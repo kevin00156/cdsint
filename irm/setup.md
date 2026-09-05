@@ -1,72 +1,66 @@
-# Setup Script for cdsint
+# The setup script
 
-> **Not rewritten yet.** This describes what `setup.ps1` does today, which is
-> the pre-split flat install: the whole tree into one ScriptDir folder that
-> the IDE scans recursively. The layout it should install is SPEC 5.3 — three
-> stubs in ScriptDir, the body outside it — and three ScriptDir locations, not
-> one. Until then, install by hand: see "Development install" in `readMe.md`.
+`setup.ps1` installs cdsint into every CODESYS-family IDE on the machine.
 
-This directory contains a PowerShell setup script designed to automate the installation and update process for the `cdsint` tool.
-
-## How to execute
-
-You can run the script directly from GitHub using a single command in PowerShell:
+## How to run it
 
 ```powershell
 irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
 ```
 
-**No Git installation required** - the script downloads clean zip archives from GitHub.
+No Git needed — it downloads a zip. To install against a clone you are
+editing instead, run it from a file:
 
-## What the script does
-
-1.  **Version Selection**:
-    - Fetches available stable releases from GitHub (tags starting with `vX.Y.Z`).
-    - Displays an interactive menu with the **last 5 stable versions**.
-    - **Default option (L)**: Latest development version from `main` branch.
-    - Shows the **recommended stable** version marked with `(recommended stable)`.
-    - Allows you to select any version from the list.
-2.  **Directory Management**:
-    - Ensures the required directory structure exists: `%LOCALAPPDATA%\CODESYS\ScriptDir\`.
-3.  **Installation**:
-    - Downloads the selected version as a clean zip archive from GitHub.
-    - **Stable releases**: Downloads from `archive/refs/tags/vX.Y.Z.zip` - no `.git` folder, smaller size.
-    - **Latest version**: Downloads from `archive/refs/heads/main.zip` - also clean archive without `.git`.
-    - Extracts to `%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint`.
-4.  **Update**:
-    - If an existing installation is found, it creates a backup.
-    - Downloads and extracts the new version.
-    - Replaces the old installation.
-    - Automatically cleans up temporary files and backup.
-
-## Version Selection Menu Example
-
-The script presents the following menu:
-
-```
---- Version Selection ---
-[L] Latest (main branch) [DEFAULT]
-Stable Releases (last 5):
-[1] v1.7.1
-[2] v1.7.2
-[3] v1.7.3 (recommended stable)
-
-Select version [L, 1-3] (default: L)
+```powershell
+.\irm\setup.ps1 -Clone C:\path\to\cdsint
 ```
 
-- Press `Enter` or type `L` for the latest development version.
-- Type a number (1, 2, 3...) to select a specific stable release.
-- The most recent stable version is always marked as **recommended stable**.
+## What it does
+
+**Finds the IDEs.** Each vendor scans a different directory for scripts, and
+picking the wrong one is the usual reason nothing appears in the menu
+(SPEC 5.3):
+
+| IDE | ScriptDir |
+|---|---|
+| CODESYS 3.5 SP17–SP21 (all versions share one) | `%LOCALAPPDATA%\CODESYS\ScriptDir` |
+| Lenze PLC Designer 4.x | `%LOCALAPPDATA%\PLCDesigner\ScriptDir` |
+| Lenze PLC Designer 3.x | `C:\ProgramData\PLCDesigner\ScriptDir` |
+| Delta DIADesigner-AX 1.8, 1.10 | `<install dir>\CODESYS\ScriptDir` |
+
+An install counts only when its executable is there. These vendors put
+shared targets, a gateway and an unversioned directory beside the real
+installs, and going by directory name alone reports each of those as an IDE
+with a ScriptDir of its own.
+
+The last two rows are under `C:\ProgramData` and `C:\Program Files`, so they
+need an elevated shell. Without one the script says which it skipped and
+carries on with the rest; run it again as administrator to add them.
+
+**Installs the body.** Downloads the requested version (`-Version`, default
+`main`) into `%LOCALAPPDATA%\cdsint`, replacing whatever is there rather than
+merging — a stub deleted upstream must not survive an upgrade and keep
+showing in the menu. With `-Clone` it skips this and uses the clone.
+
+**Points ScriptDir at the stubs.** `ScriptDir\cdsint` becomes an NTFS
+junction onto the body's `stub\` directory, and `stub\body.path` is written
+with the body's location, one line, no BOM. The IDE scans ScriptDir
+recursively and menus every `.py` it finds, which is why only the three stubs
+are reachable from there and everything else stays outside.
+
+Downloaded or cloned, it is the same junction. One mechanism means an upgrade
+cannot leave a stale stub in one IDE's ScriptDir and a fresh one in another's.
+
+## Options
+
+| | |
+|---|---|
+| `-List` | print the IDEs and ScriptDirs found, change nothing |
+| `-ScriptDir D` | install into `D` only, instead of everything found |
+| `-Clone P` | use the tree at `P` as the body instead of downloading |
+| `-Version v1.2.3` | download this tag instead of `main` |
 
 ## Requirements
 
-- **Operating System**: Windows (10/11)
-- **PowerShell**: Version 5.1 or higher
-- **Internet Connection**: Required to download the script and the selected version.
-
-## Advantages
-
-- **No Git required**: The script uses `Invoke-WebRequest` to download zip archives directly from GitHub.
-- **Clean installation**: No `.git` folder, no repository history, smaller disk footprint (~5MB vs ~10MB+ with full history).
-- **Safe updates**: Automatic backup before updating, with rollback capability if something fails.
-- **Fast downloads**: Downloads only the files you need, not the entire repository history.
+Windows 10 or 11, PowerShell 5.1 or later, and an internet connection unless
+you pass `-Clone`.

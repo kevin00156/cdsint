@@ -14,9 +14,10 @@ The code came out of
 itself a fork of [ArthurkaX/cds-text-sync](https://github.com/ArthurkaX/cds-text-sync);
 that repo holds the history up to the move.
 
-> **Early days.** Version 0.0.1. The zip installer in `irm/` has not been
-> rewritten for the new layout yet — install by hand, below. The headless mode
-> (driving an IDE that is not open) is not in this repo yet either.
+> **Early days.** Version 0.0.1. There is no published release yet, so the
+> one-line installer has nothing to download — clone the repo and point the
+> installer at it, below. The headless mode (driving an IDE that is not open)
+> is not in this repo yet either.
 
 ---
 
@@ -45,14 +46,31 @@ The IDE finds scripts by scanning one directory tree for `.py` files and putting
 every one of them in **Tools > Scripting > Scripts**. So only the stubs go there;
 the code they call lives in your clone.
 
-Two steps. First, tell the stubs where the clone is — one line, no trailing
-slash, in a file called `body.path` next to them:
+The installer does both halves of that — it finds every IDE on the machine,
+junctions each one's ScriptDir onto `stub\`, and writes the clone's path into
+`stub\body.path`:
 
-```
-echo C:\path\to\cdsint > stub\body.path
+```powershell
+.\irm\setup.ps1 -Clone .
 ```
 
-Second, point the IDE's ScriptDir at `stub\` with an NTFS junction. **Which
+Run it from an elevated shell to include Lenze 3.x and Delta, whose ScriptDirs
+are outside your profile; it says which ones it skipped otherwise.
+`.\irm\setup.ps1 -List` shows what it found without touching anything, and
+`irm/setup.md` has the rest of the options.
+
+<details>
+<summary>By hand, if you would rather</summary>
+
+Write the clone's path — one line, no trailing slash, no BOM — into a file
+called `body.path` next to the stubs:
+
+```powershell
+[System.IO.File]::WriteAllText("stub\body.path", (Get-Location).Path, `
+    (New-Object System.Text.UTF8Encoding($false)))
+```
+
+Then point the IDE's ScriptDir at `stub\` with an NTFS junction. **Which
 directory that is depends on the IDE**, and getting it wrong is the usual reason
 nothing shows up in the menu:
 
@@ -66,6 +84,8 @@ nothing shows up in the menu:
 ```
 mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 ```
+
+</details>
 
 Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
 `Project_export`, `Project_import`, `Project_watch`.

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """Scripts menu -> import. The body lives outside ScriptDir (SPEC 5.3)."""
-import os
-import sys
+import codecs, os, sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(_here, "body.path")) as _f:
+# utf-8-sig, not open(): an editor or an installer that adds a BOM would
+# otherwise put "\ufeffC:\..." on sys.path and nothing would import.
+with codecs.open(os.path.join(_here, "body.path"), "r", "utf-8-sig") as _f:
     _root = _f.read().strip()
 if _root not in sys.path:
     sys.path.insert(0, _root)

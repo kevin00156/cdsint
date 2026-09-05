@@ -1,148 +1,268 @@
-# DO NOT RUN THIS YET. It still installs the pre-split flat layout: the
-# whole tree under one ScriptDir folder, which the IDE scans recursively,
-# so the Scripts menu would list every .py in engine/, tools/ and tests/.
-# It also knows only one of the three ScriptDir locations (SPEC 5.3).
-# Until it is rewritten, install by hand: see 'Development install' in
-# readMe.md. Only the names and URLs below have been moved to this repo.
+<#
+.SYNOPSIS
+    Install cdsint into every CODESYS-family IDE on this machine.
 
-# Set encoding to UTF8 for correct character display
+.DESCRIPTION
+    The IDE builds its Scripts menu by scanning one directory tree for .py
+    files, recursively, and it puts every one of them in the menu. So only
+    three stubs go into that tree; the code they call lives somewhere else
+    and the stubs are told where by a one-line file called body.path
+    (SPEC 5.3).
+
+    Which directory the IDE scans differs by vendor, and getting it wrong is
+    the usual reason nothing appears in the menu. This script works it out
+    from what is installed rather than asking.
+
+.PARAMETER ScriptDir
+    Install into this directory only, instead of every one found. The
+    directory is the ScriptDir itself; the stubs land in a "cdsint"
+    subdirectory of it.
+
+.PARAMETER Clone
+    Use this tree as the body instead of downloading one. Editing the clone
+    then changes what the menu runs, because ScriptDir points at its stub\
+    directory rather than holding a copy.
+
+.PARAMETER Version
+    Which tag to download, or "main". Ignored with -Clone.
+
+.PARAMETER List
+    Print the IDEs and ScriptDirs found, and change nothing.
+
+.EXAMPLE
+    irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
+
+.EXAMPLE
+    .\setup.ps1 -Clone C:\path\to\cdsint
+#>
+[CmdletBinding()]
+param(
+    [string] $ScriptDir,
+    [string] $Clone,
+    [string] $Version = "main",
+    [switch] $List
+)
+
+$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$repoUrl = "https://github.com/kevin00156/cdsint"
-$targetBaseDir = Join-Path $env:LOCALAPPDATA "CODESYS\ScriptDir"
-$repoName = "cdsint"
-$fullPath = Join-Path $targetBaseDir $repoName
+$RepoUrl = "https://github.com/kevin00156/cdsint"
+$StubNames = @("Project_export.py", "Project_import.py", "Project_watch.py")
 
-Write-Host "--- Environment Setup: cdsint ---" -ForegroundColor Cyan
+# The subdirectory of ScriptDir the stubs live in. It is the product name,
+# so the Scripts menu groups them under something recognisable.
+$MenuFolder = "cdsint"
 
-# 2. Get available stable releases
-Write-Host "`n[*] Fetching available versions..." -ForegroundColor Cyan
-$tags = @()
-try {
-    $tagsUrl = "$repoUrl/tags"
-    $tagsResponse = Invoke-WebRequest -Uri $tagsUrl -UseBasicParsing
-    if ($tagsResponse.StatusCode -eq 200) {
-        # Parse tags from HTML - look for version tags (vX.Y.Z)
-        $tags = @($tagsResponse.Content | Select-String "v\d+\.\d+\.\d+" | 
-            ForEach-Object { 
-                $line = $_.ToString()
-                if ($line -match "v(\d+\.\d+\.\d+)") {
-                    "v" + $matches[1]
-                }
-            } | 
-            Where-Object { $_ -ne $null } | 
-            Select-Object -Unique)
-        
-        # Get last 5 stable versions
-        if ($tags.Count -gt 5) {
-            $tags = @($tags | Select-Object -Last 5)
+
+function Find-Installs {
+    <#
+        Directories under $Root holding an IDE, proved by its executable.
+
+        The directory name is not proof: these vendors put shared targets,
+        gateways and an unversioned stub directory beside the real installs,
+        and each of those would otherwise be reported as an IDE with a
+        ScriptDir of its own.
+    #>
+    param([string] $Root, [string] $Filter, [string] $Exe)
+
+    $installs = Get-ChildItem -Path $Root -Directory -Filter $Filter -ErrorAction SilentlyContinue
+    return $installs | Where-Object { Test-Path (Join-Path $_.FullName $Exe) }
+}
+
+
+function Find-ScriptDirs {
+    <#
+        Every ScriptDir on this machine that an installed IDE actually scans.
+        The mapping is SPEC 5.3; it is not guessable from the install path,
+        which is why it is written out per vendor.
+    #>
+    $found = @()
+
+    $codesys = Find-Installs "$env:ProgramFiles" "CODESYS *" "CODESYS\Common\CODESYS.exe"
+    if ($codesys) {
+        # SP17 to SP21 share one ScriptDir, however many are installed.
+        $found += [pscustomobject]@{
+            Ide        = "CODESYS 3.5 (" + (($codesys | ForEach-Object { $_.Name }) -join ", ") + ")"
+            Path       = Join-Path $env:LOCALAPPDATA "CODESYS\ScriptDir"
+            NeedsAdmin = $false
         }
     }
-} catch {
-    Write-Host "[!] Warning: Could not fetch tags. Only main branch will be available." -ForegroundColor Yellow
-}
 
-# 3. Show version selection menu
-Write-Host "`n--- Version Selection ---" -ForegroundColor Cyan
-Write-Host "[L] Latest (main branch) [DEFAULT]" -ForegroundColor Green
+    foreach ($root in @("$env:ProgramFiles\Lenze\PlcDesigner", "${env:ProgramFiles(x86)}\Lenze\PlcDesigner")) {
+        foreach ($install in (Find-Installs $root "*" "PlcDesigner\Common\PlcDesigner.exe")) {
+            # 4.x moved its ScriptDir into the user profile; 3.x is machine-wide.
+            if ($install.Name -match "^4\.") {
+                $path = Join-Path $env:LOCALAPPDATA "PLCDesigner\ScriptDir"
+            } else {
+                $path = "$env:ProgramData\PLCDesigner\ScriptDir"
+            }
+            $found += [pscustomobject]@{
+                Ide        = "Lenze PLC Designer " + $install.Name
+                Path       = $path
+                NeedsAdmin = ($path -like "$env:ProgramData*")
+            }
+        }
+    }
 
-if ($tags.Count -gt 0) {
-    Write-Host "Stable Releases (last $($tags.Count)):" -ForegroundColor Cyan
-    for ($i = 0; $i -lt $tags.Count; $i++) {
-        $tag = $tags[$i]
-        $isLatest = ($i -eq ($tags.Count - 1))
-        $label = if ($isLatest) { " (recommended stable)" } else { "" }
-        Write-Host "[$($i+1)] $tag$label" -ForegroundColor Yellow
+    $deltaRoot = "$env:ProgramFiles\Delta Industrial Automation\DIAStudio"
+    foreach ($install in (Find-Installs $deltaRoot "DIADesigner-AX*" "CODESYS\Common\DIADesigner-AX.exe")) {
+        # Delta keeps its ScriptDir inside the install, under Program Files,
+        # so writing there needs an elevated shell.
+        $found += [pscustomobject]@{
+            Ide        = "Delta " + $install.Name
+            Path       = Join-Path $install.FullName "CODESYS\ScriptDir"
+            NeedsAdmin = $true
+        }
+    }
+
+    # Two Lenze versions of the same generation share a ScriptDir; installing
+    # into it twice would report two successes for one directory.
+    return $found | Group-Object Path | ForEach-Object {
+        $first = $_.Group[0]
+        [pscustomobject]@{
+            Ide        = ($_.Group | ForEach-Object { $_.Ide }) -join " + "
+            Path       = $first.Path
+            NeedsAdmin = $first.NeedsAdmin
+        }
     }
 }
 
-$choice = Read-Host "`nSelect version [L, 1-$($tags.Count)] (default: L)"
-if ([string]::IsNullOrWhiteSpace($choice)) {
-    $choice = "L"
+
+function Test-Elevated {
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return (New-Object Security.Principal.WindowsPrincipal $me).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# 4. Determine download URL and version name
-$zipUrl = ""
-$versionName = ""
 
-if ($choice -eq "L") {
-    $zipUrl = "$repoUrl/archive/refs/heads/main.zip"
-    $versionName = "main"
+function Get-Body {
+    <#
+        Where the engine, cds and cdsint packages live after this runs.
+        Downloads a release unless a clone was named.
+    #>
+    param([string] $Version)
+
+    $root = Join-Path $env:LOCALAPPDATA "cdsint"
+    $zip = Join-Path $env:TEMP "cdsint-$Version.zip"
+    $unpacked = Join-Path $env:TEMP "cdsint-unpacked-$Version"
+
+    if ($Version -eq "main") {
+        $url = "$RepoUrl/archive/refs/heads/main.zip"
+    } else {
+        $url = "$RepoUrl/archive/refs/tags/$Version.zip"
+    }
+
+    Write-Host "[*] Downloading $Version from $RepoUrl" -ForegroundColor Cyan
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+        if (Test-Path $unpacked) { Remove-Item $unpacked -Recurse -Force }
+        Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+
+        # GitHub wraps the tree in one directory named after the ref.
+        $inner = Get-ChildItem $unpacked -Directory | Select-Object -First 1
+
+        # Replace rather than merge: a file deleted upstream must not survive
+        # an upgrade, or the Scripts menu keeps showing a stub that is gone.
+        if (Test-Path $root) { Remove-Item $root -Recurse -Force }
+        Move-Item -Path $inner.FullName -Destination $root
+    } finally {
+        if (Test-Path $zip) { Remove-Item $zip -Force }
+        if (Test-Path $unpacked) { Remove-Item $unpacked -Recurse -Force }
+    }
+    Write-Host "[+] Body installed to $root" -ForegroundColor Green
+    return $root
+}
+
+
+function Install-Stubs {
+    <#
+        Point ScriptDir\cdsint at the body's stub\ directory and tell the
+        stubs where the body is.
+
+        A junction, not a copy, and the same junction whether the body was
+        downloaded or is a clone you are editing. One mechanism means an
+        upgrade cannot leave a stale stub behind in one IDE's ScriptDir and
+        a fresh one in another's (SPEC D16), and it is what the by-hand
+        instructions in readMe.md already describe.
+
+        body.path is one line naming the body root. It is machine specific,
+        which is why it is written here and gitignored rather than checked in.
+    #>
+    param([string] $ScriptDir, [string] $Body)
+
+    $stubs = Join-Path $Body "stub"
+    foreach ($name in $StubNames) {
+        if (-not (Test-Path (Join-Path $stubs $name))) {
+            throw "$stubs is missing $name"
+        }
+    }
+    # Not Set-Content -Encoding utf8: PowerShell 5.1 writes a BOM, and the
+    # stub would then insert "﻿C:\..." into sys.path and import nothing.
+    [System.IO.File]::WriteAllText((Join-Path $stubs "body.path"), $Body,
+                                   (New-Object System.Text.UTF8Encoding($false)))
+
+    $menu = Join-Path $ScriptDir $MenuFolder
+    if (Test-Path $menu) { Remove-Item $menu -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $ScriptDir | Out-Null
+    New-Item -ItemType Junction -Path $menu -Target $stubs | Out-Null
+}
+
+
+# --- what to do -----------------------------------------------------------
+
+Write-Host "--- cdsint setup ---" -ForegroundColor Cyan
+
+if ($ScriptDir) {
+    $targets = @([pscustomobject]@{ Ide = "(given on the command line)"
+                                    Path = $ScriptDir
+                                    NeedsAdmin = $false })
 } else {
-    $tagIndex = [int]$choice - 1
-    if ($tagIndex -ge 0 -and $tagIndex -lt $tags.Count) {
-        $selectedTag = $tags[$tagIndex]
-        $zipUrl = "$repoUrl/archive/refs/tags/$selectedTag.zip"
-        $versionName = $selectedTag
-    } else {
-        Write-Host "[!] Invalid selection. Falling back to main branch." -ForegroundColor Yellow
-        $zipUrl = "$repoUrl/archive/refs/heads/main.zip"
-        $versionName = "main"
+    $targets = @(Find-ScriptDirs)
+}
+
+if ($targets.Count -eq 0) {
+    Write-Host "[!] No CODESYS, Lenze PLC Designer or Delta DIADesigner-AX install found." -ForegroundColor Red
+    Write-Host "    Pass -ScriptDir to install somewhere anyway." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "`nScriptDirs to install into:" -ForegroundColor Cyan
+foreach ($target in $targets) {
+    $note = ""
+    if ($target.NeedsAdmin) { $note = "  (needs an elevated shell)" }
+    Write-Host ("  {0,-40} {1}{2}" -f $target.Ide, $target.Path, $note)
+}
+if ($List) { exit 0 }
+
+if ($Clone) {
+    $body = (Resolve-Path $Clone).Path
+    if (-not (Test-Path (Join-Path $body "stub"))) {
+        Write-Host "[!] $body does not look like a cdsint clone: no stub\ directory." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "`n[*] Installing against the clone at $body" -ForegroundColor Cyan
+} else {
+    $body = Get-Body -Version $Version
+}
+
+$elevated = Test-Elevated
+$failed = 0
+foreach ($target in $targets) {
+    if ($target.NeedsAdmin -and -not $elevated) {
+        Write-Host ("[!] Skipped {0}: {1} needs an elevated shell. Re-run this script as administrator to add it." `
+                    -f $target.Ide, $target.Path) -ForegroundColor Yellow
+        $failed++
+        continue
+    }
+    try {
+        Install-Stubs -ScriptDir $target.Path -Body $body
+        Write-Host ("[+] {0}: {1}\{2}" -f $target.Ide, $target.Path, $MenuFolder) -ForegroundColor Green
+    } catch {
+        Write-Host ("[!] {0}: {1}" -f $target.Ide, $_) -ForegroundColor Red
+        $failed++
     }
 }
 
-# 5. Create required directories if they don't exist
-if (-not (Test-Path $targetBaseDir)) {
-    Write-Host "[*] Creating directory: $targetBaseDir" -ForegroundColor Cyan
-    New-Item -ItemType Directory -Force -Path $targetBaseDir | Out-Null
-}
-
-# 6. Download and install
-$tempZipPath = "$env:TEMP\cdsint-$versionName.zip"
-$tempExtractPath = "$env:TEMP\cdsint-temp-$versionName"
-
-try {
-    Write-Host "[*] Downloading cdsint ($versionName)..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $zipUrl -OutFile $tempZipPath -UseBasicParsing
-    
-    Write-Host "[*] Extracting archive..." -ForegroundColor Cyan
-    Expand-Archive -Path $tempZipPath -DestinationPath $tempExtractPath -Force
-    
-    # Find the extracted folder (it will be named "cdsint-main" or "cdsint-v1.7.3")
-    $extractedFolder = Get-ChildItem $tempExtractPath -Directory | Select-Object -First 1
-    $extractedPath = $extractedFolder.FullName
-    
-    if (Test-Path $fullPath) {
-        Write-Host "[*] Updating existing installation..." -ForegroundColor Cyan
-        # Backup existing installation
-        $backupPath = "$fullPath.backup"
-        if (Test-Path $backupPath) {
-            Remove-Item -Path $backupPath -Recurse -Force
-        }
-        Copy-Item -Path $fullPath -Destination $backupPath -Recurse -Force
-        
-        # Replace with new version
-        Remove-Item -Path $fullPath -Recurse -Force
-        Move-Item -Path $extractedPath -Destination $fullPath
-        
-        Write-Host "[+] Update completed." -ForegroundColor Green
-    } else {
-        Write-Host "[*] Installing cdsint to $fullPath..." -ForegroundColor Cyan
-        Move-Item -Path $extractedPath -Destination $fullPath
-        Write-Host "[+] Installation completed!" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "[!] An error occurred: $_" -ForegroundColor Red
-    Write-Host "[*] Cleaning up temporary files..." -ForegroundColor Cyan
-    
-    # Try to restore from backup if update failed
-    if (Test-Path "$fullPath.backup") {
-        if (-not (Test-Path $fullPath)) {
-            Write-Host "[*] Restoring from backup..." -ForegroundColor Cyan
-            Move-Item -Path "$fullPath.backup" -Destination $fullPath
-        }
-    }
-} finally {
-    # Cleanup temporary files
-    if (Test-Path $tempZipPath) {
-        Remove-Item -Path $tempZipPath -Force
-    }
-    if (Test-Path $tempExtractPath) {
-        Remove-Item -Path $tempExtractPath -Recurse -Force
-    }
-    if (Test-Path "$fullPath.backup") {
-        Remove-Item -Path "$fullPath.backup" -Recurse -Force
-    }
-}
-
-Write-Host "`n--- Setup Finished! ---" -ForegroundColor Cyan
+Write-Host "`nRestart the IDE. Tools > Scripting > Scripts should list three entries." -ForegroundColor Cyan
+Write-Host "For the CLI: python -m pip install -e `"$body`"" -ForegroundColor Cyan
+if ($failed -gt 0) { exit 1 }

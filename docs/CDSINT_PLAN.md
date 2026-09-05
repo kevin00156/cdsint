@@ -158,7 +158,7 @@ img/        readMe 用的圖
 - [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
   - [x] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
   - [x] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
-  - [ ] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
+  - [x] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
   - [x] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗。階段 0 已做，見第 7 節 worker 的 Ruling。
   - [ ] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。
   - [ ] 驗收：`stub/` 只有三個檔案。
@@ -232,6 +232,10 @@ img/        readMe 用的圖
 
 階段 1 新增的：
 
+- Ruling: 安裝器不管下載還是 clone，一律用 junction 指向本體的 `stub/`，不複製 stub — 工單寫「本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、開發模式用 junction」，讀起來像兩條路（下載就複製、開發就 junction）。兩條路就是兩份 stub，升級時一個 IDE 的 ScriptDir 留著舊的、另一個是新的，而且 SPEC D16 明講不准並存。改成一條之後，下載模式與開發模式的差別只剩「本體從哪來」 — 錯了的代價是 ScriptDir 所在的磁碟如果不是 NTFS 就裝不起來；三家的 ScriptDir 都在 C: 底下，這個情況實務上不存在。
+- Ruling: 安裝器認一套 IDE 的條件是它的執行檔在，不是目錄名字像版本號 — 這台機器上 `Lenze\PlcDesigner\` 底下有 `Targets` 與 `GatewayPLC`，`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們每一個都會被當成一套有自己 ScriptDir 的 IDE。加上執行檔檢查之後，`-List` 列出的正好是這台真正的五個 ScriptDir — 錯了的代價是某天有一套 IDE 把執行檔搬到別的相對位置，安裝器就會說「找不到任何 IDE」，得改那三條路徑。
+- Ruling: 拿掉互動式的版本選單，改成 `-Version`（預設 `main`） — 選單要先去 GitHub 抓 tag 再 `Read-Host`，而這個 repo 一個 release 都還沒發，選單永遠是空的；更要緊的是 `Read-Host` 讓安裝器沒辦法自動驗收 — 錯了的代價是之後真的發了版，想裝舊版的人要自己打 `-Version v1.2.3`，不能從清單挑。
+- Ruling: `body.path` 一律寫成沒有 BOM 的 UTF-8，stub 讀的時候用 `utf-8-sig` — 第一次跑無頭驗收就是掛在這個上面：`Set-Content -Encoding utf8` 在 PowerShell 5.1 會加 BOM，stub 於是把 `﻿C:\...` 插進 `sys.path`，IDE 丟 `ImportError: No module named cds.ide`。安裝器寫對是根治，stub 讀得寬是因為這個檔也可能是人用編輯器建的 — 錯了的代價是 stub 各多一行 import，`Project_export.py` 與 `Project_import.py` 剛好用到 15 行的上限。
 - Ruling: `cds/ide/silent.py` 自己按名字把 `engine.codesys_ui` 載進來，載不到就整個不跑本體 — 這是修一個階段 0 留下的洞：來源 repo 的入口在模組層級用 `_load_hidden_module` 把 `codesys_ui` 塞進 `sys.modules`，階段 0 改成函式裡的 `from engine.codesys_ui import ...` 之後就沒有人在模組層級載它了，而看門人每次執行命令前都會清掉 `sys.modules` 裡的 engine，所以 `_install` 那句 `sys.modules.get(...)` 永遠是 None，三個對話框一個都沒被換掉。後果是 `cdsint import -y --target` 會在 IDE 裡開一個沒人能按的 WinForms 對話框，把 IDE 的訊息迴圈卡死 — 正是階段 1 驗收要跑的那條命令。SPEC D12 的字面是「`cds/ide` 不准 import 引擎模組」，這一行違反了字面；但 `silent.py` 本來就寫死 `UI_MODULE = "engine.codesys_ui"` 並且往裡面 setattr，這個相依早就存在，缺的只是讓它真的成立。載進來之後 `cds/ide` 仍然不使用引擎的任何東西，只是把三個函式換掉再換回去 — 錯了的代價是 D12 的 grep 會多一筆命中（`__import__(UI_MODULE)`），要在規則裡寫成例外。這一條值得監督者裁。
 - Ruling: `choose_sync_folder` 回 `(folder, error)` 兩元組，跟 `load_base_dir` 同形 — 只回 `folder` 或 `None` 的話，呼叫端只能回報一句「沒設同步資料夾」，把真正的原因（沒開專案／使用者按了取消／寫不進專案屬性）吃掉，那正是 SPEC D13 禁止的 — 錯了的代價是多一個要解包的回傳值。
 - Ruling: `entry_directory.py` 裡檢查 `_metadata.json` 專案路徑不符的那一段整段刪掉，不搬進 `engine/settings.py` — 現在的中繼資料檔叫 `sync_metadata.json`，`_metadata.json` 全 repo 只剩 `RESERVED_FILES` 裡一個字串，沒有任何地方會寫出它，所以那段是對著一個不存在的檔案跑的死碼（PRINCIPLES 7）。順帶消掉的還有它那個 `ask_yes_no("Update Metadata?")`，否則替身 UI 的答案表要多登記一個永遠答不出來的題目 — 錯了的代價是如果真有人手上留著遠古版本寫的 `_metadata.json`，設定同步資料夾時不會再被問要不要更新裡面的專案路徑。
