@@ -39,34 +39,80 @@ def credentials():
 
 
 def silence_credential_dialogs(online_api, ide_globals):
-    """Switch the credential dialog off and hand over what the environment has.
+    """Switch the dialog off and hand over the environment's login.
 
-    This is the line that makes the whole command unattended. Without it a
-    controller that wants a login pops a window, and under --noUI that is not
-    a failure anyone can read — it is a process that never returns. Told not
-    to fall back to a dialog, the same situation raises where it happens.
+    Returns (note, problem); one is None. This is the line that makes the
+    whole command unattended: without it a controller that wants a login pops
+    a window, and under --noUI that is not a failure anyone can read — it is
+    a process that never returns.
 
-    Written as getattr(kinds, "None") because None is a Python keyword and
-    the attribute really is called that; spelled as an attribute access the
-    file would not compile.
+    A problem here stops the trip. It used to print "will hang this run" and
+    carry on into exactly that hang, which on the WSL bench cost four runs of
+    360 seconds each and told the reader nothing. Not being able to switch
+    the dialog off is a reason not to connect, and there is no version of
+    this worth trying anyway.
     """
-    said = []
-    kinds = ide_globals.get("CredentialSourceKind")
+    off = switch_fallback_off(online_api,
+                              ide_globals.get("CredentialSourceKind"))
+    if off is None:
+        return None, ("this IDE's scripting API has no way to switch the "
+                      "credential dialog off (neither an auth_fallback_modes "
+                      "property nor a set_auth_fallback_modes method), and "
+                      "under --noUI a controller that asks for a login opens "
+                      "a window nothing can close, so the connection would "
+                      "never return. Nothing was tried.")
+    return "; ".join([off, hand_over_credentials(online_api)]), None
+
+
+def switch_fallback_off(online_api, kinds):
+    """Forbid the interactive fallback, whichever spelling this IDE has.
+
+    ScriptEngine 4.2.0.0 (CODESYS 3.5.21.40) exposes auth_fallback_modes as a
+    settable property and has no setter method at all — calling one, which is
+    what this did for its first year, lands in the except and switches
+    nothing off. 4.0.0.0 (Lenze 3.24, Delta 1.10) has not been checked, so
+    the old spelling stays as a fallback rather than being deleted.
+
+    The property is read back rather than trusted: the whole bug being fixed
+    here is a switch that reported itself set and was not, and an assignment
+    that quietly lands on a Python attribute instead of the .NET property
+    would be that bug again.
+
+    None when neither spelling worked. Written as getattr(kinds, "None")
+    because None is a Python keyword and the enum member really is called
+    that; spelled as an attribute access the file would not compile.
+    """
+    none_of_them = None if kinds is None else getattr(kinds, "None", None)
+    if none_of_them is None:
+        # Without the enum there is no value to assign, and assigning Python's
+        # None would read as success while forbidding nothing.
+        return None
     try:
-        online_api.set_auth_fallback_modes(getattr(kinds, "None"))
-        said.append("credential dialogs off")
-    except Exception as exc:
-        said.append("credential dialogs could NOT be switched off (%s), so a "
-                    "controller that asks for a login will hang this run"
-                    % safe_str(exc))
+        online_api.auth_fallback_modes = none_of_them
+        if online_api.auth_fallback_modes == none_of_them:
+            return "credential dialogs off (auth_fallback_modes)"
+    except Exception:
+        pass
+    try:
+        online_api.set_auth_fallback_modes(none_of_them)
+        return "credential dialogs off (set_auth_fallback_modes)"
+    except Exception:
+        return None
+
+
+def hand_over_credentials(online_api):
+    """Give the API what the environment holds, and say which it was.
+
+    Both variable names appear when there is no login, because a reader who
+    sets only the one named in the message gets the same failure again.
+    """
     user, password = credentials()
-    if user:
-        online_api.set_default_credentials(user, password)
-        said.append("logging in as %s (from %s)" % (user, USER_ENV))
-    else:
-        said.append("no %s in the environment, so the controller gets no "
-                    "credentials" % USER_ENV)
-    return "; ".join(said)
+    if not user:
+        return ("no %s in the environment, so the controller gets no "
+                "credentials; set %s and %s to log in"
+                % (USER_ENV, USER_ENV, PASS_ENV))
+    online_api.set_default_credentials(user, password)
+    return "logging in as %s (from %s and %s)" % (user, USER_ENV, PASS_ENV)
 
 
 # --------------------------------------------------------------------------

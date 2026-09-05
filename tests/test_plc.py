@@ -168,17 +168,30 @@ class Session(object):
 
 
 class Online(object):
-    """The CODESYS `online` global."""
+    """The CODESYS `online` global, shaped like ScriptEngine 4.2.0.0.
+
+    `auth_fallback_modes` is a settable property there and there is no
+    `set_auth_fallback_modes` method at all. This fake had the method and not
+    the property, so 61 tests vouched for a call no IDE has, and the bench
+    found out the hard way: the dialog was never switched off and four runs
+    hung until they were killed. A property here means an assignment that
+    lands on a plain attribute cannot pass for the real thing.
+    """
 
     def __init__(self, device=None, gateways=()):
         self.device = device if device is not None else Device()
         self.gateways = list(gateways)
         self.session = Session()
-        self.fallback_modes = "never set"
+        self._fallback = "never set"
         self.credentials = None
 
-    def set_auth_fallback_modes(self, kinds):
-        self.fallback_modes = kinds
+    @property
+    def auth_fallback_modes(self):
+        return self._fallback
+
+    @auth_fallback_modes.setter
+    def auth_fallback_modes(self, kinds):
+        self._fallback = kinds
 
     def set_default_credentials(self, user, password):
         self.credentials = (user, password)
@@ -188,6 +201,27 @@ class Online(object):
 
     def create_online_application(self, application):
         return self.session
+
+
+class NoSwitch(Online):
+    """An IDE whose API offers neither spelling.
+
+    Nothing has confirmed such an IDE exists — ScriptEngine 4.0.0.0 (Lenze
+    3.24, Delta 1.10) has not been looked at. It is a fake for the rule
+    rather than for a machine: whatever cannot switch the dialog off must
+    not be connected to, because under --noUI that is a hang.
+    """
+
+    @property
+    def auth_fallback_modes(self):
+        raise AttributeError("auth_fallback_modes")
+
+    @auth_fallback_modes.setter
+    def auth_fallback_modes(self, kinds):
+        raise AttributeError("auth_fallback_modes")
+
+    def set_auth_fallback_modes(self, kinds):
+        raise AttributeError("set_auth_fallback_modes")
 
 
 class Gateway(object):
@@ -723,6 +757,28 @@ def test_the_gateway_flag_aims_the_device_and_says_where():
                for note in outcome.result["data"]["notes"])
 
 
+def test_a_note_is_on_stdout_before_the_step_after_it_runs(capsys):
+    # The four bench runs that hung were killed inside connect(), and their
+    # stdout held nothing but the headless BEGIN mark: every note was sitting
+    # in a list waiting for a result that never came, so nothing said which
+    # step had stopped. Modelled with a connect() that ends the run instead
+    # of failing it, because a failure still reaches result().
+    class Killed(BaseException):
+        """Not an Exception: the engine catches those and reports them."""
+
+    class Unreachable(Device):
+        def connect(self):
+            raise Killed("the process went away")
+
+    ide_globals = ide(allowed="connect", device=Unreachable(),
+                      children=[Node("Device", DEVICE_GUID)],
+                      gateways=[Gateway()])
+    with pytest.raises(Killed):
+        silent.run(ide_globals, PLC_BODY, "connect",
+                   {"gateway": "192.168.1.5", "port": 11740})
+    assert "192.168.1.5" in capsys.readouterr().out
+
+
 def test_a_gateway_with_no_port_uses_the_standard_device_port():
     gateway = Gateway()
     device_node = Node("Device", DEVICE_GUID)
@@ -755,20 +811,51 @@ def test_the_credential_dialog_is_switched_off_before_anything_connects():
     # unattended at all.
     plc = engine_module("plc_link")
     online = Online()
-    plc.silence_credential_dialogs(online, {"CredentialSourceKind":
-                                            CredentialSourceKind})
-    assert online.fallback_modes == "no-dialog"
+    note, problem = plc.silence_credential_dialogs(
+        online, {"CredentialSourceKind": CredentialSourceKind})
+    assert problem is None
+    assert online.auth_fallback_modes == "no-dialog"
+    assert "auth_fallback_modes" in note
 
 
-def test_a_credential_api_that_will_not_be_switched_off_is_said_out_loud():
+def test_an_ide_with_only_the_old_setter_is_switched_off_through_it():
+    # 4.2.0.0 has the property and no method; 4.0.0.0 has not been looked at,
+    # so the old spelling stays as a fallback instead of being deleted.
     plc = engine_module("plc_link")
 
-    class Awkward(Online):
+    class OldApi(NoSwitch):
         def set_auth_fallback_modes(self, kinds):
-            raise RuntimeError("not supported here")
+            self._fallback = kinds
 
-    said = plc.silence_credential_dialogs(Awkward(), {})
-    assert "hang" in said
+    online = OldApi()
+    note, problem = plc.silence_credential_dialogs(
+        online, {"CredentialSourceKind": CredentialSourceKind})
+    assert problem is None
+    assert online._fallback == "no-dialog"
+    assert "set_auth_fallback_modes" in note
+
+
+def test_a_credential_api_that_will_not_be_switched_off_stops_the_trip():
+    # The old behaviour printed "will hang this run" and then went and hung.
+    plc = engine_module("plc_link")
+    note, problem = plc.silence_credential_dialogs(NoSwitch(), {
+        "CredentialSourceKind": CredentialSourceKind})
+    assert note is None
+    assert "auth_fallback_modes" in problem and "never return" in problem
+
+
+def test_an_ide_that_cannot_switch_the_dialog_off_never_connects():
+    # The point of refusing is that connect() is the call that hangs, so it
+    # must not be reached at all. Not a refusal in the permission sense
+    # either: the project allowed this, the IDE cannot carry it out.
+    device = Device()
+    ide_globals = ide(allowed="connect", device=device)
+    ide_globals["online"] = NoSwitch(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert not outcome.ok()
+    assert outcome.denied is None
+    assert device.connected is False
+    assert "never return" in outcome.result["summary"]
 
 
 def test_the_login_comes_from_the_environment_and_nowhere_else(monkeypatch):
@@ -785,9 +872,10 @@ def test_no_environment_login_is_reported_rather_than_invented(monkeypatch):
     plc = engine_module("plc_link")
     monkeypatch.delenv(plc.USER_ENV, raising=False)
     online = Online()
-    said = plc.silence_credential_dialogs(online, {"CredentialSourceKind":
-                                                   CredentialSourceKind})
-    assert online.credentials is None and plc.USER_ENV in said
+    note, problem = plc.silence_credential_dialogs(
+        online, {"CredentialSourceKind": CredentialSourceKind})
+    assert problem is None and online.credentials is None
+    assert plc.USER_ENV in note and plc.PASS_ENV in note
 
 
 def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):

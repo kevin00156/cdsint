@@ -226,8 +226,8 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。——2026-09-06 使用者授權用這台的兩個 WSL soft PLC 當台架，事實如下，登入帳密仍然只有使用者有。
   - **WSL 台架的事實（2026-09-06 監督者查的）。** `.wslconfig` 是 `networkingMode=mirrored`，所以兩個 distro 跟 Windows 共用 IP 與埠。`Ubuntu-22.04`（`/etc/plc-testrig` 是 `bench-wsl-a`）的 `codesyscontrol` 聽 TCP 11740（預設）；`slitter-b`（`bench-wsl-b`）的 `CODESYSControl.cfg` 有 `[CmpBlkDrvTcp] ListenPort=11741`。Windows 上的 `CODESYS Gateway V3`（3.5.18.50）在 0.0.0.0:1217，所以 IDE 走 gateway `127.0.0.1`，裝置位址 `127.0.0.1:11740` 是 A、`127.0.0.1:11741` 是 B。兩個 runtime 都開了使用者管理（`/var/opt/codesys/.UserDatabase.csv` 存在），登入要 `CDS_DEV_USER`、`CDS_DEV_PASS`，這兩個值不在任何檔案或環境變數裡，worker 與監督者都沒有。runtime 是 demo 授權，連續跑兩小時會停，重啟命令：`wsl -d Ubuntu-22.04 -u root -- systemctl restart codesyscontrol`、`wsl -d slitter-b -- systemctl restart codesyscontrol`（`slitter-b` 預設就是 root）。這兩個 distro 都是使用者的測試環境，使用者 2026-09-06 明說可以拿來測。
   - [x] 台架測試（worker 做，不需要帳密的部分）：新增 `tools/grant_plc.py`，一支 `--runscript` 用的 IronPython 腳本，對環境變數指到的專案**副本**設 `cds-sync-plc`（值由 `CDSINT_GRANT_PLC` 給）並存檔；檔頭寫明這是給測試副本用的、SPEC 6.5 的政策不是牆。用它對 softplc 副本設 `connect,download`。然後對 A（`--gateway 127.0.0.1 --port 11740`）與 B（`--port 11741`）各跑 `plc connect --project <softplc 副本> --install 3.5.21.40 --sync-dir S`，環境變數不設。預期：gateway 解析、`find_address_by_ip`、`set_gateway_and_ip_address` 都過（report 的 notes 有 `gateway: ... -> 127.0.0.1:11740` 那一行），登入因為沒有帳密而失敗，**exit 1、訊息說要設哪兩個環境變數、沒有 traceback、行程自己退出不掛住、report 的 `timed_out` 是 false**。`plc download -y` 同樣。把兩家 A、B 的結果與秒數寫進第 7 節。runtime 若已停（連兩小時），先用上面的命令重啟再測。——**跑完了，但工單寫的預期一項都沒達成，四趟全部掛住。**`tools/grant_plc.py` 已加，對 softplc 副本設 `connect,download` 成功（56.4 秒）。A 與 B 的 `plc connect` 與 `plc download -y` 四趟都是 exit 3、360 秒撞行程期限被殺、report 的 `timed_out` 是 true。閘道那一段是好的（`find_address_by_ip` 與 `set_gateway_and_ip_address` 都過，notes 就是 `gateway: Gateway-3 -> 127.0.0.1:11740` 那一行），掛住的是 `device.connect()`：`engine/plc_link.py:56` 叫的 `set_auth_fallback_modes` 在真的 `ScriptOnline` 上不存在（正確的是可寫屬性 `auth_fallback_modes`），憑證對話框沒被關掉，`--noUI` 底下那是掛住不是失敗。一行的修法在台架上量過了：`connect()` 1.4 秒丟「Invalid user authentication on the target」，行程 55.9 秒自己退出。改不改請監督者裁，連同秒數表與證據全部在第 7 節「階段 3 台架」那一段。
-  - [ ] **階段 3 台架收尾（監督者裁後）**：三件都做。（1）`engine/plc_link.py` 的 `silence_credential_dialogs` 改成對 `online_api.auth_fallback_modes` 指派 `CredentialSourceKind.None`；這台 4.2.0.0 的 ScriptEngine 就是這個形狀，4.0.0.0（Lenze、Delta）沒查過，所以屬性不存在時退而呼叫 `set_auth_fallback_modes`；**兩個都沒有就不連線**，回 `ok=False`、`denied` 不設、訊息說「這個 IDE 的 API 關不掉憑證對話框，`--noUI` 底下連線會永遠不回來，所以拒絕」。現在那段 `except` 印一句「will hang this run」然後照樣往下走，那是明知會掛住還去掛住，改掉。（2）`tests/test_plc.py` 的假 `online` 物件改成真的形狀（屬性），加一條「屬性與方法都沒有時拒絕連線、`connect` 沒被呼叫」。（3）notes 一產生就印到 stdout，不等 `result()`，這樣掛住的一趟至少看得出停在哪一步；`Trip` 的回傳結構不變。順便：沒帳密時的 note 要同時提 `CDS_DEV_USER` 與 `CDS_DEV_PASS`；SPEC 6.6 那句改成屬性寫法（監督者已改）。
-  - [ ] 驗收：`python -m pytest tests -q` 綠。四趟台架命令（A、B 各 `plc connect` 與 `plc download -y`，不設帳密）重跑：每趟 exit 1、report 的 `timed_out` 是 false、行程自己退出（總秒數在 120 以內）、`error` 或 stdout 含「Invalid user authentication」與兩個環境變數的名字、沒有 traceback；notes 裡有 `gateway: Gateway-3 -> 127.0.0.1:1174x` 那一行。秒數表更新到第 7 節。
+  - [x] **階段 3 台架收尾（監督者裁後）**：三件都做。（1）`engine/plc_link.py` 的 `silence_credential_dialogs` 改成對 `online_api.auth_fallback_modes` 指派 `CredentialSourceKind.None`；這台 4.2.0.0 的 ScriptEngine 就是這個形狀，4.0.0.0（Lenze、Delta）沒查過，所以屬性不存在時退而呼叫 `set_auth_fallback_modes`；**兩個都沒有就不連線**，回 `ok=False`、`denied` 不設、訊息說「這個 IDE 的 API 關不掉憑證對話框，`--noUI` 底下連線會永遠不回來，所以拒絕」。現在那段 `except` 印一句「will hang this run」然後照樣往下走，那是明知會掛住還去掛住，改掉。（2）`tests/test_plc.py` 的假 `online` 物件改成真的形狀（屬性），加一條「屬性與方法都沒有時拒絕連線、`connect` 沒被呼叫」。（3）notes 一產生就印到 stdout，不等 `result()`，這樣掛住的一趟至少看得出停在哪一步；`Trip` 的回傳結構不變。順便：沒帳密時的 note 要同時提 `CDS_DEV_USER` 與 `CDS_DEV_PASS`；SPEC 6.6 那句改成屬性寫法（監督者已改）。——三件都做完。（1）`silence_credential_dialogs` 改成回 `(note, problem)`，關對話框那半拆成 `switch_fallback_off`：先對 `auth_fallback_modes` 指派**再讀回來確認**，屬性這條不通才退而呼叫 `set_auth_fallback_modes`，兩個都沒有就回 problem，`Trip.reach_the_device` 收到就停在 `create_online_device` 之前。（2）假 `online` 的 `auth_fallback_modes` 現在是真的 property 且沒有 setter 方法，另外加 `NoSwitch`（兩個都沒有）與 `OldApi`（只有舊方法）兩個形狀。（3）`Trip.note()` 一產生就印，`result()` 那個延後的迴圈刪掉，回傳結構沒動。沒帳密的 note 兩個變數名都提了。三條新測試都先確認在改之前是紅的，另外兩條既有的（開關有沒有生效、沒帳密怎麼講）也是改完才綠。
+  - [x] 驗收：`python -m pytest tests -q` 綠。四趟台架命令（A、B 各 `plc connect` 與 `plc download -y`，不設帳密）重跑：每趟 exit 1、report 的 `timed_out` 是 false、行程自己退出（總秒數在 120 以內）、`error` 或 stdout 含「Invalid user authentication」與兩個環境變數的名字、沒有 traceback；notes 裡有 `gateway: Gateway-3 -> 127.0.0.1:1174x` 那一行。秒數表更新到第 7 節。——`python -m pytest tests -q` 與根目錄各 901 passed。四趟重跑全部 exit 1、`timed_out` false、`exit_code_actual` 1 且 `exit_code_trusted` true、行程自己退出、`error` 含「Invalid user authentication on the target」、沒有 traceback，notes 有 `gateway: Gateway-3 -> 127.0.0.1:11740`（B 是 `:11741`），兩個環境變數的名字在 note 裡也在行程的 stdout 檔裡。**一項不合：秒數。** connect 是 69.7 與 67.5 秒（在 120 以內），download 是 159.4 與 160.2 秒（超過）。原因不是掛住而是 `session.login()` 之前 CODESYS 會先把整個應用程式編譯一遍；行程期限 360 秒沒有靠近。秒數表在第 7 節。
   - [ ] 驗收（監督者會重現）：A 的 `plc connect` 一趟，同上。
   - [ ] 驗收（還需要人）：使用者在自己的 shell 設好 `CDS_DEV_USER`、`CDS_DEV_PASS`，對 A 跑 `cdsint plc connect --project <softplc 副本> --install 3.5.21.40 --sync-dir S --gateway 127.0.0.1 --port 11740`，列出裝置與檔案；再跑 `plc download -y`，exit 0 且 report 的 CRC 是 `MATCH`。原因：帳密只有人有。
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
@@ -327,7 +327,7 @@ img/        readMe 用的圖
 SPEC 6.5 自己寫的同一條——無頭模式本來就在 IDE 裡跑任意 IronPython。在原廠 3.5.21.40 上對
 `%TEMP%\cdsint-work\softplc_copy.project` 跑一次：56.4 秒 exit 0，屬性從沒有設過變成 `connect,download`。
 
-**四趟台架測試全部掛住，一趟都沒有達到工單寫的預期。** 命令是
+**修好之前：四趟台架測試全部掛住，一趟都沒有達到工單寫的預期。** 命令是
 `cdsint plc <connect|download -y> --project <softplc 副本> --install 3.5.21.40 --sync-dir S --gateway 127.0.0.1 --port <埠>`，
 沒有設 `CDS_DEV_USER` 與 `CDS_DEV_PASS`：
 
@@ -390,19 +390,50 @@ notes 裡就是 `gateway: ... -> 127.0.0.1:11740` 那一行。掛住的是下一
 工單那句「exit 1、沒有 traceback、行程自己退出不掛住、`timed_out` 是 false」四件事會同時成立
 （例外會被 `read_back` 的 `except` 接住寫成 `%s did not answer: %s`，不是 traceback）。
 
-- **請監督者裁：`engine/plc_link.py:56` 的 `set_auth_fallback_modes` 要不要現在改成
-  `auth_fallback_modes` 屬性指派。** 我沒有改，理由是階段 3 監督者已經驗收過，而這動的是引擎行為；
-  照階段 1 `classify_object` 那條的先例，這種事寫進第 7 節請裁而不是自己動手。要裁的有三件：
-  (a) 改不改；(b) `tests/test_plc.py` 的兩個假物件要不要一起改成只認新名字——不改的話測試會繼續替一個
-  不存在的 API 背書，改的話那 61 條測試才真的守著這條路；(c) 舊名字要不要留一條相容路徑——Lenze 3.24 與
-  Delta 1.10 的 ScriptEngine 是 4.0.0.0，我只在 4.2.0.0 上查過，其他兩家有沒有舊名字沒有量。
-  我的建議是三件都做：屬性優先、舊名字當退路、假物件改成只認新名字並補一條「兩個名字都沒有時要說出來」的測試。
-- 工單那句「訊息說要設哪兩個環境變數」**沒有驗到**，因為四趟都沒有走到印訊息那一步。順帶看到的是
-  `plc_link.silence_credential_dialogs` 那句 note 只提了 `CDS_DEV_USER`，沒提 `CDS_DEV_PASS`；
-  等上面那條裁完再看要不要一起改。
-- 另一件掛住時才看得出來的事：`Trip` 的 notes 是在 `result()` 裡才印的，所以一趟掛住的執行 stdout 上
-  只有 `=== CDSINT_HEADLESS_BEGIN ===`，讀的人完全看不出它停在哪一步。這次是靠另外寫一支逐步寫檔的探針才定位的。
-  要不要讓 notes 一產生就印，也請一併裁。
+三個問號（改不改、假物件、notes 什麼時候印）監督者 2026-09-06 裁了「三件都做」，做完的樣子見下一段。
+
+**修好之後重跑，四趟全過（2026-09-06）。** 同一份 softplc 副本、同樣不設帳密、同樣的命令：
+
+| 台架 | 命令 | 退出碼 | 秒數 | `timed_out` | 實際退出碼 | `error` |
+|---|---|---|---|---|---|---|
+| A（11740） | `plc connect` | 1 | 69.7 | false | 1，`exit_code_trusted` true | `connect: CODESYS_Control_for_Linux_SL did not answer: Invalid user authentication on the target` |
+| A（11740） | `plc download -y` | 1 | 159.4 | false | 1，同上 | `download: the download did not complete: Login failed: ... Invalid user authentication on the target` |
+| B（11741） | `plc connect` | 1 | 67.5 | false | 1，同上 | 同 A 的 connect |
+| B（11741） | `plc download -y` | 1 | 160.2 | false | 1，同上 | 同 A 的 download |
+
+四趟的 `stdout_reached` 都是 true，`error` 裡沒有 traceback，行程都自己退出，沒有一趟被殺。
+notes 兩條都在，第一條是
+`credential dialogs off (auth_fallback_modes); no CDS_DEV_USER in the environment, so the controller gets no credentials; set CDS_DEV_USER and CDS_DEV_PASS to log in`，
+第二條是 `gateway: Gateway-3 -> 127.0.0.1:11740`（B 是 `:11741`，節點位址也不同，
+A 是 `0168.1000.2DDC.7F00.0001`、B 是 `0168.1000.2DDD.7F00.0001`）。兩個環境變數的名字都在 note 裡，
+而 note 現在一產生就印，所以行程的 stdout 檔上就看得到它們，不必等 report。
+
+**`download` 的 159 秒超出驗收句寫的「總秒數在 120 以內」，原因不是掛住。**
+`session.login()` 之前 CODESYS 會先把整個應用程式編譯一遍（前一輪掛住的那兩趟 stderr
+最後一行就是 `Compile complete -- 0 errors, 101 warnings`，那是掛住之前已經編完的），
+所以 download 的成本是「IDE 啟動 + 完整編譯 + 登入被拒」，connect 只有「IDE 啟動 + 登入被拒」，
+兩者差的 90 秒就是那次編譯。行程期限是 360 秒（`--timeout` 預設 120 推出來的），沒有靠近。
+`connect` 的 69.7 與 67.5 秒在 120 以內。
+
+- Ruling: 指派完 `auth_fallback_modes` 之後讀回來比對，比對不過才試舊方法名 — 裁定沒有要求這一步，
+  但這個 bug 的形狀正是「開關回報自己設好了而其實沒有」，而 Python 的屬性指派在一個沒有該屬性的
+  普通物件上會安靜地變成新增一個屬性；讀回來是唯一能分辨「真的設進去」與「掛在物件上」的動作 —
+  錯了的代價是每次多讀一次屬性，那是一次 .NET 邊界呼叫，一趟只有一次。
+- Ruling: `silence_credential_dialogs` 拆成三支（它自己、`switch_fallback_off`、`hand_over_credentials`）—
+  原本一支同時做「關對話框」與「交出帳密」兩件事，而現在第一件多了兩種拼法加拒絕，
+  混在一起的話那個函式會有三層縮排；拆開之後每支一句話說得完，而且兩種拼法的取捨有地方寫 —
+  錯了的代價是 `plc_link.py` 從 192 行變成 238 行，仍在上限內。
+- Ruling: 假物件分成三個形狀（`Online` 有屬性沒方法、`OldApi` 只有舊方法、`NoSwitch` 兩個都沒有），
+  `OldApi` 繼承 `NoSwitch` 只覆寫那一個方法 — 三種形狀是這段程式碼真正要分辨的三件事，各給一個名字
+  比在測試裡臨時定義三個匿名子類清楚；`OldApi` 繼承 `NoSwitch` 是因為「只有舊方法」就是「兩個都沒有」
+  再加回一個方法，重寫一次那兩個丟 AttributeError 的 property 等於把同一件事寫兩遍 —
+  錯了的代價是無。
+- Ruling: 「notes 一產生就印」那條的測試用一個丟 `BaseException` 的 `connect()` — 要證明的是
+  「執行沒有走到 `result()` 也看得到 notes」，而引擎把所有 `Exception` 都接住並且照樣走到 `result()`，
+  所以用 `Exception` 的測試在改之前也會綠。真實情況是行程被 SIGKILL，Python 那一側什麼都不會拋，
+  但從「有沒有走到 `result()`」這個觀察點上兩者一樣 — 錯了的代價是這條測試模擬的情況比真實的溫和，
+  它守得住的是「印的時機」，守不住「行程真的被殺時作業系統有沒有把緩衝區吐出來」；
+  後者這一輪在真台架上看到了（掛住那四趟的 stdout 檔只有 BEGIN 一行，修好之後兩條 note 都在檔案裡）。
 - 台架本身沒有問題，工單第 5 節那段「WSL 台架的事實」量到的全部成立：兩個 runtime 都活著
   （`systemctl is-active` 都是 active，2026-09-06 00:51 起的，demo 授權的兩小時還沒到），
   Windows 這邊 `127.0.0.1:11740` 與 `:11741` 都連得上，閘道 `Gateway-3` 兩個埠都解析得出節點位址。

@@ -37,6 +37,18 @@ class Trip(object):
         self.found = {"crc": plc_crc.UNKNOWN, "local_crc": None,
                       "plc_crc": None, "plc_files": [], "source_archive": None}
 
+    def note(self, text):
+        """Record one step, and say it now rather than at the end.
+
+        Printed as it happens because stdout is the only channel a --noUI run
+        has, and a run that never reaches its result has no other way to say
+        where it stopped: four bench runs were killed at 360 seconds each
+        having printed nothing but the headless BEGIN mark, and locating them
+        took a separate probe that wrote a file per step.
+        """
+        self.notes.append(text)
+        print("plc %s: %s" % (self.action, text))
+
     # -- getting there ------------------------------------------------------
 
     def reach_the_device(self):
@@ -48,8 +60,11 @@ class Trip(object):
         if self.online is None:
             return ("the CODESYS 'online' API is not reachable from this "
                     "script run, so nothing can connect to a controller")
-        self.notes.append(
-            plc_link.silence_credential_dialogs(self.online, self.globals))
+        note, problem = plc_link.silence_credential_dialogs(self.online,
+                                                            self.globals)
+        if problem:
+            return problem
+        self.note(note)
         self.device_node, problem = plc_link.find_device(self.projects.primary)
         if problem:
             return problem
@@ -59,14 +74,14 @@ class Trip(object):
         """Aim the device at --gateway, or leave the project's own settings."""
         address = self.args.get("gateway")
         if not address:
-            self.notes.append("gateway: whatever the project already holds")
+            self.note("gateway: whatever the project already holds")
             return None
         port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
         note, problem = plc_link.aim_at_gateway(self.online, self.device_node,
                                                 address, port)
         if problem:
             return problem
-        self.notes.append(note)
+        self.note(note)
         return None
 
     # -- the destructive half ----------------------------------------------
@@ -106,9 +121,8 @@ class Trip(object):
             return "the download did not complete: " + safe_str(exc)
         finally:
             plc_link.logout(session)
-        self.notes.append("download: application state %s"
-                          % safe_str(getattr(session, "application_state",
-                                             "unknown")))
+        self.note("download: application state %s"
+                  % safe_str(getattr(session, "application_state", "unknown")))
         return None
 
     # -- reading it back ----------------------------------------------------
@@ -156,8 +170,8 @@ class Trip(object):
         try:
             self.device.upload_file(plc_crc.REMOTE_CRC, local, True)
         except Exception as exc:
-            self.notes.append("%s could not be fetched: %s"
-                              % (plc_crc.REMOTE_CRC, safe_str(exc)))
+            self.note("%s could not be fetched: %s"
+                      % (plc_crc.REMOTE_CRC, safe_str(exc)))
             return None
         return plc_crc.crc_field(plc_crc.read_bytes(local))
 
@@ -170,9 +184,8 @@ class Trip(object):
         """
         application = getattr(self.projects.primary, "active_application", None)
         if application is None:
-            self.notes.append("this project has no active application, so "
-                              "there is nothing to compare the controller "
-                              "against")
+            self.note("this project has no active application, so there "
+                      "is nothing to compare the controller against")
             return None
         target = plc_crc.forget(os.path.join(self.workspace(),
                                              plc_crc.BOOT_NAME))
@@ -181,8 +194,8 @@ class Trip(object):
         try:
             application.create_boot_application(target)
         except Exception as exc:
-            self.notes.append("the boot application could not be built: "
-                              + safe_str(exc))
+            self.note("the boot application could not be built: "
+                      + safe_str(exc))
             return None
         return plc_crc.crc_field(plc_crc.read_bytes(crc_path))
 
@@ -199,8 +212,8 @@ class Trip(object):
         try:
             self.device.upload_source(target)
         except Exception as exc:
-            self.notes.append("no source archive on the controller: "
-                              + safe_str(exc))
+            self.note("no source archive on the controller: "
+                      + safe_str(exc))
             return None
         return target if os.path.isfile(target) else None
 
@@ -223,8 +236,6 @@ class Trip(object):
         return self.result(False, "%s: %s" % (self.action, problem))
 
     def result(self, ok, summary):
-        for note in self.notes:
-            print("plc %s: %s" % (self.action, note))
         return entry.result(
             ok, summary, action=self.action, notes=list(self.notes),
             workspace=self._workspace, failed_objects=unhandled.names(),
