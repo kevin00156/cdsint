@@ -218,15 +218,17 @@ img/        readMe 用的圖
 
   - 監督者驗證（2026-09-05 19:50，收尾二之後）：`python -m pytest tests -q` 與根目錄各 535 passed，監督者自己跑的。監督者親自在 `%TEMP%\cdsint-sup\` 底下複製 softplc、`export --project` 229 個物件 0 失敗，再 `verify -y --project` **不帶 `--timeout`**：exit 0，122 秒，report `timed_out` false、`exit_code_trusted` true、四步全 ok、build 0 errors，副本旁沒有鎖檔。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 不存在。
 
-- [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）——施工做完，只剩台架那條「還需要人」。
+- [x] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）——監督者 2026-09-05 20:45 驗收通過；只剩台架那條「還需要人」，依使用者指示等基本開發全部做完再處理。
   - [x] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。——權限在新的 `cds/ide/permit.py`，攔在 `cds/ide/entries.py` 按下引擎本體之前；exit 5 靠結果紀錄新的 `denied` 欄位決定。引擎本體是新的 `engine/entry_plc.py`。`--target` 由 argparse 收下再拒絕（exit 2），訊息說 D8 的理由；看門人那邊也有一份同樣的拒絕，給手寫命令檔用。`config set cds-sync-plc` 原本就拒絕，現在跟 `permit.PROPERTY` 共用同一個常數。
   - [x] 驗收：用假 IDE 物件的測試涵蓋四條：屬性空時 `plc download -y` exit 5 且引擎的 login 沒被呼叫；屬性有 `download` 但沒 `-y` 時回 `needs_input`、exit 1、login 沒被呼叫；`plc connect --target` 被拒絕；report 的 CRC 欄位 `MATCH` 與 `DIFFERENT` 兩種各有測試。——`tests/test_plc.py` 61 條，四條都有；「login 沒被呼叫」那兩條除了看假的 online 物件沒被登入，還多一條證明引擎根本沒被載入。全套 596 passed。
   - [x] 驗收：`grep -rn "CDS_DEV_PASS" .` 只出現在讀環境變數的那一行與文件裡。——程式碼裡只有 `engine/entry_plc.py:46` 的 `PASS_ENV = "CDS_DEV_PASS"` 一處，其餘三處在 `docs/SPEC.md` 與本工單。另外有一條測試：把密碼設成一個哨兵字串跑完一整趟下載，確認結果紀錄、stdout、messages 裡都沒有它。
   - [x] 驗收（工單沒寫，worker 加的）：新模組在真的 IronPython 裡 import 得起來。——`tools/probe_imports.py` 在原廠 3.5.21.40（IronPython 2.7.12）34.7 秒與 Lenze 3.24（2.7.7）173.7 秒各無頭跑一次，32 個模組全 ok、最後一行 OK。順手修好那份清單：它還列著階段 1 就刪掉的 `engine.entry_directory` 與 `engine.entry_parameters`，現在跑一定 FAILED。兩個行程都自己退出，`%TEMP%\cdsint-work\` 已刪。
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。
+  - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
 
 - [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
   - [ ] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
+  - [ ] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [ ] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
   - [ ] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
   - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
@@ -395,6 +397,8 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 3 驗收後）: worker 階段 3 的十二條 Ruling 全部接受 — `denied` 獨立欄位（exit 5 從紀錄決定不從字串猜）、只有 `MATCH` 才 exit 0 且 `UNKNOWN` 跟 `DIFFERENT` 同樣非零（比不出來不能讀成一致）、權限攔在按下本體之前、多裝置專案拒絕、`--gateway` 沒給就不動專案設定，每條都有理由與代價 — 錯了的代價是無。
+- Ruling（階段 3 驗收後）: `engine/entry_plc.py` 607 行違反新碼的 400 行硬上限，排進階段 4 拆，不擋階段 3 — 拆檔不改行為，而 PLC 這兩個命令在台架驗過之前本來就不會發版；階段 4 就是品質階段 — 錯了的代價是拆完要再跑一次 IronPython 的 import 探針。
 - Ruling（階段 2 收尾二驗收後）: worker 收尾二的七條 Ruling 全部接受，包括 `timed_out` 在 report 完整時仍為 true（事實就是被殺了，區分「有沒有答案」的是 `error` 與結果）、寬限常數取量到的數倍（它們只在掛住時起作用）、`cdsint/lock.py` 獨立出來 — 每條都有理由與代價 — 錯了的代價是無。
 - Ruling（階段 2 收尾驗收後）: worker 收尾的七條 Ruling 全部接受，包括沒 `-y` 時仍跑一趟 `compare` 來印計畫（多付一次 IDE 啟動，換來「你要同意的是刪 229 個」這句話，值得）與 `--sync-dir` 連 `config` 都要（一條沒有例外的規則） — 錯了的代價是 `config get --project` 多打一個旗標。
 - Ruling（階段 2 收尾驗收後）: `--timeout` 是每一步的上限，`--project` 形式的行程期限從它推導，不另設一個「無頭專用的預設」 — 一個旗標兩種意思是特殊情況；推導公式讓 `--timeout 120` 在兩種形式下說的都是「一個命令最多 120 秒」 — 錯了的代價是 `--project` 形式的實際等待上限比旗標的字面值大，文件要講清楚。
