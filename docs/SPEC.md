@@ -387,7 +387,9 @@ D8 的落地。
 | 無頭 boot app 產出 | 未驗 | 未驗 | 未驗 | 未驗 | 失敗，NullReferenceException |
 | PLC connect、download | 未驗 | 未驗 | 未驗 | 未驗 | 未驗 |
 
-「CLI export、import、build」那一列的原廠格子有一個界線是 9 月 5 日階段 1 驗收才發現的：那是拿 Delta 的專案在原廠 CODESYS 上驗的，而原廠沒有 Delta 的裝置描述與函式庫。匯出照樣完成（7 個物件失敗、有名字），但比對與匯入會中止，因為 `classify_object` 對那些缺外掛的物件丟 `SystemError`；同一個專案在 Delta 1.10 上四個命令全過。所以這一格的正確讀法是「同一家 IDE 開自己的專案時驗過」，跨家開專案還有一個引擎要補的洞。
+這張表的每一格都是「同一家 IDE 開它自己的專案」。9 月 5 日階段 1 驗收各驗了一輪：原廠 3.5.21.40 開 softplc 副本、Delta 1.10 開 Shm 副本，`export`、`import`、`compare`、`build` 都 exit 0，229 個物件，build 0 errors。
+
+跨家開專案是另一回事，而且現在有明確的行為：原廠開 Delta 的 Shm 專案時，7 個物件的外掛不在，三個命令都 exit 1、把那 7 個名字放進 `data.failed_objects`、其他 229 個照常處理完（D13、D11）。這不是「支援跨家」，是「跨家時不騙人」。
 
 效能基準，229 個物件，main 上 9 月 5 日的數字，perf 分支的改善還沒量：
 
