@@ -228,7 +228,7 @@ img/        readMe 用的圖
 
 - [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
   - [x] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
-  - [ ] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
+  - [x] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [ ] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
   - [ ] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
   - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
@@ -306,6 +306,8 @@ img/        readMe 用的圖
 
 - Ruling: `manager.export()` 出錯一律丟例外，回傳 `False` 只剩「沒有東西要寫」一個意思 — 原本 `False` 同時代表「這個物件沒有文字內容」和「檔案寫不出去」，而兩個呼叫端（`entry_export.export_project` 與 `entry_compare.perform_export`）都只看回傳值等不等於 `new`／`updated`／`identical`，所以寫失敗被當成沒事發生。兩個呼叫端本來就各有一個「處理這一個物件」的 try/except，例外一丟就落進去，一個命令仍然只有一個地方認定失敗，跟 `engine/unhandled.py` 檔頭講的理由同一條 — 錯了的代價是原本安靜回 `False` 的三種罕見情形（`export_native` 沒產出檔案、沒有 primary project、XML 換檔失敗）現在會讓整趟匯出 `ok=False`；如果某個物件種類本來就合法地不產出 XML，那種專案會開始每次匯出都 exit 1，那時要修的是分類而不是把判決放寬。
 - Ruling: 路徑超過 Windows 260 字元不做匯出前的預檢，也不改用 `\\?\` 前綴，就照 D13 一個一個報出名字 — 預檢要精確就得先把整棵樹分類一次才知道最長的檔名會有多長，那是多走一趟專案，違反 PRINCIPLES 第 3 條；`\\?\` 那條路在這裡沒有驗證過而且很可能不成立，引擎跑在 IDE 內的 IronPython 2.7 上，檔案是 .NET Framework 開的，那一層自己就擋 `MAX_PATH`，就算開得成，寫出來的 `.st` 是 git 與編輯器打不開的路徑，等於把失敗推到一個完全沒有登記簿的地方 — 錯了的代價是同步資料夾放得太深的人拿到的是一串逐物件的失敗清單，而不是開頭一句「你的資料夾太深」，要自己從錯誤訊息看出路徑長度是原因。
+- Ruling: `entry_plc.py` 拆成四個檔不是三個，而且 `Trip` 也搬出去 — 工單建議的三分法留下的門面加 `Trip` 是 329 行，超過工單自己訂的 300；要壓到 300 只能砍掉那些解釋 CODESYS 行為的註解，那是這個檔最值錢的部分。第四刀切在「命令的門面」與「一趟的步驟」之間，這兩件事本來就不同：門面是 `cds/ide/entries.py` 叫得出名字的那個東西，步驟是工作本身。順帶的好處是 `Trip` 需要的兩樣東西（`command_args` 與腳本執行時的 `globals()`）現在是參數，在 `entry_plc.py` 那一個地方讀，而那正是 `cds/ide/silent.py` exec 出來的命名空間；留在 `Trip` 裡讀的話，`Trip` 一旦是普通 import 的模組就會讀到空的 — 錯了的代價是 `plc` 這條路多一個檔案要跟著看，而且 `tools/probe_imports.py` 的清單多三行。
+- Ruling: 搬出去的函式由測試改指新模組，不在 `entry_plc.py` 留 re-export — 留 re-export 就是同一個東西兩個名字，SPEC D16 禁的就是這個；`tests/test_plc.py` 改的只有那個 import 小工具與五處呼叫，測試本體一行沒動，61 條全綠 — 錯了的代價是無。
 - Ruling: `entry_compare.perform_export` 與 `perform_import` 的 summary 在有失敗時也接上 `unhandled.summary()`，跟 `export_project`、`compare_project`、`import_project` 一致 — `entry.result` 的約定是「`ok` 為 false 時 summary 就是呼叫端拿到的錯誤文字」，一句只有 `Failed: 1` 的文字沒說是誰 — 錯了的代價是無。
 
 階段 3 新增的：

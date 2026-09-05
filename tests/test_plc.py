@@ -742,17 +742,17 @@ def test_asking_for_a_gateway_this_profile_does_not_have_stops_the_run():
 # Credentials (SPEC D14)
 # --------------------------------------------------------------------------
 
-def engine_plc():
-    """The body as an ordinary import, for the parts with no IDE in them."""
+def engine_module(name):
+    """One engine module as an ordinary import, for the parts with no IDE."""
     import importlib
-    return importlib.import_module("engine.entry_plc")
+    return importlib.import_module("engine." + name)
 
 
 def test_the_credential_dialog_is_switched_off_before_anything_connects():
     # Under --noUI a dialog nobody can answer is not a failure, it is a
     # process that never returns, so this is the line that makes the command
     # unattended at all.
-    plc = engine_plc()
+    plc = engine_module("plc_link")
     online = Online()
     plc.silence_credential_dialogs(online, {"CredentialSourceKind":
                                             CredentialSourceKind})
@@ -760,7 +760,7 @@ def test_the_credential_dialog_is_switched_off_before_anything_connects():
 
 
 def test_a_credential_api_that_will_not_be_switched_off_is_said_out_loud():
-    plc = engine_plc()
+    plc = engine_module("plc_link")
 
     class Awkward(Online):
         def set_auth_fallback_modes(self, kinds):
@@ -771,7 +771,7 @@ def test_a_credential_api_that_will_not_be_switched_off_is_said_out_loud():
 
 
 def test_the_login_comes_from_the_environment_and_nowhere_else(monkeypatch):
-    plc = engine_plc()
+    plc = engine_module("plc_link")
     monkeypatch.setenv(plc.USER_ENV, "dev")
     monkeypatch.setenv(plc.PASS_ENV, "s3cret")
     online = Online()
@@ -781,7 +781,7 @@ def test_the_login_comes_from_the_environment_and_nowhere_else(monkeypatch):
 
 
 def test_no_environment_login_is_reported_rather_than_invented(monkeypatch):
-    plc = engine_plc()
+    plc = engine_module("plc_link")
     monkeypatch.delenv(plc.USER_ENV, raising=False)
     online = Online()
     said = plc.silence_credential_dialogs(online, {"CredentialSourceKind":
@@ -793,7 +793,7 @@ def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
     # A report is committed or pasted into a ticket, so this is the test that
     # D14 is actually about. The user name is allowed through — knowing who
     # logged in is how a run is read afterwards.
-    plc = engine_plc()
+    plc = engine_module("plc_link")
     monkeypatch.setenv(plc.USER_ENV, "dev")
     monkeypatch.setenv(plc.PASS_ENV, "s3cret-do-not-print")
     ide_globals = ide(allowed="download")
@@ -816,14 +816,14 @@ def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
     (None, None, "UNKNOWN"),
 ])
 def test_the_comparison_has_three_answers_not_two(local, plc, verdict):
-    assert engine_plc().compare_crc(local, plc) == verdict
+    assert engine_module("plc_crc").compare_crc(local, plc) == verdict
 
 
 def test_a_file_too_short_to_hold_the_field_is_no_answer():
     # Truncated files would otherwise compare equal to each other.
-    assert engine_plc().crc_field(b"\x00\x01\x02") is None
-    assert engine_plc().crc_field(None) is None
+    assert engine_module("plc_crc").crc_field(b"\x00\x01\x02") is None
+    assert engine_module("plc_crc").crc_field(None) is None
 
 
 def test_the_field_is_bytes_five_to_eight():
-    assert engine_plc().crc_field(CRC_A) == "DEADBEEF"
+    assert engine_module("plc_crc").crc_field(CRC_A) == "DEADBEEF"

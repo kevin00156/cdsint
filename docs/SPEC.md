@@ -127,7 +127,7 @@
 
 **D14 帳密不准出現在命令列、檔案、report 裡。** 只從環境變數讀。
 理由：report 會進 git 或被貼到工單。
-現況：已做（階段 3）。`engine/entry_plc.py` 的 `USER_ENV`、`PASS_ENV` 是唯一讀它們的地方；
+現況：已做（階段 3）。`engine/plc_link.py` 的 `USER_ENV`、`PASS_ENV` 是唯一讀它們的地方；
 密碼交給 `set_default_credentials` 之後就不再出現在任何字串裡，帳號名字會出現在 notes（誰登入的是事後判讀的依據）。
 `tests/test_plc.py` 有一條跑完一整趟下載再確認結果紀錄、stdout、messages 裡都沒有那個密碼。
 
@@ -386,7 +386,7 @@ D8 的落地。
 - `download`：`login(OnlineChangeOption.Never, False)` 完整下載，`create_boot_application`，`start`，`logout`，再建一次 boot app 比 CRC。
 - 這兩個命令的 report 要包含比對結果 `MATCH` 或 `DIFFERENT`，pipeline 拿這個當閘門。
 
-現況：已搬（階段 3），在 `engine/entry_plc.py`，跟 `codesys_online.py` 並排。台架上還沒驗過，那一條要人。
+現況：已搬（階段 3），跟 `codesys_online.py` 並排。階段 4 拆成四個檔：`entry_plc.py` 是兩個命令的門面，`plc_trip.py` 是一趟的步驟，`plc_link.py` 是連到控制器的那一段，`plc_crc.py` 是判定本身（純位元組與路徑，不碰 IDE）。台架上還沒驗過，那一條要人。
 
 搬過來時定的幾件事。`connect` 只在給了 `--gateway` 的時候才動裝置節點的閘道設定；沒給就用專案自己帶的，
 因為那是別人設過的答案，一個唯讀命令不該順手改掉它。`--port` 不給就用 11740。
