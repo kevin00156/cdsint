@@ -382,7 +382,7 @@ D8 的落地。
 
 從探針搬，放在引擎裡跟 `codesys_online.py` 並排（D12），只在 `--project` 形式提供（D8）。
 
-- `connect`：`online.set_auth_fallback_modes(None)` 關掉憑證對話框，帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀（D14）。列閘道，`find_address_by_ip`，`set_gateway_and_ip_address` 設到裝置節點，`create_online_device` 連線，列 `PlcLogic/Application`，拉 `Application.crc`，跟本機 `create_boot_application` 產出的 `.crc` 比第 5 到 8 個位元組。有原始碼封存就拉回來。
+- `connect`：把 `online.auth_fallback_modes` 設成 `CredentialSourceKind.None` 關掉憑證對話框（ScriptEngine 4.2.0.0 實測是可寫屬性，不是方法；屬性不存在才退而呼叫 `set_auth_fallback_modes`，兩個都沒有就拒絕連線，因為 `--noUI` 底下一個關不掉的對話框是掛住不是失敗），帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀（D14）。列閘道，`find_address_by_ip`，`set_gateway_and_ip_address` 設到裝置節點，`create_online_device` 連線，列 `PlcLogic/Application`，拉 `Application.crc`，跟本機 `create_boot_application` 產出的 `.crc` 比第 5 到 8 個位元組。有原始碼封存就拉回來。
 - `download`：`login(OnlineChangeOption.Never, False)` 完整下載，`create_boot_application`，`start`，`logout`，再建一次 boot app 比 CRC。
 - 這兩個命令的 report 要包含比對結果 `MATCH` 或 `DIFFERENT`，pipeline 拿這個當閘門。
 
