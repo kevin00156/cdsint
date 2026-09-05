@@ -89,8 +89,11 @@ def build_parser():
 
 def _shared(parser):
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S,
-                        help="seconds to wait for the answer (default 120); "
-                             "also how long a busy IDE counts as alive")
+                        help="seconds one command step may take (default "
+                             "120); also how long a busy IDE counts as alive. "
+                             "With --project the process deadline is derived "
+                             "from it, so a four-step verify waits longer "
+                             "than this number")
     parser.add_argument("--json", action="store_true",
                         help="print the raw record instead of a summary")
     return parser

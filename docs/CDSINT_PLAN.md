@@ -210,11 +210,11 @@ img/        readMe 用的圖
   - [x] 驗收：`verify --target <無頭掛看門人的實例>` 沒 `-y` 回 `needs_input`、exit 1；加 `-y` exit 0。——用 `tools/headless_watch.py` 在原廠 3.5.21.40 起一個無頭 IDE 掛看門人（`softplc_copy-12972`，開的是同一份副本）。沒 `-y`：22.9 秒 exit 1，`--json` 回兩筆紀錄，`compare` ok 而 `import` 的 `needs_input.arg` 是 `yes`，計數全 0（那時磁碟與 IDE 已經一致）。加 `-y --force`：70.0 秒 exit 0，build 0 errors 101 warnings。跑完 `cdsint stop`，行程自己收掉；只有使用者原本開著的兩個 IDE（pid 17340、14012）還在，`%TEMP%\cdsint-work\` 已刪，來源專案最後寫入時間仍是 9 月 4 日 16:55。
 
   - 監督者驗證（2026-09-05 19:25，收尾之後）：`python -m pytest tests -q` 與根目錄各 531 passed，監督者自己跑的。少給 `--sync-dir` 是 exit 2 且訊息講清楚原因。監督者親自重現：新的 softplc 副本、空的 `--sync-dir`，`verify -y --project` 在 import 那步被拒絕，exit 1，訊息就是空資料夾那句；接著 `compare --project` 回 `new_in_ide=229`、`different=0`，副本一個物件都沒少。沒 `-y` 的 `verify` 回 exit 1 並印出「這一趟會刪 N 個」。report 頂層有 `sync_dir`。監督者重現時另外撞到三件事，寫成底下的「階段 2 收尾二」與階段 4 第一項。
-  - [ ] 階段 2 收尾二（監督者重現後加的）：`--timeout` 的意思改成「每一步的上限」，兩種形式一致；`--project` 形式的行程期限從它推導：啟動寬限 + 步數 × timeout + 關閉寬限，兩個寬限量出來寫成常數並在註解說明怎麼量的。預設 120 不變。原因：監督者用預設 timeout 跑 `verify -y --project`（原廠、softplc 副本、短路徑），121 秒被 kill，exit 3，但 report 裡四步全部 ok。一趟含啟動本來就要 120 到 140 秒（worker 自己量的數字），預設值讓旗艦命令的預設呼叫必定逾時。
-  - [ ] 階段 2 收尾二：逾時的時候先看 report。report 完整（有 `intended_exit`）就以 report 為準，exit code 用 report 的，輸出說「腳本已做完，IDE 沒有在期限內退出，已 kill」；report 不完整才是「疑似對話框卡住」。SPEC 6.4 那列「逾時當成有對話框卡住」補這個界線。
-  - [ ] 階段 2 收尾二：CLI 自己 kill 掉的 IDE 留下的鎖檔（`<project>.~u`）由 CLI 自己清掉並說明；只清自己起的那個行程開的那個專案的鎖。原因：監督者被 kill 那趟之後再跑同一個副本，立刻 exit 4，得手動加 `--force-lock`；那把鎖是 cdsint 自己造成的，它知道是誰的。
-  - [ ] 驗收：測試涵蓋三條：期限的推導、report 完整時逾時不算失敗、kill 之後鎖檔被清。
-  - [ ] 驗收（監督者會重現）：`verify -y --project` 用**預設** timeout 在原廠 softplc 副本（`%TEMP%` 底下的短路徑）exit 0，report `timed_out` 是 false。
+  - [x] 階段 2 收尾二（監督者重現後加的）：`--timeout` 的意思改成「每一步的上限」，兩種形式一致；`--project` 形式的行程期限從它推導：啟動寬限 + 步數 × timeout + 關閉寬限，兩個寬限量出來寫成常數並在註解說明怎麼量的。預設 120 不變。——`--target` 那半本來就是每一步各等一次 timeout，沒改。`--project` 那半的 `Headless.deadline(步數)` 是那個公式，`STARTUP_GRACE_S = 180`、`SHUTDOWN_GRACE_S = 60`。量法寫在常數上面：跑真的命令，用 shell 的時鐘減掉 report 裡每一步的時間戳，啟動冷的 47 秒、熱的 43 秒，關閉兩次都是 2 秒；常數取好幾倍，因為寬限太小會殺掉健康的執行（那正是要修的 bug），太大只是晚一點才報告一個掛住的啟動。原因：監督者用預設 timeout 跑 `verify -y --project`（原廠、softplc 副本、短路徑），121 秒被 kill，exit 3，但 report 裡四步全部 ok。一趟含啟動本來就要 120 到 140 秒（worker 自己量的數字），預設值讓旗艦命令的預設呼叫必定逾時。
+  - [x] 階段 2 收尾二：逾時的時候先看 report。report 完整（有 `intended_exit`）就以 report 為準，exit code 用 report 的，輸出說「腳本已做完，IDE 沒有在期限內退出，已 kill」；report 不完整才是「疑似對話框卡住」。SPEC 6.4 那列「逾時當成有對話框卡住」補這個界線。——IDE 側是跑完每一個命令、`run_job` 回來之後才寫 report，所以「檔案在而且有 `intended_exit`」就等於「腳本跑到最後」，這個判斷不用另外加欄位。完整就照常回結果（exit code 還是從結果算，跟 `intended_exit` 同一條規則），只多印一行警告；不完整才丟 exit 3。`timed_out` 兩種情況都還是 true，那是事實；差別在 `error` 那句話。
+  - [x] 階段 2 收尾二：CLI 自己 kill 掉的 IDE 留下的鎖檔（`<project>.~u`）由 CLI 自己清掉並說明；只清自己起的那個行程開的那個專案的鎖。——kill 之後等行程真的不在了才清（`process.wait` 沒逾時才算），清完每個檔印一行；行程沒死就不清，並印一行說下一趟要 `--force-lock`。鎖檔的兩種檔名、查詢與清除收成新的 `cdsint/lock.py`，起動前的拒絕與 kill 後的清理是同一個概念的兩個方向。原因：監督者被 kill 那趟之後再跑同一個副本，立刻 exit 4，得手動加 `--force-lock`；那把鎖是 cdsint 自己造成的，它知道是誰的。
+  - [x] 驗收：測試涵蓋三條：期限的推導、report 完整時逾時不算失敗、kill 之後鎖檔被清。——`tests/test_headless.py` 多 4 條：四步的等待時間等於公式算出來的值、report 完整的 kill 回得出結果而且 `error` 裡沒有「對話框」那句、kill 之後鎖檔不見了、kill 不死的行程鎖檔留著。假的行程現在會模擬「被 kill 之後 wait 才回來」，因為那正是能不能清鎖的判準。全套 535 passed。
+  - [x] 驗收（監督者會重現）：`verify -y --project` 用**預設** timeout 在原廠 softplc 副本（`%TEMP%` 底下的短路徑）exit 0，report `timed_out` 是 false。——**過**：133.0 秒 exit 0，`timed_out` false、`exit_code_trusted` true、實際與打算用的退出碼都是 0，四步 import 24.6／export 15.1／compare 14.3／build 25.5 秒，全部 ok。跑完 `%TEMP%\cdsint-work\` 已刪，副本旁邊沒有留下鎖檔，只有使用者原本開著的兩個 IDE（pid 17340、14012）還在。
 
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
@@ -296,6 +296,16 @@ img/        readMe 用的圖
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
 7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+
+階段 2 收尾二新增的：
+
+- Ruling: `--target` 那半一行都沒改 — 它本來就是一個命令送一次、各等一次 `--timeout`，也就是新的語意；要改的只有把整個行程當成一次等待的 `--project` 那半 — 錯了的代價是無。
+- Ruling: 寬限用量出來的數字乘上幾倍，不是「量到多少就寫多少」 — 這兩個常數只在「某件事掛住了」的時候起作用，太小會殺掉健康的執行（就是被修掉的那個 bug），太大只是晚一點才報告；不對稱的代價就該給不對稱的餘裕。啟動 180 秒是量到最慢（冷啟 47 秒）的將近四倍，因為 Delta 與 Lenze 比原廠慢、機器也可能在忙；關閉 60 秒是量到 2 秒的三十倍，它只要蓋住寫報告與行程收尾 — 錯了的代價是第一步就掛住的執行要等三分鐘才被殺掉；那是公式本身的代價（`--timeout` 綁的是一步，不是啟動）。
+- Ruling: 「report 完不完整」用 `intended_exit` 在不在判斷，不另外加一個「我跑完了」的欄位 — IDE 側是 `run_job` 回來之後才寫檔，所以檔案存在就代表腳本跑到最後；`intended_exit` 從報告被建出來的那一刻就有值，讀不到它只有一個原因：這份報告不是那個腳本寫完的 — 錯了的代價是萬一以後有人改成中途就先寫一份報告，這個判斷會變成謊話；那時該做的是讓中途的那份不要帶 `intended_exit`。
+- Ruling: 逾時但 report 完整的時候，`timed_out` 仍然是 true，只有 `error` 那句話不一樣 — 行程確實被殺了，那是事實，把它改成 false 是為了讓話好聽而說謊；要區分的是「這趟有沒有答案」，那件事由 `error` 與結果本身回答 — 錯了的代價是看板上「逾時次數」這種指標會把慢關的執行也算進去。
+- Ruling: `error` 用附加的，不是覆蓋 — 「專案沒開起來」跟「行程被殺掉」可以同時成立，後者蓋掉前者會讓報告少掉真正的原因 — 錯了的代價是那個欄位偶爾會有兩段話。
+- Ruling: 鎖檔清理只在「kill 之後 `wait` 沒有再逾時」的時候做 — 行程還活著就可能還在寫專案檔，這時清掉鎖，下一趟會開到寫到一半的檔；等不到就印一行說下一趟要 `--force-lock`，把判斷交回給人 — 錯了的代價是那種情況下使用者還是要打一次 `--force-lock`，跟今天一樣。
+- Ruling: 為了守住「`cdsint/` 每個模組不超過 300 行」這條階段 2 的驗收，這一輪從 `headless.py` 搬出四樣東西：鎖檔的規則進新的 `cdsint/lock.py`；報告檔的預設路徑與「退出碼不可信」那句話進 `cdsint/report.py`；RUNASADMIN 的警告進 `cdsint/installs.py`；兩支從來沒有人呼叫過的 `exit_code()`（`headless.py` 與 `target.py` 各一支）直接刪掉（PRINCIPLES 7）。搬的判準是「這段話是關於誰的」：鎖是專案檔的事、報告路徑與那句警告是報告的事、要不要管理員是安裝的事 — 錯了的代價是多一個檔案要開；`headless.py` 從 350 行回到 297。
 
 階段 2 收尾新增的：
 

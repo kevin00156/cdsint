@@ -17,6 +17,7 @@ from cds.ide import entries
 from cds.ide import headless as ide_side
 from cdsint import headless as cli_side
 from cdsint import installs
+from cdsint import report as report_side
 from cdsint.exits import EXIT_HEADLESS, EXIT_TIMEOUT, Failure
 from tests.test_watcher import FakeSystem, make_globals
 
@@ -173,30 +174,42 @@ def machine(tmp_path, monkeypatch):
 class FakeProcess(object):
     """Popen's stand-in: writes the report the IDE would have written."""
 
-    def __init__(self, launches, code=0, report=None, stdout=None):
+    def __init__(self, launches, code=0, report=None, stdout=None, dies=True):
         self.launches = launches
         self._code = code
         self._report = report
         self._stdout = stdout
+        self._dies = dies
         self.pid = 4321
         self.killed = False
+        self.waited = None
 
     def wait(self, timeout=None):
-        if self._code is None:
+        """A process that never exits on its own, until it is killed.
+
+        The second wait is the one after kill(), and what it answers decides
+        whether the lock file may be cleared, so it is modelled rather than
+        assumed: `dies=False` is the process that survives its own kill.
+        """
+        if self.killed and self._dies:
+            return -1
+        if self._code is None or self.killed:
             raise subprocess.TimeoutExpired("cmd", timeout)
+        self.waited = timeout
         return self._code
 
     def kill(self):
         self.killed = True
 
 
-def launching(monkeypatch, code=0):
+def launching(monkeypatch, code=0, dies=True):
     """Replace Popen and record what it was asked to start."""
     launches = []
 
     def popen(command, stdout=None, stderr=None, env=None, **kwargs):
         launches.append({"command": command, "env": env})
-        return FakeProcess(launches, code)
+        launches[-1]["process"] = FakeProcess(launches, code, dies=dies)
+        return launches[-1]["process"]
 
     monkeypatch.setattr(subprocess, "Popen", popen)
     return launches
@@ -206,10 +219,20 @@ def written_report(monkeypatch, report):
     """Make the fake launch drop `report` where the CLI will look for it."""
     real = cli_side.Headless._launch
 
-    def launch(self, job_path):
+    def launch(self, job_path, deadline):
         if report is not None:
             ipc.write_json(self.report_path, report)
-        return real(self, job_path)
+        return real(self, job_path, deadline)
+    monkeypatch.setattr(cli_side.Headless, "_launch", launch)
+
+
+def leaves_a_lock(monkeypatch):
+    """Make the fake launch leave the lock file a real IDE leaves behind."""
+    real = cli_side.Headless._launch
+
+    def launch(self, job_path, deadline):
+        open(self.project + ".~u", "w").close()
+        return real(self, job_path, deadline)
     monkeypatch.setattr(cli_side.Headless, "_launch", launch)
 
 
@@ -361,6 +384,61 @@ def test_stdout_counts_as_reached_only_with_both_marks(machine, monkeypatch):
     assert started._stdout_reached() is True
 
 
+def test_the_wait_covers_every_step_not_just_one(machine, monkeypatch):
+    # --timeout bounds a step in both forms (SPEC 4.2). A verify is four of
+    # them plus a launch, and the default used to kill the flagship command
+    # at 121s with all four steps already reported ok.
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch, timeout=30)
+    started.run([("import", {}), ("export", {}), ("compare", {}),
+                 ("build", {})])
+    assert launches[0]["process"].waited == (
+        cli_side.STARTUP_GRACE_S + 4 * 30 + cli_side.SHUTDOWN_GRACE_S)
+
+
+def test_a_kill_after_the_script_finished_is_not_a_failed_run(machine,
+                                                              monkeypatch,
+                                                              capsys):
+    # A complete report is evidence of what happened; a slow exit afterwards
+    # says nothing about the work and must not overturn it (SPEC 6.4).
+    launching(monkeypatch, code=None)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch, timeout=0.01)
+    results = started.run([("export", {})])
+    assert results[0]["ok"] is True
+    saved = ipc.read_json(started.report_path)
+    assert saved["timed_out"] is True
+    assert "did not exit" in saved["error"] and "dialog" not in saved["error"]
+    assert "did not exit" in capsys.readouterr().err
+
+
+def test_the_lock_our_own_killed_ide_left_behind_is_cleared(machine,
+                                                            monkeypatch,
+                                                            capsys):
+    # cdsint made this lock and knows it, so asking the caller for
+    # --force-lock on the next run would be asking them to confirm our mess.
+    launching(monkeypatch, code=None)
+    leaves_a_lock(monkeypatch)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+    assert not os.path.exists(started.project + ".~u")
+    assert "lock" in capsys.readouterr().err
+
+
+def test_a_process_that_survives_its_own_kill_keeps_its_lock(machine,
+                                                             monkeypatch):
+    # Still running means still possibly writing the project file. A lock
+    # cleared now would let the next run open a half-written one.
+    launching(monkeypatch, code=None, dies=False)
+    leaves_a_lock(monkeypatch)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+    assert os.path.exists(started.project + ".~u")
+
+
 def test_a_run_that_never_finishes_is_killed_and_blamed_on_a_dialog(machine,
                                                                     monkeypatch):
     launching(monkeypatch, code=None)
@@ -401,7 +479,7 @@ def test_stdout_and_the_report_share_a_name_so_two_runs_do_not_collide(machine,
 def test_a_report_path_survives_a_project_name_with_spaces_and_chinese(machine):
     # Real project names look like "SheetSplitter v2.project", and the report file
     # is named after them.
-    made = cli_side._default_report(u"C:\\p\\\u4e09\u660e \u5206\u7d19\u6a5f.project")
+    made = report_side.default_report(u"C:\\p\\\u4e09\u660e \u5206\u7d19\u6a5f.project")
     assert made.endswith(".json") and " " not in os.path.basename(made)
     assert os.path.basename(made).encode("ascii")
 

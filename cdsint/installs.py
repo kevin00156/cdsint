@@ -12,6 +12,7 @@ CPython only: the CLI side never runs inside the IDE.
 from __future__ import print_function
 
 import os
+import sys
 
 # What each vendor's tree looks like. Only the executable proves an install:
 # these vendors put shared targets, gateways and an unversioned stub
@@ -112,6 +113,21 @@ def profile_of(install, wanted=None):
                            % (install["name"], install["exe"]))
     raise InstallError("%s has %d profiles (%s); pass --profile"
                        % (install["name"], len(profiles), ", ".join(profiles)))
+
+
+def warn_if_elevated(install):
+    """Say who asked for elevation before the launch fails without saying.
+
+    Windows refuses to start a RUNASADMIN executable from an ordinary shell
+    with a message that names neither the flag nor who set it, so the fact
+    this module already read out of the registry is worth spending a line on
+    up front.
+    """
+    if not install["run_as_admin"]:
+        return
+    print("warning: %s is marked RUNASADMIN in %s, so this launch will fail "
+          "unless this shell is elevated"
+          % (install["exe"], install["run_as_admin"]), file=sys.stderr)
 
 
 def run_as_admin_layers():

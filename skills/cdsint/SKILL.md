@@ -92,8 +92,13 @@ can never open it again. The message names the key; the user decides.
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` no single live IDE
-matched, `3` timed out (raise `--timeout`, default 120s; big imports and builds
-need more), `4` the project is open elsewhere or the IDE would not start.
+matched, `3` timed out with no report to show for it (raise `--timeout`: it
+bounds one step, default 120s, and big imports and builds need more), `4` the
+project is open elsewhere or the IDE would not start.
+
+A `--project` run that was killed after its report was written is not exit 3:
+the report is the answer, and the exit code is the thing that went missing. The
+lock file such a kill leaves behind is cleared by cdsint itself.
 
 With `--json`: `messages` carries what the IDE would have shown a person,
 `stdout_tail` carries the detail (compare's per-object list, build's error list

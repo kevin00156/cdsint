@@ -13,7 +13,7 @@ from __future__ import print_function
 import time
 
 from cds.core import commands, instances
-from cdsint.exits import EXIT_FAILED, EXIT_OK, EXIT_TARGET, EXIT_TIMEOUT, Failure
+from cdsint.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT, Failure
 
 DEFAULT_TIMEOUT_S = 120.0
 POLL_S = 0.05
@@ -123,7 +123,3 @@ def live_instances(root, busy_timeout=DEFAULT_TIMEOUT_S):
     return [r for r in instances.read_all(root)
             if instances.is_alive(r, busy_timeout=busy_timeout)]
 
-
-def exit_code(results):
-    """0 only when every step came back ok."""
-    return EXIT_OK if all(r.get("ok") for r in results) else EXIT_FAILED

@@ -154,7 +154,11 @@ Every command that touches a project takes one of two forms, and never both:
 | `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
 | `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
 
-Shared flags: `--timeout SECONDS` (default 120), `--json` for the raw record.
+Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
+take, in both forms; with `--project` the deadline for the whole process is
+derived from it — a launch allowance, plus that many seconds per step, plus a
+shutdown allowance — so a four-step `verify` waits well past 120 seconds.
+`--json` prints the raw record.
 Only with `--project`: `--sync-dir D` (required — see below), `--profile NAME`
 when an install has several, `--report FILE`, `--force-lock`, and
 `--answer KEY=VALUE` (repeatable) for the IDE's own prompts.
@@ -188,7 +192,7 @@ created and deleted, `needs_input`, exit 1, and an untouched IDE.
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
 | 2 | no single listening IDE matched |
-| 3 | timed out waiting for the answer |
+| 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, or the IDE would not start |
 
 ## FAQ
