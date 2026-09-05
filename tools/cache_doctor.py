@@ -12,6 +12,13 @@ The two predicates are not the same expression, so a cache written by one side
 can be systematically rejected by the other. That shows up here as a near-100%
 miss rate on one side and a near-0% miss rate on the other.
 
+!! OUT OF DATE. This is what the engine did when the split was found. Both
+sides now go through codesys_utils.file_signature(), which stores
+milliseconds as an int, and CACHE_VERSION 3.3 discards anything older. So
+the predicates replayed below are no longer the ones that run, and section 1
+reports a format war that is over. Do not trust its numbers against a cache
+written by the current engine; it needs rewriting against file_signature().
+
 Usage:
     python tools/cache_doctor.py <sync-dir>
     python tools/cache_doctor.py <sync-dir> --list-misses 20
@@ -144,8 +151,8 @@ def main(argv=None):
     print("\n" + "-" * 72)
     print("1. disk_mtime storage type")
     print("-" * 72)
-    print("   codesys_managers.py:521      writes int(st_mtime)")
-    print("   codesys_compare_engine.py:379 writes os.path.getmtime() -> float")
+    print("   engine/codesys_managers.py    writes int(st_mtime)")
+    print("   engine/codesys_compare_engine.py writes os.path.getmtime() -> float")
     print("")
     for kind, n in kinds.most_common():
         print("   %-14s %6d  %s %s" % (kind, n, pct(n, len(objects)), bar(n, len(objects))))
@@ -170,9 +177,9 @@ def main(argv=None):
         c_size = entry.get("disk_size")
         size_ok = (st.st_size == c_size)
 
-        # codesys_managers._try_cache_skip (managers.pyw:547)
+        # engine/codesys_managers.py ObjectManager._try_cache_skip
         exp_ok = size_ok and (int(st.st_mtime) == c_mtime)
-        # codesys_compare_engine.find_all_changes (compare_engine.pyw:343)
+        # engine/codesys_compare_engine.py find_all_changes
         cmp_ok = size_ok and (st.st_mtime == c_mtime)
 
         export_hit += exp_ok

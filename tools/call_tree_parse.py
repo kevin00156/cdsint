@@ -17,7 +17,7 @@ import io
 import os
 import re
 
-# Must match IMPL_MARKER in codesys_constants.pyw — the separator this fork's
+# Must match IMPL_MARKER in engine/codesys_constants.py — the separator this
 # exporter writes between declaration and implementation in every .st file.
 IMPL_MARKER = "// === IMPLEMENTATION ==="
 

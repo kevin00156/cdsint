@@ -135,24 +135,24 @@ img/        readMe 用的圖
 
 「驗收」是能勾選的句子。標「還需要人」的，worker 做到那裡就跳過並在回報裡列出來。
 
-- [ ] **階段 0：搬家與身分**（SPEC 10.2 階段 0）
-  - [ ] 從來源 repo 搬進第 4 節的佈局。照搬的：`cds/`、`tools/`、`profiles/`、`tests/`、`irm/`、`img/`、`.github/`、`conftest.py`、`requirements-dev.txt`、`CHANGELOG.md`、`PRINCIPLES.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`docs/AI_WORKFLOW.md`、`skills/cds-ide/` 改名 `skills/cdsint/`。改位置的：七支 `codesys_*.pyw` 進 `engine/` 改 `.py`；`Project_export.py`、`Project_import.py`、`Project_compare.py`、`Project_Build.py`、`Project_directory.py`、`Project_parameters.py` 的本體進 `engine/`（檔名第 7 節第 2 項決定），`_load_hidden_module` 那段換成普通 import，邏輯一行不改；`Project_discover.py`、`Project_resources.py`、`Project_perf_probe.py` 進 `tools/`；`cli/cds_ide.py` 進 `cdsint/cli.py`。不搬的：`Project_perf_test.py`、`Performance_tests/`、`cds/__init__.py` 的 `VERSION`、`readMe.md`（重寫）、`WORKFLOW.md`（進 history）。
-  - [ ] `stub/` 五支與找本體的機制（第 7 節第 1 項）。`Project_watch.py` 的本體已經是 `cds/ide/session.py`。
-  - [ ] `pyproject.toml`：套件 `cdsint`、命令 `cdsint`。`tests/test_cds_ide_cli.py` 跟著改。
-  - [ ] 實例目錄改 `%LOCALAPPDATA%\cdsint\instances`（事實 10 的每一處），不寫遷移。
-  - [ ] `cds/ide/watcher.py` 的 `SCRIPTS` 表與 `cds/ide/silent.py` 的 `run()` 改成叫 `engine/` 裡的本體。`cds/ide/session.py` 的 `script_version()` 改成普通 import，D12 例外消失。
-  - [ ] `tests/conftest.py` 的 `load_legacy` 換成普通 import 或刪除；`DRIVEN_FILES` 清單改指 `engine/` 的本體。
-  - [ ] 抽 `docs/WATCHER.md`：從來源 `docs/WATCHER_CLI_PLAN.md` 第 5、6、14 節抽，改成現況陳述不是計畫。事實 11 的九處指標改指它的節號。來源的 `WATCHER_CLI_PLAN.md`、`RESEARCH_HTTP_IDE_CONTROL.md`、`REWORK_PLAN.md`、`WORKFLOW.md` 與 `docs/history/` 底下兩份，全部進本 repo 的 `docs/history/`。
-  - [ ] CI 改成 push 到任何分支都跑。
-  - [ ] CHANGELOG：頂上加 Unreleased 一段，說明搬進 cdsint、來源 repo 是哪個、來源 k1.1.1 之後沒發版的內容（來源 `git log --oneline 81d994e..9aa9886`，perf 與存檔一次那幾個 commit）寫症狀、根因、改法。
-  - [ ] readMe：先寫最小版。定位一段（SPEC 第 0 節）、來源 repo 一句、開發模式安裝（junction 指 `stub/`，三家 ScriptDir 的表）、CLI 命令表（現有的八個）、exit code。全面改寫留到階段 2。
-  - [ ] 驗收：根目錄 `python -m pytest -q` 與 `python -m pytest tests -q` 都綠，通過數不少於 389。
-  - [ ] 驗收：在 `%TEMP%\cdsint-work\clone\` 對本 repo `git clone`，`python -m pip install -e .`，`cdsint --help` 列出 list、ping、status、stop、export、import、compare、build；`cdsint list` exit 2 且訊息說沒有看門人。
-  - [ ] 驗收：`grep -rn "cds-text-sync" --include=*.py --include=*.md --include=*.toml --include=*.ps1 --include=*.yml .` 剩下的只有 pragma 前綴 `cds-text-sync.<key>`、屬性 `cds-text-sync-multipleApps`、來源與上游的出處註記、`docs/history/` 底下的。
-  - [ ] 驗收：`grep -rn "WATCHER_CLI_PLAN\|imp.load_source\|_load_hidden_module" --include=*.py .` 為零。
-  - [ ] 驗收：一支放在 `tools/` 的探針腳本，把本 repo 根目錄插進 `sys.path`，import `engine` 底下七個模組、四支本體、`cds.core`、`cds.ide.session`，成功印 `OK` 並寫檔。用原廠 3.5.21.40、Lenze 3.24、Delta 1.10 各無頭跑一次，三份輸出都有 `OK`、沒有 traceback。
-  - [ ] 驗收：用原廠 3.5.21.40 無頭跑 `stub/Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback；跑 `stub/Project_export.py`，輸出說沒有開啟的專案、沒有 traceback。
-  - [ ] 驗收：`stub/` 每個檔案 `wc -l` 不超過 15。
+- [x] **階段 0：搬家與身分**（SPEC 10.2 階段 0）
+  - [x] 從來源 repo 搬進第 4 節的佈局。照搬的：`cds/`、`tools/`、`profiles/`、`tests/`、`irm/`、`img/`、`.github/`、`conftest.py`、`requirements-dev.txt`、`CHANGELOG.md`、`PRINCIPLES.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`docs/AI_WORKFLOW.md`、`skills/cds-ide/` 改名 `skills/cdsint/`。改位置的：七支 `codesys_*.pyw` 進 `engine/` 改 `.py`；`Project_export.py`、`Project_import.py`、`Project_compare.py`、`Project_Build.py`、`Project_directory.py`、`Project_parameters.py` 的本體進 `engine/`（檔名第 7 節第 2 項決定），`_load_hidden_module` 那段換成普通 import，邏輯一行不改；`Project_discover.py`、`Project_resources.py`、`Project_perf_probe.py` 進 `tools/`；`cli/cds_ide.py` 進 `cdsint/cli.py`。不搬的：`Project_perf_test.py`、`Performance_tests/`、`cds/__init__.py` 的 `VERSION`、`readMe.md`（重寫）、`WORKFLOW.md`（進 history）。
+  - [x] `stub/` 五支與找本體的機制（第 7 節第 1 項）。`Project_watch.py` 的本體已經是 `cds/ide/session.py`。
+  - [x] `pyproject.toml`：套件 `cdsint`、命令 `cdsint`。`tests/test_cds_ide_cli.py` 跟著改。
+  - [x] 實例目錄改 `%LOCALAPPDATA%\cdsint\instances`（事實 10 的每一處），不寫遷移。
+  - [x] `cds/ide/watcher.py` 的 `SCRIPTS` 表與 `cds/ide/silent.py` 的 `run()` 改成叫 `engine/` 裡的本體。`cds/ide/session.py` 的 `script_version()` 改成普通 import，D12 例外消失。
+  - [x] `tests/conftest.py` 的 `load_legacy` 換成普通 import 或刪除；`DRIVEN_FILES` 清單改指 `engine/` 的本體。
+  - [x] 抽 `docs/WATCHER.md`：從來源 `docs/WATCHER_CLI_PLAN.md` 第 5、6、14 節抽，改成現況陳述不是計畫。事實 11 的九處指標改指它的節號。來源的 `WATCHER_CLI_PLAN.md`、`RESEARCH_HTTP_IDE_CONTROL.md`、`REWORK_PLAN.md`、`WORKFLOW.md` 與 `docs/history/` 底下兩份，全部進本 repo 的 `docs/history/`。
+  - [x] CI 改成 push 到任何分支都跑。
+  - [x] CHANGELOG：頂上加 Unreleased 一段，說明搬進 cdsint、來源 repo 是哪個、來源 k1.1.1 之後沒發版的內容（來源 `git log --oneline 81d994e..9aa9886`，perf 與存檔一次那幾個 commit）寫症狀、根因、改法。
+  - [x] readMe：先寫最小版。定位一段（SPEC 第 0 節）、來源 repo 一句、開發模式安裝（junction 指 `stub/`，三家 ScriptDir 的表）、CLI 命令表（現有的八個）、exit code。全面改寫留到階段 2。
+  - [x] 驗收：根目錄 `python -m pytest -q` 與 `python -m pytest tests -q` 都綠，通過數不少於 389。
+  - [~] 驗收：在 `%TEMP%\cdsint-work\clone\` 對本 repo `git clone`、`pip install -e .`、`cdsint --help` 列出八個命令——過。`cdsint list` 訊息說沒有看門人——過，但 exit 是 0 不是 2，見第 7 節第 9 項的 Ruling。
+  - [x] 驗收：`grep -rn "cds-text-sync" --include=*.py --include=*.md --include=*.toml --include=*.ps1 --include=*.yml .` 剩下的只有 pragma 前綴 `cds-text-sync.<key>`、屬性 `cds-text-sync-multipleApps`、來源與上游的出處註記、`docs/history/` 底下的。
+  - [x] 驗收：`grep -rn "WATCHER_CLI_PLAN\|imp.load_source\|_load_hidden_module" --include=*.py .` 為零。
+  - [x] 驗收：一支放在 `tools/` 的探針腳本，把本 repo 根目錄插進 `sys.path`，import `engine` 底下七個模組、四支本體、`cds.core`、`cds.ide.session`，成功印 `OK` 並寫檔。用原廠 3.5.21.40、Lenze 3.24、Delta 1.10 各無頭跑一次，三份輸出都有 `OK`、沒有 traceback。
+  - [x] 驗收：用原廠 3.5.21.40 無頭跑 `stub/Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback；跑 `stub/Project_export.py`，輸出說沒有開啟的專案、沒有 traceback。
+  - [x] 驗收：`stub/` 每個檔案 `wc -l` 不超過 15。
 
 - [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
   - [ ] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
@@ -221,12 +221,22 @@ img/        readMe 用的圖
 
 實作時決定，決定了寫回：`Ruling: 決定 — 理由 — 錯了的代價`。
 
-1. stub 找本體的機制。第 4 節建議 `body.path`。
-2. `engine/` 裡入口本體的檔名。`import` 是 Python 關鍵字，不能直接當模組名。
-3. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。
-4. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
-5. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
-6. 分紙機 Makefile 要改的行（階段 2 寫下，人做）。
+1. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。
+2. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
+3. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
+4. 分紙機 Makefile 要改的行（階段 2 寫下，人做）。
+5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
+6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。
+
+本階段（階段 0）新增的：
+
+- Ruling: stub 找本體用 `body.path` — 旁邊一個純文字檔，一行安裝根目錄，stub 讀它、插進 `sys.path`、import 本體。安裝器寫它，開發模式也寫它；它是機器專屬的路徑，所以 gitignore。沒有選「把路徑寫死在 stub 裡」是因為那樣安裝器得改寫 stub 原始碼，而開發模式的 junction 直接指著 repo 裡的 `stub/`，改它就是弄髒 git。也沒有留「找不到就往上兩層」的後路，那會變成兩條路（SPEC D16）— 錯了的代價是 clone 完還沒寫 `body.path` 之前，從選單跑任何一支都會丟 `IOError`，訊息不會告訴你該建那個檔。
+- Ruling: `engine/` 裡入口本體叫 `entry_export.py`、`entry_import.py`、`entry_compare.py`、`entry_build.py`、`entry_directory.py`、`entry_parameters.py` — `import` 是 Python 關鍵字，`entry_import` 不是；前綴一致所以一眼看得出哪些是入口本體、哪些是共用引擎模組 — 錯了的代價是文件與 commit 訊息裡「Project_import.py」這個講法要改口，選單上的名字沒變。
+- Ruling: 看門人跑本體用 exec 檔案，選單跑本體用 import 加借全域 — 替身 `system` 必須在本體的模組層級程式碼跑起來之前就在它的命名空間裡，所以 `silent.run` 沒辦法改成 import；選單那條沒有這個需求，`engine/entry.py` 把 stub 的 `globals()` 借給本體，本體自己定義的名字優先，跟原本 `dict(ide_globals)` 再 exec 完全等價。這不算 SPEC D16 的兩條路：同一件事只有一份程式碼，差的是誰負責提供命名空間 — 錯了的代價是本體要維持「`system` 從自己的模組全域讀」這個假設，不能改成參數傳入，否則兩邊都要跟著改。
+- Ruling: `cds/ide/session.py` 的 `script_version()` 整支刪掉，版本號由呼叫端（`stub/Project_watch.py` 與 `tools/watch_harness.py`）自己 import — 工單原本寫「改成普通 import」，但那樣 `imp.load_source` 的 hack 雖然沒了，`cds/ide` import 引擎模組這件事還在，而 SPEC D12 禁的就是這個方向。兩個呼叫端都不在 `cds/ide` 底下，所以移過去之後 D12 三條規則一個例外都不剩 — 錯了的代價是兩個呼叫端各多一行 import。
+- Ruling: 比對結果視窗與狀態視窗的標題、IDE 訊息列的 `cds-ide:` 前綴，階段 0 就改成 `cdsint` — 標題本來排在階段 1，但階段 0 的驗收 grep 會抓到比對視窗那一行，而且這一階段叫「搬家與身分」，產品名字就是身分 — 錯了的代價是階段 1 的「視窗標題改名」那一項會發現已經做完了。
+- Ruling: `cdsint list` 找不到看門人維持 exit 0，不改成工單寫的 exit 2 — `list` 的問題是「有誰在聽」，空的清單是答案不是失敗，而且現有的 `test_list_says_so_when_nothing_is_listening` 就是在釘這個行為；SPEC 4.3 的 exit 2 講的是「這個命令需要一個看門人而找不到」，`list` 不需要。改它是 CLI 契約的變更，超出「階段 0 不改邏輯」，留給監督者裁 — 錯了的代價是包 cdsint 的腳本如果拿 exit code 判斷「有沒有 IDE 在聽」會失準，要改讀 `--json` 的空陣列。
+- Ruling: `irm/setup.ps1` 階段 0 只換名字與 URL，不改安裝佈局，檔頭加「還不能跑」的警告 — 它現在會把整棵樹倒進一個 ScriptDir 資料夾，而 IDE 是遞迴掃的，選單會列出 `engine/`、`tools/`、`tests/` 底下每一支 `.py`；要修就是階段 1 的重寫，硬塞進階段 0 等於把搬家跟改行為混在一起 — 錯了的代價是這段期間 `irm/setup.ps1` 是不能用的，安裝只能照 readMe 手動做，這件事寫在檔頭與 `irm/setup.md` 開頭。
 
 監督者已裁的：
 
