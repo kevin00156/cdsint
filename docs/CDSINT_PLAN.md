@@ -209,6 +209,13 @@ img/        readMe 用的圖
   - [x] 驗收（監督者會重現）：softplc 副本、空的 `--sync-dir`：`verify --project --install 3.5.21.40 --force -y` exit 1，訊息是空資料夾拒絕，副本裡的物件數仍是 229（跑一次 `compare --project` 看 `new_in_ide`）；同一副本先 `export --project --sync-dir S`，再 `verify --project -y --sync-dir S` exit 0，report 頂層有 `sync_dir`。——**全過**。空資料夾那趟 72.3 秒 exit 1，import 那一步 3.1 秒就結束在拒絕訊息上（訊息帶著空資料夾的路徑），後面三步沒跑；接著 `compare --project` 回 `new_in_ide=229`、`different=0`，副本一個物件都沒少。然後 `export --project --sync-dir S` 寫出 229 個物件（73.0 秒），`verify -y --project --sync-dir S` 125.8 秒 exit 0，四步 import 23.5／export 14.6／compare 14.0／build 25.9 秒，compare 四個差異數全 0，build 0 errors 101 warnings，report 頂層 `sync_dir` 就是 S。
   - [x] 驗收：`verify --target <無頭掛看門人的實例>` 沒 `-y` 回 `needs_input`、exit 1；加 `-y` exit 0。——用 `tools/headless_watch.py` 在原廠 3.5.21.40 起一個無頭 IDE 掛看門人（`softplc_copy-12972`，開的是同一份副本）。沒 `-y`：22.9 秒 exit 1，`--json` 回兩筆紀錄，`compare` ok 而 `import` 的 `needs_input.arg` 是 `yes`，計數全 0（那時磁碟與 IDE 已經一致）。加 `-y --force`：70.0 秒 exit 0，build 0 errors 101 warnings。跑完 `cdsint stop`，行程自己收掉；只有使用者原本開著的兩個 IDE（pid 17340、14012）還在，`%TEMP%\cdsint-work\` 已刪，來源專案最後寫入時間仍是 9 月 4 日 16:55。
 
+  - 監督者驗證（2026-09-05 19:25，收尾之後）：`python -m pytest tests -q` 與根目錄各 531 passed，監督者自己跑的。少給 `--sync-dir` 是 exit 2 且訊息講清楚原因。監督者親自重現：新的 softplc 副本、空的 `--sync-dir`，`verify -y --project` 在 import 那步被拒絕，exit 1，訊息就是空資料夾那句；接著 `compare --project` 回 `new_in_ide=229`、`different=0`，副本一個物件都沒少。沒 `-y` 的 `verify` 回 exit 1 並印出「這一趟會刪 N 個」。report 頂層有 `sync_dir`。監督者重現時另外撞到三件事，寫成底下的「階段 2 收尾二」與階段 4 第一項。
+  - [ ] 階段 2 收尾二（監督者重現後加的）：`--timeout` 的意思改成「每一步的上限」，兩種形式一致；`--project` 形式的行程期限從它推導：啟動寬限 + 步數 × timeout + 關閉寬限，兩個寬限量出來寫成常數並在註解說明怎麼量的。預設 120 不變。原因：監督者用預設 timeout 跑 `verify -y --project`（原廠、softplc 副本、短路徑），121 秒被 kill，exit 3，但 report 裡四步全部 ok。一趟含啟動本來就要 120 到 140 秒（worker 自己量的數字），預設值讓旗艦命令的預設呼叫必定逾時。
+  - [ ] 階段 2 收尾二：逾時的時候先看 report。report 完整（有 `intended_exit`）就以 report 為準，exit code 用 report 的，輸出說「腳本已做完，IDE 沒有在期限內退出，已 kill」；report 不完整才是「疑似對話框卡住」。SPEC 6.4 那列「逾時當成有對話框卡住」補這個界線。
+  - [ ] 階段 2 收尾二：CLI 自己 kill 掉的 IDE 留下的鎖檔（`<project>.~u`）由 CLI 自己清掉並說明；只清自己起的那個行程開的那個專案的鎖。原因：監督者被 kill 那趟之後再跑同一個副本，立刻 exit 4，得手動加 `--force-lock`；那把鎖是 cdsint 自己造成的，它知道是誰的。
+  - [ ] 驗收：測試涵蓋三條：期限的推導、report 完整時逾時不算失敗、kill 之後鎖檔被清。
+  - [ ] 驗收（監督者會重現）：`verify -y --project` 用**預設** timeout 在原廠 softplc 副本（`%TEMP%` 底下的短路徑）exit 0，report `timed_out` 是 false。
+
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
   - [ ] 驗收：用假 IDE 物件的測試涵蓋四條：屬性空時 `plc download -y` exit 5 且引擎的 login 沒被呼叫；屬性有 `download` 但沒 `-y` 時回 `needs_input`、exit 1、login 沒被呼叫；`plc connect --target` 被拒絕；report 的 CRC 欄位 `MATCH` 與 `DIFFERENT` 兩種各有測試。
@@ -216,6 +223,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。
 
 - [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
+  - [ ] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
   - [ ] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
   - [ ] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
   - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
@@ -358,6 +366,10 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 2 收尾驗收後）: worker 收尾的七條 Ruling 全部接受，包括沒 `-y` 時仍跑一趟 `compare` 來印計畫（多付一次 IDE 啟動，換來「你要同意的是刪 229 個」這句話，值得）與 `--sync-dir` 連 `config` 都要（一條沒有例外的規則） — 錯了的代價是 `config get --project` 多打一個旗標。
+- Ruling（階段 2 收尾驗收後）: `--timeout` 是每一步的上限，`--project` 形式的行程期限從它推導，不另設一個「無頭專用的預設」 — 一個旗標兩種意思是特殊情況；推導公式讓 `--timeout 120` 在兩種形式下說的都是「一個命令最多 120 秒」 — 錯了的代價是 `--project` 形式的實際等待上限比旗標的字面值大，文件要講清楚。
+- Ruling（階段 2 收尾驗收後）: 逾時以 report 為準；kill 掉自己起的 IDE 之後清掉它留下的鎖檔 — 兩件都是「cdsint 知道的事不要假裝不知道」：report 完整就不是對話框卡住，鎖是自己造成的就不該要使用者 `--force-lock` — 錯了的代價是若 kill 的行程其實還在寫專案檔，清鎖會讓下一趟開到半寫的檔；用 kill 之後等行程真的不在了再清來擋。
+- Ruling（階段 2 收尾驗收後）: 匯出寫檔失敗沒進登記簿這件事排階段 4 第一項，不當階段 2 的收尾 — 它在引擎的寫檔層，跟階段 2 的無頭前門無關，而且階段 3 完全不碰匯出；先把階段 2 的兩個前門問題收掉再進 3 — 錯了的代價是階段 3 期間這個洞多活一陣子，但它只在路徑超長時出現。
 - Ruling（階段 2 驗收後）: `verify` 需要 `-y`，推翻 worker「匯入就是 verify 的定義，問一個只有一個答案的問題不是謹慎」那條 — 那個問題有第二個有用的答案：同步資料夾指錯的時候，「不要」就是唯一對的答案。監督者用一個空的 `--sync-dir` 重現，verify 第一步就把 229 個物件裡的 178 個刪掉並存檔。SPEC 4.2 對 `-y` 的定義是「確認這一步會改狀態」，verify 含匯入，就該跟匯入共用同一條規則，一條規則沒有例外 — 錯了的代價是 pipeline 的呼叫多打兩個字元。
 - Ruling（階段 2 驗收後）: 同步資料夾裡一個 `.st` 都沒有時 `import` 拒絕，三條路一致 — 「磁碟是事實來源」的前提是磁碟上有一份事實；空資料夾不是「什麼都沒有」這個事實，是「還沒 export」或「路徑指錯」，兩種都該停下來。這跟「登入中拒絕匯入」一樣是前置檢查，不是門檻式的啟發 — 錯了的代價是真的想把專案清空的人要自己動手；那種需求不存在。
 - Ruling（階段 2 驗收後）: `--project` 形式必給 `--sync-dir` — 副本帶著原專案的 `cds-sync-folder`，那可能是指向使用者 git 目錄的絕對路徑；scenario C 的呼叫端本來就知道兩個路徑，讓它明講比讓 cdsint 從副本的屬性猜安全 — 錯了的代價是每次呼叫多一個旗標，分紙機 Makefile 的行多一個參數。

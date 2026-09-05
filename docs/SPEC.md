@@ -169,7 +169,7 @@
 | `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、比 CRC |
 | `config get`、`config set KEY=VALUE` | 有 | 有 | 讀寫 4.4 的屬性，`cds-sync-plc` 除外 |
 
-共用旗標：`--timeout 秒`（預設 120）、`--json`。
+共用旗標：`--timeout 秒`（預設 120，是**一個命令步驟**的上限；`--project` 形式的行程期限由它推導：啟動寬限 + 步數 × timeout + 關閉寬限，所以 `verify` 的實際等待上限比字面值大）、`--json`。
 只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`（必填，理由在下面）、
 `--answer KEY=VALUE`（可多個，D7）。`--answer` 回答的是 IDE 自己的提示，而 `--target` 那半的
 IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那一排。
@@ -341,7 +341,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 | 專案路徑走環境變數，不走 `--project` 也不走 `--scriptargs` | `--project` 在 `--noUI` 底下不會真的開專案；`--scriptargs` 的引號規則吃不了中文路徑 |
 | 命令列組成單一字串，不用陣列 | PowerShell 5.1 的陣列參數會重新加引號弄壞 `--profile="有空白的名字"` |
 | stdout 與 stderr 重導向到跟 report 同名的檔案 | GUI 子系統的 exe 從 shell 拿不到輸出；檔名跟著 report 走是為了兩個行程並行不搶檔 |
-| 逾時就 kill，逾時當成「有對話框卡住」的結論記下來 | 掛住比報錯難查十倍 |
+| 逾時就 kill。report 不完整（沒有 `intended_exit`）才當成「有對話框卡住」；report 完整就以 report 為準，只記「腳本做完了但 IDE 沒在期限內退出」。kill 之後等行程真的不在，自己起的 IDE 留下的鎖檔由 CLI 清掉 | 掛住比報錯難查十倍；而一份完整的 report 就是證據，不該被一個慢的關閉蓋掉 |
 | 腳本把打算用的退出碼寫進 report，CLI 比對實際收到的 | 退出碼傳不傳得回來要驗，驗不過就改看 report |
 | `system.prompt_handling` 開 `LogMessageKeys`，沒答到的提示會把鍵名印出來；`--answer KEY=VALUE` 填進 `prompt_answers` | Delta 1.10 開 1.8 的專案會問要不要升級，預設答案是「不開了」。這是 D7 明寫的例外 |
 | 開完不 close | close 會問要不要存檔，`--noUI` 底下沒人能答 |
