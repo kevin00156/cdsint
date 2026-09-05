@@ -99,7 +99,7 @@ class Watcher(object):
         ipc.ensure_dirs(self.root, self.instance_id)
         commands.prune_results(self.root, self.instance_id)
         self._beat(ipc.now())
-        messages.note(self.ide, "cds-ide: listening as " + self.instance_id)
+        messages.note(self.ide, "cdsint: listening as " + self.instance_id)
         print("watcher: listening as " + self.instance_id)
         print("watcher: " + ipc.instance_dir(self.root, self.instance_id))
 
@@ -151,7 +151,7 @@ class Watcher(object):
             # prune_stale clears it — and raising here would bury whatever
             # actually stopped the loop.
             print("watcher: could not clear %s (%s)" % (self.instance_id, exc))
-        messages.note(self.ide, "cds-ide: stopped " + self.instance_id)
+        messages.note(self.ide, "cdsint: stopped " + self.instance_id)
         print("watcher: stopped " + self.instance_id)
 
     # -- one command -------------------------------------------------------
@@ -175,7 +175,7 @@ class Watcher(object):
             # Paint BUSY before the work starts: the IDE stops repainting for
             # the whole of an export, so afterwards is too late to say so.
             self._show()
-            messages.note(self.ide, "cds-ide: %s started" % self.doing)
+            messages.note(self.ide, "cdsint: %s started" % self.doing)
             result = self._answer(cmd, started)
             commands.write_result(self.root, self.instance_id, result)
             # A caller that gave up before we answered leaves its result
@@ -198,7 +198,7 @@ class Watcher(object):
         ok = bool(result and result.get("ok"))
         self.last = {"command": cmd.get("command"), "ok": ok,
                      "elapsed": ipc.now() - started}
-        messages.note(self.ide, "cds-ide: %s %s in %.1fs"
+        messages.note(self.ide, "cdsint: %s %s in %.1fs"
                       % (cmd.get("command"), "ok" if ok else "FAILED",
                          self.last["elapsed"]),
                       ok=ok)
