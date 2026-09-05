@@ -499,6 +499,24 @@ def test_a_process_that_survives_its_own_kill_keeps_its_lock(machine,
     assert os.path.exists(started.project + ".~u")
 
 
+def test_ctrl_c_takes_the_ide_it_started_with_it(machine, monkeypatch):
+    # Suggestion 10. Without this the --noUI process carries on with no
+    # window and nobody watching, holding the project's lock; the next run
+    # says exit 4 and prints a lock path, and the person has to go and find
+    # the process in Task Manager. cdsint/target.py already un-queues its
+    # command on Ctrl-C.
+    launches = launching(monkeypatch, code=None)
+
+    def interrupted(self, timeout=None):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(FakeProcess, "wait", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        make(machine, monkeypatch, timeout=0.01).run([("export", {})])
+
+    assert launches[-1]["process"].killed is True
+
+
 def test_a_run_that_never_finishes_is_killed_and_blamed_on_a_dialog(machine,
                                                                     monkeypatch):
     launching(monkeypatch, code=None)

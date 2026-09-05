@@ -56,13 +56,21 @@ def show_toast(title, message, timeout=3000):
     _TOASTS.append(live)
 
     def put_it_away(sender=None, event_args=None):
-        timer.Stop()
+        # Runs on the IDE's message loop, where there is no script left
+        # to catch anything: an exception out of here is an unhandled
+        # exception in the IDE's own process, which puts a
+        # thread-exception dialog on top of whatever the person was
+        # doing. A tray icon that will not go away is the smaller bug.
         try:
-            notification.Visible = False
-            notification.Dispose()
-        finally:
-            timer.Dispose()
-            _TOASTS.remove(live)
+            timer.Stop()
+            try:
+                notification.Visible = False
+                notification.Dispose()
+            finally:
+                timer.Dispose()
+                _TOASTS.remove(live)
+        except Exception as e:
+            print("show_toast cleanup error: " + str(e))
 
     timer.Tick += put_it_away
     timer.Start()

@@ -164,6 +164,13 @@ class Headless(object):
             return process.wait(timeout=deadline), process.pid
         except subprocess.TimeoutExpired:
             return self._kill(process), process.pid
+        except KeyboardInterrupt:
+            # Leaving it would leave a --noUI process with no window,
+            # holding the project's lock, findable only in Task
+            # Manager. cdsint/target.py un-queues its command for the
+            # same reason.
+            self._kill(process)
+            raise
 
     def _kill(self, process):
         """Stop waiting, and clean up after the process we started.
