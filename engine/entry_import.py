@@ -7,6 +7,8 @@ applies all disk-side changes to IDE (equivalent to Compare -> Select All -> Imp
 
 Also detects new files on disk (e.g. from git pull) not yet tracked in metadata.
 """
+from __future__ import print_function
+
 import os
 import sys
 import time

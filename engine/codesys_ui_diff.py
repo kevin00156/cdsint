@@ -5,6 +5,8 @@ codesys_ui_diff.py - Side-by-side diff viewer for CODESYS scripts
 Renders two columns showing IDE vs Disk text content with highlighted differences.
 Uses WinForms RichTextBox for colored diff rendering.
 """
+from __future__ import print_function
+
 import clr
 clr.AddReference("System.Windows.Forms")
 clr.AddReference("System.Drawing")

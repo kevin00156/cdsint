@@ -4,6 +4,8 @@ entry_build.py - Trigger build in CODESYS IDE
 
 Compiles the active application and reports errors/warnings.
 """
+from __future__ import print_function
+
 import os
 import time
 import sys

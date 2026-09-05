@@ -18,3 +18,5 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
                         the IDE globals it was written to find in its own
                         namespace.
 """
+
+from __future__ import print_function

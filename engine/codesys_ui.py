@@ -2,6 +2,8 @@
 """
 codesys_ui.py - Modern UI components for CODESYS scripts
 """
+from __future__ import print_function
+
 import clr
 import os
 try:

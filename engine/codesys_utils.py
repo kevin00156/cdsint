@@ -4,6 +4,8 @@ codesys_utils.py - Shared utility functions for CODESYS scripts
 
 Contains common utility functions used across export, import, and sync scripts.
 """
+from __future__ import print_function
+
 import os
 import codecs
 import json
@@ -1831,13 +1833,13 @@ def check_version_compatibility(base_dir):
 
 
 def save_sync_metadata(base_dir, action, stats, elapsed):
-    """Record the sync version and (in debug mode) sync_metadata.json.
+    """Write sync_metadata.json, in debug mode only.
 
-    Used by both entry_export.py and entry_import.py. The version
-    property lives in the .project (not git), so it is always recorded -
-    check_version_compatibility depends on it. The metadata file is part of
-    the debug audit trail and only written when debug mode is on (e179ef9
-    policy: a normal run produces only project content).
+    Used by both entry_export.py and entry_import.py. Part of the debug
+    audit trail (e179ef9 policy: a normal run produces only project
+    content). The version property is not written here -- it has to be in
+    the project before the save, and this runs after it; see
+    finalize_sync_operation.
 
     Args:
         base_dir: Export/import directory path
@@ -1846,11 +1848,6 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
         elapsed: Elapsed time in seconds (float)
     """
     from engine.codesys_constants import SCRIPT_VERSION
-    try:
-        set_project_prop(props.VERSION, SCRIPT_VERSION)
-    except Exception as e:
-        log_warning("Failed to save version to project property: " + safe_str(e))
-
     if not is_debug():
         return
 
@@ -1871,7 +1868,20 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
 
 
 def finalize_sync_operation(base_dir, projects_obj, is_import=False):
-    """Handle final document save or binary backup according to user settings."""
+    """Stamp the sync version, then save or back up as the settings say.
+
+    The version goes first because it is a project property: the save below
+    is the only thing that makes it outlive the run. Written after it, as it
+    used to be, it never survived at all -- a headless process ends and takes
+    it with it -- so check_version_compatibility found a mismatch on every
+    run and every run had to be told to ignore the warning.
+    """
+    from engine.codesys_constants import SCRIPT_VERSION
+    try:
+        set_project_prop(props.VERSION, SCRIPT_VERSION)
+    except Exception as e:
+        log_warning("Failed to save version to project property: " + safe_str(e))
+
     save_prop = props.SAVE_AFTER_IMPORT if is_import else props.SAVE_AFTER_EXPORT
     save_after_op = get_project_prop(save_prop, True)
     backup_binary = get_project_prop(props.BACKUP_BINARY, False)

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Scripts menu -> import. The body lives outside ScriptDir (SPEC 5.3)."""
+from __future__ import print_function
+
 import codecs, os, sys
 
 _here = os.path.dirname(os.path.abspath(__file__))

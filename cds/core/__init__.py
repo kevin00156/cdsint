@@ -23,3 +23,5 @@ Editing anything here needs the IDE restarted. The menu stubs drop the
 next run; `cds` was never in that set, and adding it would hand a running
 watcher and a fresh export two different copies of the same module.
 """
+
+from __future__ import print_function

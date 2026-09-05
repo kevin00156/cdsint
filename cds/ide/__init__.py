@@ -11,3 +11,5 @@
 Only session and statusform need .NET; the rest take the CODESYS globals as
 an argument, which is what lets CPython test them. IronPython 2.7 throughout.
 """
+
+from __future__ import print_function

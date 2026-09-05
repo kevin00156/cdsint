@@ -10,6 +10,8 @@ Compares .st and .xml files between the CODESYS IDE and the sync folder to ident
 
 Outputs a concise git-style difference list and saves to compare.log.
 """
+from __future__ import print_function
+
 import os
 import sys
 import codecs

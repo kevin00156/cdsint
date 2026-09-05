@@ -16,6 +16,8 @@ Provides:
 Saving and backing up the project is deliberately NOT done here; callers
 finish with codesys_utils.finalize_sync_operation().
 """
+from __future__ import print_function
+
 import os
 import codecs
 import tempfile

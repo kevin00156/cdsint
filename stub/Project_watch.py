@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Scripts menu -> start or stop the watcher. Run it again to stop it."""
+from __future__ import print_function
+
 import codecs, os, sys
 
 _here = os.path.dirname(os.path.abspath(__file__))

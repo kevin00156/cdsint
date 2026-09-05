@@ -4,6 +4,8 @@ codesys_managers.py - Object Manager classes for CODESYS synchronization
 
 Extracts object-specific logic for export and import operations.
 """
+from __future__ import print_function
+
 import os
 import codecs
 import tempfile
