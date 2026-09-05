@@ -19,9 +19,8 @@ why cds/ide/config.py refuses to write it.
 """
 from __future__ import print_function
 
+from cds.core import props
 from cds.ide import project
-
-PROPERTY = "cds-sync-plc"
 
 # The only two values the property recognises (SPEC 6.5). A word that is not
 # one of these allows nothing; it is left visible in the refusal instead of
@@ -44,14 +43,14 @@ def refusal(projects_obj, action):
     allowed = granted(projects_obj)
     if action in allowed:
         return None
-    raw = project.prop(projects_obj, PROPERTY)
+    raw = project.prop(projects_obj, props.PLC)
     wanted = ",".join([a for a in ACTIONS if a in allowed or a == action])
     return ("this project does not allow plc %s. Its %s property is %s. Only "
             "a person in the IDE can change that: Project Information > "
             "Properties, set %s to %s. cdsint will not write it for you "
             "(SPEC 6.5)."
-            % (action, PROPERTY, "not set" if raw is None else repr(raw),
-               PROPERTY, wanted))
+            % (action, props.PLC, "not set" if raw is None else repr(raw),
+               props.PLC, wanted))
 
 
 def record(action):
@@ -61,7 +60,7 @@ def record(action):
     sentence is prose: a caller must not have to match on wording to tell a
     refusal from a failure.
     """
-    return {"property": PROPERTY, "action": action}
+    return {"property": props.PLC, "action": action}
 
 
 def _written(projects_obj):
@@ -72,5 +71,5 @@ def _written(projects_obj):
     ACTIONS, so "download " and "DOWNLOAD" work and "downlaod" allows
     nothing.
     """
-    raw = project.prop(projects_obj, PROPERTY) or ""
+    raw = project.prop(projects_obj, props.PLC) or ""
     return set(word.strip().lower() for word in raw.split(",") if word.strip())

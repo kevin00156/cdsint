@@ -231,7 +231,7 @@ img/        readMe 用的圖
   - [x] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [x] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
   - [x] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
-  - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
+  - [x] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
   - [ ] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [ ] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
   - [ ] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
@@ -239,7 +239,7 @@ img/        readMe 用的圖
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [x] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
   - [x] 驗收：IDE 側沒有 sleep、沒有執行緒。由 `tests/test_single_threaded_ide_side.py` 守著，不是靠人跑 grep；見底下的 Ruling。
-  - [ ] 驗收：`grep -rn '"cds-sync-' engine/ cds/ cdsint/ tools/` 只剩常數定義那一處。
+  - [x] 驗收：`grep -rn '"cds-sync-' engine/ cds/ cdsint/ tools/` 只剩常數定義那一處。
   - [ ] 驗收：SPEC 第 7 節的 perf 表有新數字。
 
 ---
@@ -262,7 +262,7 @@ img/        readMe 用的圖
 
 實作時決定，決定了寫回：`Ruling: 決定 — 理由 — 錯了的代價`。
 
-1. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。
+1. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。（階段 4 已裁：不併，見底下的 Ruling。）
 2. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
 3. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
 4. 分紙機 Makefile 要改的行（階段 2 寫下，**人做**；本 worker 一個位元組都沒有寫進那個 repo）。
@@ -304,6 +304,9 @@ img/        readMe 用的圖
 
 階段 4 新增的：
 
+- Ruling: 屬性名字收在 `cds/core/props.py`，不是收在引擎也不是收在 `cds/ide` — 兩邊都要用它，而 D12 不准它們互相 import，`cds/core` 是唯一兩邊都到得了又不碰 CODESYS 的地方；順帶它在 CI 上跑得到，所以那張表可以被測。收的是「前綴一次、每個屬性一個常數」而不是「到處寫 `PREFIX + "folder"`」，因為後者會讓 `grep folder` 什麼都找不到，而屬性名字正是人要在 IDE 裡打的東西 — 錯了的代價是引擎多一條對 `cds.core` 的相依（原本一條都沒有），IDE 側 `sys.path` 上本來就有 `cds`，但這是一個新的方向，日後要拆開跑就得記得。
+- Ruling: `cds-text-sync-multipleApps` 不併進 `cds-sync-` — 它比其他屬性早，而且已經寫進每一個同步過的 `.project`；併進去換到的是一致的拼法，代價是對所有現有專案跑一次遷移，跟 D10 當初拒絕改前綴是同一筆帳。它在 `props.py` 裡有自己的常數，那段解釋就放在旁邊，所以拼法怪的地方只有一處而且附理由 — 錯了的代價是有人以為所有屬性都是 `cds-sync-` 開頭，然後 grep 不到這一個；常數與註解就是為了擋這件事。
+- Ruling: 順手把 `permit.PROPERTY`、`config.READ_ONLY`、兩處 `SYNC_FOLDER_PROP` 這幾個轉手的別名拆掉，直接用 `props.X` — 一個字串三個名字，D16 說的兩條路就是這個形狀；`config.py` 自己的註解早就寫著「兩種拼法就是其中一個會過時」 — 錯了的代價是 `tests/test_plc.py` 有四行跟著改，測試本體沒動。
 - Ruling: D5 的驗收從「跑一次 grep」改成一條 parse 程式碼的測試 — 工單寫的那條字串 grep 現在只剩兩個命中，兩個都是散文：`engine/unhandled.py` 用「threading a register through」講的是「一路傳下去」，`cds/ide/watcher.py` 的檔頭在複述這條規則本身（「No threads, no time.sleep()」）。為了讓 grep 歸零去改後面那句，等於為了通過檢查把正確描述規則的那句話弄壞。測試看的是呼叫與 import 這兩種語法節點，講到 thread 的字不會被誤判，而且它每次 CI 都跑，不必有人記得 — 錯了的代價是這條規則現在多一個檔案要維護，而且如果有人用 `getattr(x, 'sleep')()` 這種寫法繞過去，AST 看不出來；沒有人有理由那樣寫。
 - Ruling: `codesys_utils` 的 `threading.Lock` 直接刪掉，不是留著加註解 — 工單說它「單執行緒設計下是空轉的」，實際查過更乾脆：整個 repo 沒有任何一處 acquire 它，它是死碼，PRINCIPLES 第 7 條 — 錯了的代價是無。
 - Ruling: `show_toast` 改成 Timer 這件事沒有測試，也沒有在真 IDE 上跑過 — 這個檔第一行就 `import clr`，CI 上根本 import 不了，而托盤氣泡要不要正確消失只有眼睛看得出來。守得住的部分（沒有執行緒、沒有 sleep）已經由上面那條測試守住；剩下的要人在 IDE 裡跑一次比對視窗的「存到 .diff」看氣泡有沒有出現又消失 — 錯了的代價是氣泡可能出不來或者留在托盤上不走，那是外觀問題，不影響任何命令的結果。

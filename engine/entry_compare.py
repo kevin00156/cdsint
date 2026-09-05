@@ -18,6 +18,7 @@ import time
 import codecs
 import json
 
+from cds.core import props
 from engine.codesys_constants import TYPE_GUIDS, SCRIPT_VERSION
 from engine.codesys_utils import (
     safe_str, load_base_dir, init_logging, log_info, log_error, log_warning,
@@ -65,7 +66,7 @@ def compare_project(projects_obj=None):
     print("Comparing: CODESYS IDE <-> " + base_dir)
     start_time = time.time()
     
-    export_xml = get_project_prop("cds-sync-export-xml", False)
+    export_xml = get_project_prop(props.EXPORT_XML, False)
     
     # ── Run comparison engine ──
     print("Comparing IDE objects with disk...")

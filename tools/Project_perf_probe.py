@@ -39,6 +39,8 @@ _INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _INSTALL_ROOT not in sys.path:
     sys.path.insert(0, _INSTALL_ROOT)
 
+from cds.core import props  # noqa: E402
+
 # High-resolution timer. On Python 2 / Windows time.clock() is
 # QueryPerformanceCounter; time.time() only has ~15 ms granularity there, which
 # is far too coarse for per-object calls.
@@ -455,7 +457,7 @@ def main():
 
     start = _timer()
     if mode == "compare":
-        export_xml = utils.get_project_prop("cds-sync-export-xml", False)
+        export_xml = utils.get_project_prop(props.EXPORT_XML, False)
         results = engine.find_all_changes(base_dir, projects_obj, export_xml=export_xml)
         print("")
         print("different=%d  new_in_ide=%d  new_on_disk=%d  unchanged=%d"

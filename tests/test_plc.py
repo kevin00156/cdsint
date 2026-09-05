@@ -24,6 +24,7 @@ import types
 import pytest
 
 from cds.core import commands
+from cds.core import props
 from cds.ide import entries, permit, silent
 from cdsint import cli, flags
 from cdsint.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
@@ -267,7 +268,7 @@ def workspace(tmp_path, monkeypatch):
 def ide(allowed="connect,download", device=None, application=None,
         children=None, gateways=()):
     """The IDE globals a plc body reads, with the property already written."""
-    values = {} if allowed is None else {permit.PROPERTY: allowed}
+    values = {} if allowed is None else {props.PLC: allowed}
     application = application if application is not None else Application()
     children = children if children is not None else [Node("Device",
                                                            DEVICE_GUID)]
@@ -314,7 +315,7 @@ def test_a_misspelt_word_allows_nothing_and_stays_visible():
 
 def test_the_refusal_says_where_to_go_and_what_to_write():
     said = permit.refusal(ide(allowed="connect")["projects"], "download")
-    assert permit.PROPERTY in said
+    assert props.PLC in said
     assert "connect,download" in said        # what to set it to
     assert "Project Information" in said     # where
 
@@ -326,7 +327,7 @@ def test_the_refusal_says_where_to_go_and_what_to_write():
 def test_a_project_that_allows_nothing_refuses_download_before_any_login():
     ide_globals = ide(allowed=None)
     outcome = press(ide_globals, "download", {"yes": True})
-    assert outcome.denied == {"property": permit.PROPERTY,
+    assert outcome.denied == {"property": props.PLC,
                               "action": "download"}
     assert not outcome.ok()
     assert ide_globals["online"].session.calls == []
@@ -403,7 +404,7 @@ def test_a_project_that_forbids_it_comes_back_as_exit_5(monkeypatch, capsys):
     code = cli.main(["plc", "download", "-y", "--project", "P", "--install",
                      "I", "--sync-dir", "S"])
     assert code == EXIT_DENIED
-    assert permit.PROPERTY in capsys.readouterr().err
+    assert props.PLC in capsys.readouterr().err
 
 
 def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):

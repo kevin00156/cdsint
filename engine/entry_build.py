@@ -8,6 +8,7 @@ import os
 import time
 import sys
 
+from cds.core import props
 from engine.codesys_utils import safe_str, init_logging, load_base_dir, resolve_projects, update_application_count_flag
 from engine import entry
 
@@ -108,7 +109,7 @@ def build_project(projects_obj=None):
 
     # Find application to build
     from engine.codesys_utils import get_project_prop
-    has_multiple_apps = get_project_prop("cds-text-sync-multipleApps", False)
+    has_multiple_apps = get_project_prop(props.MULTIPLE_APPS, False)
     
     app = None
     if has_multiple_apps:

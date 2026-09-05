@@ -14,7 +14,7 @@ from __future__ import print_function
 import os
 import sys
 
-SYNC_FOLDER_PROP = "cds-sync-folder"
+from cds.core import props
 
 
 def path_of(projects_obj):
@@ -97,7 +97,7 @@ def sync_dir(projects_obj):
     A relative value resolves against the project file, the same rule
     load_base_dir uses.
     """
-    raw = prop(projects_obj, SYNC_FOLDER_PROP)
+    raw = prop(projects_obj, props.FOLDER)
     if not raw:
         return None
     if os.path.isabs(raw):

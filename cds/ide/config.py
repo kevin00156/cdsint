@@ -12,31 +12,30 @@ already reads cds-sync-folder the same way.
 """
 from __future__ import print_function
 
-from cds.ide import permit, project
+from cds.core import props
+from cds.ide import project
 
 # The properties a caller may read and write, and what each one is for. This
 # is SPEC 4.4's table in the form a program can use: a name that is not here
 # is a typo, and silently writing it would leave a property nothing reads.
 PROPERTIES = {
-    "cds-sync-folder": "where the .st files live, absolute or relative to the project",
-    "cds-sync-pc": "the computer the sync folder was set up on",
-    "cds-sync-version": "the tool version that last synced",
-    "cds-sync-debug": "true to write sync_metadata.json and the *.log files",
-    "cds-sync-export-xml": "true to also export visualisations and alarms as XML",
-    "cds-sync-backup-binary": "true to copy the .project into the sync folder on export",
-    "cds-sync-safety-backup": "true to back the .project up before an import",
-    "cds-sync-backup-name": "what to call those backups",
-    "cds-sync-backup-retention-count": "how many backups to keep",
-    "cds-sync-save-after-import": "true to save the project after an import",
-    "cds-sync-save-after-export": "true to save the project after an export",
-    "cds-sync-auto-delete-orphans": "true to delete orphaned .st files on export",
+    props.FOLDER: "where the .st files live, absolute or relative to the project",
+    props.PC: "the computer the sync folder was set up on",
+    props.VERSION: "the tool version that last synced",
+    props.DEBUG: "true to write sync_metadata.json and the *.log files",
+    props.EXPORT_XML: "true to also export visualisations and alarms as XML",
+    props.BACKUP_BINARY: "true to copy the .project into the sync folder on export",
+    props.SAFETY_BACKUP: "true to back the .project up before an import",
+    props.BACKUP_NAME: "what to call those backups",
+    props.BACKUP_RETENTION_COUNT: "how many backups to keep",
+    props.SAVE_AFTER_IMPORT: "true to save the project after an import",
+    props.SAVE_AFTER_EXPORT: "true to save the project after an export",
+    props.AUTO_DELETE_ORPHANS: "true to delete orphaned .st files on export",
 }
 
 # Readable, never writable from here. The property means "a person decided
-# this in the IDE", and a CLI that can write it erases that meaning. Named
-# from cds/ide/permit.py, which is the code that acts on it: two spellings of
-# one property name is one of them going stale.
-READ_ONLY = permit.PROPERTY
+# this in the IDE", and a CLI that can write it erases that meaning.
+READ_ONLY = props.PLC
 
 
 def run(ide_globals, args):

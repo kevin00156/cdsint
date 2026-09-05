@@ -16,6 +16,7 @@ from __future__ import print_function
 
 import os
 
+from cds.core import props
 from engine.codesys_constants import SCRIPT_VERSION
 from engine.codesys_utils import (
     safe_str, get_project_prop, set_project_prop, resolve_projects,
@@ -25,14 +26,14 @@ from engine.codesys_utils import (
 
 SETTINGS = (
     # property suffix          dialog key            default
-    ("cds-sync-export-xml", "export_xml", False),
-    ("cds-sync-backup-binary", "backup_binary", False),
-    ("cds-sync-save-after-import", "save_after_import", True),
-    ("cds-sync-save-after-export", "save_after_export", True),
-    ("cds-sync-safety-backup", "safety_backup", True),
-    ("cds-sync-backup-name", "backup_name", ""),
-    ("cds-sync-backup-retention-count", "retention_count", 10),
-    ("cds-sync-debug", "debug", False),
+    (props.EXPORT_XML, "export_xml", False),
+    (props.BACKUP_BINARY, "backup_binary", False),
+    (props.SAVE_AFTER_IMPORT, "save_after_import", True),
+    (props.SAVE_AFTER_EXPORT, "save_after_export", True),
+    (props.SAFETY_BACKUP, "safety_backup", True),
+    (props.BACKUP_NAME, "backup_name", ""),
+    (props.BACKUP_RETENTION_COUNT, "retention_count", 10),
+    (props.DEBUG, "debug", False),
 )
 
 
@@ -65,13 +66,13 @@ def choose_sync_folder(caller_globals=None):
         return None, failed
 
     from engine.codesys_ui import show_sync_folder_dialog
-    chosen = show_sync_folder_dialog(system, get_project_prop("cds-sync-folder", ""))
+    chosen = show_sync_folder_dialog(system, get_project_prop(props.FOLDER, ""))
     if not chosen:
         print("Sync folder setup cancelled.")
         return None, "Sync folder setup cancelled; nothing was changed."
 
     folder = _as_written(chosen, projects_obj.primary)
-    if not set_project_prop("cds-sync-folder", folder):
+    if not set_project_prop(props.FOLDER, folder):
         failed = ("Could not write cds-sync-folder to Project Information > "
                   "Properties.")
         system.ui.error(failed)
@@ -150,10 +151,10 @@ def _remember_who_and_what():
     """
     try:
         import socket
-        set_project_prop("cds-sync-pc", socket.gethostname())
+        set_project_prop(props.PC, socket.gethostname())
     except Exception as e:
         log_warning("Could not record the computer name: " + safe_str(e))
-    set_project_prop("cds-sync-version", SCRIPT_VERSION)
+    set_project_prop(props.VERSION, SCRIPT_VERSION)
 
 
 def _prepare(folder, project):

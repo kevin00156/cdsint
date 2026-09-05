@@ -15,6 +15,7 @@ import time
 import tempfile
 import shutil
 
+from cds.core import props
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
 # Cache version - bump when the cache format or hash semantics change to
@@ -53,8 +54,8 @@ class Logger:
             if projects.primary:
                 info = projects.primary.get_project_info()
                 props = info.values if hasattr(info, "values") else info
-                if "cds-sync-folder" in props:
-                    folder = props["cds-sync-folder"]
+                if props.FOLDER in props:
+                    folder = props[props.FOLDER]
                     if folder and os.path.exists(folder):
                         self.log_file = os.path.join(folder, "sync_debug.log")
                         self.is_final = True # We found the real path
@@ -417,7 +418,7 @@ def set_project_prop(key, value):
         
         props = info.values if hasattr(info, "values") else info
         props[key] = str(value)
-        if key == "cds-sync-debug":
+        if key == props.DEBUG:
             reset_debug_cache()
         return True
     except:
@@ -443,7 +444,7 @@ def is_debug():
     the flag from the Settings dialog still takes effect.
     """
     if not _debug_flag:
-        _debug_flag.append(bool(get_project_prop("cds-sync-debug", False)))
+        _debug_flag.append(bool(get_project_prop(props.DEBUG, False)))
     return _debug_flag[0]
 
 
@@ -467,7 +468,7 @@ def set_application_count_flag(app_count):
             return False
 
         has_multiple_apps = (app_count > 1)
-        log_info("Application count summary: Found %d applications. Setting 'cds-text-sync-multipleApps' flag to %s" % (app_count, str(has_multiple_apps)))
+        log_info("Application count summary: Found %d applications. Setting props.MULTIPLE_APPS flag to %s" % (app_count, str(has_multiple_apps)))
 
         # Cleanup old 'boolean' flag if it exists (prevents clutter)
         try:
@@ -478,7 +479,7 @@ def set_application_count_flag(app_count):
         except:
             pass
 
-        return set_project_prop("cds-text-sync-multipleApps", has_multiple_apps)
+        return set_project_prop(props.MULTIPLE_APPS, has_multiple_apps)
     except Exception as e:
         log_error("Failed to update application count flag: " + safe_str(e))
         return False
@@ -528,7 +529,7 @@ def update_application_count_flag(all_objs=None):
         return False
 
 def load_base_dir():
-    """Load base directory from the project property 'cds-sync-folder'.
+    """Load base directory from the project property props.FOLDER.
     
     Supports both absolute and relative paths:
     - Absolute paths: Used as-is (e.g., C:\\MySync\\)
@@ -536,7 +537,7 @@ def load_base_dir():
     
     If the directory doesn't exist, it will be created automatically.
     """
-    base_dir = get_project_prop("cds-sync-folder")
+    base_dir = get_project_prop(props.FOLDER)
     if not base_dir:
         return None, "Project sync directory not set!\nRun `cdsint config set cds-sync-folder=<path>`, or run export or import from the Scripts menu and it will ask, or add the property yourself in Project Information > Properties."
     
@@ -571,7 +572,7 @@ def load_base_dir():
     # Check for PC mismatch only for ABSOLUTE paths
     # For relative paths, we skip this check to facilitate teamwork and portability
     if not is_relative:
-        sync_pc = get_project_prop("cds-sync-pc")
+        sync_pc = get_project_prop(props.PC)
         try:
             import socket
             current_pc = socket.gethostname()
@@ -1604,7 +1605,7 @@ def backup_project_binary(export_dir, projects_obj=None, timestamped=False, rete
             # Format: YYYYMMDD_HHMMSS_ProjectName.project.bak
             file_name = "{}_{}.bak".format(timestamp, base_name)
         else:
-            custom_name = get_project_prop("cds-sync-backup-name", "")
+            custom_name = get_project_prop(props.BACKUP_NAME, "")
             if custom_name:
                 # Ensure it ends with .project
                 if not custom_name.lower().endswith(".project"):
@@ -1795,7 +1796,7 @@ def check_version_compatibility(base_dir):
     """Check if export was done with compatible script version"""
     from engine.codesys_constants import SCRIPT_VERSION
     
-    proj_version = get_project_prop("cds-sync-version")
+    proj_version = get_project_prop(props.VERSION)
     if proj_version is None:
         proj_version = "not set"
     
@@ -1836,7 +1837,7 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
     """
     from engine.codesys_constants import SCRIPT_VERSION
     try:
-        set_project_prop("cds-sync-version", SCRIPT_VERSION)
+        set_project_prop(props.VERSION, SCRIPT_VERSION)
     except Exception as e:
         log_warning("Failed to save version to project property: " + safe_str(e))
 
@@ -1861,9 +1862,9 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
 
 def finalize_sync_operation(base_dir, projects_obj, is_import=False):
     """Handle final document save or binary backup according to user settings."""
-    save_prop = "cds-sync-save-after-import" if is_import else "cds-sync-save-after-export"
+    save_prop = props.SAVE_AFTER_IMPORT if is_import else props.SAVE_AFTER_EXPORT
     save_after_op = get_project_prop(save_prop, True)
-    backup_binary = get_project_prop("cds-sync-backup-binary", False)
+    backup_binary = get_project_prop(props.BACKUP_BINARY, False)
 
     if backup_binary and projects_obj and getattr(projects_obj, 'primary', None):
         try:
@@ -1884,9 +1885,9 @@ def finalize_sync_operation(base_dir, projects_obj, is_import=False):
 def create_safety_backup(base_dir, projects_obj, items_to_import):
     """Create a timestamped safety backup of the project before importing changes."""
     backup_filename = None
-    safety_backup = get_project_prop("cds-sync-safety-backup", True)
+    safety_backup = get_project_prop(props.SAFETY_BACKUP, True)
     if safety_backup and items_to_import:
-        retention = get_project_prop("cds-sync-backup-retention-count", 10)
+        retention = get_project_prop(props.BACKUP_RETENTION_COUNT, 10)
         backup_filename = backup_project_binary(base_dir, projects_obj, timestamped=True, retention_count=retention)
     return backup_filename
 

@@ -14,6 +14,7 @@ import time
 import codecs
 import json
 
+from cds.core import props
 from engine.codesys_utils import (
     safe_str, load_base_dir, init_logging, log_info, log_warning,
     resolve_projects, get_project_prop,
@@ -99,7 +100,7 @@ def import_project(projects_obj=None):
     start_time = time.time()
     reset_interaction_timer()
     
-    export_xml = get_project_prop("cds-sync-export-xml", False)
+    export_xml = get_project_prop(props.EXPORT_XML, False)
     
     # ── Phase 1: Find all changes ──
     print("Comparing IDE with disk...")
@@ -249,7 +250,7 @@ def import_project(projects_obj=None):
 
 def main():
     # Same first-run setup as export (SPEC 6.7); see entry_export.main.
-    if not get_project_prop("cds-sync-folder"):
+    if not get_project_prop(props.FOLDER):
         from engine.settings import choose_sync_folder
         _folder, setup_error = choose_sync_folder(globals())
         if setup_error:

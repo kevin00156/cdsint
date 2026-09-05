@@ -34,7 +34,7 @@ if _ROOT not in sys.path:
     # root on the path yet.
     sys.path.insert(0, _ROOT)
 
-from cds.core import commands, ipc          # noqa: E402
+from cds.core import commands, ipc, props   # noqa: E402
 from cds.ide import entries, project, silent  # noqa: E402
 
 JOB_ENV = "CDSINT_HEADLESS_JOB"
@@ -51,9 +51,6 @@ END_MARK = "=== CDSINT_HEADLESS_END ==="
 # answer (SPEC 6.4).
 EXIT_OK = 0
 EXIT_FAILED = 1
-
-SYNC_FOLDER_PROP = "cds-sync-folder"
-
 
 def main(ide_globals, job_path=None):
     """Do one job and write its report. Returns the exit code it asked for."""
@@ -189,7 +186,7 @@ def point_sync_folder(projects_obj, sync_dir):
     change the project on disk. `cdsint config set` is how you change it for
     good.
     """
-    return project.set_prop(projects_obj, SYNC_FOLDER_PROP, sync_dir)
+    return project.set_prop(projects_obj, props.FOLDER, sync_dir)
 
 
 def _why_nothing_opened(job):

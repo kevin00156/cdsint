@@ -4,6 +4,7 @@ import time
 import codecs
 import json
 
+from cds.core import props
 from engine.codesys_constants import (
     IMPL_MARKER, TYPE_GUIDS, EXPORTABLE_TYPES, XML_TYPES, FORBIDDEN_CHARS, RESERVED_FILES,
     SCRIPT_VERSION, kind_allows_export, sync_direction_of
@@ -77,7 +78,7 @@ def cleanup_orphaned_files(export_dir, current_objects):
     # Check for auto-delete property
     try:
         from engine.codesys_utils import get_project_prop
-        auto_delete = get_project_prop("cds-sync-auto-delete-orphans", False)
+        auto_delete = get_project_prop(props.AUTO_DELETE_ORPHANS, False)
     except:
         auto_delete = False
 
@@ -189,8 +190,8 @@ def export_project(export_dir, projects_obj=None):
     
     # Flags and tracking
     from engine.codesys_utils import get_project_prop
-    export_xml = get_project_prop("cds-sync-export-xml", False)
-    backup_binary = get_project_prop("cds-sync-backup-binary", False)
+    export_xml = get_project_prop(props.EXPORT_XML, False)
+    backup_binary = get_project_prop(props.BACKUP_BINARY, False)
     exported_paths = set()  # For orphan tracking
     
     # The binary backup runs once, at the end, from finalize_sync_operation().
@@ -437,7 +438,7 @@ def main():
     # exists (SPEC 6.7). With nobody at the keyboard the dialog is refused,
     # not guessed at: cds/ide/silent.py turns it into needs_input.
     from engine.codesys_utils import get_project_prop
-    if not get_project_prop("cds-sync-folder"):
+    if not get_project_prop(props.FOLDER):
         from engine.settings import choose_sync_folder
         _folder, setup_error = choose_sync_folder(globals())
         if setup_error:
