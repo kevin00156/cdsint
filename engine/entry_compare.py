@@ -33,7 +33,7 @@ from engine.codesys_compare_engine import (
     TYPE_NAMES, build_expected_path
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
-from engine import entry
+from engine import entry, unhandled
 
 
 
@@ -60,6 +60,7 @@ def compare_project(projects_obj=None):
         print("The export was created with a different version of the sync script.")
         print("Comparison results may be unreliable.\n")
     
+    unhandled.start()
     print("=== Starting Project Comparison ===")
     print("Comparing: CODESYS IDE <-> " + base_dir)
     start_time = time.time()
@@ -137,11 +138,17 @@ def compare_project(projects_obj=None):
         elif action == "export":
             return perform_export(base_dir, selected, unchanged_count)
 
-    # Compare only looks. Differences are the answer, not a failure.
-    return entry.result(True, counts,
+    # Compare only looks, so differences are the answer, not a failure. An
+    # object it could not classify is a different matter: it is missing from
+    # every one of those counts, which makes the answer wrong rather than
+    # inconvenient (SPEC D13).
+    missing = unhandled.names()
+    return entry.result(not missing,
+                        counts if not missing else
+                        counts + " -- " + unhandled.summary(),
                         different=len(different), new_in_ide=len(new_in_ide),
                         new_on_disk=len(new_on_disk), moved=len(moved),
-                        unchanged=unchanged_count)
+                        unchanged=unchanged_count, failed_objects=missing)
 
 
 def perform_import(primary_project, base_dir, selected, unchanged_count=0):
@@ -180,9 +187,11 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=True)
 
-    return entry.result(True, summary,
+    missing = unhandled.names()
+    return entry.result(not missing, summary,
                         updated=updated, created=created, moved=moved,
-                        deleted=deleted, failed=failed, identical=unchanged_count)
+                        deleted=deleted, failed=failed,
+                        identical=unchanged_count, failed_objects=missing)
 
 
 def perform_export(base_dir, selected, unchanged_count=0):
@@ -291,10 +300,11 @@ def perform_export(base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=False)
 
-    return entry.result(True, summary,
+    missing = unhandled.names()
+    return entry.result(not missing, summary,
                         updated=count_updated, created=count_created,
                         removed=count_removed, failed=count_failed,
-                        identical=unchanged_count)
+                        identical=unchanged_count, failed_objects=missing)
 
 
 def main():

@@ -42,6 +42,7 @@ from engine.codesys_managers import (
     get_object_path, get_parent_pou_name, export_object_content,
     build_expected_path, update_object_code, clear_path_caches
 )
+from engine import unhandled
 
 
 # The managers are stateless; one shared instance spares the engine from
@@ -220,93 +221,103 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     p1_start = time.time()
     path_cache_hits = 0
     for obj in all_ide_objects:
-        obj_guid = safe_str(obj.guid)
+        # One guard for the whole per-object step, not one around each
+        # read inside it. Every attribute of an object whose plugin is
+        # missing can raise -- .guid here, .type in classify_object --
+        # and this loop is where a command meets the objects it cannot
+        # handle. It names them and carries on; giving up on the first
+        # one used to lose all 229 (SPEC D13, engine/unhandled.py).
+        try:
+            obj_guid = safe_str(obj.guid)
         
-        # Check type cache first to avoid classify_object AND path building
-        # Cache stores (eff_type, is_xml, cached_rel_path)
-        cached_info = cached_types.get(obj_guid)
-        cached_rel_path = cached_info[2] if (cached_info and len(cached_info) > 2) else None
-        if cached_rel_path:
-            # Fast path: trust the cache ONLY for objects that previously had a
-            # real path (i.e. were exported). Validate it against the live tree
-            # in case the object was moved/renamed in IDE.
-            eff_type, is_xml = cached_info[0], cached_info[1]
-            should_skip = False
-            fresh_path = build_expected_path(obj, eff_type, is_xml)
-            if fresh_path and fresh_path != cached_rel_path:
-                # Path disagrees with the cache: the object moved/renamed in the
-                # IDE, or the cached classification predates the current profile.
-                # Re-classify rather than keeping a stale (eff_type, is_xml) —
-                # those decide .st vs .xml, so half-trusting them yields a path
-                # that neither export nor import agrees on.
+            # Check type cache first to avoid classify_object AND path building
+            # Cache stores (eff_type, is_xml, cached_rel_path)
+            cached_info = cached_types.get(obj_guid)
+            cached_rel_path = cached_info[2] if (cached_info and len(cached_info) > 2) else None
+            if cached_rel_path:
+                # Fast path: trust the cache ONLY for objects that previously had a
+                # real path (i.e. were exported). Validate it against the live tree
+                # in case the object was moved/renamed in IDE.
+                eff_type, is_xml = cached_info[0], cached_info[1]
+                should_skip = False
+                fresh_path = build_expected_path(obj, eff_type, is_xml)
+                if fresh_path and fresh_path != cached_rel_path:
+                    # Path disagrees with the cache: the object moved/renamed in the
+                    # IDE, or the cached classification predates the current profile.
+                    # Re-classify rather than keeping a stale (eff_type, is_xml) —
+                    # those decide .st vs .xml, so half-trusting them yields a path
+                    # that neither export nor import agrees on.
+                    eff_type, is_xml, should_skip = classify_object(obj)
+                    rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
+                    path_invalidations += 1
+                    log_info("Path invalidated for GUID %s: '%s' -> '%s'" % (obj_guid, cached_rel_path, rel_path))
+                else:
+                    rel_path = cached_rel_path
+                    path_cache_hits += 1
+            else:
+                # Cache miss OR a cached "skip" (rel_path None): always re-classify so
+                # newly-supported types aren't buried forever by a stale skip decision
+                # (which here would also get the disk file deleted as a false orphan).
                 eff_type, is_xml, should_skip = classify_object(obj)
                 rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
-                path_invalidations += 1
-                log_info("Path invalidated for GUID %s: '%s' -> '%s'" % (obj_guid, cached_rel_path, rel_path))
-            else:
-                rel_path = cached_rel_path
-                path_cache_hits += 1
-        else:
-            # Cache miss OR a cached "skip" (rel_path None): always re-classify so
-            # newly-supported types aren't buried forever by a stale skip decision
-            # (which here would also get the disk file deleted as a false orphan).
-            eff_type, is_xml, should_skip = classify_object(obj)
-            rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
 
-        # ── CRITICAL: honor the same export_xml gate that export uses ──
-        # Export does NOT write XML-type objects to disk when export_xml is off
-        # (Library Manager, Visualizations, Alarm config, Trace, ...). Without
-        # the same gate here, Pass 2 sees "no disk file" for them, marks them as
-        # orphans, and import then DELETES them. Skip them entirely so they are
-        # never treated as orphans. task_config / NVL are always exported, so
-        # they are not skipped (matches entry_export.py).
-        if not export_xml and is_xml and eff_type in XML_TYPES:
-            if eff_type not in (TYPE_GUIDS["task_config"],
-                                TYPE_GUIDS["nvl_sender"],
-                                TYPE_GUIDS["nvl_receiver"]):
+            # ── CRITICAL: honor the same export_xml gate that export uses ──
+            # Export does NOT write XML-type objects to disk when export_xml is off
+            # (Library Manager, Visualizations, Alarm config, Trace, ...). Without
+            # the same gate here, Pass 2 sees "no disk file" for them, marks them as
+            # orphans, and import then DELETES them. Skip them entirely so they are
+            # never treated as orphans. task_config / NVL are always exported, so
+            # they are not skipped (matches entry_export.py).
+            if not export_xml and is_xml and eff_type in XML_TYPES:
+                if eff_type not in (TYPE_GUIDS["task_config"],
+                                    TYPE_GUIDS["nvl_sender"],
+                                    TYPE_GUIDS["nvl_receiver"]):
+                    continue
+
+            # Per-kind sync direction (profiles/default.json): kinds that are not
+            # exported must never enter the comparison — a missing disk file would
+            # mark them is_orphan and import would delete them from the IDE.
+            if not kind_allows_export(eff_type):
                 continue
 
-        # Per-kind sync direction (profiles/default.json): kinds that are not
-        # exported must never enter the comparison — a missing disk file would
-        # mark them is_orphan and import would delete them from the IDE.
-        if not kind_allows_export(eff_type):
-            continue
-
-        if should_skip or not rel_path:
-            continue
+            if should_skip or not rel_path:
+                continue
         
-        # Optimization: Collect property accessors during this same loop
-        if eff_type == TYPE_GUIDS["property"]:
-            try:
-                if obj_guid not in property_accessors:
-                    property_accessors[obj_guid] = {'get': None, 'set': None}
+            # Optimization: Collect property accessors during this same loop
+            if eff_type == TYPE_GUIDS["property"]:
+                try:
+                    if obj_guid not in property_accessors:
+                        property_accessors[obj_guid] = {'get': None, 'set': None}
                 
-                for child in obj.get_children():
-                    child_name = child.get_name().upper()
-                    if child_name == "GET":
-                        property_accessors[obj_guid]['get'] = child
-                    elif child_name == "SET":
-                        property_accessors[obj_guid]['set'] = child
-            except:
-                pass
+                    for child in obj.get_children():
+                        child_name = child.get_name().upper()
+                        if child_name == "GET":
+                            property_accessors[obj_guid]['get'] = child
+                        elif child_name == "SET":
+                            property_accessors[obj_guid]['set'] = child
+                except:
+                    pass
 
-        # Update type cache with path
-        current_types[obj_guid] = (eff_type, is_xml, rel_path)
+            # Update type cache with path
+            current_types[obj_guid] = (eff_type, is_xml, rel_path)
 
-        norm_path = normalize_path(rel_path)
-        ide_paths[rel_path] = obj
-        ide_metadata[norm_path] = (eff_type, is_xml)
+            norm_path = normalize_path(rel_path)
+            ide_paths[rel_path] = obj
+            ide_metadata[norm_path] = (eff_type, is_xml)
         
-        # Quick hash for ST
-        q_hash = get_quick_ide_hash(obj, is_xml)
+            # Quick hash for ST
+            q_hash = get_quick_ide_hash(obj, is_xml)
         
-        # For XML objects: use cached ide_hash to allow Merkle skip for mixed folders
-        if not q_hash and is_xml:
-            cached_entry = cached_objects.get(norm_path)
-            if cached_entry:
-                q_hash = cached_entry.get("ide_hash")
+            # For XML objects: use cached ide_hash to allow Merkle skip for mixed folders
+            if not q_hash and is_xml:
+                cached_entry = cached_objects.get(norm_path)
+                if cached_entry:
+                    q_hash = cached_entry.get("ide_hash")
                 
-        ide_hashes[norm_path] = q_hash
+            ide_hashes[norm_path] = q_hash
+        except Exception as exc:
+            unhandled.note(obj, exc)
+            log_error("Cannot read " + unhandled.name_of(obj) + ": " + safe_str(exc))
 
     # Build folder hashes (Merkle Tree)
     from engine.codesys_utils import build_folder_hashes
@@ -940,13 +951,18 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
                             print("  Updated (native batch): " + rel_path)
                     else:
                         log_error("Batch import could not find " + name + " after import.")
+                        unhandled.note(name, "not found after batch import")
                         failed += 1
                         
             except Exception as e:
                 log_error("Batch import failed for " + safe_str(container) + ": " + safe_str(e))
+                for queued in items:
+                    unhandled.note(queued[2], e)
                 failed += len(items)
         else:
             log_error("Failed to merge XML for " + safe_str(container))
+            for queued in items:
+                unhandled.note(queued[2], "XML for its container could not be merged")
             failed += len(items)
         
         if os.path.exists(temp_xml):
@@ -1189,6 +1205,7 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
                         deleted_count += 1
                     except Exception as e:
                         log_error("Failed to delete " + item["name"] + ": " + safe_str(e))
+                        unhandled.note(item["name"], e)
                         failed_count += 1
                     continue
 
@@ -1253,6 +1270,7 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
 
         except Exception as e:
             log_error("Failed to process " + item.get("path", "unknown") + ": " + safe_str(e))
+            unhandled.note(item.get("path", "unknown"), e)
             failed_count += 1
 
     # ═══════════════════════════════════════════════════════════════════
@@ -1352,10 +1370,12 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
                 if res:
                     created_count += 1
                 else:
+                    unhandled.note(item.get("path", "unknown"), "could not be created in the IDE")
                     failed_count += 1
 
         except Exception as e:
             log_error("Failed to import ST " + item.get("path", "unknown") + ": " + safe_str(e))
+            unhandled.note(item.get("path", "unknown"), e)
             failed_count += 1
 
     # No save here: the caller finishes with finalize_sync_operation(), which

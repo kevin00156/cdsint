@@ -24,7 +24,7 @@ from engine.codesys_managers import (
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers
-from engine import entry
+from engine import entry, unhandled
 
 # Shared constants and utilities imported from modules
 
@@ -61,6 +61,17 @@ def cleanup_orphaned_files(export_dir, current_objects):
                 orphaned_items.append(rel_path)
 
     if not orphaned_items:
+        return 0
+
+    # An object this run could not classify has no path, so its .st file looks
+    # like an orphan and deleting it would throw away a file the project still
+    # needs. The run does not know which files those are -- that is what "could
+    # not classify" means -- so it deletes none of them.
+    if unhandled.any_so_far():
+        print("Orphan cleanup skipped: " + unhandled.summary())
+        log_warning("Not deleting %d orphan(s): this run could not classify "
+                    "every object, so some of them may belong to one of those."
+                    % len(orphaned_items))
         return 0
 
     # Check for auto-delete property
@@ -166,6 +177,7 @@ def export_project(export_dir, projects_obj=None):
     
     # Create project binary backup (moved down)
     
+    unhandled.start()
     print("=== Starting Project Export ===")
     # The multipleApps flag is set after the main loop, from the classification
     # that loop already performs. Doing it up front meant a second recursive
@@ -337,8 +349,9 @@ def export_project(export_dir, projects_obj=None):
                 
         except Exception as e:
             exported_failed += 1
-            log_error("Error exporting " + safe_str(obj) + ": " + safe_str(e))
-    
+            unhandled.note(obj, e)
+            log_error("Error exporting " + unhandled.name_of(obj) + ": " + safe_str(e))
+
     set_application_count_flag(app_count)
 
     # Orphan cleanup now uses exported_paths set directly
@@ -391,12 +404,17 @@ def export_project(export_dir, projects_obj=None):
     except NameError:
         print("Export complete!\n" + summary + "\nLocation: " + export_dir + "\nTime elapsed: " + elapsed_text)
 
-    # Objects that failed are counted, not fatal: the run still wrote every
-    # object it could, and log_error named each one it could not.
-    return entry.result(True, summary,
+    # Disk is the source of truth (SPEC target 1), so an export that left
+    # objects behind is not a finished export, however many it did write.
+    # It still wrote all the others: giving up on the first bad object
+    # would be worse than reporting the ones that did not make it.
+    missing = unhandled.names()
+    return entry.result(not missing, summary if not missing else
+                        summary + " -- " + unhandled.summary(),
                         new=exported_new, updated=exported_updated,
                         identical=exported_identical, removed=removed_count,
-                        failed=exported_failed, total=exported_total)
+                        failed=len(missing), total=exported_total,
+                        failed_objects=missing)
 
 
 def main():

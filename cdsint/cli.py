@@ -217,7 +217,15 @@ def _report(result, as_json):
         said.append(message.get("text", ""))
         print("%s: %s" % (message.get("level", "info"), said[-1]))
     for key, value in sorted((result.get("data") or {}).items()):
-        print("  %-16s %s" % (key, value))
+        # A list gets a line each: the one that matters is the names of the
+        # objects a command could not handle, and those are what the reader
+        # has to go and look up.
+        if isinstance(value, list):
+            print("  %-16s %d" % (key, len(value)))
+            for item in value:
+                print("  %-16s   %s" % ("", item))
+        else:
+            print("  %-16s %s" % (key, value))
     needs = result.get("needs_input")
     if needs:
         said.append(needs.get("question"))

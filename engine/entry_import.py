@@ -25,7 +25,7 @@ from engine.codesys_compare_engine import (
     find_all_changes, perform_import_items, build_device_remap, summarize_device_remap
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
-from engine import entry
+from engine import entry, unhandled
 
 
 
@@ -75,6 +75,7 @@ def import_project(projects_obj=None):
         system.ui.error(block)
         return entry.result(False, block)
 
+    unhandled.start()
     print("=== Starting Project Import ===")
     print("Importing from: " + base_dir)
     start_time = time.time()
@@ -126,8 +127,13 @@ def import_project(projects_obj=None):
         msg = "No changes to import.\nAll " + str(unchanged_count) + " objects are in sync."
         print(msg)
         system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
-        return entry.result(True, msg, updated=0, created=0, moved=0, deleted=0,
-                            failed=0, identical=unchanged_count)
+        missing = unhandled.names()
+        if missing:
+            msg += " " + unhandled.summary()
+        return entry.result(not missing, msg, updated=0, created=0, moved=0,
+                            deleted=0, failed=len(missing),
+                            identical=unchanged_count,
+                            failed_objects=missing)
 
 
     # Show what we're about to import
@@ -211,11 +217,16 @@ def import_project(projects_obj=None):
     except NameError:
         print("Import complete!\n" + summary)
 
-    # Items that failed are counted, not fatal: perform_import_items named
-    # each one it could not land, and the rest of the import stands.
-    return entry.result(True, summary,
+    # Disk is the source of truth (SPEC target 1), so an import that left
+    # items on disk is not a finished import. The rest of them still landed:
+    # stopping at the first one would be worse than naming the ones that
+    # did not.
+    missing = unhandled.names()
+    return entry.result(not missing, summary if not missing else
+                        summary + " -- " + unhandled.summary(),
                         updated=updated, created=created, moved=moved,
-                        deleted=deleted, failed=failed, identical=unchanged_count)
+                        deleted=deleted, failed=failed,
+                        identical=unchanged_count, failed_objects=missing)
 
 
 def main():

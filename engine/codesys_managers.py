@@ -21,6 +21,7 @@ from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, EXPORTABLE_TYPES, IMPLEMENTATION_TYPES,
     XML_TYPES as XML_TYPES_CONST, kind_of, sync_direction_of
 )
+from engine import unhandled
 
 # Distinguishes "property absent" from "property present and falsy" when
 # reading an IDE object with a single getattr instead of hasattr-then-read.
@@ -591,8 +592,20 @@ def classify_object(obj):
         - effective_type: the resolved type GUID (e.g. NVL replaces GVL)
         - is_xml: True if object should be exported/compared as native XML
         - should_skip: True if object should be ignored (property_accessor, task, etc.)
+
+    An object the IDE will not describe comes back as a skip with its name in
+    engine/unhandled.py, never as an exception. Reading .type raises when the
+    plugin that owns the object is not installed — a project opened in another
+    vendor's IDE — and this has five call sites, four of which were inside a
+    try/except and one of which was not. The command that went through the
+    one that was not lost all 229 objects to a traceback (SPEC D13).
     """
-    obj_type = safe_str(obj.type)
+    try:
+        obj_type = safe_str(obj.type)
+    except Exception as exc:
+        unhandled.note(obj, exc)
+        log_error("Cannot classify %s: %s" % (unhandled.name_of(obj), safe_str(exc)))
+        return "", False, True
     kind = kind_of(obj_type)
     # Normalize alias GUIDs (alternate method/enum variants, ...) onto the
     # kind's primary GUID so downstream comparisons, filenames and the sync
