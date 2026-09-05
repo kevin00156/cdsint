@@ -4,11 +4,22 @@
 「改程式、進 IDE、編譯、讀錯誤、再修」，不必請人去點選單。
 
 CODESYS 的專案檔是二進位的，你改不了。你能改的是同步資料夾裡的 `.st` 文字檔，
-再叫 IDE 把它們讀進去。IDE 必須是開著的——這套工具是「代替人按按鈕」，不是無頭編譯器。
+再叫 IDE 把它們讀進去。
+
+有兩種情況，命令一樣，只差你怎麼指定要驅動哪個 IDE：
+
+- **人開著 IDE**，你用 `--target` 對他那個 IDE 裡的看門人下命令。這是第 0 節到第 3 節。
+- **沒有人、也沒有開著的 IDE**，你用 `--project P --install I` 讓 cdsint 自己起一個
+  無頭的 IDE、跑完、收掉。這是第 4 節。
+
+兩組旗標不能同時給，argparse 會直接擋。原因是 CODESYS 不允許兩個行程開同一個專案檔，
+所以同一條命令本來就只有一條路走得通。
 
 ---
 
-## 0. 前提：IDE 開著、看門人啟動了
+## 0. `--target` 形式的前提：IDE 開著、看門人啟動了
+
+第 0 到 3 節講的都是「人開著 IDE」那條路。IDE 沒開的話直接跳到第 4 節。
 
 人要先做兩件事，你做不到：打開 CODESYS 或 DIADesigner、開好專案，
 然後從 **Tools > Scripting** 跑一次 `Project_watch.py`。那支腳本會立刻結束，
@@ -113,6 +124,7 @@ cdsint export
 | 1 | 命令失敗，或缺一個旗標 | 讀 `error` 與 `needs_input`，補旗標或修錯誤 |
 | 2 | 找不到、或找不清是哪個 IDE | 跑 `list` 看有幾個，用 `--target` 指定 |
 | 3 | 等結果等到逾時 | 加大 `--timeout`（預設 120 秒），大專案的匯入會超過 |
+| 4 | 專案被別的行程開著，或 IDE 起不來 | 只有 `--project` 形式會出現，見第 4 節 |
 
 ### `--json` 的結構
 
@@ -133,7 +145,9 @@ cdsint export
 - `stdout_tail` 是細節：compare 的逐物件差異、build 的錯誤清單都在這裡。
 - `error` 有值就代表失敗，`ok` 一定是 false。
 - `needs_input` 有值代表「有個問題沒人回答」，裡面的 `arg` 直接告訴你該補哪個旗標。
-- `data` 只有 `status` 和 `list` 會填。
+- `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
+  `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
+- `--project` 形式的紀錄還多兩個欄位：`ide`（用了哪一套）與 `report_path`（完整報告在哪）。
 
 ### `needs_input` 出現時
 
@@ -166,7 +180,89 @@ cdsint import --yes --timeout 600
 
 ---
 
-## 4. 多個 IDE 同時開著
+## 4. 沒有開著的 IDE：`--project` 形式
+
+沒有人在鍵盤前的時候，改用這一組旗標，cdsint 會自己起一個無頭的 IDE、開專案、
+跑命令、寫報告，然後讓那個行程自己結束。
+
+先看這台有哪些 IDE：
+
+```
+cdsint installs
+```
+
+每一套印出名字、執行檔、profile 名稱與 ScriptDir。`--install` 收的就是那個名字的一段，
+例如 `3.5.21.40` 或 `DIADesigner-AX 1.10`。**符合的不只一套就會被拒絕，不會替你猜**，
+因為猜錯的代價是整趟跑在一個開不了這個專案的 IDE 上。
+
+然後跟前面一樣的命令，換一組旗標：
+
+```
+cdsint compare --project C:\p\line.project --install 3.5.21.40
+cdsint import -y --project C:\p\line.project --install 3.5.21.40
+cdsint build --project C:\p\line.project --install 3.5.21.40 --report r.json
+```
+
+只有這個形式才有的旗標：
+
+| 旗標 | 做什麼 |
+|---|---|
+| `--report FILE` | 把完整報告寫到這裡。不給就寫進 `%TEMP%\cdsint\` |
+| `--sync-dir D` | 這一趟用這個同步資料夾，不改專案裡存的那個 |
+| `--profile NAME` | 一套安裝有多個 profile 時指定用哪個 |
+| `--force-lock` | 明知鎖檔是舊的殘留，硬跑 |
+| `--answer KEY=VALUE` | 回答 IDE 自己彈的提示，可以給多個 |
+
+### `verify`：一條命令跑完整趟
+
+```
+cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+```
+
+它依序跑 import、export、compare、build，任何一步失敗就停在那裡。exit 0 的意思是四件事
+同時成立：磁碟進得了 IDE、IDE 出得來、進出一輪之後兩邊對每一個物件的看法都一致、而且編得過。
+中間那一步是關鍵——import 和 export 各自都可能「成功」卻其實什麼都沒做，只有事後問
+compare 還有沒有差異，這一輪才算被驗過。
+
+`verify` 會自己回答匯入的確認（匯入本來就是它的定義），但版本不符還是要你給 `--force`。
+
+### 報告檔裡有什麼
+
+`--report` 寫出來的 JSON 除了每一步的紀錄，還記了幾件只有外面看得到的事：
+
+- `stdout_reached`：IDE 印的東西有沒有真的回到 stdout。
+- `exit_code_actual` 與 `exit_code_trusted`：腳本打算用的退出碼，跟外面實際收到的一不一致。
+  不一致就代表在這台機器上退出碼不能當閘門，要改讀報告檔。
+- `timed_out`：逾時被殺掉的話是 true，`error` 裡會說這通常代表有個沒人能按的對話框。
+
+### 這個形式的兩個坑
+
+**專案被開著就跑不了。** cdsint 在起 IDE 之前先看鎖檔（`.~u`），有的話直接 exit 4 並印出
+鎖檔路徑，省下二十秒的 IDE 啟動。人自己開著那個專案就是這個情況，那是預期行為，不是 bug。
+
+**IDE 自己的提示 cdsint 不會替你回答。** 舊版 IDE 存的專案開起來會問
+`UpgradeProjectConfirmation`，而答 Yes 會改寫它的儲存格式，改完原本那套 IDE 就再也開不了它。
+所以沒有預設答案：跑不起來的時候訊息會告訴你是哪個鍵，你決定要不要
+`--answer UpgradeProjectConfirmation=Yes`。
+
+---
+
+## 5. 讀寫專案設定：`config`
+
+同步資料夾、要不要存檔、備份幾份，這些都存在專案自己的屬性裡，兩種形式都能讀寫：
+
+```
+cdsint config get                          # 有值的都列出來
+cdsint config get cds-sync-folder
+cdsint config set cds-sync-debug=true
+```
+
+`config set` 寫完會存檔——不存的話那個設定在專案關掉的時候就沒了。`cds-sync-plc` 只能讀不能寫，
+那個屬性的意思是「有人在 IDE 裡決定過」。
+
+---
+
+## 6. 多個 IDE 同時開著
 
 `list` 會列出全部。有超過一個的時候，每個命令都要指定 `--target`，
 不指定的話會以 exit code 2 結束並列出候選：
@@ -180,7 +276,7 @@ cdsint build --target Shm_2026.07.29
 
 ---
 
-## 5. `.st` 檔的格式
+## 7. `.st` 檔的格式
 
 一個檔案就是一個物件，宣告區和實作區用一行標記分開：
 
@@ -205,18 +301,19 @@ count := count + 1;
 
 ---
 
-## 6. 不要做的事
+## 8. 不要做的事
 
 - **不要改 `.project` 檔。** 那是二進位的，你改了會壞掉。
 - **不要改同步資料夾以外的東西。** `sync_cache.json` 是機器本地的快取，不要碰也不要提交。
 - **PLC 在線上（logged in）時不要匯入。** 工具會自己擋下來並告訴你，別想繞過；
   上線狀態下 IDE 拒絕所有物件的建立、搬移與刪除。
-- **不要自己去啟動或關閉 IDE。** 開著的專案是人的工作現場。
+- **不要自己去啟動或關閉人開著的那個 IDE。** 開著的專案是人的工作現場。
+  `--project` 形式起的是它自己的行程、開的是你給的專案，那條路不受這一條限制。
 - **不要在不確定的時候用 `--force`。** 它是用來壓過安全檢查的，壓過去就沒有第二道防線。
 
 ---
 
-## 7. 一輪完整的例子
+## 9. 一輪完整的例子
 
 ```bash
 # 這個 IDE 開著什麼、同步資料夾在哪

@@ -70,7 +70,9 @@
 
 **D2 一個引擎，一個 CLI 命名空間，模式由旗標決定。** `--target X` 走開著的 IDE 裡的看門人，`--project P --install I` 起一個無頭 IDE。兩組旗標互斥。
 理由：兩個場景互斥，CODESYS 會擋第二個行程開同一個專案檔，所以同一條命令不會兩邊都能走。但兩邊做的是同一件事，給它們兩套詞彙只會讓子命令各自長出只有一邊有的東西。不自動偵測，因為那會讓旗標需求隨執行期狀態變，而且意外的二十秒 IDE 啟動是最難查的那種驚喜。
-現況：看門人那半有。無頭那半在分紙機專案的探路腳本裡，還沒搬進來。
+現況：兩半都有（階段 2）。`--target` 是 `cdsint/target.py`，`--project` 是
+`cdsint/headless.py` 配 `cds/ide/headless.py`。兩者對外都是 `run(steps)`，所以 `verify`
+只寫一次。argparse 用互斥群組擋住同時給。
 
 **D3 IDE 的 Scripts 選單只有三個入口：匯出、匯入、看門人。本體放在 ScriptDir 外面。**
 理由：選單是遞迴掃 ScriptDir 底下所有 `.py`，上游 v2.9.0 實測連隱藏屬性都躲不掉。
@@ -82,7 +84,8 @@
 
 **D5 IDE 內等待命令用 WinForms 計時器掛在 IDE 訊息迴圈上，腳本立刻返回。IDE 側不准 `time.sleep()`、不准 `system.delay()`、不准開執行緒、不准 `execute_on_primary_thread`。** 這條是絕對的，沒有「背景執行緒不碰 API 就可以」的例外。
 理由：`system.delay()` 不處理滑鼠鍵盤，`execute_on_primary_thread` SP21 拿掉了，CODESYS API 不是執行緒安全的。整個 IDE 側只有一種併發模式，比一條寫得精確的例外值錢。計時器設計在 ScriptEngine 4.0.0.0 與 4.2.0.0 都有真人驗過。
-現況：看門人已經是這樣。`codesys_ui.pyw` 的 `show_toast` 開一條 .NET Thread 在裡面 sleep 三秒，是唯一的違反者，階段 4 改成 Timer。`codesys_utils.pyw` 有一把 `threading.Lock`，單執行緒設計下是空轉的，同一階段決定去留。
+現況：看門人已經是這樣。`engine/codesys_ui.py` 的 `show_toast` 開一條 .NET Thread 在裡面 sleep 三秒，是唯一的違反者，階段 4 改成 Timer。`engine/codesys_utils.py` 有一把 `threading.Lock`，單執行緒設計下是空轉的，同一階段決定去留。
+`tools/headless_watch.py` 的 `park()` 用 `system.delay()`，那是這條規則唯一被允許的地方，而且只在 `--noUI`：沒有視窗就沒有畫面會凍住，而沒有東西撐著行程的話 IDE 在腳本返回的瞬間就結束，看門人一次 tick 都跑不到。它在跑之前檢查 `system.ui_present`，有 UI 就拒絕停住，所以這個例外離不開它成立的那個情況。它是驗收用的工具，不在 `cds/ide/` 底下。
 
 **D6 命令交接用檔案協定，不換 named pipe、不換 HTTP。**
 理由：現有協定已經跑過真專案，IronPython 與 CPython 都只需要標準函式庫。
@@ -90,7 +93,10 @@
 
 **D7 cdsint 自己的對話框由旗標回答，永不猜。沒有旗標就回 `needs_input`。** IDE 自己的提示不在這條的範圍內：無頭模式下它們走 `system.prompt_answers`，由 `--answer KEY=VALUE` 填，沒填到的取 IDE 的預設值並把鍵名記進 report。
 理由：場景 B 的前提是 agent 看不到視窗。IDE 內建提示那半是 IDE 在猜不是 cdsint 在猜，規格得老實寫這條界線，不能宣稱全面不猜。
-現況：看門人的替身 UI 已做。`--answer` 在探路腳本裡有，還沒搬進來。
+現況：都有（階段 2）。替身 UI 在 `cds/ide/silent.py`，兩種形式共用。`--answer` 是
+`--project` 形式的旗標，填進 `system.prompt_answers`；一個都不預設，因為
+`UpgradeProjectConfirmation` 答 Yes 會改寫專案的儲存格式，之後舊版 IDE 就開不了它。
+沒答到的提示靠 `LogMessageKeys` 把鍵名印到 stdout，訊息會說去補哪個 `--answer`。
 
 **D8 只有碰 PLC 的動作受權限管，兩層。** 專案屬性 `cds-sync-plc` 決定這個專案允不允許，`-y` 確認這一次呼叫。看門人模式一律拒絕 PLC 命令。
 理由：一個 agent 下錯命令現在能直接下載到 PLC。`export`、`import`、`compare`、`build` 不碰硬體，把它們放進權限清單只會讓每個命令多一次預檢，換來三個場景都用不到的功能。看門人跑在使用者的 IDE 裡，登入會搶走使用者的線上狀態。
@@ -163,8 +169,10 @@
 | `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、比 CRC |
 | `config get`、`config set KEY=VALUE` | 有 | 有 | 讀寫 4.4 的屬性，`cds-sync-plc` 除外 |
 
-共用旗標：`--timeout 秒`（預設 120）、`--json`、`--answer KEY=VALUE`（可多個，D7）。
-只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`。
+共用旗標：`--timeout 秒`（預設 120）、`--json`。
+只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`、
+`--answer KEY=VALUE`（可多個，D7）。`--answer` 回答的是 IDE 自己的提示，而 `--target` 那半的
+IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那一排。
 
 `-y` 的意思統一是「確認這一步會改狀態」，`import` 和 `plc download` 共用。沒給就印出這趟會做什麼，回 `needs_input`，exit 1，什麼都不改。沒有 `-N`，因為沒給 `-y` 就已經是「不做」，其他有安全預設值的對話框各自有具名旗標，`--force` 答版本和電腦不符，`--delete-orphans` 答刪孤兒。
 
@@ -338,6 +346,12 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 
 已知還沒解的：Delta 1.10 無頭、專案剛升級過儲存格式之後第一次 `save()` 丟 NullReferenceException。啟動器印一行繼續，不中止。
 
+現況：階段 2 做完，CLI 側是 `cdsint/headless.py`，IDE 側是 `cds/ide/headless.py`，PowerShell 那支退役。
+表裡「專案路徑走環境變數」的落地是一個環境變數 `CDSINT_HEADLESS_JOB` 指向一個 JSON 工作檔，
+專案路徑、命令清單、`--answer` 的答案都在裡面；理由跟原本那一列一樣，而且順帶讓兩側不必為了
+每個新旗標各長一個環境變數。IDE 側跑完寫 JSON 報告，CLI 側再把只有外面知道的事補進去：
+`stdout_reached`（兩個標記都看到才算）、`exit_code_actual` 與 `exit_code_trusted`、`timed_out`。
+
 ### 6.5 權限
 
 D8 的落地。
@@ -368,7 +382,7 @@ D8 的落地。
 2. 電腦名稱不符：警告，問要不要繼續，`--force` 回答。
 3. 其他屬性透過 `cdsint config get/set` 讀寫。看門人的狀態視窗放一個「設定」按鈕，開跟現在 `Project_parameters.py` 一樣的對話框。這樣沒有 CLI 的人也改得到。
 
-現況：階段 1 已做，程式在 `engine/settings.py`。「存成相對路徑」的落地是：選到的資料夾在專案檔那一層或底下才寫成 `./...`，其他情形（別的磁碟、專案外面）維持絕對路徑，理由是 `..\..\` 這種相對路徑只在專案不搬家時才成立。`config get/set` 是階段 2，在那之前 `--target` 形式第一次跑會回 `needs_input`，訊息說去 Project Information > Properties 加屬性或從選單跑一次匯出。
+現況：階段 1 已做，程式在 `engine/settings.py`。「存成相對路徑」的落地是：選到的資料夾在專案檔那一層或底下才寫成 `./...`，其他情形（別的磁碟、專案外面）維持絕對路徑，理由是 `..\..\` 這種相對路徑只在專案不搬家時才成立。`config get/set` 階段 2 做了，在 `cds/ide/config.py`，兩種形式都有；讀寫的是 4.4 那張表列的屬性，名字不在表上就拒絕，`cds-sync-plc` 只讀不寫。`config set` 寫完會存檔，因為一個只活在記憶體裡的設定在專案關掉時就沒了，而無頭模式沒有人會禮貌地關它；代價是使用者手上還沒存的編輯會跟著落地，所以 summary 會說「project saved」。第一次跑 export 或 import 而還沒設同步資料夾時，`--target` 形式仍然回 `needs_input`，訊息現在會告訴你三條路：`cdsint config set`、Project Information > Properties、或從選單跑一次匯出。
 
 ---
 
@@ -383,11 +397,16 @@ D8 的落地。
 | CLI export、import、build | 驗過，229 個物件 | 未驗 | 未驗 | 未驗 | 驗過 |
 | 無頭起得來 | 驗過 | 驗過 | 未驗 | 未驗 | 驗過 |
 | 無頭開得了專案、跑得了引擎 | 驗過 | 未驗 | 未驗 | 未驗 | 驗過 |
-| 無頭 build | 驗過 | 未驗 | 未驗 | 未驗 | 驗過 |
+| 無頭 build | 驗過 | 未驗 | 未驗 | 未驗 | 驗過，要修過才會真的編譯，見底下 |
+| `verify --project` 一條命令跑完 | 驗過 | 未驗 | 未驗 | 未驗 | 驗過 |
 | 無頭 boot app 產出 | 未驗 | 未驗 | 未驗 | 未驗 | 失敗，NullReferenceException |
 | PLC connect、download | 未驗 | 未驗 | 未驗 | 未驗 | 未驗 |
 
-這張表的每一格都是「同一家 IDE 開它自己的專案」。9 月 5 日階段 1 驗收各驗了一輪：原廠 3.5.21.40 開 softplc 副本、Delta 1.10 開 Shm 副本，`export`、`import`、`compare`、`build` 都 exit 0，229 個物件，build 0 errors。
+這張表的每一格都是「同一家 IDE 開它自己的專案」。9 月 5 日階段 1 驗收各驗了一輪：原廠 3.5.21.40 開 softplc 副本、Delta 1.10 開 Shm 副本，`export`、`import`、`compare`、`build` 都 exit 0，229 個物件，build 0 errors。階段 2 用 `verify --project` 對同樣兩個副本各再跑一輪，四步全過。
+
+**ScriptEngine 4.0.0.0 的 build 有兩個坑，兩個都是階段 2 在 Delta 1.10 上量出來、修掉的**，Lenze 3.24 同版本應該一樣（未驗）。一是 `get_message_objects` 在 4.0.0.0 沒有單參數的形式，兩個多載都要再給一個 severity；只給 category 會丟 `Value cannot be null. Parameter name: category`，整份 build 結果就變成一個 traceback。二是那個 category 還得正在裝著訊息，一次什麼都沒重編的 build 讓它空著，同一個呼叫同樣丟那句話。4.2.0.0 兩件都容忍，所以原廠一直沒露出來。
+
+更要緊的是底下那一個：**Delta 1.10 一個行程裡的第一次 `app.build()` 不會真的編譯**。同一個 IDE 連跑三次量到 7.4 秒沒有任何訊息、31.7 秒 101 個警告、5.8 秒同樣 101 個。而 `--project` 形式一個行程只跑得到第一次，所以它本來會回報一份它根本沒編過的乾淨結果。現在的做法是：一次 build 如果連自己的摘要行都沒寫，就再 build 一次；兩次都沒有的話回報「這台 IDE 沒有產出任何 build 輸出」而不是 0 個錯誤。
 
 跨家開專案是另一回事，而且現在有明確的行為：原廠開 Delta 的 Shm 專案時，7 個物件的外掛不在，三個命令都 exit 1、把那 7 個名字放進 `data.failed_objects`、其他 229 個照常處理完（D13、D11）。這不是「支援跨家」，是「跨家時不騙人」。
 
@@ -398,6 +417,18 @@ D8 的落地。
 | export | 59.7 秒 | 56.6 秒 |
 | compare，只改一個 POU | 50.6 秒 | 47.1 秒 |
 | build | 23.3 秒 | 32.5 秒 |
+
+階段 2 的 `verify --project` 一整趟，同樣 229 個物件，9 月 5 日量的。這一組的每一步都是
+「沒有差異」的情況（磁碟與 IDE 早已一致），所以比上面那組快；上面那組留著當基準，
+兩組不能互相取代。IDE 啟動加開專案另外算，兩家都是三十幾秒。
+
+| 步驟 | 原廠 3.5.21.40（softplc 副本） | Delta 1.10（Shm 副本） |
+|---|---|---|
+| import | 24.2 秒 | 18.4 秒 |
+| export | 14.8 秒 | 14.8 秒 |
+| compare | 13.2 秒 | 14.0 秒 |
+| build | 23.5 秒 | 31.3 秒 |
+| 一整趟（含啟動） | 124.6 秒 | 142.3 秒 |
 
 ---
 
@@ -411,7 +442,7 @@ D8 的落地。
 |---|---|---|
 | `cds/core` 與 CLI 的純函式 | CI，CPython 3.12 | 有 |
 | 引擎邏輯，用假 IDE 物件 | CI | 有，389 個 |
-| 真 IDE 驗收：無頭起一個專案副本，跑 export、import、build，比對輸出 | 本機，手動或排程，三家各一次 | 有啟動器（`tools/open_copy_and_watch.py`），沒有一鍵跑完的腳本 |
+| 真 IDE 驗收：無頭起一個專案副本，跑 export、import、build，比對輸出 | 本機，手動或排程，三家各一次 | `cdsint verify --project` 就是那個腳本（階段 2）。`--target` 那半要一個開著的 IDE，`tools/headless_watch.py` 起得出來 |
 
 **CI** 在 push 到任何分支都跑，不只 `main` 與 `claude/**`。
 
@@ -443,7 +474,7 @@ D8 的落地。
 | `Project_perf_test.py` | 刪除。`perf_probe` 已經取代它，而且它的檔名符合 `*_test.py`，今天讓 `python -m pytest` 在收集階段就報錯 |
 | `codesys_*.pyw` | 搬進 `engine/`，副檔名改回 `.py`，因為已經不在 ScriptDir 裡 |
 | `cli/cds_ide.py` | 改成 `cdsint/` 套件，拆成四個模組 |
-| `tools/open_copy_and_watch.py`、`tools/watch_harness.py` | 變成無頭啟動器的 IDE 側，歸 `cds/ide/` |
+| `tools/open_copy_and_watch.py`、`tools/watch_harness.py` | 開專案那半歸 `cds/ide/headless.py`；「掛看門人再停住不退出」那半留在 `tools/headless_watch.py`，因為它用 `system.delay()`，而 D5 禁的就是那個（見 D5 現況） |
 | 分紙機的 `codesys-probe.ps1`、`codesys_probe.py` | 搬進本 repo，PowerShell 退役，分紙機的 Makefile 改呼叫 `cdsint ... --project` |
 | `cds/__init__.py` 的 `VERSION` | 刪除，沒人讀 |
 | `docs/WATCHER_CLI_PLAN.md`、`docs/RESEARCH_HTTP_IDE_CONTROL.md`、`docs/REWORK_PLAN.md`、`WORKFLOW.md` | 進 `docs/history/`，見第 9 節 |

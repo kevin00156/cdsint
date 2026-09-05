@@ -292,9 +292,10 @@ def _no_folder_dialog(*args, **kwargs):
     would freeze the IDE until someone walked over to the machine. Refuse
     instead, and say what to go and do.
     """
-    raise NeedsInput("this project has no sync folder yet; set the "
-                     "cds-sync-folder property in Project Information > "
-                     "Properties, or run export once from the Scripts menu")
+    raise NeedsInput("this project has no sync folder yet; run `cdsint config "
+                     "set cds-sync-folder=<path>`, or set that property in "
+                     "Project Information > Properties, or run export once "
+                     "from the Scripts menu")
 
 
 def _yes_no(args):

@@ -1,14 +1,21 @@
 ---
 name: cdsint
-description: Drive a running CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, or building a PLC application (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC).
+description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, or building a PLC application (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC).
 ---
 
 # Driving a CODESYS IDE from the shell
 
 CODESYS project files are binary and cannot be edited. What can be edited are the
 `.st` text files in the project's sync folder; the IDE is then told to read them
-back in. The IDE must be open — this drives a running IDE, it is not a headless
-compiler.
+back in.
+
+There are two ways to say which IDE, and they are mutually exclusive because
+CODESYS will not open one project twice:
+
+- **`--target X`** drives the watcher inside an IDE somebody has open. Start here
+  when the user is at the machine with their project up.
+- **`--project P --install I`** starts an IDE of its own, runs the command and
+  lets it go. This is the one for a project nobody has open.
 
 `cdsint` is a console command, installed with `pip install -e .` from a clone of
 the cdsint repo. If the command is not on PATH, ask the user where that repo is
@@ -20,11 +27,12 @@ checked out and run `python -m cdsint.cli` from it instead.
 cdsint list
 ```
 
-One line per listening IDE. **Nothing listed means nobody can be driven** — ask the
-user to open their project and run `Project_watch.py` once from **Tools > Scripting**.
-That script finishes immediately and leaves a listener behind; the IDE stays usable.
-Do not try to start an IDE yourself: a second instance cannot open a project that
-another IDE already has open.
+One line per listening IDE. Nothing listed means nothing to `--target`: either ask
+the user to run `Project_watch.py` once from **Tools > Scripting** (it finishes
+immediately and leaves a listener behind, with the IDE still usable), or switch to
+`--project` below. Never start an IDE by hand to get around it — a second instance
+cannot open a project another IDE already has open, and that is what `--project`'s
+lock check is for.
 
 Find the sync folder — the only directory to edit — from:
 
@@ -48,16 +56,41 @@ cdsint build              # or build --app NAME
 `export` runs the other way, writing the IDE's objects out as `.st`. Run it before
 starting so the disk is current, or after an import to confirm it landed.
 
+## Nobody has it open: `--project`
+
+```
+cdsint installs                                  # names, profiles, ScriptDirs
+cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+```
+
+`--install` takes a fragment of a name from `installs`; more than one match is
+refused rather than guessed. Every command above works this way, plus:
+`--report FILE` for the full record, `--sync-dir D` to use a sync folder just for
+this run, `--force-lock`, `--profile NAME`, and `--answer KEY=VALUE` for the IDE's
+own prompts.
+
+`verify` is the one worth knowing: import, export, compare, build, and exit 0 only
+if all four agree. compare is what makes it mean something — import and export can
+each report success having done nothing, and only asking afterwards whether the IDE
+and the disk still differ turns the pair into a round trip that was checked.
+
+Two things stop a `--project` run before it starts, both on purpose. A `.~u` lock
+beside the project means something has it open: exit 4, with the lock path. And the
+IDE's own prompts get no default answer — a project saved by an older IDE asks
+`UpgradeProjectConfirmation`, and yes rewrites its storage format so that older IDE
+can never open it again. The message names the key; the user decides.
+
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` no single live IDE
 matched, `3` timed out (raise `--timeout`, default 120s; big imports and builds
-need more).
+need more), `4` the project is open elsewhere or the IDE would not start.
 
 With `--json`: `messages` carries what the IDE would have shown a person,
 `stdout_tail` carries the detail (compare's per-object list, build's error list
 with line numbers), `error` explains a failure, `needs_input` names the flag that
-was missing, `data` is filled only by `status` and `list`.
+was missing, and `data` holds this command's own numbers — the counts, and
+`failed_objects` naming anything the command could not handle.
 
 ## Flags answer the questions a person would have
 
@@ -89,7 +122,8 @@ time and wait for it.
 - Edit the `.project` file, or anything outside the sync folder.
 - Import while the PLC is logged in — the tool refuses, and the IDE would reject
   every create, move and delete anyway.
-- Start or close an IDE. The open project is someone's workbench.
+- Start or close the IDE the user has open. That project is their workbench.
+  `--project` starting one of its own is a different thing and is fine.
 - Use `--force` when unsure. It exists to override a safety check.
 
 ## The `.st` format

@@ -7,17 +7,16 @@ result — from outside, where a script or an agent can reach it.**
 A CODESYS `.project` file is binary. What you can edit, diff, review and commit
 is the text beside it. cdsint keeps the two in step and lets you say so from a
 terminal: export the project to text, edit the text, import it back, build, read
-the errors. The IDE stays usable the whole time.
+the errors. It works whether the IDE is open in front of you or not open at all.
 
 The code came out of
 [`kevin-cds-text-sync`](https://github.com/kevin00156/cds-text-sync), which is
 itself a fork of [ArthurkaX/cds-text-sync](https://github.com/ArthurkaX/cds-text-sync);
 that repo holds the history up to the move.
 
-> **Early days.** Version 0.0.1. There is no published release yet, so the
-> one-line installer has nothing to download — clone the repo and point the
-> installer at it, below. The headless mode (driving an IDE that is not open)
-> is not in this repo yet either.
+> **Early days.** Version 0.0.1, no published release yet, so the one-line
+> installer has nothing to download — clone the repo and point the installer at
+> it, below. The PLC commands (`plc connect`, `plc download`) are not built yet.
 
 ---
 
@@ -28,6 +27,42 @@ that repo holds the history up to the move.
 - Python 3.11 or later, for the `cdsint` command. Nothing else — no pip
   dependencies on either side.
 - Inside the IDE it uses only the IronPython 2.7 the IDE already ships.
+
+## Three ways it gets used
+
+### An engineer, with the IDE open
+
+Open the project, run **Project_export** once from **Tools > Scripting >
+Scripts**, and pick a sync folder when it asks. From then on the `.st` files
+beside your project are yours to edit in whatever editor you like, and
+**Project_import** reads them back. Run **Project_watch** once and the same
+things work from a terminal, with the IDE still usable between commands:
+
+```
+cdsint compare              # what differs, changes nothing
+cdsint import --yes         # disk wins
+cdsint build                # 0 errors, 101 warnings
+```
+
+### A team, through git
+
+The sync folder is the thing under version control; the `.project` binary is the
+hardware and HMI, owned by whoever maintains those. A developer pulls `main`,
+edits `.st`, imports, builds, and opens a pull request on the text. The reviewer
+reads a diff instead of a binary. Whoever owns the project file merges, exports
+once, and everyone pulls.
+
+### A pipeline, with nothing open
+
+No IDE, no person. cdsint starts one, drives it and lets it go:
+
+```
+cdsint installs                                     # what is on this machine
+cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+```
+
+`verify` imports the text, exports it back, checks the IDE and the disk still
+agree about every object, and builds. Exit 0 means all four held.
 
 ## Install
 
@@ -54,10 +89,10 @@ junctions each one's ScriptDir onto `stub\`, and writes the clone's path into
 .\irm\setup.ps1 -Clone .
 ```
 
-Run it from an elevated shell to include Lenze 3.x and Delta, whose ScriptDirs
-are outside your profile; it says which ones it skipped otherwise.
-`.\irm\setup.ps1 -List` shows what it found without touching anything, and
-`irm/setup.md` has the rest of the options.
+Run it from an elevated shell to include Delta, whose ScriptDir is inside
+Program Files; it says which ones it skipped otherwise. `.\irm\setup.ps1 -List`
+shows what it found without touching anything, and `irm/setup.md` has the rest
+of the options.
 
 <details>
 <summary>By hand, if you would rather</summary>
@@ -72,7 +107,7 @@ called `body.path` next to the stubs:
 
 Then point the IDE's ScriptDir at `stub\` with an NTFS junction. **Which
 directory that is depends on the IDE**, and getting it wrong is the usual reason
-nothing shows up in the menu:
+nothing shows up in the menu — `cdsint installs` prints the right one per IDE:
 
 | IDE | ScriptDir |
 |---|---|
@@ -90,44 +125,35 @@ mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
 `Project_export`, `Project_import`, `Project_watch`.
 
-## Using it
+## The commands
 
-### From the IDE
+Every command that touches a project takes one of two forms, and never both:
 
-Open a project and run **Project_export**. The first time it will ask where the
-sync folder should go; everything after that is one click. **Project_import**
-reads the text back in, disk wins.
+- `--target X` drives the watcher inside an IDE somebody has open. `X` is an
+  instance id or a project name, and it can be left out when only one IDE is
+  listening.
+- `--project P --install I` starts an IDE of its own, does the work and lets it
+  go. `I` is a name from `cdsint installs`.
 
-The other settings live in the project's own properties. Change them from the
-**Settings** button on the watcher's status window, or by hand in **Project
-Information > Properties**.
+| Command | `--target` | `--project` | What it does |
+|---|---|---|---|
+| `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
+| `list`, `ping`, `status`, `stop` | yes | — | the listeners' lifecycle |
+| `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
+| `import -y [--force]` | yes | yes | read the `.st` back in, disk wins |
+| `compare` | yes | yes | list what differs, change nothing |
+| `build [--app NAME]` | yes | yes | compile, report the errors |
+| `verify [--force]` | yes | yes | import, export, compare and build, all four or nothing |
+| `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
 
-### From a terminal
+Shared flags: `--timeout SECONDS` (default 120), `--json` for the raw record.
+Only with `--project`: `--profile NAME` when an install has several,
+`--report FILE`, `--force-lock`, `--sync-dir D`, and `--answer KEY=VALUE`
+(repeatable) for the IDE's own prompts.
 
-Run **Project_watch** once from the Scripts menu. It arms a timer and ends
-immediately — the IDE is yours again straight away — and leaves a listener
-behind. Run it a second time to stop it.
-
-Then, from any shell:
-
-| Command | What it does |
-|---|---|
-| `cdsint list` | which IDEs are listening |
-| `cdsint ping` | is this one answering |
-| `cdsint status` | what it has open, and where its sync folder is |
-| `cdsint export [--delete-orphans]` | write the project out as `.st` |
-| `cdsint import --yes [--force]` | read the `.st` back in, disk wins |
-| `cdsint compare` | list what differs, change nothing |
-| `cdsint build [--app NAME]` | compile, report the errors |
-| `cdsint stop` | shut the listener down |
-
-Shared flags: `--target X` picks one IDE by instance id or project name (needed
-once more than one is listening), `--timeout SECONDS` (default 120), `--json`
-for the raw record.
-
-**Every dialog is answered by a flag, never guessed.** A question with no flag
-behind it comes back as `needs_input` naming the flag you need, exit code 1, and
-nothing in the IDE changed.
+**Every dialog of cdsint's own is answered by a flag, never guessed.** A question
+with no flag behind it comes back as `needs_input` naming the flag you need, exit
+code 1, and nothing in the IDE changed.
 
 ### Exit codes
 
@@ -137,6 +163,35 @@ nothing in the IDE changed.
 | 1 | the command failed, or it needs a flag you did not give |
 | 2 | no single listening IDE matched |
 | 3 | timed out waiting for the answer |
+| 4 | the project is open elsewhere, or the IDE would not start |
+
+## FAQ
+
+**Nothing appears in the Scripts menu.** The ScriptDir differs per vendor; run
+`cdsint installs` and compare with where the junction went.
+
+**`cdsint list` says nobody is listening.** Run **Project_watch** once from the
+Scripts menu. It arms a timer and returns immediately — the IDE is yours again
+straight away. Running it a second time stops the listener.
+
+**A `--project` run says the project is open in another process.** Something has
+it open and CODESYS will not open it twice. Close that, or pass `--force-lock` if
+you know the lock file is stale.
+
+**A `--project` run stops on a prompt.** The IDE asks its own questions, and
+cdsint does not answer them for you — a project saved by an older IDE asks
+`UpgradeProjectConfirmation`, and saying yes rewrites its storage format so the
+older IDE can never open it again. The keys are printed; answer the one you mean
+with `--answer UpgradeProjectConfirmation=Yes`.
+
+**A sync says the version does not match.** The tool that wrote the sync folder
+was a different version from this one. `--force` goes ahead anyway; without it
+nothing is changed.
+
+**Where do the settings live?** In the project's own properties, prefixed
+`cds-sync-`. Read and write them with `cdsint config`, from the **Settings**
+button on the watcher's status window, or by hand in **Project Information >
+Properties**.
 
 ## Layout
 
@@ -145,8 +200,9 @@ engine/     the sync engine and the bodies behind the menu entries.
             IronPython 2.7, standard library only.
 cds/core/   the file protocol the IDE and the CLI talk over. Pure Python,
             runs on both sides, fully unit-tested.
-cds/ide/    the listener, the stand-in UI, the status window.
-stub/       the ten-line files the IDE's menu scans.
+cds/ide/    the listener, the stand-in UI, the status window, the IDE side of
+            the headless launcher.
+stub/       the fifteen-line files the IDE's menu scans.
 cdsint/     the `cdsint` command. CPython 3.11+.
 tools/      offline diagnostics: call tree, cache doctor, perf probe.
 profiles/   object-type GUIDs and per-kind sync policy, as JSON.

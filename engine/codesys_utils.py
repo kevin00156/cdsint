@@ -541,7 +541,7 @@ def load_base_dir():
     """
     base_dir = get_project_prop("cds-sync-folder")
     if not base_dir:
-        return None, "Project sync directory not set!\nRun export or import from the Scripts menu and it will ask, or add the 'cds-sync-folder' property yourself in Project Information > Properties."
+        return None, "Project sync directory not set!\nRun `cdsint config set cds-sync-folder=<path>`, or run export or import from the Scripts menu and it will ask, or add the property yourself in Project Information > Properties."
     
     # Check if path is relative
     is_relative = base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.'
@@ -628,7 +628,7 @@ def load_base_dir():
         
         return base_dir, None
     
-    return None, "Project sync directory not found: " + str(base_dir) + "\nFix the 'cds-sync-folder' property in Project Information > Properties, or clear it and run export again."
+    return None, "Project sync directory not found: " + str(base_dir) + "\nFix it with `cdsint config set cds-sync-folder=<path>`, or in Project Information > Properties, or clear it and run export again."
 
 
 def ensure_git_configs(export_dir):
