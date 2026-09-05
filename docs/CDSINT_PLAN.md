@@ -235,7 +235,7 @@ img/        readMe 用的圖
   - [x] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [x] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
   - [x] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
-  - [ ] import 刪物件的順序：父物件（POU）刪掉之後它的成員再被輪到就丟 `Object reference not set`，監督者在階段 2 重現時一次看到 51 個。改成先刪成員再刪父物件，或父物件刪掉時把它的成員從待刪清單拿掉；有測試。
+  - [x] import 刪物件的順序：父物件（POU）刪掉之後它的成員再被輪到就丟 `Object reference not set`，監督者在階段 2 重現時一次看到 51 個。改成先刪成員再刪父物件，或父物件刪掉時把它的成員從待刪清單拿掉；有測試。
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [x] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
   - [x] 驗收：IDE 側沒有 sleep、沒有執行緒。由 `tests/test_single_threaded_ide_side.py` 守著，不是靠人跑 grep；見底下的 Ruling。
@@ -304,6 +304,9 @@ img/        readMe 用的圖
 
 階段 4 新增的：
 
+- Ruling: 刪孤兒的作法是「父物件在同一張清單上的話，成員就不自己刪」，不是「先刪成員再刪父物件」 — 工單給了兩個選項，後者在這個專案的檔案佈局下不成立：方法的磁碟路徑跟它的 POU 在同一層（`Function Blocks/MC/MC.Main.st` 對 `Function Blocks/MC/MC.st`），照路徑深度排序分不出誰是誰的成員，能分的只有 IDE 物件的 `parent` 鏈。而且先刪成員等於多打一次 API，刪掉父物件本來就會把它們帶走 — 錯了的代價是無。
+- Ruling: 被父物件帶走的成員算進 `deleted`，不算 skip 也不算 failed — 那個數字是人拿去跟剛才看到的孤兒清單對的，「因為父物件被刪所以不在了」也是不在了 — 錯了的代價是報告上的刪除數比實際呼叫 `remove()` 的次數多，而那正是事實。
+- Ruling: 判斷在任何 `remove()` 之前一次算完 — 一邊刪一邊問「你的父物件是誰」，問到一半那個物件已經死了，`.parent` 自己就會丟例外，那時候「丟例外」到底是「父物件不在了」還是「這個物件本來就壞的」分不出來 — 錯了的代價是多走一趟 `to_sync`，那是純記憶體的迴圈。
 - Ruling: `cache_doctor.py` 第一節從「`disk_mtime` 存成什麼型別」改成「引擎還會不會讀這個 cache」 — 原本那一節是為了抓 int 對 float 那場格式戰，戰爭結束了，型別只剩一種；換上去的問題才是讀者第一個該知道的：`load_sync_cache` 在 cache 版本或 profile hash 對不上時整份丟掉，那樣的話底下每個數字講的都是一份沒有人會讀的檔案 — 錯了的代價是無，兩個判準都是從引擎 import 進來的，不是抄的。
 - Ruling: 順手給它補了測試（`tests/test_cache_doctor.py`），雖然工單只說改判斷式 — 這支工具的整個毛病就是「手抄了一份引擎的判斷式然後跟著漂走」，只換一次判斷式不改變它會再漂一次；測試用引擎自己的 `save_sync_cache` 寫 cache 再問醫生看到什麼，所以下次引擎那邊一改，這裡就紅。改之前先跑，四條全紅，其中一條紅得剛好：現行引擎剛寫好的一份健康 cache，舊版醫生兩邊都報 0.0% DEGRADED — 錯了的代價是無。
 - Ruling: PRINCIPLES 的兩級不是照「`engine/` 對其他」切，是照「搬過來的對這裡寫的」切 — `tools/` 底下的 `Project_discover.py`、`Project_resources.py`、`call_tree_*.py` 跟 `engine/` 同一批搬過來，性質一模一樣，照 SPEC 8 的字面切等於因為它們落在別的資料夾就要它們守新碼的規矩。判準寫成「`git log --follow` 看它是不是在本 repo 第一個 commit 就在了」，這樣不必在文件裡列一張會腐爛的檔案清單 — 錯了的代價是有人搬新東西進 `tools/` 卻以為自己在寬鬆那一級；第 1 條「一個模組一件事」沒有寬鬆級，那條先擋住他。

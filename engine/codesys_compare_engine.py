@@ -1020,6 +1020,60 @@ def order_st_files_parents_first(items):
 #  DEVICE-NAME REMAP (import safety)
 # ═══════════════════════════════════════════════════════════════════
 
+def orphans_their_parent_takes(to_sync):
+    """The orphan objects that will be gone before their own turn comes.
+
+    Removing a POU removes its methods, properties and actions with it, so an
+    orphan whose ancestor is on the same list has nothing left to remove when
+    the loop reaches it: obj.remove() answers "Object reference not set", and
+    the run reports a failure for an object that did exactly what was asked.
+    The supervisor hit 51 of those in one phase 2 import.
+
+    Worked out before any removal happens, while the tree still answers
+    questions about parents. Returns the GUIDs to leave alone; they still
+    count as deleted, because they will be.
+    """
+    doomed = {}
+    for item in to_sync:
+        if not item.get("is_orphan"):
+            continue
+        obj = item.get("obj")
+        if obj is None:
+            continue
+        try:
+            doomed[safe_str(obj.guid)] = obj
+        except Exception as exc:
+            unhandled.note(item.get("name") or obj, exc)
+
+    covered = set()
+    for guid, obj in doomed.items():
+        parent = _parent_or_none(obj)
+        while parent is not None:
+            try:
+                parent_guid = safe_str(parent.guid)
+            except Exception:
+                break
+            if parent_guid in doomed:
+                covered.add(guid)
+                break
+            parent = _parent_or_none(parent)
+    return covered
+
+
+def _parent_or_none(obj):
+    try:
+        return getattr(obj, "parent", None)
+    except Exception:
+        return None
+
+
+def _guid_or_none(obj):
+    try:
+        return safe_str(obj.guid)
+    except Exception:
+        return None
+
+
 def build_device_remap(project, to_sync):
     """Map an export's device-folder names onto the IDE's actual device names.
 
@@ -1185,6 +1239,10 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
     # device, rewrite the leading device segment of every import path onto the
     # real device. Without this, new objects get created in a phantom top-level
     # folder named after the old device and never appear under the device.
+    # Worked out before anything is removed, while every object can still be
+    # asked who its parent is.
+    taken_by_parent = orphans_their_parent_takes(to_sync)
+
     device_remap = build_device_remap(primary_project, to_sync)
     if device_remap:
         for line in summarize_device_remap(to_sync, device_remap):
@@ -1216,6 +1274,11 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
             if item.get("is_orphan"):
                 obj = item.get("obj")
                 if obj:
+                    if _guid_or_none(obj) in taken_by_parent:
+                        # Its POU is on this same list; removing that removes
+                        # this. Counted, because it will be gone either way.
+                        deleted_count += 1
+                        continue
                     try:
                         obj.remove()
                         deleted_count += 1
