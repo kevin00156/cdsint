@@ -34,9 +34,13 @@ class FakeProject(object):
     def __init__(self, path):
         self.path = path
         self.props = {}
+        self.saves = 0
 
     def get_project_info(self):
         return FakeProjectInfo(self.props)
+
+    def save(self):
+        self.saves += 1
 
 
 class FakeProjects(object):
@@ -508,15 +512,15 @@ def test_build_is_happy_when_the_named_app_comes_back(root):
 
 def _fake_build(app_name):
     """Stand in for the real script: report which application it compiled."""
-    from cds.ide import silent
+    from cds.ide import entries, silent
 
     def handler(cmd, started):
         outcome = silent.Outcome(
             [{"level": "info", "text": "%s\nErrors: 0" % app_name}], "",
             result={"ok": True, "summary": "Build Success",
                     "data": {"application": app_name, "errors": 0}})
-        error = outcome.error_text() or watcher._wrong_application(
-            cmd, cmd.get("args") or {}, outcome)
+        error = outcome.error_text() or entries.wrong_application(
+            cmd["command"], cmd.get("args") or {}, outcome)
         return commands.new_result(cmd, not error, started_at=started,
                                    error=error, messages=outcome.messages)
     return handler

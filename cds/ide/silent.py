@@ -230,7 +230,7 @@ def _ui_module():
 
     Nothing imports codesys_ui at module level -- every use of it in the
     engine is a `from engine.codesys_ui import ...` inside a function -- and
-    watcher._forget_engine() empties sys.modules of the whole engine before
+    entries.forget_engine() empties sys.modules of the whole engine before
     every command. So on any real tick it is absent at this point, and the
     old `sys.modules.get(...) or skip` left the real message boxes in place
     without a word.

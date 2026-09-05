@@ -26,6 +26,56 @@ def path_of(projects_obj):
 
 def prop(projects_obj, name):
     """One project property as text, or None. Never raises."""
+    values = _values(projects_obj)
+    if values is None:
+        return None
+    try:
+        value = values[name]
+    except Exception:
+        # An unset property is a missing key, and the collection raises
+        # rather than returning None. Nothing to report either way.
+        return None
+    return None if value is None else str(value)
+
+
+def set_prop(projects_obj, name, value):
+    """Write one project property. False when there was nowhere to write it.
+
+    The value goes in as text, which is what the property store holds. The
+    engine reads "true"/"false" and digits back out as booleans and numbers,
+    so the spelling matters to it — this only promises to store what it was
+    given.
+    """
+    values = _values(projects_obj)
+    if values is None:
+        return False
+    try:
+        values[name] = value
+    except Exception:
+        return False
+    return True
+
+
+def save(projects_obj):
+    """Write the project to disk. False when the IDE would not.
+
+    DIADesigner-AX 1.10 throws NullReferenceException from save() after it
+    has upgraded a project's storage format headless. That is a persistence
+    failure, and reporting it beats letting it end a run that has already
+    done its real work.
+    """
+    primary = getattr(projects_obj, "primary", None)
+    if primary is None:
+        return False
+    try:
+        primary.save()
+    except Exception:
+        return False
+    return True
+
+
+def _values(projects_obj):
+    """The project's property collection, or None. Never raises."""
     primary = getattr(projects_obj, "primary", None)
     if primary is None:
         return None
@@ -34,12 +84,11 @@ def prop(projects_obj, name):
         info = getter() if getter else getattr(primary, "project_info", None)
         if info is None:
             return None
-        value = getattr(info, "values", info)[name]
+        return getattr(info, "values", info)
     except Exception:
-        # The property may not be set, and older versions expose the
-        # collection differently. Either way there is nothing to report.
+        # Older versions expose the collection differently, and a project
+        # with none at all is a project with nothing to report.
         return None
-    return None if value is None else str(value)
 
 
 def sync_dir(projects_obj):

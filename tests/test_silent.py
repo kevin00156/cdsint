@@ -228,7 +228,7 @@ def test_codesys_ui_is_put_back_afterwards(tmp_path, ide, fake_codesys_ui):
 
 def test_a_body_is_not_run_at_all_when_the_dialogs_cannot_be_taken_over(
         tmp_path, ide, monkeypatch):
-    """Nothing imports codesys_ui at module level, and _forget_engine wipes
+    """Nothing imports codesys_ui at module level, and forget_engine wipes
     sys.modules before every command, so the runner has to load it itself.
     When it cannot, running the body anyway would open a real message box on
     the IDE's message loop and freeze the IDE."""
