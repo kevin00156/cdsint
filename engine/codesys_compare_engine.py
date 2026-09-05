@@ -220,7 +220,23 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     print("  Pass 1: Batch hashing IDE objects...")
     p1_start = time.time()
     path_cache_hits = 0
+    # Entries this pass will not be able to rewrite, kept so that the file
+    # they describe keeps its dirty-file guard (SPEC 6.1). An entry says what
+    # the disk held at the last sync; only an export or an import can make
+    # that statement newer, and compare does neither. Dropping it is how a
+    # look-only command used to disarm the guard for the next export.
+    carried_entries = {}
+
+    def carry_over(path):
+        if not path:
+            return
+        norm = normalize_path(path)
+        kept = cached_objects.get(norm)
+        if kept:
+            carried_entries[norm] = kept
+
     for obj in all_ide_objects:
+        obj_guid = None
         # One guard for the whole per-object step, not one around each
         # read inside it. Every attribute of an object whose plugin is
         # missing can raise -- .guid here, .type in classify_object --
@@ -260,6 +276,8 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
                 # (which here would also get the disk file deleted as a false orphan).
                 eff_type, is_xml, should_skip = classify_object(obj)
                 rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
+
+            carry_over(rel_path)
 
             # ── CRITICAL: honor the same export_xml gate that export uses ──
             # Export does NOT write XML-type objects to disk when export_xml is off
@@ -318,6 +336,11 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         except Exception as exc:
             unhandled.note(obj, exc)
             log_error("Cannot read " + unhandled.name_of(obj) + ": " + safe_str(exc))
+            # It never reached Pass 2, so nothing fresh describes its file.
+            # The type cache remembers where it used to live; that is enough
+            # to keep the old entry alive.
+            stale = cached_types.get(obj_guid) if obj_guid else None
+            carry_over(stale[2] if (stale and len(stale) > 2) else None)
 
     # Build folder hashes (Merkle Tree)
     from engine.codesys_utils import build_folder_hashes
@@ -328,7 +351,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     # ── Pass 2: Comparison ──
     print("  Pass 2: Comparing with disk...")
     p2_start = time.time()
-    new_cache_objects = {}
+    new_cache_objects = dict(carried_entries)
     
     for rel_path, obj in ide_paths.items():
         norm_path = normalize_path(rel_path)

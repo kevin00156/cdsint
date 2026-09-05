@@ -23,7 +23,8 @@ from engine.codesys_constants import TYPE_GUIDS, SCRIPT_VERSION
 from engine.codesys_utils import (
     safe_str, load_base_dir, init_logging, log_info, log_error, log_warning,
     resolve_projects, clean_filename, get_project_prop,
-    check_version_compatibility, finalize_sync_operation, create_safety_backup
+    check_version_compatibility, finalize_sync_operation, create_safety_backup,
+    load_sync_cache, save_sync_cache, build_folder_hashes
 )
 from engine.codesys_managers import (
     FolderManager, POUManager, NativeManager, ConfigManager, PropertyManager,
@@ -216,10 +217,20 @@ def perform_export(base_dir, selected, unchanged_count=0):
     # watching -- they read the difference in the compare dialog and picked
     # the IDE side -- and refusing them would be refusing the answer they
     # just gave.
+    #
+    # 'new_cache' is a different thing and it does belong here. Reading the
+    # cache is what decides whether to write; writing it records what was
+    # written. Leaving that record stale made the next ordinary export read a
+    # disk signature no entry matched, blame the disk for a change this
+    # export had just made, and refuse to write. Seeded with every existing
+    # entry so that one selected object does not cost all the others theirs.
+    old_cache = load_sync_cache(base_dir)
+    new_cache = dict(old_cache.get('objects') or {})
     context = {
         'export_dir': base_dir,
         'exported_paths': set(),
-        'property_accessors': property_accessors
+        'property_accessors': property_accessors,
+        'new_cache': new_cache
     }
     
     managers = create_import_managers()
@@ -310,6 +321,11 @@ def perform_export(base_dir, selected, unchanged_count=0):
         count_updated, count_created, count_removed, count_failed, unchanged_count)
         
     system.ui.info("Export complete!\n\n" + summary)
+
+    just_hashes = {path: record.get('ide_hash')
+                   for path, record in new_cache.items()}
+    save_sync_cache(base_dir, new_cache, build_folder_hashes(just_hashes),
+                    old_cache.get('types'))
 
     # Handle final save and backup
     projects_obj = resolve_projects(None, globals())

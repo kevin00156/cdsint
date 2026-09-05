@@ -7,6 +7,7 @@ sync cache noticed the file had changed, used that only to decide it could
 not take the fast path, and then overwrote it anyway (SPEC 6.1).
 """
 import sys
+import types
 
 import pytest
 
@@ -77,13 +78,18 @@ class DeafSystem(object):
 
 
 class Synced(object):
-    """One POU exported once, and the two ways to export it again."""
+    """One POU exported once, and the ways to look at it or export it again."""
 
-    def __init__(self, pou, path, export, from_dialog):
+    def __init__(self, pou, path, sync, export, from_dialog, look,
+                 import_answering_no, compare_engine):
         self.pou = pou
         self.file = path
+        self.sync = sync
         self.export = export
         self.export_from_dialog = from_dialog
+        self.look = look
+        self.import_answering_no = import_answering_no
+        self.compare_engine = compare_engine
 
 
 @pytest.fixture
@@ -115,7 +121,22 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
     chose_the_ide = lambda: compare.perform_export(
         str(sync), [{"obj": pou, "name": pou.get_name(),
                      "path": written[0].name}])
-    return Synced(pou, written[0], run, chose_the_ide)
+
+    engine_module = sys.modules["engine.codesys_compare_engine"]
+    look = lambda: engine_module.find_all_changes(str(sync), projects,
+                                                  export_xml=False)
+
+    importer = load_engine("entry_import")
+    monkeypatch.setattr(importer, "projects", projects, raising=False)
+    monkeypatch.setattr(importer, "system", DeafSystem(), raising=False)
+    said_no = types.ModuleType("engine.codesys_ui")
+    said_no.ask_yes_no = lambda title, message: False
+    said_no.ask_yes_no_cancel = lambda title, message: False
+    monkeypatch.setitem(sys.modules, "engine.codesys_ui", said_no)
+    refuse = lambda: importer.import_project(projects)
+
+    return Synced(pou, written[0], sync, run, chose_the_ide, look, refuse,
+                  engine_module)
 
 
 def edit_on_disk(path, text):
@@ -196,3 +217,91 @@ def test_the_compare_dialog_export_writes_what_the_person_chose(
 
     assert u"theirs := 2;" in a_synced_project.file.read_text(encoding="utf-8")
     assert result["ok"] is True
+
+
+def test_a_compare_between_the_edit_and_the_export_does_not_lose_the_guard(
+        a_synced_project):
+    # compare only looks, so it must not throw away what the guard reads.
+    # It used to rewrite sync_cache.json with only the objects it found
+    # unchanged, which dropped the entry for the very file that differed --
+    # and without an entry the guard has nothing to compare against and the
+    # next export writes straight over the edit.
+    mine = u"FUNCTION_BLOCK MC_Main\nEND_VAR\n// === IMPLEMENTATION ===\nmine := 1;\n"
+    edit_on_disk(a_synced_project.file, mine)
+    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
+
+    a_synced_project.look()
+    result = a_synced_project.export()
+
+    assert a_synced_project.file.read_text(encoding="utf-8") == mine
+    assert result["data"]["pending_import"] == ["MC_Main.st"]
+
+
+def test_an_import_nobody_confirmed_does_not_lose_the_guard(a_synced_project):
+    # import runs the same compare before it opens the Confirm Import
+    # dialog, so answering No -- or getting NeedsInput headlessly -- left
+    # the cache in the same gutted state as a bare compare.
+    mine = u"FUNCTION_BLOCK MC_Main\nEND_VAR\n// === IMPLEMENTATION ===\nmine := 1;\n"
+    edit_on_disk(a_synced_project.file, mine)
+    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
+
+    refused = a_synced_project.import_answering_no()
+    assert refused["ok"] is False
+
+    result = a_synced_project.export()
+
+    assert a_synced_project.file.read_text(encoding="utf-8") == mine
+    assert result["data"]["pending_import"] == ["MC_Main.st"]
+
+
+def test_an_object_compare_could_not_read_keeps_its_cache_entry(
+        a_synced_project, monkeypatch):
+    # An object whose plugin is missing lands in the unhandled register and
+    # never reaches Pass 2, so it has no fresh entry to write. Dropping the
+    # old one disarms the guard for a file nobody even looked at.
+    mine = u"FUNCTION_BLOCK MC_Main\nEND_VAR\n// === IMPLEMENTATION ===\nmine := 1;\n"
+    edit_on_disk(a_synced_project.file, mine)
+
+    def unreadable(obj, *args, **kwargs):
+        raise RuntimeError("plugin missing")
+
+    monkeypatch.setattr(a_synced_project.compare_engine, "classify_object",
+                        unreadable)
+    a_synced_project.look()
+    result = a_synced_project.export()
+
+    assert a_synced_project.file.read_text(encoding="utf-8") == mine
+    assert result["data"]["pending_import"] == ["MC_Main.st"]
+
+
+def test_the_compare_dialog_export_leaves_the_cache_describing_the_disk(
+        a_synced_project):
+    # Suggestion 11. perform_export writes the file but used to record
+    # nothing, so the cache still described the pre-edit disk. The next
+    # ordinary export then read a signature that did not match, blamed the
+    # disk for a change the IDE had made, and refused to write.
+    edit_on_disk(a_synced_project.file,
+                 u"FUNCTION_BLOCK MC_Main\nEND_VAR\nmine := 1;\n")
+    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
+    a_synced_project.export_from_dialog()
+
+    a_synced_project.pou.textual_implementation.text = u"later := 3;\n"
+    result = a_synced_project.export()
+
+    assert result["ok"] is True and result["data"]["pending_import"] == []
+    assert u"later := 3;" in a_synced_project.file.read_text(encoding="utf-8")
+
+
+def test_the_compare_dialog_export_keeps_the_entries_it_did_not_touch(
+        a_synced_project):
+    # Writing only the exported object's entry would be the same bug as
+    # compare's: one selected file must not cost every other object the
+    # entry that guards it.
+    from engine.codesys_utils import load_sync_cache
+
+    before = set(load_sync_cache(str(a_synced_project.sync)).get("objects", {}))
+    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
+    a_synced_project.export_from_dialog()
+
+    after = load_sync_cache(str(a_synced_project.sync))
+    assert before and before <= set(after.get("objects", {}))
