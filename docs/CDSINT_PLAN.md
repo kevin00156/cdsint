@@ -234,7 +234,7 @@ img/        readMe 用的圖
   - [x] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
   - [x] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [x] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
-  - [ ] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
+  - [x] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
   - [ ] import 刪物件的順序：父物件（POU）刪掉之後它的成員再被輪到就丟 `Object reference not set`，監督者在階段 2 重現時一次看到 51 個。改成先刪成員再刪父物件，或父物件刪掉時把它的成員從待刪清單拿掉；有測試。
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [x] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
@@ -299,11 +299,13 @@ img/        readMe 用的圖
    三，`st-verify` 的 `git diff` 仍然有價值：`verify` 問的是「IDE 跟磁碟一不一致」，
    `git diff` 問的是「磁碟跟上一次 commit 一不一致」，兩個問題不一樣。
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
-6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
+6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）（階段 4 已做。）
 7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
 
 階段 4 新增的：
 
+- Ruling: `cache_doctor.py` 第一節從「`disk_mtime` 存成什麼型別」改成「引擎還會不會讀這個 cache」 — 原本那一節是為了抓 int 對 float 那場格式戰，戰爭結束了，型別只剩一種；換上去的問題才是讀者第一個該知道的：`load_sync_cache` 在 cache 版本或 profile hash 對不上時整份丟掉，那樣的話底下每個數字講的都是一份沒有人會讀的檔案 — 錯了的代價是無，兩個判準都是從引擎 import 進來的，不是抄的。
+- Ruling: 順手給它補了測試（`tests/test_cache_doctor.py`），雖然工單只說改判斷式 — 這支工具的整個毛病就是「手抄了一份引擎的判斷式然後跟著漂走」，只換一次判斷式不改變它會再漂一次；測試用引擎自己的 `save_sync_cache` 寫 cache 再問醫生看到什麼，所以下次引擎那邊一改，這裡就紅。改之前先跑，四條全紅，其中一條紅得剛好：現行引擎剛寫好的一份健康 cache，舊版醫生兩邊都報 0.0% DEGRADED — 錯了的代價是無。
 - Ruling: PRINCIPLES 的兩級不是照「`engine/` 對其他」切，是照「搬過來的對這裡寫的」切 — `tools/` 底下的 `Project_discover.py`、`Project_resources.py`、`call_tree_*.py` 跟 `engine/` 同一批搬過來，性質一模一樣，照 SPEC 8 的字面切等於因為它們落在別的資料夾就要它們守新碼的規矩。判準寫成「`git log --follow` 看它是不是在本 repo 第一個 commit 就在了」，這樣不必在文件裡列一張會腐爛的檔案清單 — 錯了的代價是有人搬新東西進 `tools/` 卻以為自己在寬鬆那一級；第 1 條「一個模組一件事」沒有寬鬆級，那條先擋住他。
 - Ruling: 「硬上限」改寫成「新檔不准一開始就超過，已經超過的不准再長」，不是「超過就是 bug」 — `cds/ide/silent.py` 現在 403 行，為了 3 行去拆它是湊數字不是設計；而原本那句話的問題正是它把三個一千多行的檔說成 bug 然後什麼也沒發生。改寫過的版本是守得住的，而且它施的壓力方向對：下一個東西進去之前先拆 — 錯了的代價是有人拿「反正不准再長」當藉口讓 401 行的檔停在那裡；那是第 1 條要管的事。
 - Ruling: PRINCIPLES 整份改寫，不只改尺寸那一節 — 工單只寫「改成兩級」，但第 3 條（「整包 `export_native` 一次倒出」）與第 4 條（「`cds/ide` 是唯一准碰 CODESYS 全域的地方」）描述的是被刪掉的那個骨架，不是現在的程式碼；SPEC 8 要改寫這份文件的理由就是「文件跟程式碼講不同的話比沒有文件更糟」，只修其中一條而留著另外兩條假話，等於承認那個理由然後不照做 — 錯了的代價是這次改動比工單那一行大，而且都是文件；沒有一行程式碼跟著動。

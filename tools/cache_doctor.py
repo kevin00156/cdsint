@@ -2,28 +2,26 @@
 """Offline health check for a sync directory's sync_cache.json. CPython 3 only.
 
 Answers one question without opening CODESYS: *would the cache actually skip
-anything on the next run?* It replays both cache-hit predicates against the
-real files on disk --- the export-side one from
-codesys_managers._try_cache_skip and the compare-side one from
-codesys_compare_engine.find_all_changes --- and reports how many objects each
-would let through.
+anything on the next run?* It asks the engine's own predicate rather than a
+copy of it -- codesys_utils.file_signature() is what both export and compare
+compare against, so this imports that function and hands it the same two
+values the cache holds.
 
-The two predicates are not the same expression, so a cache written by one side
-can be systematically rejected by the other. That shows up here as a near-100%
-miss rate on one side and a near-0% miss rate on the other.
+It used to replay two hand-written expressions instead, one per side, because
+that was the bug it existed to find: export compared int(st_mtime), compare
+compared a float, and each side rejected everything the other had written.
+That is fixed, and a diagnostic still replaying the old expressions reports a
+war that is over and calls a healthy cache degraded.
 
-!! OUT OF DATE. This is what the engine did when the split was found. Both
-sides now go through codesys_utils.file_signature(), which stores
-milliseconds as an int, and CACHE_VERSION 3.3 discards anything older. So
-the predicates replayed below are no longer the ones that run, and section 1
-reports a format war that is over. Do not trust its numbers against a cache
-written by the current engine; it needs rewriting against file_signature().
+Before any of that it checks whether the engine would look at this cache at
+all: load_sync_cache() throws the whole file away when the cache version or
+the type profile has moved on, and every number below would then be about a
+file nobody is going to read.
 
 Usage:
     python tools/cache_doctor.py <sync-dir>
     python tools/cache_doctor.py <sync-dir> --list-misses 20
 """
-
 from __future__ import annotations
 
 import argparse
@@ -32,6 +30,15 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
+
+# tools/ sits beside engine/, and this is run as a script by path, so nothing
+# else puts the install root on sys.path for us.
+_INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _INSTALL_ROOT not in sys.path:
+    sys.path.insert(0, _INSTALL_ROOT)
+
+from engine.codesys_constants import PROFILE_HASH  # noqa: E402
+from engine.codesys_utils import CACHE_VERSION, file_signature  # noqa: E402
 
 CACHE_NAME = "sync_cache.json"
 
@@ -59,18 +66,6 @@ def classify_hash(h):
         return "state_hash"
     if is_crc:
         return "crc_decimal"
-    return "other"
-
-
-def mtime_kind(v):
-    if isinstance(v, bool):
-        return "other"
-    if isinstance(v, int):
-        return "int"
-    if isinstance(v, float):
-        return "float(whole)" if float(v).is_integer() else "float(frac)"
-    if v is None:
-        return "missing"
     return "other"
 
 
@@ -146,23 +141,31 @@ def main(argv=None):
               "next run. Every object will take the slow path.")
         return 0
 
-    # ── 1. mtime storage type ────────────────────────────────────────────
-    kinds = Counter(mtime_kind(e.get("disk_mtime")) for e in objects.values())
-    print("\n" + "-" * 72)
-    print("1. disk_mtime storage type")
-    print("-" * 72)
-    print("   engine/codesys_managers.py    writes int(st_mtime)")
-    print("   engine/codesys_compare_engine.py writes os.path.getmtime() -> float")
+    # -- 1. would the engine read this file at all? -----------------------
     print("")
-    for kind, n in kinds.most_common():
-        print("   %-14s %6d  %s %s" % (kind, n, pct(n, len(objects)), bar(n, len(objects))))
-    if kinds.get("int") and (kinds.get("float(frac)") or kinds.get("float(whole)")):
-        print("\n   [!] MIXED. Entries from both writers are present in one file.")
+    print("-" * 72)
+    print("1. is this cache still current?")
+    print("-" * 72)
+    discarded = []
+    if cache.get("version") != CACHE_VERSION:
+        discarded.append("cache version is %s, the engine writes %s"
+                         % (cache.get("version"), CACHE_VERSION))
+    if cache.get("profile_hash") != PROFILE_HASH:
+        discarded.append("type profile is %s, this install has %s"
+                         % (cache.get("profile_hash"), PROFILE_HASH))
+    if discarded:
+        for line in discarded:
+            print("   [!] %s" % line)
+        print("")
+        print("   load_sync_cache() will discard the whole file and trigger a")
+        print("   full rebuild, so everything below describes a cache the next")
+        print("   run is not going to read.")
+    else:
+        print("   version %s and type profile %s both match this install."
+              % (CACHE_VERSION, PROFILE_HASH))
 
-    # ── 2. replay both cache-hit predicates ──────────────────────────────
-    export_hit = export_miss = 0
-    compare_hit = compare_miss = 0
-    absent = 0
+    # -- 2. ask the engine's own predicate --------------------------------
+    hit = miss = absent = 0
     reasons = defaultdict(list)
 
     for norm_path, entry in objects.items():
@@ -172,45 +175,31 @@ def main(argv=None):
             reasons["file missing on disk"].append(norm_path)
             continue
 
-        st = os.stat(file_path)
-        c_mtime = entry.get("disk_mtime")
-        c_size = entry.get("disk_size")
-        size_ok = (st.st_size == c_size)
+        # The one comparison both sides make (codesys_utils.file_signature).
+        mtime, size = file_signature(file_path)
+        if (mtime, size) == (entry.get("disk_mtime"), entry.get("disk_size")):
+            hit += 1
+            continue
 
-        # engine/codesys_managers.py ObjectManager._try_cache_skip
-        exp_ok = size_ok and (int(st.st_mtime) == c_mtime)
-        # engine/codesys_compare_engine.py find_all_changes
-        cmp_ok = size_ok and (st.st_mtime == c_mtime)
-
-        export_hit += exp_ok
-        export_miss += not exp_ok
-        compare_hit += cmp_ok
-        compare_miss += not cmp_ok
-
-        if not size_ok:
-            reasons["size differs (real edit)"].append(norm_path)
-        elif exp_ok != cmp_ok:
-            reasons["mtime type mismatch only"].append(norm_path)
-        elif not exp_ok:
-            reasons["mtime differs on both"].append(norm_path)
+        miss += 1
+        if size != entry.get("disk_size"):
+            reasons["size differs (a real edit)"].append(norm_path)
+        else:
+            reasons["same size, later timestamp"].append(norm_path)
 
     checked = len(objects) - absent
-    print("\n" + "-" * 72)
+    print("")
+    print("-" * 72)
     print("2. would the next run skip anything?  (%d entries with a real file)" % checked)
     print("-" * 72)
-    print("   EXPORT  side  _try_cache_skip()   -> int(st_mtime) == cached")
-    print("     skip  %6d  %s %s" % (export_hit, pct(export_hit, checked), bar(export_hit, checked)))
-    print("     work  %6d  %s" % (export_miss, pct(export_miss, checked)))
-    print("   COMPARE side  find_all_changes()  -> st_mtime == cached")
-    print("     skip  %6d  %s %s" % (compare_hit, pct(compare_hit, checked), bar(compare_hit, checked)))
-    print("     work  %6d  %s" % (compare_miss, pct(compare_miss, checked)))
-
-    divergent = len(reasons["mtime type mismatch only"])
-    if divergent:
-        print("\n   [!] %d entries (%s) are accepted by one side and rejected by the"
-              % (divergent, pct(divergent, checked)))
-        print("       other purely because of int-vs-float. These are objects that")
-        print("       have NOT changed but will still be fully re-processed.")
+    print("   file_signature(path) == (disk_mtime, disk_size) from the cache")
+    print("")
+    print("     would skip  %6d  %s %s" % (hit, pct(hit, checked), bar(hit, checked)))
+    print("     would work  %6d  %s" % (miss, pct(miss, checked)))
+    print("")
+    print("   A miss is not wrong on its own: a file that really changed has to")
+    print("   be re-processed. It is a problem when nobody has touched the tree")
+    print("   and the rate is still high.")
 
     # ── 3. ide_hash format, split by file kind ───────────────────────────
     cross = defaultdict(Counter)
@@ -277,24 +266,17 @@ def main(argv=None):
         print("No cache entry has a matching file -- nothing to judge.")
         return 0
 
-    healthy = True
-    for side, hit in (("export", export_hit), ("compare/import", compare_hit)):
-        rate = 100.0 * hit / checked
-        state = "ok" if rate >= 80.0 else "DEGRADED"
-        print("  %-15s skips %s of unchanged objects   [%s]"
-              % (side, pct(hit, checked), state))
-        if rate < 80.0:
-            healthy = False
-
-    if divergent:
-        healthy = False
+    healthy = not discarded
+    if discarded:
+        print("  The engine will discard this cache and rebuild from scratch,")
+        print("  so the skip rate below is not what the next run will get.")
         print("")
-        print("  [!] %s of entries are accepted by one side and rejected by the"
-              % pct(divergent, checked))
-        print("      other for no reason but int-vs-float on disk_mtime.")
-        print("      Each alternation between export and compare/import rewrites")
-        print("      the field in the other format, so the two sides keep")
-        print("      invalidating each other's work.")
+
+    rate = 100.0 * hit / checked
+    if rate < 80.0:
+        healthy = False
+    print("  skips %s of the objects it has entries for   [%s]"
+          % (pct(hit, checked), "ok" if rate >= 80.0 else "DEGRADED"))
 
     if healthy:
         print("")
