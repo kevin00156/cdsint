@@ -13,11 +13,8 @@ import sys
 import traceback
 import time
 import tempfile
-import threading
 import shutil
 
-# --- Global Thread Lock ---
-_metadata_thread_lock = threading.Lock()
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
 # Cache version - bump when the cache format or hash semantics change to

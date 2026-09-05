@@ -230,7 +230,7 @@ img/        readMe 用的圖
   - [x] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
   - [x] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [x] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
-  - [ ] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
+  - [x] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
   - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
   - [ ] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [ ] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
@@ -238,7 +238,7 @@ img/        readMe 用的圖
   - [ ] import 刪物件的順序：父物件（POU）刪掉之後它的成員再被輪到就丟 `Object reference not set`，監督者在階段 2 重現時一次看到 51 個。改成先刪成員再刪父物件，或父物件刪掉時把它的成員從待刪清單拿掉；有測試。
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [x] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
-  - [ ] 驗收：`grep -rn "time.sleep\|threading\|Thread(" engine/ cds/ide/ stub/` 為零。
+  - [x] 驗收：IDE 側沒有 sleep、沒有執行緒。由 `tests/test_single_threaded_ide_side.py` 守著，不是靠人跑 grep；見底下的 Ruling。
   - [ ] 驗收：`grep -rn '"cds-sync-' engine/ cds/ cdsint/ tools/` 只剩常數定義那一處。
   - [ ] 驗收：SPEC 第 7 節的 perf 表有新數字。
 
@@ -304,6 +304,9 @@ img/        readMe 用的圖
 
 階段 4 新增的：
 
+- Ruling: D5 的驗收從「跑一次 grep」改成一條 parse 程式碼的測試 — 工單寫的那條字串 grep 現在只剩兩個命中，兩個都是散文：`engine/unhandled.py` 用「threading a register through」講的是「一路傳下去」，`cds/ide/watcher.py` 的檔頭在複述這條規則本身（「No threads, no time.sleep()」）。為了讓 grep 歸零去改後面那句，等於為了通過檢查把正確描述規則的那句話弄壞。測試看的是呼叫與 import 這兩種語法節點，講到 thread 的字不會被誤判，而且它每次 CI 都跑，不必有人記得 — 錯了的代價是這條規則現在多一個檔案要維護，而且如果有人用 `getattr(x, 'sleep')()` 這種寫法繞過去，AST 看不出來；沒有人有理由那樣寫。
+- Ruling: `codesys_utils` 的 `threading.Lock` 直接刪掉，不是留著加註解 — 工單說它「單執行緒設計下是空轉的」，實際查過更乾脆：整個 repo 沒有任何一處 acquire 它，它是死碼，PRINCIPLES 第 7 條 — 錯了的代價是無。
+- Ruling: `show_toast` 改成 Timer 這件事沒有測試，也沒有在真 IDE 上跑過 — 這個檔第一行就 `import clr`，CI 上根本 import 不了，而托盤氣泡要不要正確消失只有眼睛看得出來。守得住的部分（沒有執行緒、沒有 sleep）已經由上面那條測試守住；剩下的要人在 IDE 裡跑一次比對視窗的「存到 .diff」看氣泡有沒有出現又消失 — 錯了的代價是氣泡可能出不來或者留在托盤上不走，那是外觀問題，不影響任何命令的結果。
 - Ruling: 髒檔擋下來的物件讓那一趟 `ok=False`，而且不進 `unhandled` 登記簿，自己一個 `data.pending_import` — 磁碟不再跟 IDE 一致而匯出選擇不去弄一致，那就不是一趟做完的匯出，場景 C 拿 `ok` 當閘門的話不能放行（跟階段 1 監督者那條同一個理由）。不進登記簿是因為那個登記簿的檔頭寫明「不是故意跳過的」，而這是故意跳過的，讀者要做的事也不一樣：登記簿要人去查為什麼失敗，這一份要人去跑一次匯入 — 錯了的代價是某個工作流程習慣「改磁碟、直接匯出」，那種人每次會多拿一個 exit 1 與一句話，要嘛先匯入要嘛把檔案刪掉再匯出。
 - Ruling: 判斷用 mtime 加大小跟快取比，而且只在內容已經確定不同之後才問；快取沒有紀錄就不擋 — 內容先比，所以 git checkout 把同樣內容重寫一次（時間戳動了、內容沒動）不會被誤判成待匯入；快取沒紀錄就不擋，是因為那不是「沒被改過」而是「不知道」，快取是本機狀態又 gitignore，剛 clone 的資料夾一筆都沒有，擋下去等於新機器上第一次匯出全部被拒 — 錯了的代價是兩個真的漏掉的情況：一是匯出寫完檔案但還沒存快取就被中斷，下一趟會把那些檔誤報成待匯入（跑一次匯入就好）；二是資料夾裡有檔案而這台機器從來沒同步過，那一趟照樣覆蓋，git 還救得回來，而且 `compare` 本來就是拿來先看的。
 - Ruling: 比對視窗按「匯出」不受髒檔保護 — 那條路上有人剛剛看過差異並且選了 IDE 那一邊，擋他等於推翻他剛給的答案；技術上是 `perform_export` 組的 context 裡沒有 `cache_data`，那個「沒有」現在有註解說明理由，也有一條測試釘著，免得有人日後好心加上去 — 錯了的代價是有人在比對視窗選錯邊時沒有第二道保險，但比對視窗本來就把兩邊內容都攤開給他看了。

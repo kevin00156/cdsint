@@ -11,39 +11,59 @@ try:
         Application, Form, Label, CheckBox, Button, FormBorderStyle, 
         DialogResult, FormStartPosition, NotifyIcon, ToolTipIcon, TextBox,
         Control, Keys, Panel, RichTextBoxScrollBars, BorderStyle,
-        MessageBox, MessageBoxButtons, MessageBoxIcon, FlatStyle
+        MessageBox, MessageBoxButtons, MessageBoxIcon, FlatStyle, Timer
     )
     from System.Drawing import Size, Point, Font, FontStyle, SystemIcons, Color, ContentAlignment
 except:
     # Fallback if forms not available (e.g. Linux/Headless)
     pass
 
-import time
-from System.Threading import Thread, ThreadStart
+
+# Each live toast, until its timer fires. Nothing else refers to a tray icon
+# or its timer once show_toast returns, and .NET objects nobody holds get
+# collected: a collected NotifyIcon disappears from the tray mid-balloon and
+# a collected Timer never ticks, so the icon would stay there forever.
+_TOASTS = []
+
 
 def show_toast(title, message, timeout=3000):
+    """Put a tray balloon up and return at once, without blocking the IDE.
+
+    The wait before the icon is taken down is a WinForms timer on the IDE's
+    own message loop, not a thread that sleeps (SPEC D5). The old version
+    started a .NET thread purely so the script could return while the balloon
+    was up; a timer buys the same thing and puts no second thread anywhere
+    near an API that is not thread-safe.
     """
-    Shows a Windows system tray notification that doesn't block the user.
-    """
-    def run_toast():
+    try:
+        notification = NotifyIcon()
+        notification.Icon = SystemIcons.Information
+        notification.Visible = True
+        notification.ShowBalloonTip(timeout, title, message, ToolTipIcon.Info)
+    except Exception as e:
+        # A notification nobody can show is not worth failing the command it
+        # was announcing, but it should not vanish without a word either.
+        print("show_toast error: " + str(e))
+        return
+
+    timer = Timer()
+    # A second past the balloon's own lifetime: disposing the icon while
+    # Windows is still showing the balloon takes the balloon down early.
+    timer.Interval = timeout + 1000
+    live = [notification, timer]
+    _TOASTS.append(live)
+
+    def put_it_away(sender=None, event_args=None):
+        timer.Stop()
         try:
-            notification = NotifyIcon()
-            notification.Icon = SystemIcons.Information
-            notification.Visible = True
-            
-            # Show balloon
-            notification.ShowBalloonTip(timeout, title, message, ToolTipIcon.Info)
-            
-            # Keep alive briefly then cleanup
-            time.sleep(timeout / 1000.0 + 1.0) 
             notification.Visible = False
             notification.Dispose()
-        except:
-            pass
+        finally:
+            timer.Dispose()
+            _TOASTS.remove(live)
 
-    # Run in a daemon-like thread
-    t = Thread(ThreadStart(run_toast))
-    t.Start()
+    timer.Tick += put_it_away
+    timer.Start()
 
 def ask_yes_no(title, message):
     """

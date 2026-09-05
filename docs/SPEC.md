@@ -84,7 +84,7 @@
 
 **D5 IDE 內等待命令用 WinForms 計時器掛在 IDE 訊息迴圈上，腳本立刻返回。IDE 側不准 `time.sleep()`、不准 `system.delay()`、不准開執行緒、不准 `execute_on_primary_thread`。** 這條是絕對的，沒有「背景執行緒不碰 API 就可以」的例外。
 理由：`system.delay()` 不處理滑鼠鍵盤，`execute_on_primary_thread` SP21 拿掉了，CODESYS API 不是執行緒安全的。整個 IDE 側只有一種併發模式，比一條寫得精確的例外值錢。計時器設計在 ScriptEngine 4.0.0.0 與 4.2.0.0 都有真人驗過。
-現況：看門人已經是這樣。`engine/codesys_ui.py` 的 `show_toast` 開一條 .NET Thread 在裡面 sleep 三秒，是唯一的違反者，階段 4 改成 Timer。`engine/codesys_utils.py` 有一把 `threading.Lock`，單執行緒設計下是空轉的，同一階段決定去留。
+現況：IDE 側沒有違反者（階段 4）。`show_toast` 已改成 WinForms Timer，`codesys_utils` 那把從來沒有人 acquire 過的 `threading.Lock` 連同 `import threading` 一起刪了。這條規則由 `tests/test_single_threaded_ide_side.py` 守著：它 parse `engine/`、`cds/ide/`、`stub/` 底下每一支 `.py`，看的是呼叫與 import 這兩種語法節點，不是文字，所以講到「thread」的註解不會被誤判。
 `tools/headless_watch.py` 的 `park()` 用 `system.delay()`，那是這條規則唯一被允許的地方，而且只在 `--noUI`：沒有視窗就沒有畫面會凍住，而沒有東西撐著行程的話 IDE 在腳本返回的瞬間就結束，看門人一次 tick 都跑不到。它在跑之前檢查 `system.ui_present`，有 UI 就拒絕停住，所以這個例外離不開它成立的那個情況。它是驗收用的工具，不在 `cds/ide/` 底下。
 
 **D6 命令交接用檔案協定，不換 named pipe、不換 HTTP。**
