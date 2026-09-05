@@ -24,6 +24,7 @@ from engine.codesys_managers import (
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers
+from engine.entry import result
 
 # Shared constants and utilities imported from modules
 
@@ -154,8 +155,8 @@ def export_project(export_dir, projects_obj=None):
             system.ui.error(msg)
         except NameError:
             print("Error:", msg)
-        return
-    
+        return result(False, msg)
+
     # Create export directory
     if not os.path.exists(export_dir):
         os.makedirs(export_dir)
@@ -343,7 +344,7 @@ def export_project(export_dir, projects_obj=None):
     # Orphan cleanup now uses exported_paths set directly
     removed_count = cleanup_orphaned_files(export_dir, exported_paths)
     if removed_count is None:
-        return
+        return result(False, "Export cancelled during orphan cleanup.")
 
     # Calculate folder hashes (Merkle Tree) and save the updated cache
     if new_cache:
@@ -390,6 +391,13 @@ def export_project(export_dir, projects_obj=None):
     except NameError:
         print("Export complete!\n" + summary + "\nLocation: " + export_dir + "\nTime elapsed: " + elapsed_text)
 
+    # Objects that failed are counted, not fatal: the run still wrote every
+    # object it could, and log_error named each one it could not.
+    return result(True, summary,
+                  new=exported_new, updated=exported_updated,
+                  identical=exported_identical, removed=removed_count,
+                  failed=exported_failed, total=exported_total)
+
 
 def main():
     base_dir, error = load_base_dir()
@@ -398,10 +406,10 @@ def main():
             system.ui.warning(error)
         except NameError:
             print("Error:", error)
-        return
-        
+        return result(False, error)
+
     init_logging(base_dir)
-    export_project(base_dir)
+    return export_project(base_dir)
 
 
 if __name__ == "__main__":

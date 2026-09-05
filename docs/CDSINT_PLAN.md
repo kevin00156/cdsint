@@ -156,7 +156,7 @@ img/        readMe 用的圖
   - 監督者驗證（2026-09-05 15:40）：`python -m pytest tests -q` 與根目錄 `python -m pytest -q` 各 390 passed，監督者自己跑的。`tools/probe_imports.py` 在原廠 3.5.21.40 無頭重跑一次，27 秒，最後一行 `OK`。來源 repo 的 `git status` 跟派工前一字不差。兩條 grep 驗收監督者重跑，結果同 worker 回報；`imp.load_source` 唯一一筆命中是 `tools/probe_imports.py` 的 docstring 在講歷史，不是呼叫。worker 起過的六個無頭行程都已不在，`%TEMP%\cdsint-work\` 已空。
 
 - [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
-  - [ ] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
+  - [x] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
   - [ ] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
   - [ ] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
   - [x] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗。階段 0 已做，見第 7 節 worker 的 Ruling。
@@ -230,7 +230,15 @@ img/        readMe 用的圖
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。
 
-本階段（階段 0）新增的：
+階段 1 新增的：
+
+- Ruling: 新的 `ok` 一比一複製舊的等級規則的判決，不順手改嚴 — 匯出有 3 個物件失敗、匯入有幾筆沒落地，今天都算成功（結尾呼叫的是 `system.ui.info`），summary 與 `data` 裡有 `failed` 的數字。改成「failed > 0 就 ok=False」是新的失敗模式，D11 要解的是「無害的 warning 讓好的匯出變 exit 1」，跟這件事無關；而且沒有資料說真專案的匯出平常會失敗幾個 — 錯了的代價是包 cdsint 的 pipeline 要自己讀 `--json` 的 `data.failed` 才知道有物件沒落地，光看 exit code 看不出來。這一條值得監督者裁。
+- Ruling: 回傳值的建構收在 `engine/entry.py` 的 `result(ok, summary, **data)`，不在四支本體各寫 dict 字面值 — 契約只寫一次，`**data` 讓呼叫端自然寫成扁平的鍵值；`engine/entry.py` 本來就是「呼叫端與本體之間的契約」那個模組，加這個沒有多一份職責 — 錯了的代價是本體多一行 `from engine.entry import result`。
+- Ruling: `data` 由看門人寫進結果檔（`commands.new_result(data=...)`），CLI 的 `--json` 與非 JSON 輸出都看得到 — 不接出去的話 `data` 就是死碼（PRINCIPLES 7）；而且場景 B 的 agent 要的就是這些計數。因此每個 `data` 的值都是純量，`cdsint/cli.py` 的 `_report` 一個鍵印一行才不會印出巢狀 repr — 錯了的代價是以後想在 `data` 裡塞清單，得先改 `_report` 的印法。
+- Ruling: build 的 `data` 只放 `application`、`errors`、`warnings` 三個計數，錯誤清單不放進去 — 工單第 4 節寫「build 放錯誤清單」，但那份清單已經有一條路了：`cds/ide/messages.py` 從 IDE 的訊息庫讀，帶物件名與行號，比引擎自己格式化的那張表詳細，走 `stdout_tail` 出去。放兩份等於同一個事實兩條路（SPEC D16），而且會漂移 — 錯了的代價是 `--json` 的 `data` 裡沒有錯誤清單，要讀 `stdout_tail`。
+- Ruling: `cds/ide/watcher.py` 的 `_wrong_application` 維持掃 `outcome.messages` 找應用程式名字，這次不改 — 它現在可以改讀 `data["application"]`，那樣更準（今天的 `wanted in message["text"]` 是子字串比對，`--app App` 會被 `AppB` 的訊息滿足），但那是另一個事實的推斷，不在本項的範圍內 — 錯了的代價是 `--app` 的檢查對名字互為前綴的兩個應用程式仍然會誤判。留給監督者決定要不要現在改。
+
+階段 0 新增的：
 
 - Ruling: stub 找本體用 `body.path` — 旁邊一個純文字檔，一行安裝根目錄，stub 讀它、插進 `sys.path`、import 本體。安裝器寫它，開發模式也寫它；它是機器專屬的路徑，所以 gitignore。沒有選「把路徑寫死在 stub 裡」是因為那樣安裝器得改寫 stub 原始碼，而開發模式的 junction 直接指著 repo 裡的 `stub/`，改它就是弄髒 git。也沒有留「找不到就往上兩層」的後路，那會變成兩條路（SPEC D16）— 錯了的代價是 clone 完還沒寫 `body.path` 之前，從選單跑任何一支都會丟 `IOError`，訊息不會告訴你該建那個檔。
 - Ruling: `engine/` 裡入口本體叫 `entry_export.py`、`entry_import.py`、`entry_compare.py`、`entry_build.py`、`entry_directory.py`、`entry_parameters.py` — `import` 是 Python 關鍵字，`entry_import` 不是；前綴一致所以一眼看得出哪些是入口本體、哪些是共用引擎模組 — 錯了的代價是文件與 commit 訊息裡「Project_import.py」這個講法要改口，選單上的名字沒變。

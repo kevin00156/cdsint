@@ -9,6 +9,7 @@ import time
 import sys
 
 from engine.codesys_utils import safe_str, init_logging, load_base_dir, resolve_projects, update_application_count_flag
+from engine.entry import result
 
 def build_project(projects_obj=None):
     """Build the active application in CODESYS and generate build.log"""
@@ -20,12 +21,12 @@ def build_project(projects_obj=None):
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
-        return
+        return result(False, msg)
 
     if not projects_obj.primary:
         msg = "Error: No project open!"
         system.ui.error(msg)
-        return
+        return result(False, msg)
 
     # Find application to build
     from engine.codesys_utils import get_project_prop
@@ -54,8 +55,9 @@ def build_project(projects_obj=None):
                 if choice_idx is not None and choice_idx >= 0:
                     app = apps[choice_idx]
                 else:
-                    print("Build cancelled by user.")
-                    return
+                    cancelled = "Build cancelled by user."
+                    print(cancelled)
+                    return result(False, cancelled)
         except Exception as e:
             print("Selection error: " + safe_str(e))
             
@@ -78,7 +80,7 @@ def build_project(projects_obj=None):
     if not app:
         msg = "Error: No active application found to build."
         system.ui.error(msg)
-        return
+        return result(False, msg)
 
     # CODESYS Build GUID Category
     BUILD_CATEGORY = Guid("97F48D64-A2A3-4856-B640-75C046E37EA9")
@@ -378,17 +380,29 @@ def build_project(projects_obj=None):
             system.ui.info(msg_body)
         else:
             system.ui.error(msg_body)
-                    
+
+        # The errors themselves are not in here: the IDE's message store has
+        # them with object and line, and cds/ide/messages.py reads them from
+        # there. Two copies of the same list would drift (SPEC D16).
+        return result(error_count == 0,
+                      "{}: {}, {} errors, {} warnings in {:.2f}s".format(
+                          msg_title, app_name, error_count, warning_count,
+                          elapsed),
+                      application=app_name, errors=error_count,
+                      warnings=warning_count)
+
     except Exception as e:
+        failure = "Build process failed: " + str(e)
         print("Build Error: " + str(e))
-        system.ui.error("Build process failed: " + str(e))
+        system.ui.error(failure)
+        return result(False, failure)
 
 def main():
     base_dir, error = load_base_dir()
     if error:
         pass
-    
-    build_project()
+
+    return build_project()
 
 if __name__ == "__main__":
     main()

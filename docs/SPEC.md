@@ -106,7 +106,7 @@
 
 **D11 四支入口回傳結果，替身 UI 讀回傳值判斷成功失敗。**
 理由：現在四支 `main()` 不管成功失敗都回 `None`，替身 UI 只能看 `system.ui.warning` 和 `error` 有沒有被呼叫來推。這讓「warning 只准在中止點呼叫」變成所有未來作者都得記住的規則，違反的後果離現場很遠：有人在匯出中途寫一句無害的 warning，一次成功的匯出就變成 exit 1。
-現況：等級推斷。今天引擎裡沒有任何非中止的 `warning`，所以不變量成立。階段 1 搬入口時換成回傳值，在那之前等級規則當過渡紀律。
+現況：已做（階段 1）。回傳的形狀是 `engine/entry.py` 的 `result(ok, summary, **data)`，替身 UI 讀 `ok`；回傳 `None` 算失敗。
 
 **D12 三條可以用 grep 驗的分層規則。** `cds/core` 不准 import `system`、`projects`、`online`、`clr`。`cds/ide` 不准 import `online`，不准 import 引擎模組。引擎不准 import `cds/ide`。
 理由：`cds/core` 要在 CI 上被完整測。`cds/ide` 只做管線，也就是協定端點、計時器、替身 UI、prompt 答案、狀態視窗、無頭模式的 `projects.open`。走物件樹和碰 PLC 的事全在引擎。依賴方向是 `cds/ide` 用入口名字驅動引擎，不反過來。
@@ -303,7 +303,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 - **等待人按鈕的時間不算進耗時**。現況：已做，`fc1b9da`。
 - **新寫的程式碼不准空白 `except:`**。現有的 119 處不要求一次清完，但每次碰到的函式順手改。
 - **對話框只透過 `codesys_ui.ask_yes_no`、`ask_yes_no_cancel`、`system.ui.choose`**，因為替身 UI 只攔這幾個。新的對話框要先登記在替身 UI 的答案表裡，`test_every_yes_no_dialog_has_an_answer` 會擋沒登記的。那條測試掃的是一張寫死的檔名清單，10.1 搬檔案時要跟著改。
-- **成功失敗的訊號**走回傳值（D11）。過渡期間 `system.ui.warning` 與 `error` 只在中止的地方呼叫，純資訊用 `info`。
+- **成功失敗的訊號**走回傳值（D11）。每一條 `return` 都要回一個 `result()`，訊息等級不再影響判決。
 
 ### 6.2 看門人
 

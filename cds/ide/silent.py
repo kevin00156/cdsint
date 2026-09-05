@@ -3,7 +3,8 @@
 
 The bodies were written for a human: they ask "Confirm Import?" and wait. The
 watcher answers those questions from the command's arguments instead, and
-refuses — loudly — to guess when the caller did not say.
+refuses — loudly — to guess when the caller did not say. Whether the run
+worked comes from what the body returns (SPEC D11), not from what it said.
 
 The body is exec'd from its file rather than imported, because the stand-in
 `system` has to be in its namespace before its module-level code runs, and
@@ -47,11 +48,6 @@ STDOUT_TAIL_LINES = 200
 # the engine, which is the one direction SPEC D12 rules out.
 UI_MODULE = "engine.codesys_ui"
 
-# These levels mean the script gave up. It has no return value to check —
-# reporting through system.ui is the only signal it gives (see the four main()
-# functions, which return None whether they worked or not).
-BAD_LEVELS = ("warning", "error")
-
 
 class NeedsInput(BaseException):
     """A dialog wanted an answer that the command did not carry.
@@ -72,16 +68,27 @@ class NeedsInput(BaseException):
 
 
 class Outcome(object):
-    """What came back from a script run: what it said, printed, and needs."""
+    """What came back from a script run: its verdict, words, output and needs.
 
-    def __init__(self, messages, stdout_tail, needs=None, error=None):
+    `result` is what the body returned — engine/entry.py `result()` builds it.
+    """
+
+    def __init__(self, messages, stdout_tail, needs=None, error=None,
+                 result=None):
         self.messages = messages
         self.stdout_tail = stdout_tail
         self.needs = needs
         self.error = error
+        self.result = result
 
     def ok(self):
         return not self.error_text()
+
+    def data(self):
+        """The command's own counts, or None if it did not hand any back."""
+        if isinstance(self.result, dict):
+            return self.result.get("data")
+        return None
 
     def error_text(self):
         """The reason this run failed, or None. Never a silent failure."""
@@ -89,17 +96,16 @@ class Outcome(object):
             return self.error
         if self.needs is not None:
             return self.needs.question
-        for message in self.messages:
-            if message["level"] in BAD_LEVELS:
-                return message["text"]
-        if not self.messages:
-            # Every one of the four scripts calls system.ui.info when it
-            # finishes (Project_export 383, Project_import 143,
-            # Project_compare 149, Project_Build 393), so silence means it
-            # gave up on a path that only print()s — and a caller told "ok"
-            # would go on to build code that was never imported.
-            return ("the script returned without reporting anything; see "
-                    "stdout_tail for what it printed")
+        if not isinstance(self.result, dict) or "ok" not in self.result:
+            # Every body ends by returning a result (SPEC D11). Coming back
+            # without one means it took a give-up path that only print()s,
+            # and a caller told "ok" would go on to build code that was
+            # never imported.
+            return ("the script returned no result; see stdout_tail for what "
+                    "it printed")
+        if not self.result["ok"]:
+            return (self.result.get("summary")
+                    or "the script reported failure without saying why")
         return None
 
 
@@ -197,8 +203,8 @@ def _call(namespace, entry, silent, ui, args):
     undo = _install(silent, ui, args)
     sys.stdout = tee
     try:
-        namespace[entry]()
-        return Outcome(ui.messages, tee.tail())
+        result = namespace[entry]()
+        return Outcome(ui.messages, tee.tail(), result=result)
     except NeedsInput as need:
         return Outcome(ui.messages, tee.tail(), needs=need)
     except Exception:

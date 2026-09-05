@@ -512,7 +512,9 @@ def _fake_build(app_name):
 
     def handler(cmd, started):
         outcome = silent.Outcome(
-            [{"level": "info", "text": "%s\nErrors: 0" % app_name}], "")
+            [{"level": "info", "text": "%s\nErrors: 0" % app_name}], "",
+            result={"ok": True, "summary": "Build Success",
+                    "data": {"application": app_name, "errors": 0}})
         error = outcome.error_text() or watcher._wrong_application(
             cmd, cmd.get("args") or {}, outcome)
         return commands.new_result(cmd, not error, started_at=started,

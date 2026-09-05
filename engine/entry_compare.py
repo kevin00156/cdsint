@@ -33,6 +33,7 @@ from engine.codesys_compare_engine import (
     TYPE_NAMES, build_expected_path
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
+from engine.entry import result
 
 
 
@@ -44,13 +45,14 @@ def compare_project(projects_obj=None):
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
-        return
-    
+        return result(False, msg)
+
     base_dir, error = load_base_dir()
     if error:
         system.ui.warning(error)
-        return
-    
+        return result(False, error)
+
+
     # Check version compatibility
     version_ok, version_msg = check_version_compatibility(base_dir)
     if not version_ok:
@@ -107,19 +109,18 @@ def compare_project(projects_obj=None):
     else:
         print("No differences found - IDE and disk are in sync!")
     
+    counts = "M:" + str(len(different)) + " +:" + str(len(new_in_ide)) \
+             + " *:" + str(len(new_on_disk)) \
+             + " ~:" + str(len(moved)) \
+             + " =:" + str(unchanged_count) + " | {:.2f}s".format(elapsed)
+
     print("")
-    print("Summary: M:" + str(len(different)) + " +:" + str(len(new_in_ide)) 
-          + " *:" + str(len(new_on_disk))
-          + " ~:" + str(len(moved))
-          + " =:" + str(unchanged_count) + " | {:.2f}s".format(elapsed))
-    
-    log_info("COMPARE: M:" + str(len(different)) + " +:" + str(len(new_in_ide)) 
-             + " *:" + str(len(new_on_disk))
-             + " ~:" + str(len(moved))
-             + " =:" + str(unchanged_count) + " | {:.2f}s".format(elapsed))
+    print("Summary: " + counts)
+
+    log_info("COMPARE: " + counts)
     if diff_lines:
         log_info("DIFF:\n" + "\n".join(diff_lines))
-    
+
     # ── Show UI ──
     if not diff_lines:
         system.ui.info("IDE and Disk are in sync!\n\nObjects checked: " + str(unchanged_count))
@@ -128,18 +129,28 @@ def compare_project(projects_obj=None):
         action, selected = show_compare_dialog(
             different, new_in_ide, new_on_disk, unchanged_count, moved
         )
-        
+
+        # These two only happen with a person at the dialog; whichever one
+        # ran is what this command did, so its result is the result.
         if action == "import":
-            perform_import(projects_obj.primary, base_dir, selected, unchanged_count)
+            return perform_import(projects_obj.primary, base_dir, selected, unchanged_count)
         elif action == "export":
-            perform_export(base_dir, selected, unchanged_count)
+            return perform_export(base_dir, selected, unchanged_count)
+
+    # Compare only looks. Differences are the answer, not a failure.
+    return result(True, counts,
+                  different=len(different), new_in_ide=len(new_in_ide),
+                  new_on_disk=len(new_on_disk), moved=len(moved),
+                  unchanged=unchanged_count)
 
 
 def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     """Import selected items via the shared engine."""
     if not selected:
-        system.ui.info("No files selected for import.")
-        return
+        nothing = "No files selected for import."
+        system.ui.info(nothing)
+        return result(True, nothing, updated=0, created=0, moved=0,
+                      deleted=0, failed=0, identical=unchanged_count)
 
     # A live PLC login makes every create/move/delete fail inside the IDE.
     online_apps = find_logged_in_applications(primary_project, globals())
@@ -148,7 +159,7 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
         print(block)
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
-        return
+        return result(False, block)
 
     # Create timestamped safety backup if enabled
     projects_obj = resolve_projects(None, globals())
@@ -158,8 +169,9 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
         primary_project, base_dir, selected, globals()
     )
     
-    message = "Import complete!\n\nUpdated: {}, Created: {}, Moved: {}, Deleted: {}, Failed: {} (Identical: {})".format(
+    summary = "Updated: {}, Created: {}, Moved: {}, Deleted: {}, Failed: {} (Identical: {})".format(
         updated, created, moved, deleted, failed, unchanged_count)
+    message = "Import complete!\n\n" + summary
     if backup_filename:
         message += "\n\nBackup created: .project/" + backup_filename
     system.ui.info(message)
@@ -168,13 +180,20 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=True)
 
+    return result(True, summary,
+                  updated=updated, created=created, moved=moved,
+                  deleted=deleted, failed=failed, identical=unchanged_count)
+
 
 def perform_export(base_dir, selected, unchanged_count=0):
     """Trigger export for IDE-side changes"""
     if not selected:
-        system.ui.info("No objects selected for export.")
-        return
-        
+        nothing = "No objects selected for export."
+        system.ui.info(nothing)
+        return result(True, nothing, updated=0, created=0, removed=0,
+                      failed=0, identical=unchanged_count)
+
+
     # Property accessors collected dynamically during export loop
     property_accessors = {}
     
@@ -272,6 +291,11 @@ def perform_export(base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=False)
 
+    return result(True, summary,
+                  updated=count_updated, created=count_created,
+                  removed=count_removed, failed=count_failed,
+                  identical=unchanged_count)
+
 
 def main():
     base_dir, error = load_base_dir()
@@ -313,7 +337,7 @@ def main():
                 pass
 
     try:
-        compare_project()
+        return compare_project()
     finally:
         if log_file_obj:
             sys.stdout = original_stdout

@@ -25,6 +25,7 @@ from engine.codesys_compare_engine import (
     find_all_changes, perform_import_items, build_device_remap, summarize_device_remap
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
+from engine.entry import result
 
 
 
@@ -39,13 +40,14 @@ def import_project(projects_obj=None):
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
-        return
-    
+        return result(False, msg)
+
     base_dir, error = load_base_dir()
     if error:
         system.ui.warning(error)
-        return
-    
+        return result(False, error)
+
+
     # Check version compatibility
     version_ok, version_msg = check_version_compatibility(base_dir)
     if not version_ok:
@@ -59,8 +61,9 @@ def import_project(projects_obj=None):
         if not ask_yes_no("Version Mismatch Warning", msg):
             # Warn, do not just print: a caller driving this headlessly reads
             # system.ui as its only success/failure signal.
-            system.ui.warning("Import cancelled due to version mismatch.")
-            return
+            cancelled = "Import cancelled due to version mismatch."
+            system.ui.warning(cancelled)
+            return result(False, cancelled)
     
     # A live PLC login makes every create/move/delete fail inside the IDE, so
     # check before spending a full compare on an import that cannot land.
@@ -70,7 +73,7 @@ def import_project(projects_obj=None):
         print(block)
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
-        return
+        return result(False, block)
 
     print("=== Starting Project Import ===")
     print("Importing from: " + base_dir)
@@ -123,8 +126,10 @@ def import_project(projects_obj=None):
         msg = "No changes to import.\nAll " + str(unchanged_count) + " objects are in sync."
         print(msg)
         system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
-        return
-    
+        return result(True, msg, updated=0, created=0, moved=0, deleted=0,
+                      failed=0, identical=unchanged_count)
+
+
     # Show what we're about to import
     print("")
     print("Importing " + str(len(to_import)) + " items to IDE:")
@@ -152,9 +157,11 @@ def import_project(projects_obj=None):
     if remap_lines:
         confirm_msg += "\n\n[!] Device remap (export -> IDE):\n  " + "\n  ".join(remap_lines)
     if not timed_prompt(ask_yes_no, "Confirm Import", confirm_msg):
-        system.ui.warning("Import cancelled: not confirmed.")
-        return
-        
+        cancelled = "Import cancelled: not confirmed."
+        system.ui.warning(cancelled)
+        return result(False, cancelled)
+
+
     # ── Create timestamped safety backup if enabled ──
     backup_filename = create_safety_backup(base_dir, projects_obj, to_import)
     
@@ -204,14 +211,20 @@ def import_project(projects_obj=None):
     except NameError:
         print("Import complete!\n" + summary)
 
+    # Items that failed are counted, not fatal: perform_import_items named
+    # each one it could not land, and the rest of the import stands.
+    return result(True, summary,
+                  updated=updated, created=created, moved=moved,
+                  deleted=deleted, failed=failed, identical=unchanged_count)
+
 
 def main():
     base_dir, error = load_base_dir()
-    
+
     if base_dir:
         init_logging(base_dir)
-    
-    import_project()
+
+    return import_project()
 
 
 if __name__ == "__main__":

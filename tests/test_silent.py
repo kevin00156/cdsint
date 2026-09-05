@@ -55,12 +55,19 @@ def fake_codesys_ui():
 
 
 def write_script(tmp_path, body, name="Project_fake.py"):
+    """A stand-in body. It ends by returning a result, as the real ones do.
+
+    Tests that care about the verdict append their own `return` to the body;
+    this trailing one keeps every other test off the "returned no result"
+    path, which is not what they are about.
+    """
     path = tmp_path / name
     path.write_text(
         u"# -*- coding: utf-8 -*-\n"
         u"import sys\n"
         u"RAN_AS_MAIN = False\n"
         u"def main():\n" + body + u"\n"
+        u"    return {'ok': True, 'summary': 'done', 'data': {}}\n"
         u"if __name__ == '__main__':\n"
         u"    RAN_AS_MAIN = True\n"
         u"    main()\n",
@@ -250,43 +257,75 @@ def test_any_other_dialog_says_it_needs_a_person(tmp_path, ide):
     assert "query_string" in outcome.needs.question
 
 
-# --- the verdict -----------------------------------------------------------
+# --- the verdict is the return value (SPEC D11) ----------------------------
 
-def test_a_warning_counts_as_failure(tmp_path, ide):
-    # The scripts abort by warning and returning; there is no return value.
-    path = write_script(tmp_path, u"    system.ui.warning('sync folder not set')")
+def returning(tmp_path, expression, said=u""):
+    """A body that says `said`, then returns `expression`."""
+    path = tmp_path / "Project_verdict.py"
+    path.write_text(u"# -*- coding: utf-8 -*-\n"
+                    u"def main():\n" + said + u"    return " + expression
+                    + u"\n", encoding="utf-8")
+    return str(path)
+
+
+def test_a_false_result_is_a_failure_and_its_summary_is_the_error(tmp_path, ide):
+    path = returning(tmp_path,
+                     u"{'ok': False, 'summary': 'sync folder not set'}")
     outcome = silent.run(ide, path, "main", {})
     assert not outcome.ok()
     assert outcome.error_text() == "sync folder not set"
 
 
-def test_an_error_counts_as_failure(tmp_path, ide):
-    path = write_script(tmp_path, u"    system.ui.error('no project open')")
-    assert not silent.run(ide, path, "main", {}).ok()
-
-
-def test_plain_information_is_success(tmp_path, ide):
-    path = write_script(tmp_path, u"    system.ui.info('Export complete!')")
+def test_a_true_result_is_success(tmp_path, ide):
+    path = returning(tmp_path, u"{'ok': True, 'summary': 'Export complete!'}")
     outcome = silent.run(ide, path, "main", {})
     assert outcome.ok() and outcome.error_text() is None
 
 
+def test_a_warning_no_longer_condemns_a_run_that_worked(tmp_path, ide):
+    # This is the whole point of D11: an author who writes a harmless
+    # warning mid-export used to turn a good export into exit 1.
+    path = returning(tmp_path, u"{'ok': True, 'summary': 'Export complete!'}",
+                     said=u"    system.ui.warning('two objects were skipped')\n")
+    assert silent.run(ide, path, "main", {}).ok()
+
+
+def test_an_error_message_does_not_rescue_a_run_that_failed(tmp_path, ide):
+    path = returning(tmp_path, u"{'ok': False, 'summary': 'no project open'}",
+                     said=u"    system.ui.error('no project open')\n")
+    assert not silent.run(ide, path, "main", {}).ok()
+
+
+def test_a_failure_with_no_summary_still_says_something(tmp_path, ide):
+    # commands.new_result refuses to write "it failed and I don't know why".
+    outcome = silent.run(ide, returning(tmp_path, u"{'ok': False}"), "main", {})
+    assert not outcome.ok() and outcome.error_text()
+
+
+def test_the_counts_come_back_in_data(tmp_path, ide):
+    path = returning(tmp_path,
+                     u"{'ok': True, 'summary': 's', 'data': {'updated': 3}}")
+    assert silent.run(ide, path, "main", {}).data() == {"updated": 3}
+
+
 # --- a script that gives up quietly ----------------------------------------
 
-def test_a_script_that_reports_nothing_is_a_failure(tmp_path, ide):
+def test_a_script_that_returns_nothing_is_a_failure(tmp_path, ide):
     # Project_import.py used to have two give-up paths that only print(), so
     # a cancelled import came back ok=True and the caller went on to build
     # code that was never imported.
-    path = write_script(tmp_path, u"    print('Import cancelled.')")
+    path = returning(tmp_path, u"None", said=u"    print('Import cancelled.')\n")
     outcome = silent.run(ide, path, "main", {})
     assert not outcome.ok()
-    assert "without reporting anything" in outcome.error_text()
+    assert "returned no result" in outcome.error_text()
     assert outcome.stdout_tail == "Import cancelled."
 
 
-def test_one_info_is_enough_to_count_as_finished(tmp_path, ide):
-    path = write_script(tmp_path, u"    system.ui.info('Export complete!')")
-    assert silent.run(ide, path, "main", {}).ok()
+def test_saying_it_is_complete_is_not_enough_on_its_own(tmp_path, ide):
+    # An info popup is what a person reads, not the verdict.
+    path = returning(tmp_path, u"None",
+                     said=u"    system.ui.info('Export complete!')\n")
+    assert not silent.run(ide, path, "main", {}).ok()
 
 
 # --- the dialog titles are copies of literals in four other files ----------
@@ -343,6 +382,44 @@ def test_an_unknown_yes_no_cancel_dialog_is_refused(tmp_path, ide,
             u"    ask_yes_no_cancel('Brand New Question', 'm')")
     outcome = silent.run(ide, write_script(tmp_path, body), "main", {})
     assert "Brand New Question" in outcome.needs.question
+
+
+# --- the real bodies keep the contract -------------------------------------
+
+class DeafUI(object):
+    """Swallows every popup, so what is left is the return value."""
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+class NoProjectSystem(object):
+    def __init__(self):
+        self.ui = DeafUI()
+
+
+# entry_build.py is missing: its first line is `from System import Guid`, and
+# System is the .NET one, which only exists inside the IDE. Its give-up paths
+# are covered by the headless acceptance run in the plan instead.
+BODIES = ("entry_export.py", "entry_import.py", "entry_compare.py")
+
+
+@pytest.mark.parametrize("script", BODIES)
+def test_a_body_that_gives_up_still_returns_a_result(script):
+    """No project open is the give-up path every body can reach from here.
+
+    The stand-in scripts above prove the runner reads a result; this proves
+    the bodies hand one back. A body that grows a bare `return` fails here
+    rather than six months later, as a command that reported success and
+    changed nothing.
+    """
+    ide = {"system": NoProjectSystem(), "projects": None}
+    outcome = silent.run(ide, os.path.join(REPO_ROOT, "engine", script),
+                         "main", {})
+    assert isinstance(outcome.result, dict), outcome.error
+    assert outcome.result["ok"] is False
+    assert outcome.result["summary"]
+    assert not outcome.ok()
 
 
 # --- the exec path ---------------------------------------------------------

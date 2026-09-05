@@ -262,8 +262,8 @@ class Watcher(object):
     def _run_script(self, cmd, started):
         """Press the button on one of the entry bodies in engine/.
 
-        The bodies report success and failure by popping dialogs, so the
-        stand-in UI's messages are the only verdict there is.
+        The verdict is the body's return value (SPEC D11); its dialogs are
+        just what a person would have read.
         """
         script, entry = SCRIPTS[cmd["command"]]
         args = cmd.get("args") or {}
@@ -277,6 +277,7 @@ class Watcher(object):
             error=error,
             messages=outcome.messages,
             stdout_tail=self._tail(cmd, outcome),
+            data=outcome.data(),
             needs_input=None if outcome.needs is None else outcome.needs.as_record())
 
     def _tail(self, cmd, outcome):
