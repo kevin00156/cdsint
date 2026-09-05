@@ -25,7 +25,7 @@ from engine.codesys_compare_engine import (
     find_all_changes, perform_import_items, build_device_remap, summarize_device_remap
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
-from engine.entry import result
+from engine import entry
 
 
 
@@ -40,12 +40,12 @@ def import_project(projects_obj=None):
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
-        return result(False, msg)
+        return entry.result(False, msg)
 
     base_dir, error = load_base_dir()
     if error:
         system.ui.warning(error)
-        return result(False, error)
+        return entry.result(False, error)
 
 
     # Check version compatibility
@@ -63,7 +63,7 @@ def import_project(projects_obj=None):
             # system.ui as its only success/failure signal.
             cancelled = "Import cancelled due to version mismatch."
             system.ui.warning(cancelled)
-            return result(False, cancelled)
+            return entry.result(False, cancelled)
     
     # A live PLC login makes every create/move/delete fail inside the IDE, so
     # check before spending a full compare on an import that cannot land.
@@ -73,7 +73,7 @@ def import_project(projects_obj=None):
         print(block)
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
-        return result(False, block)
+        return entry.result(False, block)
 
     print("=== Starting Project Import ===")
     print("Importing from: " + base_dir)
@@ -126,8 +126,8 @@ def import_project(projects_obj=None):
         msg = "No changes to import.\nAll " + str(unchanged_count) + " objects are in sync."
         print(msg)
         system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
-        return result(True, msg, updated=0, created=0, moved=0, deleted=0,
-                      failed=0, identical=unchanged_count)
+        return entry.result(True, msg, updated=0, created=0, moved=0, deleted=0,
+                            failed=0, identical=unchanged_count)
 
 
     # Show what we're about to import
@@ -159,7 +159,7 @@ def import_project(projects_obj=None):
     if not timed_prompt(ask_yes_no, "Confirm Import", confirm_msg):
         cancelled = "Import cancelled: not confirmed."
         system.ui.warning(cancelled)
-        return result(False, cancelled)
+        return entry.result(False, cancelled)
 
 
     # ── Create timestamped safety backup if enabled ──
@@ -213,9 +213,9 @@ def import_project(projects_obj=None):
 
     # Items that failed are counted, not fatal: perform_import_items named
     # each one it could not land, and the rest of the import stands.
-    return result(True, summary,
-                  updated=updated, created=created, moved=moved,
-                  deleted=deleted, failed=failed, identical=unchanged_count)
+    return entry.result(True, summary,
+                        updated=updated, created=created, moved=moved,
+                        deleted=deleted, failed=failed, identical=unchanged_count)
 
 
 def main():
@@ -224,7 +224,7 @@ def main():
         from engine.settings import choose_sync_folder
         _folder, setup_error = choose_sync_folder(globals())
         if setup_error:
-            return result(False, setup_error)
+            return entry.result(False, setup_error)
 
     base_dir, error = load_base_dir()
 

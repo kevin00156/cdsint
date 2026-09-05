@@ -160,10 +160,10 @@ img/        readMe 用的圖
   - [x] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
   - [x] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
   - [x] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗。階段 0 已做，見第 7 節 worker 的 Ruling。
-  - [ ] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。
-  - [ ] 驗收：`stub/` 只有三個檔案。
-  - [ ] 驗收：安裝器對 `%TEMP%\cdsint-work\scriptdir\` 裝完，裡面只有 `cdsint\Project_export.py`、`cdsint\Project_import.py`、`cdsint\Project_watch.py` 三個 `.py`。用原廠 3.5.21.40 無頭 `--runscript` 跑那份 `Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback。
-  - [ ] 驗收：對 Shm 副本，用原廠與 Delta 1.10 各起一次無頭 IDE 掛看門人（事實 18 的路），`cdsint export --target`、`cdsint import -y --target`、`cdsint compare --target`、`cdsint build --target` 四個都 exit 0，`--json` 的 `ok` 是 true。做完把自己起的 IDE 收掉。
+  - [x] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。——416 passed，grep 零。
+  - [x] 驗收：`stub/` 只有三個檔案。——三支 `.py`，各 15、15、14 行；另外有一個 `body.path`，那是安裝器寫的、gitignore 的機器專屬路徑檔，不是第四支腳本。
+  - [x] 驗收：安裝器對 `%TEMP%\cdsint-work\scriptdir\` 裝完，裡面只有 `cdsint\Project_export.py`、`cdsint\Project_import.py`、`cdsint\Project_watch.py` 三個 `.py`。用原廠 3.5.21.40 無頭 `--runscript` 跑那份 `Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback。——過。第一次跑掛在 `body.path` 的 BOM 上（`ImportError: No module named cds.ide`），修掉後 exit 0，輸出是 `cdsint: listening as unsaved-21556`。
+  - [ ] 驗收：對 Shm 副本，用原廠與 Delta 1.10 各起一次無頭 IDE 掛看門人（事實 18 的路），`cdsint export --target`、`cdsint import -y --target`、`cdsint compare --target`、`cdsint build --target` 四個都 exit 0，`--json` 的 `ok` 是 true。做完把自己起的 IDE 收掉。——**Delta 1.10 四個全過**（export 16.6s、import 14.2s、compare 13.2s、build 31.3s，229 個物件，build 0 errors 101 warnings）。**原廠 3.5.21.40 只有 export 過**；compare 與 import 掛在 `classify_object` 對缺外掛的物件丟 `SystemError`，build 因為缺 Delta 的函式庫而有 502 個編譯錯誤所以 exit 1。兩者都不是階段 1 造成的，原因是這是 Delta 的專案、原廠 CODESYS 沒裝 Delta 的裝置描述與函式庫，見第 7 節的裁決請求。自己起的六個無頭行程都已收掉，`%TEMP%\cdsint-work\` 已刪。
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
@@ -232,6 +232,10 @@ img/        readMe 用的圖
 
 階段 1 新增的：
 
+- **請監督者裁：原廠 CODESYS 開 Delta 的專案時，`classify_object` 對缺外掛的物件丟 `SystemError`，整個 compare 與 import 就死了。** 現況是引擎自己前後不一致：匯出的迴圈每個物件包在 `try/except Exception` 裡，所以那 7 個物件被算進 `failed` 並用名字寫進 log，匯出照樣完成；`codesys_compare_engine.find_all_changes` 沒有包，所以 7 個物件讓 229 個物件的比對整個中止。這不是階段 1 造成的，`codesys_managers.classify_object` 與 `find_all_changes` 這次一行都沒動。要修的話是「照匯出那樣，報出名字然後跳過」，屬於引擎品質（階段 4 那條「碰到的函式順手把空白 except 改成具體例外」的鄰居）。工單階段 1 的驗收句要求原廠也四個都 exit 0，所以這一條擋著那句驗收；請裁定是現在修還是留到階段 4，以及那句驗收要不要改成「用專案自己的 IDE」。
+- Ruling: `cds/ide/messages.py` 讀 IDE 的編譯訊息時，一則讀不出來不影響其他則 — 它的 docstring 本來就寫「never an exception，因為它是在已經有結果的編譯之後才跑」，但 `_first` 用 `getattr(item, name, None)`，而預設值只吃 `AttributeError`；缺外掛的專案裡有一則訊息讀 `.object` 會丟 .NET 的「The object GUID ... is not valid」，於是整個 `build` 的結果被一個 traceback 換掉。改成每則各自 try、`_first` 吞掉任何例外之後，同一個情境下 build 回報 502 errors 101 warnings 與 200 行錯誤清單 — 錯了的代價是某則訊息如果只有部分讀得出來，報出來的位置會少一半，但那比整份不見好。新增 `tests/test_build_messages.py` 釘住這件事。
+- Ruling: 四支本體改成 `from engine import entry` 再叫 `entry.result(...)`，不 `from engine.entry import result` — 這是真跑出來的 bug：`entry_export.export_project` 的匯出迴圈裡有一個區域變數也叫 `result`，於是 `return result(True, summary, ...)` 變成 `TypeError: str is not callable`，在 IDE 裡跑真專案才炸出來，單元測試與那三支「放棄路徑」的測試都走不到那一行。`result` 在這個引擎裡是很常見的區域變數名，把一個函式用這個名字 import 進四個上千行的舊檔案就是在等著被遮蔽 — 錯了的代價是每個呼叫點多六個字元。順手把那個區域變數改名 `wrote`（它是「這個物件寫出去的結果」），把同檔的字典推導變數 `entry` 改名 `record`。
+- Ruling: `cdsint import` 加上 `-y` 這個短旗標，`--yes` 保留 — SPEC 4.2 通篇寫的是 `import -y`，工單階段 1 的驗收句也是；程式碼裡只有 `--yes`，所以驗收照著打會被 argparse 拒絕。加一個 alias 比改規格與驗收都便宜，而且 `-y` 是這類確認旗標的通用寫法 — 錯了的代價是無，`--yes` 照樣能用。
 - Ruling: 安裝器不管下載還是 clone，一律用 junction 指向本體的 `stub/`，不複製 stub — 工單寫「本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、開發模式用 junction」，讀起來像兩條路（下載就複製、開發就 junction）。兩條路就是兩份 stub，升級時一個 IDE 的 ScriptDir 留著舊的、另一個是新的，而且 SPEC D16 明講不准並存。改成一條之後，下載模式與開發模式的差別只剩「本體從哪來」 — 錯了的代價是 ScriptDir 所在的磁碟如果不是 NTFS 就裝不起來；三家的 ScriptDir 都在 C: 底下，這個情況實務上不存在。
 - Ruling: 安裝器認一套 IDE 的條件是它的執行檔在，不是目錄名字像版本號 — 這台機器上 `Lenze\PlcDesigner\` 底下有 `Targets` 與 `GatewayPLC`，`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們每一個都會被當成一套有自己 ScriptDir 的 IDE。加上執行檔檢查之後，`-List` 列出的正好是這台真正的五個 ScriptDir — 錯了的代價是某天有一套 IDE 把執行檔搬到別的相對位置，安裝器就會說「找不到任何 IDE」，得改那三條路徑。
 - Ruling: 拿掉互動式的版本選單，改成 `-Version`（預設 `main`） — 選單要先去 GitHub 抓 tag 再 `Read-Host`，而這個 repo 一個 release 都還沒發，選單永遠是空的；更要緊的是 `Read-Host` 讓安裝器沒辦法自動驗收 — 錯了的代價是之後真的發了版，想裝舊版的人要自己打 `-Version v1.2.3`，不能從清單挑。

@@ -33,7 +33,7 @@ from engine.codesys_compare_engine import (
     TYPE_NAMES, build_expected_path
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
-from engine.entry import result
+from engine import entry
 
 
 
@@ -45,12 +45,12 @@ def compare_project(projects_obj=None):
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
-        return result(False, msg)
+        return entry.result(False, msg)
 
     base_dir, error = load_base_dir()
     if error:
         system.ui.warning(error)
-        return result(False, error)
+        return entry.result(False, error)
 
 
     # Check version compatibility
@@ -138,10 +138,10 @@ def compare_project(projects_obj=None):
             return perform_export(base_dir, selected, unchanged_count)
 
     # Compare only looks. Differences are the answer, not a failure.
-    return result(True, counts,
-                  different=len(different), new_in_ide=len(new_in_ide),
-                  new_on_disk=len(new_on_disk), moved=len(moved),
-                  unchanged=unchanged_count)
+    return entry.result(True, counts,
+                        different=len(different), new_in_ide=len(new_in_ide),
+                        new_on_disk=len(new_on_disk), moved=len(moved),
+                        unchanged=unchanged_count)
 
 
 def perform_import(primary_project, base_dir, selected, unchanged_count=0):
@@ -149,8 +149,8 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     if not selected:
         nothing = "No files selected for import."
         system.ui.info(nothing)
-        return result(True, nothing, updated=0, created=0, moved=0,
-                      deleted=0, failed=0, identical=unchanged_count)
+        return entry.result(True, nothing, updated=0, created=0, moved=0,
+                            deleted=0, failed=0, identical=unchanged_count)
 
     # A live PLC login makes every create/move/delete fail inside the IDE.
     online_apps = find_logged_in_applications(primary_project, globals())
@@ -159,7 +159,7 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
         print(block)
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
-        return result(False, block)
+        return entry.result(False, block)
 
     # Create timestamped safety backup if enabled
     projects_obj = resolve_projects(None, globals())
@@ -180,9 +180,9 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=True)
 
-    return result(True, summary,
-                  updated=updated, created=created, moved=moved,
-                  deleted=deleted, failed=failed, identical=unchanged_count)
+    return entry.result(True, summary,
+                        updated=updated, created=created, moved=moved,
+                        deleted=deleted, failed=failed, identical=unchanged_count)
 
 
 def perform_export(base_dir, selected, unchanged_count=0):
@@ -190,8 +190,8 @@ def perform_export(base_dir, selected, unchanged_count=0):
     if not selected:
         nothing = "No objects selected for export."
         system.ui.info(nothing)
-        return result(True, nothing, updated=0, created=0, removed=0,
-                      failed=0, identical=unchanged_count)
+        return entry.result(True, nothing, updated=0, created=0, removed=0,
+                            failed=0, identical=unchanged_count)
 
 
     # Property accessors collected dynamically during export loop
@@ -291,10 +291,10 @@ def perform_export(base_dir, selected, unchanged_count=0):
     projects_obj = resolve_projects(None, globals())
     finalize_sync_operation(base_dir, projects_obj, is_import=False)
 
-    return result(True, summary,
-                  updated=count_updated, created=count_created,
-                  removed=count_removed, failed=count_failed,
-                  identical=unchanged_count)
+    return entry.result(True, summary,
+                        updated=count_updated, created=count_created,
+                        removed=count_removed, failed=count_failed,
+                        identical=unchanged_count)
 
 
 def main():

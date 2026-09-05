@@ -24,7 +24,7 @@ from engine.codesys_managers import (
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers
-from engine.entry import result
+from engine import entry
 
 # Shared constants and utilities imported from modules
 
@@ -155,7 +155,7 @@ def export_project(export_dir, projects_obj=None):
             system.ui.error(msg)
         except NameError:
             print("Error:", msg)
-        return result(False, msg)
+        return entry.result(False, msg)
 
     # Create export directory
     if not os.path.exists(export_dir):
@@ -327,12 +327,12 @@ def export_project(export_dir, projects_obj=None):
                 manager = managers["default"]
 
             context['effective_type'] = effective_type
-            result = manager.export(obj, context, rel_path=rel_path)
-            if result == "new":
+            wrote = manager.export(obj, context, rel_path=rel_path)
+            if wrote == "new":
                 exported_new += 1
-            elif result == "updated":
+            elif wrote == "updated":
                 exported_updated += 1
-            elif result == "identical":
+            elif wrote == "identical":
                 exported_identical += 1
                 
         except Exception as e:
@@ -344,12 +344,12 @@ def export_project(export_dir, projects_obj=None):
     # Orphan cleanup now uses exported_paths set directly
     removed_count = cleanup_orphaned_files(export_dir, exported_paths)
     if removed_count is None:
-        return result(False, "Export cancelled during orphan cleanup.")
+        return entry.result(False, "Export cancelled during orphan cleanup.")
 
     # Calculate folder hashes (Merkle Tree) and save the updated cache
     if new_cache:
         # build_folder_hashes expects a dict of {path: ide_hash}
-        just_hashes = {path: entry.get('ide_hash') for path, entry in new_cache.items()}
+        just_hashes = {path: record.get('ide_hash') for path, record in new_cache.items()}
         folder_hashes = build_folder_hashes(just_hashes)
         save_sync_cache(export_dir, new_cache, folder_hashes, context.get('new_types'))
         log_info("Saved updated sync cache with {} objects and {} folders.".format(
@@ -393,10 +393,10 @@ def export_project(export_dir, projects_obj=None):
 
     # Objects that failed are counted, not fatal: the run still wrote every
     # object it could, and log_error named each one it could not.
-    return result(True, summary,
-                  new=exported_new, updated=exported_updated,
-                  identical=exported_identical, removed=removed_count,
-                  failed=exported_failed, total=exported_total)
+    return entry.result(True, summary,
+                        new=exported_new, updated=exported_updated,
+                        identical=exported_identical, removed=removed_count,
+                        failed=exported_failed, total=exported_total)
 
 
 def main():
@@ -409,7 +409,7 @@ def main():
         from engine.settings import choose_sync_folder
         _folder, setup_error = choose_sync_folder(globals())
         if setup_error:
-            return result(False, setup_error)
+            return entry.result(False, setup_error)
 
     base_dir, error = load_base_dir()
     if error:
@@ -417,7 +417,7 @@ def main():
             system.ui.warning(error)
         except NameError:
             print("Error:", error)
-        return result(False, error)
+        return entry.result(False, error)
 
     init_logging(base_dir)
     return export_project(base_dir)

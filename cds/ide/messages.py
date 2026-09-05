@@ -45,14 +45,25 @@ def build_report(ide_globals, limit=MAX_LINES):
 
     Empty when the IDE has nothing to say or will not say it in a shape this
     understands — never an exception, because it is called after a build that
-    already has a result to report.
+    already has a result to report, and raising here would throw that result
+    away and report a traceback instead of what the build actually did.
+
+    Reading the messages one at a time, not the whole list at once: a project
+    holding an object whose plugin is missing has one message that cannot be
+    read, and the other hundred are still worth having.
     """
     try:
         found = _fetch(ide_globals)
     except Exception:
         return []
-    lines = [_format(item) for item in found]
-    lines = [line for line in lines if line]
+    lines = []
+    for item in found:
+        try:
+            line = _format(item)
+        except Exception as exc:
+            line = "?        a build message could not be read (%s)" % exc
+        if line:
+            lines.append(line)
     lines.sort(key=lambda line: 0 if line.startswith("error") else 1)
     return lines[:limit]
 
@@ -103,8 +114,18 @@ def _name_of(obj):
 
 
 def _first(item, names):
+    """The first of these attributes that is there and can be read.
+
+    getattr's default only covers AttributeError. Reading .object off a
+    message that points at an object whose plugin is missing raises a .NET
+    exception instead ("The object GUID ... is not valid"), and a build
+    whose position could not be worked out is still a build worth reporting.
+    """
     for name in names:
-        value = getattr(item, name, None)
+        try:
+            value = getattr(item, name, None)
+        except Exception:
+            continue
         if value is not None:
             return value
     return None

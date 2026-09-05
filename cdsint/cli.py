@@ -67,6 +67,11 @@ def build_parser():
         for flag, help_text in FLAGS.get(name, []):
             if flag == "--app":
                 command.add_argument(flag, default=None, help=help_text)
+            elif flag == "--yes":
+                # -y is the spelling in SPEC 4.2, and the one every other
+                # tool that asks "are you sure" uses.
+                command.add_argument("-y", flag, action="store_true",
+                                     default=None, help=help_text)
             else:
                 command.add_argument(flag, action="store_true", default=None,
                                      help=help_text)
