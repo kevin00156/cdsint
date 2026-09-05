@@ -106,7 +106,7 @@ SPEC 第 3 節的 D1 到 D16 全部適用。本工單另外定的：
 
 ```
 engine/     原 codesys_*.pyw 改 .py，加四支本體（分別對應 export、import、compare、build），各回傳結果
-stub/       Project_*.py，每支不超過 15 行；階段 0 五支（export、import、watch、directory、parameters），階段 1 減到三支
+stub/       Project_*.py，每支不超過 17 行（原本 15，階段 4 收尾補 print_function 之後改的，見第 7 節）；階段 0 五支（export、import、watch、directory、parameters），階段 1 減到三支
 cdsint/     原 cli/cds_ide.py 拆成 cli.py（目標解析、印結果）、headless.py（無頭啟動器 CLI 側）、
             installs.py（IDE 安裝探測）、plc.py（PLC 子命令）
 cds/core/   照搬
@@ -226,7 +226,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
 
-- [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）——worker 2026-09-05 22:26 做完，監督者的驗證見本階段末尾；全新上下文的審查在跑，必修修完才打大勾。
+- [x] **階段 4：引擎品質**（SPEC 10.2 階段 4）——worker 2026-09-05 22:26 做完，監督者的驗證見本階段末尾；審查的三條必修與十二條建議 2026-09-05 23:12 全部做完，見「階段 4 收尾（審查後）」。
   - [x] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
   - [x] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [x] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
@@ -243,12 +243,12 @@ img/        readMe 用的圖
   - [x] 驗收：SPEC 第 7 節的 perf 表有新數字。
   - 監督者驗證（2026-09-05 22:30）：`python -m pytest tests -q` 與根目錄各 757 passed，監督者自己跑的。`grep "time.sleep\|threading\|Thread("` 在 `engine/ cds/ide/ stub/` 只剩兩處 docstring 在講「沒有執行緒」；`"cds-sync-` 字面值只剩 `cds/core/props.py:20`；PLC 本體拆成四個檔，最長 243 行。監督者在真 IDE（原廠 3.5.21.40，softplc 副本，`%TEMP%\cdsint-sup\`）重現髒檔保護：export 229 個，改磁碟上 `FB_LowPass.st` 一行，再 export：那個檔的雜湊值前後相同、`data.pending_import` 列出它、`ok` false、其他 228 個 identical。使用者的兩個 IDE（pid 14012、17340）都在 20:48 前後自己關掉（Shm 原檔 20:47:59 有一次存檔，登記檔最後心跳 20:48:24），worker 第一次起無頭 IDE 是 21:29，監督者最後一次碰是 20:37；兩個原始專案的內容沒有被 cdsint 寫過。沒有殘留的 IDE 行程。
   - [ ] 驗收（還需要人）：比對視窗的托盤氣泡改成 Timer 之後，在有畫面的 IDE 裡按一次「存到 .diff」，氣泡有出現又消失。原因：`codesys_ui.py` 第一行 import clr，CI 跑不了，而氣泡只有眼睛看得到。
-  - [ ] **階段 4 收尾（審查後）**：全新上下文的只讀審查在 `docs/history/REVIEW_2026-09-05.md`（HEAD `49aa6a5`），兩支重現腳本 `docs/history/repro_compare_drops_guard.py`、`repro_stale_report.py` 用 `tests/` 的假物件就能跑。監督者裁定：**三條必修全部修，十二條建議全部做**；做的時候發現某條的代價不對，不做也可以，但要在第 7 節寫取捨。每一條修完要有一條會在修之前紅的測試，兩支重現腳本修完要跑不出問題。
-  - [ ] 必修 1：`find_all_changes` 對「不同」與「處理不了」的物件保留舊快取項目（它描述的仍是上次同步時磁碟長什麼樣），只看的命令不再把髒檔保護的依據丟掉；順便做建議 11（比對視窗的 export 也更新快取）。測試：edit → compare → export，檔案還在、`pending_import` 有它；edit → `import`（沒 `-y`）→ export 同樣。
-  - [ ] 必修 2：`cdsint/headless.py` 的 `run()` 啟動前刪掉舊的 report 檔。測試：上一趟的 report 在、這趟沒寫 → raise 逾時或啟動失敗，不回傳舊結果。
-  - [ ] 必修 3：`cds/ide/headless.py` 的 `point_sync_folder` 失敗就不跑命令，report 記原因，`intended_exit` 是失敗。
-  - [ ] 建議 1 到 12（見審查檔）。特別是：`--force-lock` 那條路上 kill 之後不清別人的鎖（啟動前記下鎖在不在）；有登記簿項目時 import 不做 create／move（跟 export 不刪孤兒同形）；`cds-sync-version` 移到存檔之前寫；缺 `print_function` 的檔全部補上；`cds/ide/headless._text` 改成先判 unicode 並考慮三個 `_text` 收成 `cds/core` 一支；Ctrl-C 要 kill 自己起的 IDE；D12 加 `tests/test_layering.py` 用 AST 守。
-  - [ ] 驗收：`python -m pytest tests -q` 綠；兩支重現腳本各自跑完印出「檔案還在／有 raise」；`grep -L "print_function" engine/*.py cds/ide/*.py cds/core/*.py stub/*.py` 為空。
+  - [x] **階段 4 收尾（審查後）**：全新上下文的只讀審查在 `docs/history/REVIEW_2026-09-05.md`（HEAD `49aa6a5`），兩支重現腳本 `docs/history/repro_compare_drops_guard.py`、`repro_stale_report.py` 用 `tests/` 的假物件就能跑。監督者裁定：**三條必修全部修，十二條建議全部做**；做的時候發現某條的代價不對，不做也可以，但要在第 7 節寫取捨。每一條修完要有一條會在修之前紅的測試，兩支重現腳本修完要跑不出問題。
+  - [x] 必修 1：`find_all_changes` 對「不同」與「處理不了」的物件保留舊快取項目（它描述的仍是上次同步時磁碟長什麼樣），只看的命令不再把髒檔保護的依據丟掉；順便做建議 11（比對視窗的 export 也更新快取）。測試：edit → compare → export，檔案還在、`pending_import` 有它；edit → `import`（沒 `-y`）→ export 同樣。
+  - [x] 必修 2：`cdsint/headless.py` 的 `run()` 啟動前刪掉舊的 report 檔。測試：上一趟的 report 在、這趟沒寫 → raise 逾時或啟動失敗，不回傳舊結果。
+  - [x] 必修 3：`cds/ide/headless.py` 的 `point_sync_folder` 失敗就不跑命令，report 記原因，`intended_exit` 是失敗。
+  - [x] 建議 1 到 12（見審查檔）。特別是：`--force-lock` 那條路上 kill 之後不清別人的鎖（啟動前記下鎖在不在）；有登記簿項目時 import 不做 create／move（跟 export 不刪孤兒同形）；`cds-sync-version` 移到存檔之前寫；缺 `print_function` 的檔全部補上；`cds/ide/headless._text` 改成先判 unicode 並考慮三個 `_text` 收成 `cds/core` 一支；Ctrl-C 要 kill 自己起的 IDE；D12 加 `tests/test_layering.py` 用 AST 守。
+  - [x] 驗收：`python -m pytest tests -q` 綠；兩支重現腳本各自跑完印出「檔案還在／有 raise」；`grep -L "print_function" engine/*.py cds/ide/*.py cds/core/*.py stub/*.py` 為空。
   - [ ] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。
 
 ---
@@ -301,15 +301,40 @@ img/        readMe 用的圖
    四個要提醒人的地方。零，`-y` 少了 make 會停在 exit 1，那是設計不是故障；`--sync-dir`
    少了會被 argparse 擋在 exit 2。
    一，`cds-sync-version` 屬性現在是 `k1.1.1` 而工具是 `0.0.1`，
-   第一次跑會撞版本不符，要 `--force`；那個屬性只有在專案存檔之後才會更新，而這個專案的
-   `cds-sync-save-after-export` 是 False，所以它不會自己好起來——要嘛每次都帶 `--force`，
-   要嘛人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。
+   第一次跑會撞版本不符，要 `--force`。（階段 4 收尾後改了：屬性改成在存檔之前寫，
+   所以只要那一趟真的存了檔，第二趟就不會再撞。但這個專案的 `cds-sync-save-after-export`
+   是 False，那一趟不會存檔，所以還是不會自己好起來——要嘛每次帶 `--force`，
+   要嘛人跑一次 `cdsint config set cds-sync-version=0.0.1`，那個命令會存檔。）
    二，`.cdsint-verify.json` 要進 `.gitignore`。
    三，`st-verify` 的 `git diff` 仍然有價值：`verify` 問的是「IDE 跟磁碟一不一致」，
    `git diff` 問的是「磁碟跟上一次 commit 一不一致」，兩個問題不一樣。
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）（階段 4 已做。）
-7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。當時屬性是寫在存檔之後（`save_sync_metadata` 裡），所以無頭那一趟根本留不住它，看門人模式也要等使用者自己存檔——也就是說每一趟都會撞，這個警告永遠是噪音。階段 4 收尾把它移到 `finalize_sync_operation` 裡、存檔之前（審查的建議 3）。剩下的一半沒有解：softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，那一趟不存檔，屬性還是留不住。解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+
+階段 4 收尾（審查後）新增的：
+
+- Ruling: 必修 1 走「保留舊快取項目」那條，不走「只看的命令不寫 `sync_cache.json`」 — 審查給了兩個選項。不寫快取會讓比對每一次都從頭算，Merkle 跳過就白做了，而保留舊項目本來就是誠實的：那一項描述的是「上次同步時磁碟長什麼樣」，比對沒有讓磁碟同步過，所以那句話仍然為真 — 錯了的代價是快取裡會留著已經從磁碟刪掉的檔的項目，而讀它的兩個地方（`_try_cache_skip`、`_disk_moved_since_sync`）都會先 stat 檔案，檔不在就當沒項目。
+
+- Ruling: 保留的範圍比工單寫的大一點：不只「不同」與「處理不了」，任何一個 Pass 1 走到了卻沒有走完 Pass 2 的物件都保留 — `export_xml` 關掉時被擋下的 XML 物件、`sync_direction` 不匯出的那些，都是同一個洞的不同入口，而匯出那邊本來就是這樣做的（`entry_export.py` 的 PERSIST CACHE FOR SKIPPED OBJECTS）；兩邊規則一致比兩邊各有例外好記 — 錯了的代價同上一條。
+
+- Ruling: 建議 11 的比對視窗匯出，快取是「載入現有的再蓋上這次寫的」，不是「只寫這次的」 — `save_sync_cache` 是整份替換不是合併，只寫這次選中的那幾個等於把其他每個物件的護欄拿掉，也就是必修 1 換一個入口再犯一次。這一條有自己的測試（`test_the_compare_dialog_export_keeps_the_entries_it_did_not_touch`），它在修之前是綠的，因為那時候比對視窗根本不寫快取；留著它是為了擋住這次的改法出錯 — 錯了的代價是無。
+
+- Ruling: 比對視窗的匯出仍然不放 `cache_data`，只放 `new_cache` — 前者是「讀快取來決定要不要寫」，也就是髒檔保護的開關，而那條路上有人剛剛在對話框裡看過差異並選了 IDE 這邊，攔他等於推翻他剛給的答案；後者是「把寫出去的東西記下來」，兩件事不同 — 錯了的代價是無，`entry_compare.perform_export` 的註解寫了這個分別。
+
+- Ruling: 建議 8（`point_sync_folder` 的註解與事實矛盾）除了改註解，也讓 IDE 側把實際生效的資料夾寫進 report，CLI 側不再用自己的旗標蓋掉它 — 純改註解沒有任何測試會紅，而審查那一條本來就提了「或 report 註明」這個選項；報告說的是引擎實際讀的那個資料夾，比報告說的是「我要求的那個」有用 — 錯了的代價是 report 多一個來源，IDE 沒跑到那一步時仍然退回旗標值。
+
+- Ruling: 建議 7 的死碼（`cleanup_orphaned_files` 的 Cancel 分支、`removed_count is None`）沒有「修之前會紅的測試」 — 它不可達，這正是刪掉它的理由；能寫出來的測試只有結構檢查，而那是在測實作不是測行為。同一條的另一半（永遠印 `Skipped: 0`）有測試。刪的證據是整套測試照樣綠 — 錯了的代價是無。
+
+- Ruling: 順手把 `choice_idx` 改成布林 `delete_them`，不只是刪掉那個 else — 對話框只有兩個按鈕，留著 `choice_idx == 0 / == 1` 會讓下一個讀的人繼續問「那 2 是什麼」；消掉那個問題比補一句註解好 — 錯了的代價是無。
+
+- Ruling: 建議 5 的三個 `_text` 收成 `cds/core/text.py` 的 `as_text`，`cds/ide/headless.py` 留一層薄包裝 — 另外兩個對 `None` 回 `u"None"`，headless 要 `None`（report 欄位該是 null 不是「None」這個字）；硬把三個的契約統一會讓 `silent.py` 的 `self._partial + _text(text)` 在拿到 None 時炸掉。測試守的是「只有一份實作」而不是判斷順序，因為 CPython 重現不了 IronPython 那個「三個型別是同一個」的塌陷 — 錯了的代價是 headless 多三行。
+
+- Ruling: `print_function` 補到每一支，包含只有 docstring 的三個 `__init__.py` — 規則有例外就變成每個人都要記的東西，棘輪測試對整個目錄一視同仁最省事；工單的驗收句本來就是「`grep -L` 為空」 — 錯了的代價是三支 stub 從 15 行變成 17 行，超過第 4 節寫的「每支不超過 15 行」。那個上限是為了擋邏輯長進 stub，而這兩行不是邏輯，所以上限跟著改成 17。
+
+- Ruling: 建議 2 只擋 create，不擋 delete — 讀不到的物件不會進 `ide_paths`，所以也不會出現在孤兒清單 `new_in_ide` 裡，擋 delete 擋不到任何東西；真正會出事的是它的 `.st` 被當成新檔拿去 create，或被 `detect_moved_files` 按檔名配成一組假搬移。沒被建的檔名進 `data.not_created` 並寫進 summary，否則那一趟會回報一句乾淨的「沒有東西要匯入」 — 錯了的代價是那些檔要等到讀得到那個物件的 IDE 上再跑一次才會被建出來。
+
+- Ruling: 兩支重現腳本的暫存目錄從「腳本自己旁邊」改成系統 temp — 它們是在 scratchpad 寫的，現在住在 `docs/history/` 底下，照原樣跑會在 repo 裡長出暫存資料夾 — 錯了的代價是無，腳本的邏輯一行沒動。
 
 階段 4 新增的：
 
@@ -411,7 +436,7 @@ img/        readMe 用的圖
 - Ruling: 安裝器不管下載還是 clone，一律用 junction 指向本體的 `stub/`，不複製 stub — 工單寫「本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、開發模式用 junction」，讀起來像兩條路（下載就複製、開發就 junction）。兩條路就是兩份 stub，升級時一個 IDE 的 ScriptDir 留著舊的、另一個是新的，而且 SPEC D16 明講不准並存。改成一條之後，下載模式與開發模式的差別只剩「本體從哪來」 — 錯了的代價是 ScriptDir 所在的磁碟如果不是 NTFS 就裝不起來；三家的 ScriptDir 都在 C: 底下，這個情況實務上不存在。
 - Ruling: 安裝器認一套 IDE 的條件是它的執行檔在，不是目錄名字像版本號 — 這台機器上 `Lenze\PlcDesigner\` 底下有 `Targets` 與 `GatewayPLC`，`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們每一個都會被當成一套有自己 ScriptDir 的 IDE。加上執行檔檢查之後，`-List` 列出的正好是這台真正的五個 ScriptDir — 錯了的代價是某天有一套 IDE 把執行檔搬到別的相對位置，安裝器就會說「找不到任何 IDE」，得改那三條路徑。
 - Ruling: 拿掉互動式的版本選單，改成 `-Version`（預設 `main`） — 選單要先去 GitHub 抓 tag 再 `Read-Host`，而這個 repo 一個 release 都還沒發，選單永遠是空的；更要緊的是 `Read-Host` 讓安裝器沒辦法自動驗收 — 錯了的代價是之後真的發了版，想裝舊版的人要自己打 `-Version v1.2.3`，不能從清單挑。
-- Ruling: `body.path` 一律寫成沒有 BOM 的 UTF-8，stub 讀的時候用 `utf-8-sig` — 第一次跑無頭驗收就是掛在這個上面：`Set-Content -Encoding utf8` 在 PowerShell 5.1 會加 BOM，stub 於是把 `﻿C:\...` 插進 `sys.path`，IDE 丟 `ImportError: No module named cds.ide`。安裝器寫對是根治，stub 讀得寬是因為這個檔也可能是人用編輯器建的 — 錯了的代價是 stub 各多一行 import，`Project_export.py` 與 `Project_import.py` 剛好用到 15 行的上限。
+- Ruling: `body.path` 一律寫成沒有 BOM 的 UTF-8，stub 讀的時候用 `utf-8-sig` — 第一次跑無頭驗收就是掛在這個上面：`Set-Content -Encoding utf8` 在 PowerShell 5.1 會加 BOM，stub 於是把 `﻿C:\...` 插進 `sys.path`，IDE 丟 `ImportError: No module named cds.ide`。安裝器寫對是根治，stub 讀得寬是因為這個檔也可能是人用編輯器建的 — 錯了的代價是 stub 各多一行 import，`Project_export.py` 與 `Project_import.py` 剛好用到當時 15 行的上限。（階段 4 收尾補 `print_function` 之後上限改成 17。）
 - Ruling: `cds/ide/silent.py` 自己按名字把 `engine.codesys_ui` 載進來，載不到就整個不跑本體 — 這是修一個階段 0 留下的洞：來源 repo 的入口在模組層級用 `_load_hidden_module` 把 `codesys_ui` 塞進 `sys.modules`，階段 0 改成函式裡的 `from engine.codesys_ui import ...` 之後就沒有人在模組層級載它了，而看門人每次執行命令前都會清掉 `sys.modules` 裡的 engine，所以 `_install` 那句 `sys.modules.get(...)` 永遠是 None，三個對話框一個都沒被換掉。後果是 `cdsint import -y --target` 會在 IDE 裡開一個沒人能按的 WinForms 對話框，把 IDE 的訊息迴圈卡死 — 正是階段 1 驗收要跑的那條命令。SPEC D12 的字面是「`cds/ide` 不准 import 引擎模組」，這一行違反了字面；但 `silent.py` 本來就寫死 `UI_MODULE = "engine.codesys_ui"` 並且往裡面 setattr，這個相依早就存在，缺的只是讓它真的成立。載進來之後 `cds/ide` 仍然不使用引擎的任何東西，只是把三個函式換掉再換回去 — 錯了的代價是 D12 的 grep 會多一筆命中（`__import__(UI_MODULE)`），要在規則裡寫成例外。這一條值得監督者裁。
 - Ruling: `choose_sync_folder` 回 `(folder, error)` 兩元組，跟 `load_base_dir` 同形 — 只回 `folder` 或 `None` 的話，呼叫端只能回報一句「沒設同步資料夾」，把真正的原因（沒開專案／使用者按了取消／寫不進專案屬性）吃掉，那正是 SPEC D13 禁止的 — 錯了的代價是多一個要解包的回傳值。
 - Ruling: `entry_directory.py` 裡檢查 `_metadata.json` 專案路徑不符的那一段整段刪掉，不搬進 `engine/settings.py` — 現在的中繼資料檔叫 `sync_metadata.json`，`_metadata.json` 全 repo 只剩 `RESERVED_FILES` 裡一個字串，沒有任何地方會寫出它，所以那段是對著一個不存在的檔案跑的死碼（PRINCIPLES 7）。順帶消掉的還有它那個 `ask_yes_no("Update Metadata?")`，否則替身 UI 的答案表要多登記一個永遠答不出來的題目 — 錯了的代價是如果真有人手上留著遠古版本寫的 `_metadata.json`，設定同步資料夾時不會再被問要不要更新裡面的專案路徑。

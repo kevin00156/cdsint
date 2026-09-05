@@ -43,6 +43,38 @@ about a version mismatch once and then records the new number.
   `CDS_DEV_USER` and `CDS_DEV_PASS` and reach no command line, file or report.
   Not yet run against real hardware.
 
+- **A compare between an edit and an export threw away the edit.** The
+  dirty-file guard reads one thing: the sync-cache entry saying what the
+  disk held at the last sync. `find_all_changes` rewrote the cache with
+  only the objects it found unchanged, so every object it reported as
+  *different* lost its entry — and it runs before the Confirm Import
+  dialog, so `compare`, `verify`, and an `import` nobody confirmed all
+  left the next export free to overwrite an unimported edit, reporting
+  `ok` with nothing pending. Entries for objects this run could not
+  rewrite are now kept. The compare dialog's own export had the mirror
+  problem: it wrote the file and recorded nothing, so the next ordinary
+  export blamed the disk for a change the IDE had made and refused.
+- **A headless run could answer with the previous run's report.** The
+  report path is stable across runs by design, so an IDE that hung on a
+  dialog and wrote nothing left the last run's file to be read: it
+  carried `intended_exit`, the run counted as finished, and `verify`
+  passed on numbers from a run that had already happened. `run()` now
+  removes the report before launching, as it already truncated stdout
+  and stderr. Two more on the same path: `--sync-dir` that would not
+  stick was swallowed into a `False` and the commands ran against the
+  folder the project file carried, and Ctrl-C left the `--noUI` process
+  running with no window, holding the project's lock.
+- **An object the IDE will not describe no longer gets a duplicate.**
+  Its `.st` looks like a file nobody owns, so import created a second
+  object for it or moved an unrelated orphan onto it; export has refused
+  to delete orphans under the same conditions since D13. The withheld
+  filenames are reported in `data.not_created`.
+- **`cds-sync-version` is written before the project is saved**, not
+  after, so it can actually outlive the run that wrote it. Written
+  afterwards it never survived a headless process at all, and every run
+  therefore warned about a version mismatch — a warning that is always
+  wrong is a warning nobody reads.
+
 Behaviour that was in `main` but never released:
 
 - **Export and compare each rejected every cache entry the other wrote.** Both

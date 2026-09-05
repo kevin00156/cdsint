@@ -129,6 +129,11 @@ print_function`, **no type annotations** (a syntax error in 2.7), no
 f-strings, no `pathlib`-only idioms. Standard library only — if a feature
 needs a pip package, it does not run inside CODESYS (SPEC D4).
 
+`tests/test_print_function.py` enforces the `__future__` line over all
+four directories, with no carve-out for the docstring-only `__init__.py`
+files: a rule with an exception is one every future author has to
+remember.
+
 `cdsint/` is CPython 3.11+ and has none of these restrictions.
 
 ## 9. One concurrency model inside the IDE, and it is the message loop.
