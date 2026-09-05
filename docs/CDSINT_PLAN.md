@@ -172,22 +172,32 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
-- [ ] **階段 2：無頭前門**（SPEC 10.2 階段 2）
-  - [ ] `cdsint installs`：掃 `Program Files` 底下的 `CODESYS *`、`Delta Industrial Automation\DIAStudio\DIADesigner-AX*`、`Lenze\PlcDesigner\*`，還有 `Program Files (x86)\Lenze\PlcDesigner\*`；讀 `Profiles\*.profile.xml` 檔名當 profile 名；查登錄檔 `AppCompatFlags\Layers` 的 `RUNASADMIN`。
-  - [ ] `--project P --install I` 形式：`cdsint/headless.py` 是 CLI 側，`cds/ide/headless.py` 是 IDE 側。SPEC 6.4 表的每一列都要保留，程式碼註解引 SPEC 6.4 的列。旗標 `--answer`、`--profile`、`--report`、`--force-lock`、`--sync-dir`；exit 3 逾時、exit 4 鎖檔或啟動失敗。
-  - [ ] `verify` 子命令，兩種形式都有。
-  - [ ] `config get`、`config set KEY=VALUE`，兩種形式都有，`cds-sync-plc` 拒絕（SPEC 6.5）。
-  - [ ] argparse 擋住 `--target` 與 `--project` 同時給。
-  - [ ] `tools/open_copy_and_watch.py`、`tools/watch_harness.py` 併進 `cds/ide/headless.py` 後刪除（D16）。
-  - [ ] 分紙機 Makefile 要改成呼叫 `cdsint ... --project` 的那幾行，寫進第 7 節第 6 項，人去改。
-  - [ ] readMe 依 SPEC 第 9 節全面改寫。`docs/AI_WORKFLOW.md` 與 `skills/cdsint/SKILL.md` 加 `--project` 形式那一段。`docs/history/WORKFLOW.md` 還成立的內容併進三個場景。
-  - [ ] 驗收：`python -m pytest tests -q` 綠；`cdsint/` 底下每個模組 `wc -l` 不超過 300。
-  - [ ] 驗收：`cdsint installs` 列出這台七套（3.5.19.10、3.5.20.40、3.5.21.40、Lenze 3.24、Lenze 4.0、Delta 1.8、Delta 1.10），每套有 profile 名，兩套 Delta 標需要管理員。
-  - [ ] 驗收：`cdsint verify --project <softplc 副本> --install 3.5.21.40 --report r.json` 與 `cdsint verify --project <Shm 副本> --install "DIADesigner-AX 1.10"` 各一次 exit 0（每家 IDE 用它自己開得了的專案，副本路徑見階段 1）。report 裡 stdout 有回來、report 寫的退出碼跟實際收到的一致、匯出後同步資料夾無差異、build 0 errors。每一步的秒數記進第 7 節。
-  - [ ] 驗收：對使用者開著的專案原檔跑 `cdsint compare --project "P:\Shared\Acme\Site\SheetSplitter\PLC\Shm_2026.07.29.project" --install "DIADesigner-AX 1.10"`，exit 4 且訊息含鎖檔路徑。這條只讀鎖檔就退出，不起 IDE，不寫原檔。
-  - [ ] 驗收：`--timeout 5` 對一個會跑超過五秒的命令 exit 3，report 記逾時並註明疑似有對話框卡住，用自己記的 pid 確認行程已經不在。
-  - [ ] 驗收：`cdsint export --target X --project P` 被 argparse 拒絕。
-  - [ ] 驗收：`cdsint verify --target <無頭掛看門人的實例>` 也跑得完，exit 0。
+- [x] **階段 2：無頭前門**（SPEC 10.2 階段 2）
+  - [x] `cdsint installs`：掃 `Program Files` 底下的 `CODESYS *`、`Delta Industrial Automation\DIAStudio\DIADesigner-AX*`、`Lenze\PlcDesigner\*`，還有 `Program Files (x86)\Lenze\PlcDesigner\*`；讀 `Profiles\*.profile.xml` 檔名當 profile 名；查登錄檔 `AppCompatFlags\Layers` 的 `RUNASADMIN`。——在 `cdsint/installs.py`。認一套安裝的條件是執行檔在，不是目錄名字像版本號，理由同安裝器那條 Ruling：這台的 `Lenze\PlcDesigner\` 底下有 `GatewayPLC`、`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們都會被當成一套。順帶也印 ScriptDir 與它要不要管理員。
+  - [x] `--project P --install I` 形式：`cdsint/headless.py` 是 CLI 側，`cds/ide/headless.py` 是 IDE 側。SPEC 6.4 表的每一列都要保留，程式碼註解引 SPEC 6.4 的列。旗標 `--answer`、`--profile`、`--report`、`--force-lock`、`--sync-dir`；exit 3 逾時、exit 4 鎖檔或啟動失敗。
+  - [x] `verify` 子命令，兩種形式都有。——`cdsint/verify.py`，import、export、compare、build 四步，compare 有任何差異就算沒過。
+  - [x] `config get`、`config set KEY=VALUE`，兩種形式都有，`cds-sync-plc` 拒絕（SPEC 6.5）。——`cds/ide/config.py`，走看門人與無頭共用的那張命令表。
+  - [x] argparse 擋住 `--target` 與 `--project` 同時給。——互斥群組；另外 `--project` 專用的五個旗標配 `--target` 用也會被擋。
+  - [x] `tools/open_copy_and_watch.py`、`tools/watch_harness.py` 併進 `cds/ide/headless.py` 後刪除（D16）。——開專案那半進了 `cds/ide/headless.py`，「掛看門人再停住不退出」那半是新的 `tools/headless_watch.py`，理由見底下的 Ruling。`tools/probe_watcher_ui.py` 跟著改。
+  - [x] 分紙機 Makefile 要改成呼叫 `cdsint ... --project` 的那幾行，寫進第 7 節第 4 項，人去改。
+  - [x] readMe 依 SPEC 第 9 節全面改寫。`docs/AI_WORKFLOW.md` 與 `skills/cdsint/SKILL.md` 加 `--project` 形式那一段。`docs/history/WORKFLOW.md` 還成立的內容併進三個場景。
+  - [x] 驗收：`python -m pytest tests -q` 綠；`cdsint/` 底下每個模組 `wc -l` 不超過 300。——508 passed（根目錄同）。`cdsint/` 最長的是 `headless.py` 253 行，其次 `cli.py` 249、`installs.py` 223。
+  - [x] 驗收：`cdsint installs` 列出這台七套（3.5.19.10、3.5.20.40、3.5.21.40、Lenze 3.24、Lenze 4.0、Delta 1.8、Delta 1.10），每套有 profile 名，兩套 Delta 標需要管理員。——七套全到，每套一個 profile 名，只有兩套 Delta 標「needs an elevated shell」。「要不要管理員」指的是 ScriptDir，理由見 Ruling；這台沒有任何一支 exe 掛 `RUNASADMIN`，掛了會另外印一行。
+  - [x] 驗收：`cdsint verify --project <softplc 副本> --install 3.5.21.40 --report r.json` 與 `cdsint verify --project <Shm 副本> --install "DIADesigner-AX 1.10"` 各一次 exit 0。report 裡 stdout 有回來、report 寫的退出碼跟實際收到的一致、匯出後同步資料夾無差異、build 0 errors。每一步的秒數記進第 7 節。——**兩家都 exit 0**。兩份 report 的 `stdout_reached` 都是 true、`exit_code_trusted` 都是 true、四步的 `failed_objects` 都是空的、compare 四個差異數全是 0、build 都是 0 errors 101 warnings。兩條命令都要加 `--force`，Delta 那條還要 `--answer UpgradeProjectConfirmation=Yes`，理由見第 7 節。秒數在底下的數據表，也寫進 SPEC 第 7 節。
+  - [x] 驗收：對使用者開著的專案原檔跑 `cdsint compare --project "P:\Shared\Acme\Site\SheetSplitter\PLC\Shm_2026.07.29.project" --install "DIADesigner-AX 1.10"`，exit 4 且訊息含鎖檔路徑。這條只讀鎖檔就退出，不起 IDE，不寫原檔。——exit 4，0.23 秒，訊息帶 `...\Shm_2026.07.29.project.~u`，沒有起任何行程。
+  - [x] 驗收：`--timeout 5` 對一個會跑超過五秒的命令 exit 3，report 記逾時並註明疑似有對話框卡住，用自己記的 pid 確認行程已經不在。——exit 3，5.3 秒。report 記了 `timed_out: true`、`pid: 19748`、`exit_code_actual: null`，`error` 那句說 `--noUI` 底下這通常是有個沒人能按的對話框。`tasklist` 查 19748 已經不在。
+  - [x] 驗收：`cdsint export --target X --project P` 被 argparse 拒絕。——`error: argument --project: not allowed with argument --target`。
+  - [x] 驗收：`cdsint verify --target <無頭掛看門人的實例>` 也跑得完，exit 0。——用 `tools/headless_watch.py` 在 Delta 1.10 起一個無頭 IDE 掛看門人（`Shm_2026.07.29-21576`），`verify --force --target` 50.4 秒 exit 0，四步都過。跑完 `cdsint stop`，行程自己收掉。
+  - 階段 2 的秒數（229 個物件，兩個副本都是「磁碟與 IDE 已經一致」的情況，所以比 SPEC 第 7 節那組基準快；IDE 啟動加開專案另外算，兩家都三十幾秒）：
+
+    | 步驟 | 原廠 3.5.21.40（softplc 副本） | Delta 1.10（Shm 副本） |
+    |---|---|---|
+    | import | 24.2 秒 | 18.4 秒 |
+    | export | 14.8 秒 | 14.8 秒 |
+    | compare | 13.2 秒 | 14.0 秒 |
+    | build | 23.5 秒 | 31.3 秒 |
+    | 一整趟（含啟動） | 124.6 秒 | 142.3 秒 |
+    | `verify --target`（Delta，IDE 已經開著） | — | 50.4 秒 |
 
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
@@ -231,9 +241,55 @@ img/        readMe 用的圖
 1. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。
 2. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
 3. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
-4. 分紙機 Makefile 要改的行（階段 2 寫下，人做）。
+4. 分紙機 Makefile 要改的行（階段 2 寫下，**人做**；本 worker 一個位元組都沒有寫進那個 repo）。
+
+   現在的 `st-verify`（`Makefile:164` 起）只做兩件事：對 buildstamp，然後 `git diff --exit-code -- codesys_export`。
+   它的前提寫在自己的註解裡——「Run it AFTER Project_import.py + Project_export.py」——而那兩支是人在
+   IDE 裡點的。`cdsint verify --project` 可以把那一步變成 make 的一部分。要加的行：
+
+   ```make
+   # 這個專案的 .project 不在 repo 裡，它的 cds-sync-folder 已經指著 codesys_export/。
+   CDS_PROJECT ?= D:\Acme\Site\SheetSplitter\PLC\.softplc\softplc_refactor.project
+   CDS_INSTALL ?= 3.5.21.40
+
+   # import、export、compare、build 一趟跑完。IDE 不能開著這個專案，
+   # 開著的話 cdsint 讀鎖檔就 exit 4 並印出鎖檔路徑。
+   st-sync:
+   	cdsint verify --project "$(CDS_PROJECT)" --install "$(CDS_INSTALL)"    	    --report .cdsint-verify.json
+
+   st-verify: st-sync          # 這一行是唯一要改的既有行，其餘是新增
+   ```
+
+   三個要提醒人的地方。一，`cds-sync-version` 屬性現在是 `k1.1.1` 而工具是 `0.0.1`，
+   第一次跑會撞版本不符，要 `--force`；那個屬性只有在專案存檔之後才會更新，而這個專案的
+   `cds-sync-save-after-export` 是 False，所以它不會自己好起來——要嘛每次都帶 `--force`，
+   要嘛人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。
+   二，`.cdsint-verify.json` 要進 `.gitignore`。
+   三，`st-verify` 的 `git diff` 仍然有價值：`verify` 問的是「IDE 跟磁碟一不一致」，
+   `git diff` 問的是「磁碟跟上一次 commit 一不一致」，兩個問題不一樣。
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
-6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。
+6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
+7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+
+階段 2 新增的：
+
+- Ruling: 無頭那趟的工作內容走一個環境變數指向的 JSON 檔（`CDSINT_HEADLESS_JOB`），不是一堆環境變數 — SPEC 6.4 那一列說「專案路徑走環境變數，不走 `--project` 也不走 `--scriptargs`」，理由是 `--scriptargs` 是一個字串、空白切開、引號規則自成一格，而專案路徑帶中文帶空白。一個檔案滿足同一個理由，而且順帶解決了下一個問題：命令清單、`--answer` 的答案、同步資料夾、報告路徑，每加一樣就要多一個環境變數，兩側各記一次名字。IronPython 那邊的 json 已經在 `cds/core/ipc.py` 上跑過真專案 — 錯了的代價是多一個暫存檔（寫在 report 旁邊，叫 `<report>.job.json`），而它同時也是「這趟到底叫它做什麼」的紀錄。
+- Ruling: `park()`（`system.delay()` 那個迴圈）留在 `tools/`，不進 `cds/ide/headless.py` — 工單寫「`open_copy_and_watch.py` 與 `watch_harness.py` 併進 `cds/ide/headless.py` 後刪除（D16）」，而 D16 要消滅的是「開專案、設同步資料夾、存檔」這件事有兩份程式碼；那一半確實搬進去了。但 `park()` 用 `system.delay()`，SPEC D5 對這件事的措辭是「這條是絕對的，沒有例外」，把它放進 D5 管轄的那個目錄等於讓規則自己打自己。它現在在 `tools/headless_watch.py`，跑之前檢查 `system.ui_present`，有 UI 就拒絕停住並印一句為什麼 — 錯了的代價是 `tools/` 底下有一個會 `system.delay()` 的檔案，D5 的 grep 要記得它是例外；換來的是 `cds/ide/` 底下一個都沒有。這一條值得監督者裁。
+- Ruling: 一次 `--project` 呼叫起一個 IDE 跑完整串命令，不是一個命令一個 IDE — `verify` 是四個命令，而起 IDE 加開專案要三十幾秒；四趟就是兩分鐘的純等待，而且每一趟都要再問一次那些 IDE 自己的提示。工作檔裡放的是 commands 陣列，IDE 側依序跑、第一個失敗就停 — 錯了的代價是一個命令壞掉會連累後面的，但那正是想要的：匯入做了一半就匯出，等於把半成品寫回磁碟再說「這一輪很乾淨」。
+- Ruling: `verify` 的第三步是 `compare`，不是「比對同步資料夾的前後快照」 — SPEC 4.2 寫「import、export、比對磁碟有沒有 diff、build」。前後快照要先知道同步資料夾在哪，而 `--project` 形式在 IDE 開起來之前不知道（那是專案屬性），只能多起一次 IDE 去問。`compare` 回的 `data` 裡有 `different`、`new_in_ide`、`new_on_disk`、`moved` 四個數字，任何一個不是 0 就代表跑完一輪之後 IDE 跟磁碟還是不一致，那正是這一步要抓的 — 錯了的代價是「export 寫出來的位元組跟之前一模一樣」這件事沒有被直接驗；`compare` 驗的是「兩邊對每一個物件的看法一致」，比位元組比對寬一點。
+- Ruling: `verify` 自己回答匯入的確認，但不自己回答版本不符 — 匯入就是 `verify` 的定義，SPEC 4.2 的表上 `verify` 也沒有 `-y`；問一個只有一個有用答案的問題不是謹慎。版本不符不一樣，它說的是「這個同步資料夾是別的版本寫的」，那是呼叫端該知道並決定的事，所以 `verify` 多一個 `--force` 轉交給匯入與匯出 — 錯了的代價是每個既有專案第一次跑 `verify` 都要帶 `--force`（`cds-sync-version` 還是 `k1.1.1`），這件事寫進第 7 節第 4 項給人看。
+- Ruling: `--answer` 只在 `--project` 形式有效，不是共用旗標 — SPEC 4.2 把它列在「共用旗標」那一排，但那一排講的是「每個命令都有」，不是「兩種形式都有」。`--answer` 回答的是 IDE 自己彈的提示，而 `--target` 那半的 IDE 前面坐著一個人，那些提示是他的。收下一個什麼都不做的旗標比拒絕它更糟 — 錯了的代價是 SPEC 4.2 那一句要改（已改），而想在看門人那半預先回答 IDE 提示的人得自己想辦法。
+- Ruling: `--project` 形式一律不預先回答 `UpgradeProjectConfirmation` — 來源 repo 的 `open_copy_and_watch.py` 預設答 Yes，並在註解裡說「只有指向丟棄用的副本才安全」。cdsint 的 `--project` 收的是使用者給的任何一個 `.project`，而答 Yes 會改寫它的儲存格式，改完原本那套 IDE 就再也開不了它。這正是 D7 說的「永不猜」 — 錯了的代價是每個舊版存的專案第一次都要人自己加 `--answer UpgradeProjectConfirmation=Yes`；訊息會告訴他是哪個鍵、答 Yes 的後果是什麼。
+- Ruling: 「需要管理員」在 `cdsint installs` 裡指的是 ScriptDir 在 `Program Files` 底下，不含 `ProgramData` — 安裝器現在把 `C:\ProgramData\PLCDesigner\ScriptDir` 也當成要提權，而這台的 `icacls` 顯示那個目錄是 `Everyone:(F)`，Lenze 的安裝程式就是這樣建的。SPEC 5.3 的表也只在 Delta 那一列註「需要管理員」。`Program Files` 是唯一一個一般帳號一定寫不進去的位置 — 錯了的代價是某台機器的 `ProgramData` 真的被鎖起來時，`installs` 不會事先警告；安裝器仍然會在寫失敗時報出那一行。安裝器那條規則沒有跟著改，因為它試完才知道，報「存取被拒」比事先跳過一套裝得起來的 IDE 好。
+- Ruling: 安裝掃描在 `cdsint/installs.py` 與 `irm/setup.ps1` 各寫一份，接受這個重複 — D16 禁的是同一件事有兩條路，而這裡是同一份知識（SPEC 5.3 的表）有兩個實作。安裝器沒辦法呼叫 `cdsint installs`：它是 `irm ... | iex` 跑的，那時候 Python 套件還沒裝。SPEC 5.3 是唯一的事實來源，兩邊都照它寫，而 `installs` 那條驗收（這台正好七套、兩套 Delta 要管理員）是釘住 Python 那份的 — 錯了的代價是加一家 IDE 要改兩個檔；漏改哪一個都會被那條驗收或安裝器的 `-List` 抓到。
+- Ruling: 命令列組成單一字串傳給 `subprocess.Popen`，即使 Python 不需要 — SPEC 6.4 那一列的理由是 PowerShell 5.1 的陣列參數會重新加引號弄壞 `--profile="有空白的名字"`。CPython 的 `Popen` 收陣列時用的是自己的 `list2cmdline`，理論上也對，但那一列是踩出來的，而「理論上也對」正是它當初被寫下來的原因。照著原本那個形狀組字串，跟已經跑過真專案的那份一模一樣 — 錯了的代價是路徑裡有引號的話要自己處理；`.project` 路徑不會有。
+- Ruling: `cds/ide/config.py` 自己寫 `{"ok", "summary", "data"}` 這個 dict，不呼叫 `engine/entry.py` 的 `result()` — D12 禁止 `cds/ide` import 引擎。三行字面值配一句指向 `engine/entry.py` 的註解，比為了一個 dict 把契約搬到 `cds/core/`（引擎至今一次都沒有 import 過 `cds`）便宜 — 錯了的代價是契約改形狀的時候有兩個地方要改；`tests/test_config.py` 會抓到。
+- Ruling: `config set` 一定存檔，兩種形式都一樣 — 一個只活在記憶體裡的設定在專案關掉的時候就沒了，而無頭模式沒有人會禮貌地關它，行程直接結束。使用者那半也存，因為他要的就是一個留得住的設定 — 錯了的代價是他手上還沒存的編輯會跟著落地，所以 summary 明講「project saved」；存不進去（Delta 1.10 升級過儲存格式之後的 `save()`）就說這個設定只到專案關掉為止。
+- Ruling: `config` 只讀寫 SPEC 4.4 表上有的名字，打錯就拒絕 — 寫一個沒有人讀的屬性是安靜的失敗，正是 D13 要消掉的那種。`config get` 不給名字時列出有值的那些，沒設過的就不列，因為 `""` 跟「從來沒設過」是兩件事 — 錯了的代價是 SPEC 4.4 加屬性的時候 `cds/ide/config.py` 要跟著加一行。
+- Ruling: `entry_build.py` 的 build 訊息改成「先問哪些分類正在裝訊息，再要」，而且一次不說話就再 build 一次 — 這是階段 2 在 Delta 1.10 上量出來的兩層問題，都不是階段 2 造成的。ScriptEngine 4.0.0.0 的 `get_message_objects` 沒有單參數形式（用 CLR 反射列出來看，兩個多載都要 severity），只給 category 會丟 `Value cannot be null. Parameter name: category`；而且那個 category 還得正在裝著訊息，什麼都沒重編的 build 讓它空著，同一句話又出現一次。底下那一層更要緊：**Delta 一個行程裡的第一次 `app.build()` 不會真的編譯**（同一個 IDE 連跑三次：7.4 秒沒有訊息、31.7 秒 101 個警告、5.8 秒同樣 101 個），而 `--project` 形式一個行程只跑得到第一次，所以它會回報一份沒有編過的乾淨結果。修法是「連自己的摘要行都沒寫的 build 就再 build 一次；兩次都沒有就報告『這台 IDE 沒有產出任何 build 輸出』而不是 0 個錯誤」 — 錯了的代價是某個 IDE 上真的存在「乾淨而且完全不出聲」的 build，那種情況會被多編一次然後報成失敗；沒有量到這種 IDE，而假的綠燈比假的紅燈危險得多。這一條值得監督者裁：它動的是引擎，而工單把引擎品質排在階段 4。
+- Ruling: `entry_build.py` 失敗時把 traceback 印到 stdout — 這一輪一開始只看得到 `Build process failed: 值不能為 null。參數名稱: category`，那句話是真的，但對「是哪一個呼叫說的」一個字都沒說，查它花掉一次無頭啟動。traceback 走 `stdout_tail` 回到呼叫端，summary 維持原樣 — 錯了的代價是失敗時的輸出長了十行。
+- Ruling: `cds/ide/entries.py` 抽出來，watcher 與無頭共用 — 兩個呼叫端做的是同一件事（清 `sys.modules` 的 engine、exec 本體、把 build 的 IDE 訊息接到 stdout_tail、檢查 `--app` 有沒有被忽略），差的只有「怎麼被告知」與「答案寫到哪」。不抽的話那四十行要寫兩份，而它們正是最容易漂的那種 — 錯了的代價是 `cds/ide/` 多一個檔案。
+- Ruling: `cdsint/` 拆成七個模組而不是工單寫的四個 — 工單第 4 節寫 `cli.py`、`headless.py`、`installs.py`、`plc.py`。加上兩種形式、`verify`、`config` 之後 `cli.py` 一定破 300 行，而那是這一階段的驗收。多出來的三個各有一句話說得清的職責：`target.py` 是 `--target` 那條路、`report.py` 是把紀錄印成字、`exits.py` 是 SPEC 4.3 那張表加一個帶著 exit code 的例外 — 錯了的代價是 import 多幾行；`plc.py` 仍然留給階段 3。
 
 階段 1 新增的：
 
