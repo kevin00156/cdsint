@@ -36,8 +36,8 @@ YES_NO = {
     "Confirm Import": ("yes", None),
 }
 
-# Answering "yes" here would open Project_directory's own dialogs, so carrying
-# on means "no": keep the sync folder that is already configured.
+# Answering "yes" here would open the sync-folder dialog, which needs a
+# person, so carrying on means "no": keep the folder already configured.
 YES_NO_CANCEL = {
     "Computer Mismatch Detected": "force",
 }
@@ -200,7 +200,17 @@ def run(ide_globals, script_path, entry, args):
 def _call(namespace, entry, silent, ui, args):
     """Run the entry function with the stand-ins installed, then take them out."""
     tee = _Tee(sys.stdout)
-    undo = _install(silent, ui, args)
+    try:
+        undo = _install(silent, ui, args)
+    except Exception:
+        # Not running the body is the safe answer. Running it with the real
+        # dialogs in place would put a modal message box on the IDE's own
+        # message loop with nobody there to close it, and the IDE would be
+        # frozen until someone walked over to the machine.
+        import traceback
+        return Outcome(ui.messages, "", error=(
+            "the stand-in UI could not take over the engine's dialogs, so "
+            "the command was not run:\n" + traceback.format_exc()))
     sys.stdout = tee
     try:
         result = namespace[entry]()
@@ -215,19 +225,45 @@ def _call(namespace, entry, silent, ui, args):
         undo()
 
 
+def _ui_module():
+    """The engine's dialog module, loaded by name if it is not loaded yet.
+
+    Nothing imports codesys_ui at module level -- every use of it in the
+    engine is a `from engine.codesys_ui import ...` inside a function -- and
+    watcher._forget_engine() empties sys.modules of the whole engine before
+    every command. So on any real tick it is absent at this point, and the
+    old `sys.modules.get(...) or skip` left the real message boxes in place
+    without a word.
+
+    This is the one place cds/ide reaches for an engine module, and it takes
+    nothing from it: the module is loaded only so its three dialog functions
+    can be swapped out and put back. The alternative is a hang inside the
+    IDE, which is a worse answer to SPEC D12 than this line is.
+    """
+    module = sys.modules.get(UI_MODULE)
+    if module is None:
+        __import__(UI_MODULE)
+        module = sys.modules[UI_MODULE]
+    return module
+
+
 def _install(silent, ui, args):
-    """Swap in the stand-ins the .pyw modules will reach for. Returns the undo."""
+    """Swap in the stand-ins the engine modules will reach for. Returns the undo.
+
+    The dialogs are taken over first: if that cannot be done there is no
+    half-installed state to unwind, because `system` has not moved yet.
+    """
+    codesys_ui = _ui_module()
+
     main = sys.modules["__main__"]
     had_system = hasattr(main, "system")
     old_system = getattr(main, "system", None)
     main.system = silent
 
-    codesys_ui = sys.modules.get(UI_MODULE)
     old_ui = {}
-    if codesys_ui is not None:
-        for name, replacement in _ui_patches(ui, args).items():
-            old_ui[name] = getattr(codesys_ui, name, None)
-            setattr(codesys_ui, name, replacement)
+    for name, replacement in _ui_patches(ui, args).items():
+        old_ui[name] = getattr(codesys_ui, name, None)
+        setattr(codesys_ui, name, replacement)
 
     def undo():
         if had_system:
@@ -245,7 +281,20 @@ def _ui_patches(ui, args):
         "ask_yes_no": _yes_no(args),
         "ask_yes_no_cancel": _yes_no_cancel(args),
         "show_compare_dialog": _no_compare_dialog(ui),
+        "show_sync_folder_dialog": _no_folder_dialog,
     }
+
+
+def _no_folder_dialog(*args, **kwargs):
+    """The first-run setup has no flag that can answer it (SPEC 6.7).
+
+    It is a modal window on the IDE's own message loop, so opening it here
+    would freeze the IDE until someone walked over to the machine. Refuse
+    instead, and say what to go and do.
+    """
+    raise NeedsInput("this project has no sync folder yet; set the "
+                     "cds-sync-folder property in Project Information > "
+                     "Properties, or run export once from the Scripts menu")
 
 
 def _yes_no(args):

@@ -9,5 +9,6 @@ with open(os.path.join(_here, "body.path")) as _f:
 if _root not in sys.path:
     sys.path.insert(0, _root)
 from cds.ide import session
+from engine import settings
 from engine.codesys_constants import SCRIPT_VERSION
-session.main(globals(), version=SCRIPT_VERSION)
+session.main(globals(), version=SCRIPT_VERSION, settings=settings.edit)

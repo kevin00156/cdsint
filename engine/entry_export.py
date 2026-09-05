@@ -400,6 +400,17 @@ def export_project(export_dir, projects_obj=None):
 
 
 def main():
+    # A project that has never been synced gets asked where to sync to,
+    # rather than being told to go and run a menu entry that no longer
+    # exists (SPEC 6.7). With nobody at the keyboard the dialog is refused,
+    # not guessed at: cds/ide/silent.py turns it into needs_input.
+    from engine.codesys_utils import get_project_prop
+    if not get_project_prop("cds-sync-folder"):
+        from engine.settings import choose_sync_folder
+        _folder, setup_error = choose_sync_folder(globals())
+        if setup_error:
+            return result(False, setup_error)
+
     base_dir, error = load_base_dir()
     if error:
         try:

@@ -32,9 +32,15 @@ def ide():
     return {"system": FakeSystem(), "projects": object()}
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def fake_codesys_ui():
-    """Stand in for the module the scripts reload on every run."""
+    """Stand in for the module the scripts reload on every run.
+
+    Autouse because silent.run now refuses to drive a body it cannot take
+    the dialogs away from, and the real module needs clr, which only exists
+    inside the IDE. Inside the IDE it is always importable, so every test
+    here runs with it present, the way a real command does.
+    """
     module = types.ModuleType("engine.codesys_ui")
 
     def ask_yes_no(title, message):
@@ -46,9 +52,13 @@ def fake_codesys_ui():
     def show_compare_dialog(*args):
         raise AssertionError("a real compare window was opened")
 
+    def show_sync_folder_dialog(*args):
+        raise AssertionError("a real folder dialog was opened")
+
     module.ask_yes_no = ask_yes_no
     module.ask_yes_no_cancel = ask_yes_no_cancel
     module.show_compare_dialog = show_compare_dialog
+    module.show_sync_folder_dialog = show_sync_folder_dialog
     sys.modules["engine.codesys_ui"] = module
     yield module
     del sys.modules["engine.codesys_ui"]
@@ -184,6 +194,19 @@ def test_the_computer_mismatch_cancels_unless_forced(tmp_path, ide,
                       ).messages[0]["text"] == "no"
 
 
+def test_the_sync_folder_dialog_is_refused_rather_than_opened(tmp_path, ide,
+                                                              fake_codesys_ui):
+    # It is a modal WinForms window on the IDE's own message loop. Opened
+    # from a command, it would freeze the IDE until someone walked over to
+    # the machine — the exact hang the stand-in UI exists to prevent.
+    body = (u"    from engine.codesys_ui import show_sync_folder_dialog\n"
+            u"    show_sync_folder_dialog(system, '')")
+    outcome = silent.run(ide, write_script(tmp_path, body), "main", {})
+    assert outcome.needs is not None
+    assert "cds-sync-folder" in outcome.needs.question
+    assert not outcome.ok()
+
+
 def test_the_compare_window_is_replaced_by_a_summary(tmp_path, ide,
                                                      fake_codesys_ui):
     body = (u"    from engine.codesys_ui import show_compare_dialog\n"
@@ -201,6 +224,21 @@ def test_codesys_ui_is_put_back_afterwards(tmp_path, ide, fake_codesys_ui):
     silent.run(ide, path, "main", {})
     with pytest.raises(AssertionError):
         sys.modules["engine.codesys_ui"].ask_yes_no("x", "y")
+
+
+def test_a_body_is_not_run_at_all_when_the_dialogs_cannot_be_taken_over(
+        tmp_path, ide, monkeypatch):
+    """Nothing imports codesys_ui at module level, and _forget_engine wipes
+    sys.modules before every command, so the runner has to load it itself.
+    When it cannot, running the body anyway would open a real message box on
+    the IDE's message loop and freeze the IDE."""
+    monkeypatch.setattr(silent, "UI_MODULE", "engine.no_such_dialog_module")
+    path = write_script(tmp_path, u"    print('this must not run')")
+    outcome = silent.run(ide, path, "main", {})
+    assert not outcome.ok()
+    assert "could not take over" in outcome.error
+    assert outcome.stdout_tail == ""
+    assert not hasattr(sys.modules["__main__"], "system")
 
 
 # --- the shared .pyw modules reach __main__ --------------------------------
@@ -332,9 +370,10 @@ def test_saying_it_is_complete_is_not_enough_on_its_own(tmp_path, ide):
 
 DRIVEN_FILES = (
     # What the four commands actually execute, relative to the repo root.
-    # entry_directory.py is left out on purpose: its dialog is only
-    # reachable after "Computer Mismatch" is answered yes, and silent mode
-    # never answers yes.
+    # engine/settings.py is left out on purpose: every dialog it opens sits
+    # behind show_sync_folder_dialog, which the stand-in UI refuses outright
+    # (test_the_sync_folder_dialog_is_refused_rather_than_opened), so silent
+    # mode never reaches them.
     "engine/entry_export.py", "engine/entry_import.py",
     "engine/entry_compare.py", "engine/entry_build.py",
     "engine/codesys_utils.py", "engine/codesys_managers.py",

@@ -67,9 +67,8 @@ nothing shows up in the menu:
 mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 ```
 
-Restart the IDE. **Tools > Scripting > Scripts** should now list five entries:
-`Project_export`, `Project_import`, `Project_watch`, `Project_directory`,
-`Project_parameters`.
+Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
+`Project_export`, `Project_import`, `Project_watch`.
 
 ## Using it
 
@@ -78,6 +77,10 @@ Restart the IDE. **Tools > Scripting > Scripts** should now list five entries:
 Open a project and run **Project_export**. The first time it will ask where the
 sync folder should go; everything after that is one click. **Project_import**
 reads the text back in, disk wins.
+
+The other settings live in the project's own properties. Change them from the
+**Settings** button on the watcher's status window, or by hand in **Project
+Information > Properties**.
 
 ### From a terminal
 

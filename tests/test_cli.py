@@ -153,6 +153,20 @@ def test_a_command_that_needs_an_answer_exits_one(watch, monkeypatch, capsys):
     assert (printed.out + printed.err).count("Confirm Import?") == 1
 
 
+def test_a_question_with_no_flag_behind_it_does_not_invent_one(watch,
+                                                               monkeypatch,
+                                                               capsys):
+    # The sync-folder setup has no flag in the --target form; the question
+    # itself says to run `cdsint config set` instead.
+    question = "no sync folder; set cds-sync-folder first"
+    watch.handlers["ping"] = lambda cmd, started: commands.new_result(
+        cmd, False, error=question, started_at=started,
+        needs_input={"question": question, "arg": None})
+    answering(watch, monkeypatch)
+    assert cli.main(["ping"]) == cli.EXIT_FAILED
+    assert "--None" not in capsys.readouterr().err
+
+
 # --- the flags the four real commands take ---------------------------------
 
 def parse(argv):

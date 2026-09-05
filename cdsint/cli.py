@@ -216,8 +216,13 @@ def _report(result, as_json):
     needs = result.get("needs_input")
     if needs:
         said.append(needs.get("question"))
-        print("needs input: %s (answer with --%s)"
-              % (said[-1], needs.get("arg")), file=sys.stderr)
+        # Some dialogs have no flag that answers them — the sync-folder
+        # setup is one. The question already says what to do instead, so
+        # naming a "--None" flag would only be noise.
+        arg = needs.get("arg")
+        print("needs input: %s%s"
+              % (said[-1], " (answer with --%s)" % arg if arg else ""),
+              file=sys.stderr)
     # The error repeats the first bad message, or the question. Say it once.
     if result.get("error") and result["error"] not in said:
         print("error: " + result["error"], file=sys.stderr)

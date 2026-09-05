@@ -157,7 +157,7 @@ img/        readMe 用的圖
 
 - [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
   - [x] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
-  - [ ] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
+  - [x] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
   - [ ] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
   - [x] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗。階段 0 已做，見第 7 節 worker 的 Ruling。
   - [ ] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。
@@ -232,6 +232,12 @@ img/        readMe 用的圖
 
 階段 1 新增的：
 
+- Ruling: `cds/ide/silent.py` 自己按名字把 `engine.codesys_ui` 載進來，載不到就整個不跑本體 — 這是修一個階段 0 留下的洞：來源 repo 的入口在模組層級用 `_load_hidden_module` 把 `codesys_ui` 塞進 `sys.modules`，階段 0 改成函式裡的 `from engine.codesys_ui import ...` 之後就沒有人在模組層級載它了，而看門人每次執行命令前都會清掉 `sys.modules` 裡的 engine，所以 `_install` 那句 `sys.modules.get(...)` 永遠是 None，三個對話框一個都沒被換掉。後果是 `cdsint import -y --target` 會在 IDE 裡開一個沒人能按的 WinForms 對話框，把 IDE 的訊息迴圈卡死 — 正是階段 1 驗收要跑的那條命令。SPEC D12 的字面是「`cds/ide` 不准 import 引擎模組」，這一行違反了字面；但 `silent.py` 本來就寫死 `UI_MODULE = "engine.codesys_ui"` 並且往裡面 setattr，這個相依早就存在，缺的只是讓它真的成立。載進來之後 `cds/ide` 仍然不使用引擎的任何東西，只是把三個函式換掉再換回去 — 錯了的代價是 D12 的 grep 會多一筆命中（`__import__(UI_MODULE)`），要在規則裡寫成例外。這一條值得監督者裁。
+- Ruling: `choose_sync_folder` 回 `(folder, error)` 兩元組，跟 `load_base_dir` 同形 — 只回 `folder` 或 `None` 的話，呼叫端只能回報一句「沒設同步資料夾」，把真正的原因（沒開專案／使用者按了取消／寫不進專案屬性）吃掉，那正是 SPEC D13 禁止的 — 錯了的代價是多一個要解包的回傳值。
+- Ruling: `entry_directory.py` 裡檢查 `_metadata.json` 專案路徑不符的那一段整段刪掉，不搬進 `engine/settings.py` — 現在的中繼資料檔叫 `sync_metadata.json`，`_metadata.json` 全 repo 只剩 `RESERVED_FILES` 裡一個字串，沒有任何地方會寫出它，所以那段是對著一個不存在的檔案跑的死碼（PRINCIPLES 7）。順帶消掉的還有它那個 `ask_yes_no("Update Metadata?")`，否則替身 UI 的答案表要多登記一個永遠答不出來的題目 — 錯了的代價是如果真有人手上留著遠古版本寫的 `_metadata.json`，設定同步資料夾時不會再被問要不要更新裡面的專案路徑。
+- Ruling: 「存成相對路徑」只在選到的資料夾位於專案檔那一層或底下時成立 — SPEC 6.7 寫「存成相對路徑」，但專案外面的資料夾只能寫成 `..\..\shared`，那種路徑只在專案不搬家時才對，比絕對路徑更會騙人；不同磁碟則根本沒有相對形式 — 錯了的代價是把同步資料夾放在專案外面的人，換一台電腦時仍然會撞到電腦名稱不符的警告。
+- Ruling: 所有面向使用者的訊息只提今天真的存在的做法 — 原本想寫「跑 `cdsint config set cds-sync-folder=...`」，但 `config` 是階段 2 才有的子命令，現在講等於叫人跑一個不存在的命令。改成「在 Project Information > Properties 加屬性，或從選單跑一次匯出」 — 錯了的代價是階段 2 做完之後，這三處訊息（`codesys_utils` 兩處、`silent._no_folder_dialog` 一處）要回頭補上 `config set` 這條路。
+- Ruling: 狀態視窗的「設定」按鈕在沒有 callback 時整個不出現，不是變灰 — `cds/ide` 不能 import 引擎（D12），所以設定對話框是 `stub/Project_watch.py` 傳進 `session.main` 的；沒傳就是沒有，按不下去的按鈕比沒有按鈕更難解釋 — 錯了的代價是有人自己寫程式起看門人而忘了傳 `settings`，狀態視窗上就少一個按鈕，而且沒有訊息說為什麼。
 - Ruling: 新的 `ok` 一比一複製舊的等級規則的判決，不順手改嚴 — 匯出有 3 個物件失敗、匯入有幾筆沒落地，今天都算成功（結尾呼叫的是 `system.ui.info`），summary 與 `data` 裡有 `failed` 的數字。改成「failed > 0 就 ok=False」是新的失敗模式，D11 要解的是「無害的 warning 讓好的匯出變 exit 1」，跟這件事無關；而且沒有資料說真專案的匯出平常會失敗幾個 — 錯了的代價是包 cdsint 的 pipeline 要自己讀 `--json` 的 `data.failed` 才知道有物件沒落地，光看 exit code 看不出來。這一條值得監督者裁。
 - Ruling: 回傳值的建構收在 `engine/entry.py` 的 `result(ok, summary, **data)`，不在四支本體各寫 dict 字面值 — 契約只寫一次，`**data` 讓呼叫端自然寫成扁平的鍵值；`engine/entry.py` 本來就是「呼叫端與本體之間的契約」那個模組，加這個沒有多一份職責 — 錯了的代價是本體多一行 `from engine.entry import result`。
 - Ruling: `data` 由看門人寫進結果檔（`commands.new_result(data=...)`），CLI 的 `--json` 與非 JSON 輸出都看得到 — 不接出去的話 `data` 就是死碼（PRINCIPLES 7）；而且場景 B 的 agent 要的就是這些計數。因此每個 `data` 的值都是純量，`cdsint/cli.py` 的 `_report` 一個鍵印一行才不會印出巢狀 repr — 錯了的代價是以後想在 `data` 裡塞清單，得先改 `_report` 的印法。

@@ -641,3 +641,79 @@ def show_directory_choice_dialog(title, message):
         # Fallback to standard if custom fails
         from engine.codesys_ui import ask_yes_no_cancel
         return ask_yes_no_cancel(title, message)
+
+
+class SyncFolderPathForm(Form):
+    """Type the sync folder instead of browsing for it.
+
+    Browsing cannot express "./", and a relative path is the one that
+    survives the project being opened on another machine, so the manual
+    route is not a fallback -- it is the only way to ask for one.
+    """
+    def __init__(self, initial):
+        self.Text = "Enter Sync Directory Path"
+        self.Size = Size(500, 220)
+        self.FormBorderStyle = FormBorderStyle.FixedDialog
+        self.StartPosition = FormStartPosition.CenterScreen
+        self.MaximizeBox = False
+        self.MinimizeBox = False
+
+        lbl_instructions = Label()
+        lbl_instructions.Text = "Examples:\n" + \
+                                "  ./                    - Project directory\n" + \
+                                "  ./folderName/         - 'folderName' beside the project file\n" + \
+                                "  C:\\MySync\\            - Absolute path\n\n" + \
+                                "Relative paths (starting with ./) are resolved against the project file."
+        lbl_instructions.Location = Point(20, 15)
+        lbl_instructions.Size = Size(460, 100)
+        self.Controls.Add(lbl_instructions)
+
+        lbl_path = Label()
+        lbl_path.Text = "Path:"
+        lbl_path.Location = Point(20, 125)
+        lbl_path.AutoSize = True
+        self.Controls.Add(lbl_path)
+
+        self.txt_path = TextBox()
+        self.txt_path.Location = Point(70, 122)
+        self.txt_path.Size = Size(400, 20)
+        self.txt_path.Text = initial if initial else "./"
+        self.Controls.Add(self.txt_path)
+
+        btn_ok = Button()
+        btn_ok.Text = "OK"
+        btn_ok.DialogResult = DialogResult.OK
+        btn_ok.Location = Point(300, 155)
+        btn_ok.Size = Size(80, 25)
+        self.Controls.Add(btn_ok)
+        self.AcceptButton = btn_ok
+
+        btn_cancel = Button()
+        btn_cancel.Text = "Cancel"
+        btn_cancel.DialogResult = DialogResult.Cancel
+        btn_cancel.Location = Point(390, 155)
+        btn_cancel.Size = Size(80, 25)
+        self.Controls.Add(btn_cancel)
+        self.CancelButton = btn_cancel
+
+
+def show_sync_folder_dialog(system, initial=""):
+    """Ask a person where the sync folder is. Returns a path, or None.
+
+    The one door to the whole thing, browse and type alike, because
+    cds/ide/silent.py patches this name to refuse when nobody is there
+    (SPEC 6.1). A second door would open a modal window inside the IDE's
+    message loop with no one to close it.
+    """
+    ans = show_directory_choice_dialog(
+        "Project Sync Configuration",
+        "Would you like to BROWSE for a folder or enter the path manually?")
+    if ans == "cancel":
+        return None
+    if ans == "yes":
+        return system.ui.browse_directory_dialog(
+            "Select Sync Directory for this Project", initial)
+    form = SyncFolderPathForm(initial)
+    if form.ShowDialog() != DialogResult.OK:
+        return None
+    return form.txt_path.Text.strip()

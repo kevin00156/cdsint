@@ -138,8 +138,8 @@
 
 | 入口 | 做什麼 | 現況 |
 |---|---|---|
-| `Project_export.py` | 把 IDE 專案寫成 `.st`。第一次執行時若沒設同步資料夾，先走設定流程（6.7） | 有，但設定流程還在 `Project_directory.py` 與 `Project_parameters.py` 兩個獨立入口 |
-| `Project_import.py` | 把 `.st` 讀回 IDE，磁碟贏。同樣先走設定流程 | 同上 |
+| `Project_export.py` | 把 IDE 專案寫成 `.st`。第一次執行時若沒設同步資料夾，先走設定流程（6.7） | 已做（階段 1） |
+| `Project_import.py` | 把 `.st` 讀回 IDE，磁碟贏。同樣先走設定流程 | 已做（階段 1） |
 | `Project_watch.py` | 啟動看門人，腳本立刻返回；再跑一次就停止 | 有 |
 
 比對、編譯、診斷、資源統計、效能量測都不出現在選單。比對和編譯由 CLI 呼叫。其餘搬到 `tools/`。
@@ -367,6 +367,8 @@ D8 的落地。
 1. `Project_export.py` 或 `Project_import.py` 啟動時若 `cds-sync-folder` 不存在，開資料夾對話框，存成相對路徑，寫入 `cds-sync-pc` 與 `cds-sync-version`，寫 `.gitattributes` 與 `.gitignore`。這個對話框沒有旗標可以回答，所以 `--target` 形式第一次跑會回 `needs_input`，解法是先跑 `cdsint config set cds-sync-folder=...` 再來；`--project` 形式用 `--sync-dir`。
 2. 電腦名稱不符：警告，問要不要繼續，`--force` 回答。
 3. 其他屬性透過 `cdsint config get/set` 讀寫。看門人的狀態視窗放一個「設定」按鈕，開跟現在 `Project_parameters.py` 一樣的對話框。這樣沒有 CLI 的人也改得到。
+
+現況：階段 1 已做，程式在 `engine/settings.py`。「存成相對路徑」的落地是：選到的資料夾在專案檔那一層或底下才寫成 `./...`，其他情形（別的磁碟、專案外面）維持絕對路徑，理由是 `..\..\` 這種相對路徑只在專案不搬家時才成立。`config get/set` 是階段 2，在那之前 `--target` 形式第一次跑會回 `needs_input`，訊息說去 Project Information > Properties 加屬性或從選單跑一次匯出。
 
 ---
 

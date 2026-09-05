@@ -27,11 +27,16 @@ TICK_MS = 250
 STATE_ATTR = "_cds_watcher"
 
 
-def main(ide_globals, root=None, version=None, timer_factory=None):
+def main(ide_globals, root=None, version=None, timer_factory=None,
+         settings=None):
     """Arm the watcher and return, or stop the one this IDE already has.
 
     Running the script a second time stops it, the way the 1.6.x daemon
     worked. Returning promptly is the feature, not an implementation detail.
+
+    `settings` is the engine's settings editor, handed in by the stub
+    rather than imported here: cds/ide is not allowed to reach into the
+    engine (SPEC D12). Without it the status window has no Settings button.
     """
     live = current()
     if live is not None:
@@ -42,12 +47,12 @@ def main(ide_globals, root=None, version=None, timer_factory=None):
     factory = timer_factory or _winforms_timer
     watcher.timer = factory(TICK_MS, _on_tick(watcher))
     setattr(sys, STATE_ATTR, watcher)
-    _show_status(watcher, ide_globals)
+    _show_status(watcher, ide_globals, settings)
     print("watcher: run Project_watch.py again to stop it")
     return watcher
 
 
-def _show_status(watcher, ide_globals):
+def _show_status(watcher, ide_globals, settings=None):
     """Give the watcher a window, when there is a screen to put one on.
 
     Headless runs get nothing: --noUI has no message loop to own the form,
@@ -58,7 +63,10 @@ def _show_status(watcher, ide_globals):
         return None
     try:
         from cds.ide.statusform import StatusForm
-        form = StatusForm(lambda: stop(watcher)).show()
+        on_settings = None
+        if settings is not None:
+            on_settings = lambda: settings(ide_globals)
+        form = StatusForm(lambda: stop(watcher), on_settings).show()
     except Exception:
         import traceback
         print("watcher: no status window\n" + traceback.format_exc())

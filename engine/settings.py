@@ -1,0 +1,170 @@
+# -*- coding: utf-8 -*-
+"""The cds-sync-* project properties, as a person sets them (SPEC 6.7).
+
+This used to be two entries of its own in the Scripts menu, which meant a
+first-time user had to know to run Project_directory.py before export would
+work, and the error message that told them so was the only documentation.
+Now export and import ask for the folder themselves when it is missing, and
+the watcher's status window has a Settings button for the rest.
+
+Nothing here is reachable with nobody at the keyboard: every dialog goes
+through codesys_ui.show_sync_folder_dialog or show_settings_dialog, and
+cds/ide/silent.py refuses the first of those outright rather than freezing
+the IDE on a modal window (SPEC 6.7 step 1).
+"""
+from __future__ import print_function
+
+import os
+
+from engine.codesys_constants import SCRIPT_VERSION
+from engine.codesys_utils import (
+    safe_str, get_project_prop, set_project_prop, resolve_projects,
+    resolve_system, ensure_git_configs, log_warning,
+    update_application_count_flag
+)
+
+SETTINGS = (
+    # property suffix          dialog key            default
+    ("cds-sync-export-xml", "export_xml", False),
+    ("cds-sync-backup-binary", "backup_binary", False),
+    ("cds-sync-save-after-import", "save_after_import", True),
+    ("cds-sync-save-after-export", "save_after_export", True),
+    ("cds-sync-safety-backup", "safety_backup", True),
+    ("cds-sync-backup-name", "backup_name", ""),
+    ("cds-sync-backup-retention-count", "retention_count", 10),
+    ("cds-sync-debug", "debug", False),
+)
+
+
+def _ide(caller_globals):
+    """The IDE's `system`, or a loud failure: everything here needs a screen."""
+    system = resolve_system(caller_globals)
+    if system is None:
+        raise RuntimeError(
+            "the CODESYS `system` object is not reachable, so there is no "
+            "way to put a dialog on screen; settings can only be changed "
+            "from inside a running IDE")
+    return system
+
+
+def choose_sync_folder(caller_globals=None):
+    """Ask where the sync folder is and remember it.
+
+    Returns (folder, error), the same shape load_base_dir uses, so a caller
+    that gives up has a sentence saying which of the three ways this can
+    fail happened rather than one flat "not set".
+
+    Called on the first export or import of a project, and again when
+    load_base_dir finds the saved path belongs to another computer.
+    """
+    system = _ide(caller_globals)
+    projects_obj = resolve_projects(None, caller_globals)
+    if projects_obj is None or not projects_obj.primary:
+        failed = "No project open! Open a project to set its sync folder."
+        system.ui.error(failed)
+        return None, failed
+
+    from engine.codesys_ui import show_sync_folder_dialog
+    chosen = show_sync_folder_dialog(system, get_project_prop("cds-sync-folder", ""))
+    if not chosen:
+        print("Sync folder setup cancelled.")
+        return None, "Sync folder setup cancelled; nothing was changed."
+
+    folder = _as_written(chosen, projects_obj.primary)
+    if not set_project_prop("cds-sync-folder", folder):
+        failed = ("Could not write cds-sync-folder to Project Information > "
+                  "Properties.")
+        system.ui.error(failed)
+        return None, failed
+    _remember_who_and_what()
+    _prepare(folder, projects_obj.primary)
+
+    print("Sync folder set to: " + folder)
+    system.ui.info("Sync folder saved to Project Information > Properties.\n\n"
+                   + folder)
+    return folder, None
+
+
+def edit(caller_globals=None):
+    """Open the settings dialog and write back whatever comes out of it."""
+    system = _ide(caller_globals)
+    try:
+        from engine.codesys_ui import show_settings_dialog
+    except ImportError as e:
+        system.ui.error("Could not load the settings dialog "
+                        "(System.Windows.Forms): " + safe_str(e))
+        return False
+
+    current = {}
+    for prop, key, default in SETTINGS:
+        current[key] = get_project_prop(prop, default)
+
+    chosen = show_settings_dialog(current, version=SCRIPT_VERSION)
+    if not chosen:
+        print("Settings cancelled.")
+        return False
+    for prop, key, _default in SETTINGS:
+        set_project_prop(prop, chosen[key])
+    print("Settings saved.")
+    return True
+
+
+def _as_written(chosen, project):
+    """The path as it goes into the property: relative when it can be.
+
+    A relative path travels with the project -- load_base_dir resolves it
+    against the project file and skips the computer-mismatch dialog
+    entirely. Only a folder at or under the project's own directory has a
+    relative form worth writing; anything else, or another drive, stays
+    absolute.
+    """
+    chosen = chosen.strip().replace("/", os.sep)
+    if chosen.startswith("." + os.sep) or chosen == ".":
+        return chosen  # already relative; the user typed it that way
+    project_dir = _project_dir(project)
+    if not project_dir or not os.path.isabs(chosen):
+        return chosen
+    try:
+        inside = os.path.relpath(chosen, project_dir)
+    except ValueError:
+        return chosen  # another drive: os.path.relpath refuses, rightly
+    if inside.startswith(".."):
+        return chosen
+    return "." + os.sep if inside == "." else "." + os.sep + inside
+
+
+def _project_dir(project):
+    try:
+        return os.path.dirname(safe_str(project.path))
+    except AttributeError:
+        return None
+
+
+def _remember_who_and_what():
+    """Stamp the machine and the tool version this folder was set up with.
+
+    load_base_dir warns when the machine changed and an absolute path is
+    probably wrong for this one; check_version_compatibility warns when the
+    files on disk were written by a different version. Both need a value
+    here to have anything to compare against.
+    """
+    try:
+        import socket
+        set_project_prop("cds-sync-pc", socket.gethostname())
+    except Exception as e:
+        log_warning("Could not record the computer name: " + safe_str(e))
+    set_project_prop("cds-sync-version", SCRIPT_VERSION)
+
+
+def _prepare(folder, project):
+    """Make the folder usable: create it, give it git rules, count the apps."""
+    resolved = folder
+    if not os.path.isabs(resolved):
+        project_dir = _project_dir(project)
+        if not project_dir:
+            return
+        resolved = os.path.normpath(os.path.join(project_dir, resolved))
+    if not os.path.exists(resolved):
+        os.makedirs(resolved)
+    ensure_git_configs(resolved)
+    update_application_count_flag()

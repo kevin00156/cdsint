@@ -219,6 +219,13 @@ def import_project(projects_obj=None):
 
 
 def main():
+    # Same first-run setup as export (SPEC 6.7); see entry_export.main.
+    if not get_project_prop("cds-sync-folder"):
+        from engine.settings import choose_sync_folder
+        _folder, setup_error = choose_sync_folder(globals())
+        if setup_error:
+            return result(False, setup_error)
+
     base_dir, error = load_base_dir()
 
     if base_dir:

@@ -433,8 +433,9 @@ def is_debug():
     """True when debug mode (cds-sync-debug project property) is enabled.
 
     Off by default: a normal run produces only project content, no metadata
-    or log files. Turn it on from Project_parameters.py to get the audit
-    trail (sync_metadata.json) and logs back.
+    or log files. Turn it on from the watcher's Settings button, or with
+    `cdsint config set cds-sync-debug=true`, to get the audit trail
+    (sync_metadata.json) and the logs back.
 
     Cached, because reading it is not cheap: get_project_prop() goes through
     resolve_projects() and proj.get_project_info(), a real IDE round trip.
@@ -442,7 +443,7 @@ def is_debug():
     is called once per object in Pass 1 and again in the Pass 2 slow path --
     so an uncached read cost thousands of round trips per run purely to
     decide whether to log. set_project_prop() clears the cache, so toggling
-    the flag from Project_parameters.py still takes effect.
+    the flag from the Settings dialog still takes effect.
     """
     if not _debug_flag:
         _debug_flag.append(bool(get_project_prop("cds-sync-debug", False)))
@@ -540,7 +541,7 @@ def load_base_dir():
     """
     base_dir = get_project_prop("cds-sync-folder")
     if not base_dir:
-        return None, "Project sync directory not set!\nPlease run 'Project_directory.py' or add 'cds-sync-folder' property in Project Information > Properties."
+        return None, "Project sync directory not set!\nRun export or import from the Scripts menu and it will ask, or add the 'cds-sync-folder' property yourself in Project Information > Properties."
     
     # Check if path is relative
     is_relative = base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.'
@@ -587,38 +588,26 @@ def load_base_dir():
                 message += safe_str(base_dir) + "\n\n"
                 message += "Would you like to re-configure the sync folder for this PC?"
                 
-                # Try to find 'system' object for UI
-                sys_ui = None
-                try:
-                    if "system" in globals(): sys_ui = globals()["system"].ui
-                    else: 
-                        import __main__
-                        if hasattr(__main__, "system"): sys_ui = __main__.system.ui
-                except: pass
-                
-                if sys_ui:
+                if resolve_system() is not None:
                     from engine.codesys_ui import ask_yes_no_cancel
                     ans = ask_yes_no_cancel("Computer Mismatch Detected", message)
-                    
+
                     if ans == "yes":
-                        try:
-                            import Project_directory
-                            Project_directory.set_base_directory()
-                            base_dir = get_project_prop("cds-sync-folder")
-                            # Re-resolve if it's still relative after reconfiguration
-                            if base_dir and (base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.'):
-                                try:
-                                    projects_obj = resolve_projects()
-                                    proj = projects_obj.primary if projects_obj else None
-                                    if proj and hasattr(proj, 'path'):
-                                        project_dir = os.path.dirname(safe_str(proj.path))
-                                        normalized_base = base_dir.replace('/', os.sep).replace('\\', os.sep)
-                                        base_dir = os.path.normpath(os.path.join(project_dir, normalized_base))
-                                except:
-                                    pass
-                        except Exception as e:
-                            log_warning("Could not launch Project_directory: " + safe_str(e))
-                            return None, "Please run 'Project_directory.py' manually to re-configure sync."
+                        from engine.settings import choose_sync_folder
+                        base_dir, setup_error = choose_sync_folder()
+                        if setup_error:
+                            return None, setup_error
+                        # Re-resolve if it's still relative after reconfiguration
+                        if base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.':
+                            try:
+                                projects_obj = resolve_projects()
+                                proj = projects_obj.primary if projects_obj else None
+                                if proj and hasattr(proj, 'path'):
+                                    project_dir = os.path.dirname(safe_str(proj.path))
+                                    normalized_base = base_dir.replace('/', os.sep).replace('\\', os.sep)
+                                    base_dir = os.path.normpath(os.path.join(project_dir, normalized_base))
+                            except Exception as e:
+                                log_warning("Could not resolve the new relative path: " + safe_str(e))
                     elif ans == "cancel":
                         return None, "Operation cancelled by user."
                 else:
@@ -639,7 +628,7 @@ def load_base_dir():
         
         return base_dir, None
     
-    return None, "Project sync directory not found: " + str(base_dir) + "\nPlease run 'Project_directory.py' to update it."
+    return None, "Project sync directory not found: " + str(base_dir) + "\nFix the 'cds-sync-folder' property in Project Information > Properties, or clear it and run export again."
 
 
 def ensure_git_configs(export_dir):

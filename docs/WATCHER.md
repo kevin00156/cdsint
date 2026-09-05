@@ -177,9 +177,15 @@ Delta 1.10 那一格後來由使用者手動補上：他在自己的真專案上
 |---|---|
 | 本體自己命名空間裡的 `system` | 本體讀的就是這個 |
 | `__main__.system` | `codesys_utils.resolve_system` 找不到模組自己的 `system` 時會走到 `__main__` |
-| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no`、`ask_yes_no_cancel`、`show_compare_dialog` | 這幾個自己開 WinForms 視窗，完全不經過 `system.ui` |
+| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no`、`ask_yes_no_cancel`、`show_compare_dialog`、`show_sync_folder_dialog` | 這幾個自己開 WinForms 視窗，完全不經過 `system.ui` |
 
-三件實作上踩過的坑：
+四件實作上踩過的坑：
+
+- **替身接不了手就整個不跑。** 引擎裡沒有任何地方在模組層級 import `codesys_ui`，而看門人每次執行
+  命令前會把 `sys.modules` 裡的 engine 全部清掉，所以這一刻 `codesys_ui` 通常不在。`cds/ide/silent.py`
+  因此自己按名字把它載進來；載不起來就回一個失敗的 `Outcome`，本體一行都不跑。理由是失敗的形狀
+  差很多：不跑只是這條命令失敗，跑了則是一個沒人能按的 WinForms 對話框卡在 IDE 的訊息迴圈上，
+  IDE 要等有人走到那台機器前面才會動。
 
 - **`NeedsInput` 繼承 `BaseException` 不是 `Exception`。** `entry_build.py` 把 `system.ui.choose`
   整段包在 `except Exception` 裡；如果 `NeedsInput` 是普通例外就會被吃掉，然後引擎退回「編譯 active
