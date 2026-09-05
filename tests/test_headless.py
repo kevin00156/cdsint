@@ -1,0 +1,383 @@
+# -*- coding: utf-8 -*-
+"""Tests for both halves of the headless form.
+
+The IDE half runs under CPython with fake CODESYS globals, the same way the
+watcher tests do. The CLI half gets a fake Popen, because the thing being
+checked is what it decides to launch and what it makes of what came back —
+not whether a real IDE starts, which is the acceptance run's job.
+"""
+import json
+import os
+import subprocess
+
+import pytest
+
+from cds.core import ipc
+from cds.ide import entries
+from cds.ide import headless as ide_side
+from cdsint import headless as cli_side
+from cdsint import installs
+from cdsint.exits import EXIT_HEADLESS, EXIT_TIMEOUT, Failure
+from tests.test_watcher import FakeSystem, make_globals
+
+
+# --- fake CODESYS globals --------------------------------------------------
+
+class FakeFlags(object):
+    """Enum members that or together into something comparable."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __or__(self, other):
+        return FakeFlags(self.name + "|" + other.name)
+
+
+class FakePromptHandling(object):
+    LogMessageKeys = FakeFlags("LogMessageKeys")
+    LogSimplePrompts = FakeFlags("LogSimplePrompts")
+    ProcessScriptPrompts = FakeFlags("ProcessScriptPrompts")
+
+
+class FakePromptResult(object):
+    Yes = "PromptResult.Yes"
+    No = "PromptResult.No"
+
+
+class PromptSystem(FakeSystem):
+    def __init__(self):
+        self.prompt_handling = None
+        self.prompt_answers = {}
+
+
+class OpeningProjects(object):
+    """A `projects` that opens whatever it is told to, or refuses to."""
+
+    def __init__(self, opens=True):
+        self.primary = None
+        self.opened = []
+        self._opens = opens
+
+    def open(self, path):
+        self.opened.append(path)
+        if self._opens:
+            self.primary = make_globals(path)["projects"].primary
+        return self.primary
+
+
+@pytest.fixture
+def ide():
+    return {"system": PromptSystem(), "projects": OpeningProjects(),
+            "PromptHandling": FakePromptHandling,
+            "PromptResult": FakePromptResult}
+
+
+def job(tmp_path, **extra):
+    record = {"project": str(tmp_path / "line.project"),
+              "report": str(tmp_path / "r.json"), "commands": [], "answers": {},
+              "sync_dir": None}
+    record.update(extra)
+    return record
+
+
+def one_step(command="export", ok=True, **data):
+    """Stand in for entries.run without touching the engine."""
+    from cds.ide import silent
+
+    def run(ide_globals, name, args):
+        return silent.Outcome([], "", result={"ok": ok, "summary": name,
+                                              "data": data})
+    return run
+
+
+# --- the IDE half ----------------------------------------------------------
+
+def test_the_prompt_keys_are_logged_so_an_unanswered_one_is_visible(ide):
+    # Without LogMessageKeys a prompt with no answer just cancels whatever it
+    # was blocking, and the report says nothing about why (SPEC 6.4).
+    ide_side.answer_prompts(ide, {})
+    assert "LogMessageKeys" in ide["system"].prompt_handling.name
+
+
+def test_nothing_is_answered_unless_the_caller_said_so(ide):
+    # The upgrade prompt rewrites the project's storage format, and after
+    # that the IDE it came from cannot open it again.
+    ide_side.answer_prompts(ide, {})
+    assert ide["system"].prompt_answers == {}
+
+
+def test_an_answer_reaches_the_prompt_table(ide):
+    ide_side.answer_prompts(ide, {"UpgradeProjectConfirmation": "Yes"})
+    assert ide["system"].prompt_answers == {
+        "UpgradeProjectConfirmation": "PromptResult.Yes"}
+
+
+def test_a_project_that_will_not_open_names_the_likely_prompt(ide, tmp_path):
+    ide["projects"] = OpeningProjects(opens=False)
+    report = ide_side.run_job(ide, job(tmp_path))
+    assert report["opened"] is False
+    assert "UpgradeProjectConfirmation" in report["error"]
+    assert report["intended_exit"] == ide_side.EXIT_FAILED
+
+
+def test_every_command_runs_and_each_gets_its_own_record(ide, tmp_path,
+                                                         monkeypatch):
+    monkeypatch.setattr(entries, "run", one_step())
+    report = ide_side.run_job(ide, job(tmp_path, commands=[
+        {"command": "import", "args": {"yes": True}},
+        {"command": "export", "args": {}}]))
+    assert [r["command"] for r in report["results"]] == ["import", "export"]
+    assert report["intended_exit"] == ide_side.EXIT_OK
+
+
+def test_a_failed_step_stops_the_ones_after_it(ide, tmp_path, monkeypatch):
+    # Exporting after a half-finished import would write that half out and
+    # call the round trip clean.
+    monkeypatch.setattr(entries, "run", one_step(ok=False))
+    report = ide_side.run_job(ide, job(tmp_path, commands=[
+        {"command": "import", "args": {}}, {"command": "export", "args": {}}]))
+    assert [r["command"] for r in report["results"]] == ["import"]
+    assert report["intended_exit"] == ide_side.EXIT_FAILED
+
+
+def test_the_sync_folder_is_pointed_where_the_caller_said(ide, tmp_path,
+                                                          monkeypatch):
+    monkeypatch.setattr(entries, "run", one_step())
+    ide_side.run_job(ide, job(tmp_path, sync_dir="D:\\sync",
+                              commands=[{"command": "export", "args": {}}]))
+    assert ide["projects"].primary.props["cds-sync-folder"] == "D:\\sync"
+
+
+def test_the_report_is_written_where_the_job_asked(ide, tmp_path, monkeypatch):
+    monkeypatch.setattr(entries, "run", one_step())
+    record = job(tmp_path, commands=[{"command": "export", "args": {}}])
+    path = str(tmp_path / "job.json")
+    ipc.write_json(path, record)
+    assert ide_side.main(ide, path) == ide_side.EXIT_OK
+    assert ipc.read_json(record["report"])["opened"] is True
+
+
+# --- the CLI half ----------------------------------------------------------
+
+@pytest.fixture
+def machine(tmp_path, monkeypatch):
+    """One install, so resolve() has something to find."""
+    fake = [{"name": "CODESYS 3.5.21.40", "exe": r"C:\ide\CODESYS.exe",
+             "profiles": ["CODESYS V3.5 SP21 Patch 4"],
+             "script_dir": r"C:\ScriptDir", "script_dir_needs_admin": False,
+             "run_as_admin": None}]
+    monkeypatch.setattr(installs, "find", lambda: fake)
+    return tmp_path
+
+
+class FakeProcess(object):
+    """Popen's stand-in: writes the report the IDE would have written."""
+
+    def __init__(self, launches, code=0, report=None, stdout=None):
+        self.launches = launches
+        self._code = code
+        self._report = report
+        self._stdout = stdout
+        self.pid = 4321
+        self.killed = False
+
+    def wait(self, timeout=None):
+        if self._code is None:
+            raise subprocess.TimeoutExpired("cmd", timeout)
+        return self._code
+
+    def kill(self):
+        self.killed = True
+
+
+def launching(monkeypatch, code=0):
+    """Replace Popen and record what it was asked to start."""
+    launches = []
+
+    def popen(command, stdout=None, stderr=None, env=None, **kwargs):
+        launches.append({"command": command, "env": env})
+        return FakeProcess(launches, code)
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    return launches
+
+
+def written_report(monkeypatch, report):
+    """Make the fake launch drop `report` where the CLI will look for it."""
+    real = cli_side.Headless._launch
+
+    def launch(self, job_path):
+        if report is not None:
+            ipc.write_json(self.report_path, report)
+        return real(self, job_path)
+    monkeypatch.setattr(cli_side.Headless, "_launch", launch)
+
+
+def make(machine, monkeypatch, project="line.project", **kwargs):
+    path = machine / project
+    path.write_text("binary", encoding="utf-8")
+    kwargs.setdefault("install", "3.5.21.40")
+    kwargs.setdefault("report", str(machine / "r.json"))
+    return cli_side.Headless(str(path), **kwargs)
+
+
+OK_REPORT = {"opened": True, "intended_exit": 0, "ide": "CODESYS.exe",
+             "results": [{"ok": True, "command": "export", "data": {}}]}
+
+
+# --- refusing before the launch --------------------------------------------
+
+@pytest.mark.parametrize("lock", ["line.project.~u", "line.~u"])
+def test_a_locked_project_is_refused_with_the_lock_path(machine, lock):
+    # Both filename shapes exist in the wild; checking one leaves the gate
+    # blind half the time (SPEC 6.4).
+    (machine / "line.project").write_text("binary", encoding="utf-8")
+    (machine / lock).write_text("", encoding="utf-8")
+    with pytest.raises(Failure) as raised:
+        cli_side.Headless(str(machine / "line.project"), "3.5.21.40")
+    assert raised.value.code == EXIT_HEADLESS and lock in str(raised.value)
+
+
+def test_force_lock_goes_ahead_anyway(machine):
+    (machine / "line.project").write_text("binary", encoding="utf-8")
+    (machine / "line.project.~u").write_text("", encoding="utf-8")
+    started = cli_side.Headless(str(machine / "line.project"), "3.5.21.40",
+                                force_lock=True)
+    assert started.project.endswith("line.project")
+
+
+def test_a_project_that_is_not_there_is_refused(machine):
+    with pytest.raises(Failure) as raised:
+        cli_side.Headless(str(machine / "nope.project"), "3.5.21.40")
+    assert raised.value.code == EXIT_HEADLESS
+
+
+def test_the_install_has_to_be_named(machine):
+    (machine / "line.project").write_text("binary", encoding="utf-8")
+    with pytest.raises(installs.InstallError):
+        cli_side.Headless(str(machine / "line.project"))
+
+
+# --- the launch ------------------------------------------------------------
+
+def test_the_profile_is_quoted_on_one_command_line(machine, monkeypatch):
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    make(machine, monkeypatch).run([("export", {})])
+    command = launches[0]["command"]
+    assert isinstance(command, str)
+    assert '--profile="CODESYS V3.5 SP21 Patch 4"' in command
+    assert "--noUI" in command and "--runscript=" in command
+
+
+def test_the_job_goes_through_the_environment_not_the_command_line(machine,
+                                                                   monkeypatch):
+    # --scriptargs is one string split on spaces, and these project paths
+    # have spaces and Chinese in them (SPEC 6.4).
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    started.run([("export", {"delete_orphans": True})])
+    job_path = launches[0]["env"][ide_side.JOB_ENV]
+    assert "--scriptargs" not in launches[0]["command"]
+    sent = ipc.read_json(job_path)
+    assert sent["project"] == started.project
+    assert sent["commands"] == [{"command": "export",
+                                 "args": {"delete_orphans": True}}]
+
+
+def test_one_launch_serves_every_step(machine, monkeypatch):
+    # Starting an IDE and opening a project costs half a minute, and verify
+    # is four commands.
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    make(machine, monkeypatch).run([("import", {}), ("export", {})])
+    assert len(launches) == 1
+
+
+# --- reading what came back ------------------------------------------------
+
+def test_each_result_says_which_ide_ran_it(machine, monkeypatch):
+    launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    results = started.run([("export", {})])
+    assert results[0]["ide"] == "CODESYS.exe"
+    assert results[0]["report_path"] == started.report_path
+
+
+def test_a_disagreeing_exit_code_is_recorded_and_said_out_loud(machine,
+                                                               monkeypatch,
+                                                               capsys):
+    # Whether the exit code can be used as a gate is a fact to measure.
+    launching(monkeypatch, code=7)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    started.run([("export", {})])
+    assert ipc.read_json(started.report_path)["exit_code_trusted"] is False
+    assert "cannot be used as a gate" in capsys.readouterr().err
+
+
+def test_a_matching_exit_code_is_trusted(machine, monkeypatch):
+    launching(monkeypatch, code=0)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    started.run([("export", {})])
+    assert ipc.read_json(started.report_path)["exit_code_trusted"] is True
+
+
+def test_stdout_counts_as_reached_only_with_both_marks(machine, monkeypatch):
+    # Half the output is not the output: seeing only BEGIN means the script
+    # died partway, which is not "stdout works".
+    launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    started.run([("export", {})])
+    with open(started.stdout_path(), "w", encoding="utf-8") as handle:
+        handle.write(ide_side.BEGIN_MARK)
+    assert started._stdout_reached() is False
+    with open(started.stdout_path(), "w", encoding="utf-8") as handle:
+        handle.write(ide_side.BEGIN_MARK + "\nwork\n" + ide_side.END_MARK)
+    assert started._stdout_reached() is True
+
+
+def test_a_run_that_never_finishes_is_killed_and_blamed_on_a_dialog(machine,
+                                                                    monkeypatch):
+    launching(monkeypatch, code=None)
+    with pytest.raises(Failure) as raised:
+        make(machine, monkeypatch, timeout=0.01).run([("export", {})])
+    assert raised.value.code == EXIT_TIMEOUT
+    assert "dialog" in str(raised.value)
+
+
+def test_a_timeout_is_written_into_the_report(machine, monkeypatch):
+    launching(monkeypatch, code=None)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+    saved = ipc.read_json(started.report_path)
+    assert saved["exit_code_actual"] is None and saved["pid"] == 4321
+
+
+def test_an_ide_that_wrote_no_report_is_a_launch_failure(machine, monkeypatch):
+    launching(monkeypatch, code=1)
+    with pytest.raises(Failure) as raised:
+        make(machine, monkeypatch).run([("export", {})])
+    assert raised.value.code == EXIT_HEADLESS
+
+
+# --- housekeeping ----------------------------------------------------------
+
+def test_stdout_and_the_report_share_a_name_so_two_runs_do_not_collide(machine,
+                                                                       monkeypatch):
+    started = make(machine, monkeypatch)
+    assert started.stdout_path().startswith(started.report_path)
+    assert started.stderr_path() != started.stdout_path()
+
+
+def test_a_report_path_survives_a_project_name_with_spaces_and_chinese(machine):
+    # Real project names look like "SheetSplitter v2.project", and the report file
+    # is named after them.
+    made = cli_side._default_report(u"C:\\p\\\u4e09\u660e \u5206\u7d19\u6a5f.project")
+    assert made.endswith(".json") and " " not in os.path.basename(made)
+    assert os.path.basename(made).encode("ascii")

@@ -12,7 +12,7 @@ import pytest
 
 from cds.core import commands, instances, ipc
 from cds.ide import watcher
-from cdsint import cli
+from cdsint import cli, target
 from tests.test_watcher import make_globals
 
 
@@ -259,7 +259,7 @@ def test_timeout_stretches_how_long_a_busy_ide_counts_as_alive(root, capsys,
         reached.append(instance_id)
         return {"ok": True, "command": "ping", "messages": []}
 
-    monkeypatch.setattr(cli, "send", fake_send)
+    monkeypatch.setattr(target, "send", fake_send)
     assert cli.main(["ping", "--timeout", "600"]) == cli.EXIT_OK
     assert reached == ["softplc-9"]
 
@@ -277,7 +277,7 @@ def gone_after_first_wait(watch, monkeypatch):
     def vanish(_seconds):
         instances.delete(watch.root, watch.instance_id)
     monkeypatch.setattr(time, "sleep", vanish)
-    monkeypatch.setattr(cli, "GONE_AFTER_S", 0.0)
+    monkeypatch.setattr(target, "GONE_AFTER_S", 0.0)
 
 
 def test_a_registration_blinking_out_mid_rewrite_is_not_death(watch,
@@ -338,3 +338,22 @@ def test_a_successful_export_stays_quiet(watch, monkeypatch, capsys):
     answering(watch, monkeypatch)
     cli.main(["export"])
     assert "nobody asked for" not in capsys.readouterr().err
+
+
+# --- config, end to end through the watcher --------------------------------
+
+def test_config_set_reaches_the_project_and_comes_back(watch, monkeypatch,
+                                                       capsys):
+    answering(watch, monkeypatch)
+    assert cli.main(["config", "set", "cds-sync-debug=true"]) == cli.EXIT_OK
+    assert watch.ide["projects"].primary.props["cds-sync-debug"] == "true"
+    assert "cds-sync-debug" in capsys.readouterr().out
+
+
+def test_config_refuses_the_plc_permission_and_exits_one(watch, monkeypatch,
+                                                         capsys):
+    answering(watch, monkeypatch)
+    assert cli.main(["config", "set", "cds-sync-plc=download"]) == \
+        cli.EXIT_FAILED
+    assert "cds-sync-plc" not in watch.ide["projects"].primary.props
+    assert "SPEC 6.5" in capsys.readouterr().err

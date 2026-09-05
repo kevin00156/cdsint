@@ -1,51 +1,54 @@
 # -*- coding: utf-8 -*-
-"""Drive a running CODESYS IDE from the command line.
+"""Drive a CODESYS-family IDE from the command line.
 
-Talks to the watcher started by Project_watch.py inside the IDE. Nothing here
-touches CODESYS: it writes a command file, waits for the result file, prints
-it. CPython 3, standard library only.
+Every command has two forms and one meaning (SPEC D2). `--target X` talks to
+the watcher inside an IDE somebody has open; `--project P --install I` starts
+an IDE of its own, drives it and lets it go. They are mutually exclusive
+because CODESYS will not open a project twice, so no run could want both.
 
+    cdsint installs
     cdsint list
-    cdsint ping [--target softplc]
-    cdsint status
-    cdsint export [--delete-orphans]
-    cdsint import --yes [--force]
-    cdsint compare
-    cdsint build [--app NAME]
-    cdsint stop
+    cdsint export  --target softplc
+    cdsint verify  --project C:\\p\\line.project --install 3.5.21.40
+    cdsint config set cds-sync-debug=true --target softplc
 
-Exit codes: 0 fine, 1 the command failed (needs_input counts), 2 no single
-live IDE matched, 3 timed out waiting for the answer.
+The work is elsewhere: cdsint/target.py and cdsint/headless.py are the two
+forms, cdsint/verify.py is the round trip, cdsint/report.py does the printing
+and cdsint/exits.py holds SPEC 4.3's exit codes. This file is the surface.
 """
 from __future__ import print_function
 
 import argparse
-import json
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cds.core import commands, instances, ipc  # noqa: E402
+from cds.core import ipc  # noqa: E402
+from cdsint import headless, installs, report, target, verify  # noqa: E402
+from cdsint.exits import (EXIT_FAILED, EXIT_OK, EXIT_TARGET, EXIT_TIMEOUT,  # noqa: E402,F401
+                          EXIT_HEADLESS, Failure)
 
-EXIT_OK = 0
-EXIT_FAILED = 1
-EXIT_TARGET = 2
-EXIT_TIMEOUT = 3
-
-DEFAULT_TIMEOUT_S = 120.0
-POLL_S = 0.05
+DEFAULT_TIMEOUT_S = target.DEFAULT_TIMEOUT_S
 
 _HELP = {
+    "installs": "list the IDEs on this machine, and what to call each one",
+    "list": "show the IDEs that are listening",
     "ping": "check that an IDE is answering",
     "status": "show what an IDE has open right now",
     "export": "write the project out to the sync folder",
     "import": "read the sync folder back into the project",
     "compare": "report how the project and the sync folder differ",
     "build": "build the application and report the error count",
+    "verify": "import, export, compare and build, and pass only if all agree",
+    "config": "read or write the project's cds-sync-* properties",
     "stop": "tell a watcher to shut down",
 }
+
+# Commands that need an IDE with the project open, in either form.
+BOTH_FORMS = ("export", "import", "compare", "build", "verify", "config")
+# Commands about a watcher's life, which only the --target form has.
+WATCHER_ONLY = ("ping", "status", "stop")
 
 # Extra flags per command, and how they become the command's args. A flag left
 # out arrives as None so the watcher can tell "not said" from "said no".
@@ -54,38 +57,33 @@ FLAGS = {
     "import": [("--yes", "confirm the import; without it the watcher asks"),
                ("--force", "go ahead despite a version or computer mismatch")],
     "build": [("--app", "which application to build, when there are several")],
+    "verify": [("--force", "go ahead despite a version or computer mismatch")],
 }
+
+# Only meaningful when we start the IDE ourselves. --answer is among them
+# because the prompts it answers are the IDE's own, and in the --target form
+# there is a person sitting in front of that IDE to answer them.
+PROJECT_ONLY = ("install", "profile", "report", "force_lock", "sync_dir",
+                "answer")
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="cdsint", description="Drive a running CODESYS IDE.")
+        prog="cdsint", description="Drive a CODESYS-family IDE.")
     sub = parser.add_subparsers(dest="command", required=True)
-    _add_shared(sub.add_parser("list", help="show the IDEs that are listening"))
-    for name in ("ping", "status", "export", "import", "compare", "build", "stop"):
-        command = _add_target(sub.add_parser(name, help=_HELP[name]))
+    _shared(sub.add_parser("installs", help=_HELP["installs"]))
+    _shared(sub.add_parser("list", help=_HELP["list"]))
+    for name in WATCHER_ONLY:
+        _target_flag(_shared(sub.add_parser(name, help=_HELP[name])))
+    for name in BOTH_FORMS:
+        command = _both_forms(_shared(sub.add_parser(name, help=_HELP[name])))
         for flag, help_text in FLAGS.get(name, []):
-            if flag == "--app":
-                command.add_argument(flag, default=None, help=help_text)
-            elif flag == "--yes":
-                # -y is the spelling in SPEC 4.2, and the one every other
-                # tool that asks "are you sure" uses.
-                command.add_argument("-y", flag, action="store_true",
-                                     default=None, help=help_text)
-            else:
-                command.add_argument(flag, action="store_true", default=None,
-                                     help=help_text)
+            _add_flag(command, flag, help_text)
+    _config_arguments(sub.choices["config"])
     return parser
 
 
-def command_args(ns):
-    """Turn the parsed flags back into the args the watcher reads."""
-    return dict((flag.lstrip("-").replace("-", "_"),
-                 getattr(ns, flag.lstrip("-").replace("-", "_")))
-                for flag, _ in FLAGS.get(ns.command, []))
-
-
-def _add_shared(parser):
+def _shared(parser):
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S,
                         help="seconds to wait for the answer (default 120); "
                              "also how long a busy IDE counts as alive")
@@ -94,74 +92,119 @@ def _add_shared(parser):
     return parser
 
 
-def _add_target(parser):
+def _target_flag(parser):
     parser.add_argument("--target", help="instance id, or a project name")
-    return _add_shared(parser)
+    return parser
+
+
+def _both_forms(parser):
+    """The two forms, and the flags that only make sense in the second one."""
+    form = parser.add_mutually_exclusive_group()
+    form.add_argument("--target", help="instance id, or a project name of a "
+                                       "watcher that is already listening")
+    form.add_argument("--project", help="a .project to open in an IDE of our "
+                                        "own; needs --install")
+    parser.add_argument("--install", help="which IDE to start; `cdsint "
+                                          "installs` lists them")
+    parser.add_argument("--profile", help="the IDE profile name, when the "
+                                          "install has more than one")
+    parser.add_argument("--report", help="where to write the run's report")
+    parser.add_argument("--force-lock", action="store_true",
+                        help="start even though the project looks open elsewhere")
+    parser.add_argument("--sync-dir", help="use this sync folder for the run")
+    parser.add_argument("--answer", action="append", default=[],
+                        metavar="KEY=VALUE",
+                        help="answer one of the IDE's own prompts; repeatable")
+    return parser
+
+
+def _add_flag(command, flag, help_text):
+    if flag == "--app":
+        return command.add_argument(flag, default=None, help=help_text)
+    if flag == "--yes":
+        # -y is the spelling in SPEC 4.2, and the one every other tool that
+        # asks "are you sure" uses.
+        return command.add_argument("-y", flag, action="store_true",
+                                    default=None, help=help_text)
+    return command.add_argument(flag, action="store_true", default=None,
+                                help=help_text)
+
+
+def _config_arguments(parser):
+    parser.add_argument("action", choices=("get", "set"),
+                        help="read a property, or write one")
+    parser.add_argument("setting", nargs="?", metavar="KEY[=VALUE]",
+                        help="the property; get takes a name and set takes "
+                             "KEY=VALUE. get with no name lists them all")
+
+
+def command_args(ns):
+    """Turn the parsed flags back into the args the IDE side reads."""
+    if ns.command == "config":
+        return _config_args(ns)
+    return dict((flag.lstrip("-").replace("-", "_"),
+                 getattr(ns, flag.lstrip("-").replace("-", "_")))
+                for flag, _ in FLAGS.get(ns.command, []))
+
+
+def _config_args(ns):
+    if ns.action == "get":
+        return {"key": ns.setting, "value": None}
+    key, _, value = (ns.setting or "").partition("=")
+    return {"key": key or None, "value": value}
 
 
 # --------------------------------------------------------------------------
-# Talking to a watcher
+# Which form, and what to do with it
 # --------------------------------------------------------------------------
 
-GONE = "gone"  # the watcher shut down while we were waiting
+def make_runner(ns):
+    """The --target form or the --project form, both answering run(steps)."""
+    if getattr(ns, "project", None):
+        return headless.Headless(
+            ns.project, ns.install, ns.profile, ns.report,
+            answers=_answers(ns.answer), sync_dir=ns.sync_dir,
+            timeout=ns.timeout, force_lock=ns.force_lock)
+    _refuse_project_flags(ns)
+    return target.Target(ipc.default_root(), ns.target, ns.timeout)
 
-# How long the registration has to stay missing before we believe it. Under
-# IronPython the watcher has no os.replace, so its every-two-second rewrite
-# deletes the file and renames the new one into place — for a moment there is
-# no registration, and a single missed read would call a healthy IDE dead.
-GONE_AFTER_S = 1.0
 
+def _refuse_project_flags(ns):
+    """A --project flag with no --project is a caller who thinks it is headless.
 
-def send(root, instance_id, name, args, timeout, poll=POLL_S):
-    """Queue a command and wait for its result.
-
-    None means it timed out; GONE means the watcher went away. A command that
-    times out is un-queued, so it cannot fire later against an IDE whose owner
-    has walked away. If the watcher already claimed it, the result it writes
-    is swept by that watcher's next start instead.
+    Ignoring it would run the command against somebody's open IDE while the
+    caller believed it was driving one of its own.
     """
-    cmd = commands.write_command(root, instance_id, name, args)
-    deadline = time.time() + timeout
-    missing_since = None
-    try:
-        while True:
-            result = commands.take_result(root, instance_id, cmd["id"])
-            if result is not None:
-                return result
-            if instances.read(root, instance_id) is not None:
-                missing_since = None
-            else:
-                missing_since = missing_since or time.time()
-                if time.time() - missing_since >= GONE_AFTER_S:
-                    # The instance directory goes with the registration, so
-                    # the answer is not coming. For `stop` that IS the answer;
-                    # for anything else, better to say so than wait out the
-                    # clock.
-                    return GONE
-            if time.time() >= deadline:
-                commands.delete_command(root, instance_id, cmd["id"])
-                return None
-            time.sleep(poll)
-    except KeyboardInterrupt:
-        commands.delete_command(root, instance_id, cmd["id"])
-        raise
+    given = [name for name in PROJECT_ONLY if getattr(ns, name, None)]
+    if given:
+        raise Failure("--%s only works with --project"
+                      % given[0].replace("_", "-"))
 
 
-def live_instances(root, busy_timeout=DEFAULT_TIMEOUT_S):
-    return [r for r in instances.read_all(root)
-            if instances.is_alive(r, busy_timeout=busy_timeout)]
+def _answers(pairs):
+    found = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            raise Failure("--answer wants KEY=VALUE, not %r" % (pair,))
+        found[key] = value
+    return found
 
 
-# --------------------------------------------------------------------------
-# The subcommands
-# --------------------------------------------------------------------------
+def run_installs(ns):
+    report.show_installs(installs.find(), ns.json)
+    return EXIT_OK
 
-def run_list(root, ns):
-    regs = live_instances(root, ns.timeout)
+
+def run_list(ns):
+    root = ipc.default_root()
+    regs = target.live_instances(root, ns.timeout)
     if ns.json:
-        print(json.dumps(regs, indent=2, sort_keys=True))
+        report.as_json(regs)
         return EXIT_OK
     if not regs:
+        # An empty list is the answer to "who is listening", not a failure,
+        # so this is exit 0 (SPEC 4.3).
         print("no IDE is listening; start Project_watch.py in one")
         return EXIT_OK
     for reg in regs:
@@ -170,96 +213,36 @@ def run_list(root, ns):
     return EXIT_OK
 
 
-def run_on_target(root, ns):
-    try:
-        # --timeout is how long the caller will wait, so it is also how long a
-        # busy instance still counts as alive. Both places, one meaning.
-        reg = instances.resolve_target(live_instances(root, ns.timeout),
-                                       ns.target, busy_timeout=ns.timeout)
-    except instances.TargetError as exc:
-        return _report_target_error(exc)
-    result = send(root, reg["instance_id"], ns.command, command_args(ns),
-                  ns.timeout)
-    if result is GONE:
-        return _report_gone(ns.command, reg["instance_id"])
-    if result is None:
-        print("timed out after %gs waiting for %s"
-              % (ns.timeout, reg["instance_id"]), file=sys.stderr)
-        return EXIT_TIMEOUT
-    return _report(result, ns.json)
+def run_verify(ns, runner):
+    results, problems = verify.run(runner, getattr(ns, "force", None))
+    report.show_steps(results, ns.json)
+    for problem in problems:
+        print("verify: " + problem, file=sys.stderr)
+    if problems:
+        return EXIT_FAILED
+    print("verify: %s round-tripped and built cleanly" % runner.describe())
+    return EXIT_OK
 
 
-def _report_gone(command, instance_id):
-    """The watcher vanished mid-wait: what that means depends on the ask."""
-    if command == "stop":
-        print("info: %s is gone" % instance_id)
-        return EXIT_OK
-    print("%s stopped before answering %s" % (instance_id, command),
-          file=sys.stderr)
-    return EXIT_FAILED
-
-
-def _report_target_error(exc):
-    print(str(exc), file=sys.stderr)
-    for reg in exc.matches:
-        print("  %-28s %s" % (reg["instance_id"],
-                              reg.get("project_path") or "(no project)"),
-              file=sys.stderr)
-    return EXIT_TARGET
-
-
-def _report(result, as_json):
-    if as_json:
-        print(json.dumps(result, indent=2, sort_keys=True))
-        return EXIT_OK if result.get("ok") else EXIT_FAILED
-    said = []
-    for message in result.get("messages") or []:
-        said.append(message.get("text", ""))
-        print("%s: %s" % (message.get("level", "info"), said[-1]))
-    for key, value in sorted((result.get("data") or {}).items()):
-        # A list gets a line each: the one that matters is the names of the
-        # objects a command could not handle, and those are what the reader
-        # has to go and look up.
-        if isinstance(value, list):
-            print("  %-16s %d" % (key, len(value)))
-            for item in value:
-                print("  %-16s   %s" % ("", item))
-        else:
-            print("  %-16s %s" % (key, value))
-    needs = result.get("needs_input")
-    if needs:
-        said.append(needs.get("question"))
-        # Some dialogs have no flag that answers them — the sync-folder
-        # setup is one. The question already says what to do instead, so
-        # naming a "--None" flag would only be noise.
-        arg = needs.get("arg")
-        print("needs input: %s%s"
-              % (said[-1], " (answer with --%s)" % arg if arg else ""),
-              file=sys.stderr)
-    # The error repeats the first bad message, or the question. Say it once.
-    if result.get("error") and result["error"] not in said:
-        print("error: " + result["error"], file=sys.stderr)
-    if _wants_tail(result) and result.get("stdout_tail"):
-        print("--- output from the IDE ---", file=sys.stderr)
-        print(result["stdout_tail"], file=sys.stderr)
-    return EXIT_OK if result.get("ok") else EXIT_FAILED
-
-
-def _wants_tail(result):
-    """When the summary is not the whole answer, show what the script printed.
-
-    A failure always earns the room. So does compare, whose useful output is
-    the per-object list it prints — the messages only carry the counts.
-    """
-    return not result.get("ok") or result.get("command") == "compare"
+def run_command(ns, runner):
+    results = runner.run([(ns.command, command_args(ns))])
+    report.show(results[0], ns.json)
+    return EXIT_OK if results[0].get("ok") else EXIT_FAILED
 
 
 def main(argv=None):
     ns = build_parser().parse_args(argv)
-    root = ipc.default_root()
-    if ns.command == "list":
-        return run_list(root, ns)
-    return run_on_target(root, ns)
+    try:
+        if ns.command == "installs":
+            return run_installs(ns)
+        if ns.command == "list":
+            return run_list(ns)
+        runner = make_runner(ns)
+        if ns.command == "verify":
+            return run_verify(ns, runner)
+        return run_command(ns, runner)
+    except Failure as failure:
+        return failure.report()
 
 
 if __name__ == "__main__":
