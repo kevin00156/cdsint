@@ -22,7 +22,8 @@ from engine.codesys_utils import (
     timed_prompt
 )
 from engine.codesys_compare_engine import (
-    find_all_changes, perform_import_items, build_device_remap, summarize_device_remap
+    find_all_changes, perform_import_items, build_device_remap,
+    summarize_device_remap, has_st_files
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
 from engine import entry, unhandled
@@ -47,6 +48,23 @@ def import_project(projects_obj=None):
         system.ui.warning(error)
         return entry.result(False, error)
 
+    # Disk wins, so this folder is the answer to "what should the project
+    # contain". A folder with no .st in it is not the answer "nothing": it is
+    # a folder nobody has exported to, or the wrong folder. Taken literally it
+    # deletes every object in the project, which is what a headless verify
+    # pointed at a fresh --sync-dir did to 178 of 229 objects. A missing
+    # source of truth is refused, the same way a live PLC login is, rather
+    # than measured against a threshold (SPEC 4.2).
+    if not has_st_files(base_dir):
+        refused = ("No .st files in the sync folder: " + base_dir + "\n\n"
+                   "Refusing to import. Disk wins, so importing from an empty "
+                   "folder would delete every object in the project.\n\n"
+                   "Run export first, or point cds-sync-folder (--sync-dir in "
+                   "the --project form) at the folder that holds the .st "
+                   "files.")
+        print(refused)
+        system.ui.error(refused)
+        return entry.result(False, refused)
 
     # Check version compatibility
     version_ok, version_msg = check_version_compatibility(base_dir)

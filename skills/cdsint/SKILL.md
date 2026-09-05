@@ -56,21 +56,30 @@ cdsint build              # or build --app NAME
 `export` runs the other way, writing the IDE's objects out as `.st`. Run it before
 starting so the disk is current, or after an import to confirm it landed.
 
+`import` refuses a sync folder with no `.st` anywhere under it, on every route
+into it. Disk wins, so an empty folder would mean "this project should contain
+nothing" and delete every object; the refusal names the folder. Export first, or
+fix the folder you pointed at.
+
 ## Nobody has it open: `--project`
 
 ```
 cdsint installs                                  # names, profiles, ScriptDirs
-cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+cdsint verify -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --report r.json
 ```
 
 `--install` takes a fragment of a name from `installs`; more than one match is
-refused rather than guessed. Every command above works this way, plus:
-`--report FILE` for the full record, `--sync-dir D` to use a sync folder just for
-this run, `--force-lock`, `--profile NAME`, and `--answer KEY=VALUE` for the IDE's
-own prompts.
+refused rather than guessed. `--sync-dir D` is required in this form: the project
+you name may be a copy, and a copy carries the original's `cds-sync-folder`, which
+often points into the original's own export folder. The resolved folder is the
+first line of the output and the report's `sync_dir`. Also here: `--report FILE`
+for the full record, `--force-lock`, `--profile NAME`, and `--answer KEY=VALUE`
+for the IDE's own prompts.
 
 `verify` is the one worth knowing: import, export, compare, build, and exit 0 only
-if all four agree. compare is what makes it mean something — import and export can
+if all four agree. It contains an import, so it takes `-y` like `import` does —
+without it you get the comparison and a count of what the import would have
+changed, created and deleted, `needs_input`, exit 1, and an untouched IDE. compare is what makes it mean something — import and export can
 each report success having done nothing, and only asking afterwards whether the IDE
 and the disk still differ turns the pair into a round trip that was checked.
 

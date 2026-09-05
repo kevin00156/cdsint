@@ -9,7 +9,8 @@ because CODESYS will not open a project twice, so no run could want both.
     cdsint installs
     cdsint list
     cdsint export  --target softplc
-    cdsint verify  --project C:\\p\\line.project --install 3.5.21.40
+    cdsint verify  -y --project C:\\p\\line.project --install 3.5.21.40 \\
+                   --sync-dir C:\\p\\exported
     cdsint config set cds-sync-debug=true --target softplc
 
 The work is elsewhere: cdsint/target.py and cdsint/headless.py are the two
@@ -40,7 +41,8 @@ _HELP = {
     "import": "read the sync folder back into the project",
     "compare": "report how the project and the sync folder differ",
     "build": "build the application and report the error count",
-    "verify": "import, export, compare and build, and pass only if all agree",
+    "verify": "import (-y), export, compare and build, and pass only if all "
+              "agree",
     "config": "read or write the project's cds-sync-* properties",
     "stop": "tell a watcher to shut down",
 }
@@ -57,7 +59,9 @@ FLAGS = {
     "import": [("--yes", "confirm the import; without it the watcher asks"),
                ("--force", "go ahead despite a version or computer mismatch")],
     "build": [("--app", "which application to build, when there are several")],
-    "verify": [("--force", "go ahead despite a version or computer mismatch")],
+    "verify": [("--yes", "confirm the import step; without it verify only "
+                         "looks and says what the import would have done"),
+               ("--force", "go ahead despite a version or computer mismatch")],
 }
 
 # Only meaningful when we start the IDE ourselves. --answer is among them
@@ -214,7 +218,8 @@ def run_list(ns):
 
 
 def run_verify(ns, runner):
-    results, problems = verify.run(runner, getattr(ns, "force", None))
+    results, problems = verify.run(runner, getattr(ns, "force", None),
+                                   getattr(ns, "yes", None))
     report.show_steps(results, ns.json)
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
@@ -230,14 +235,37 @@ def run_command(ns, runner):
     return EXIT_OK if results[0].get("ok") else EXIT_FAILED
 
 
+def _needs_sync_dir(parser, ns):
+    """The --project form has to name the folder it will treat as the truth.
+
+    A copy of a project carries the original's cds-sync-folder, and on this
+    machine those are absolute paths into the folder the original exports to
+    — somebody's git working tree. Left to the property, a headless export
+    writes there and a headless import reads from there, neither of which is
+    what "verify this copy" meant. The caller knows both paths already, so it
+    says which one it means (SPEC 4.2).
+    """
+    if getattr(ns, "project", None) and not ns.sync_dir:
+        parser.error(
+            "--project needs --sync-dir. The copy's own cds-sync-folder may "
+            "point anywhere, including the folder the original project "
+            "exports to, so a headless run says which folder holds its .st "
+            "files instead of trusting whatever the copy carried.")
+
+
 def main(argv=None):
-    ns = build_parser().parse_args(argv)
+    parser = build_parser()
+    ns = parser.parse_args(argv)
+    _needs_sync_dir(parser, ns)
     try:
         if ns.command == "installs":
             return run_installs(ns)
         if ns.command == "list":
             return run_list(ns)
         runner = make_runner(ns)
+        if getattr(ns, "project", None):
+            # First line of the run, before anything has used it.
+            report.show_sync_dir(runner.sync_dir(), ns.json)
         if ns.command == "verify":
             return run_verify(ns, runner)
         return run_command(ns, runner)

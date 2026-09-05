@@ -47,7 +47,9 @@ class Headless(object):
         self.profile = installs.profile_of(self.install, profile)
         self.report_path = os.path.abspath(report or _default_report(self.project))
         self.answers = answers or {}
-        self._sync_dir = sync_dir
+        # Absolute from here on: the IDE side writes this into the project's
+        # cds-sync-folder, and the IDE's working directory is not the shell's.
+        self._sync_dir = os.path.abspath(sync_dir) if sync_dir else None
         self.timeout = timeout
         self._check_project(force_lock)
         self._warn_about_elevation()
@@ -159,7 +161,8 @@ class Headless(object):
         report = ipc.read_json(self.report_path) or {}
         report.update({
             "install": self.install["name"], "profile": self.profile,
-            "report_path": self.report_path, "elapsed_s": round(elapsed, 3),
+            "report_path": self.report_path, "sync_dir": self._sync_dir,
+            "elapsed_s": round(elapsed, 3),
             "pid": pid, "exit_code_actual": code, "timed_out": code is None,
             "stdout_path": self.stdout_path(),
             "stderr_path": self.stderr_path(),
@@ -181,10 +184,12 @@ class Headless(object):
                           or "the IDE ran but wrote no report; see "
                              + self.stdout_path(), EXIT_HEADLESS)
         for result in report["results"]:
-            # SPEC 4.3: the --project form's record says which IDE ran it and
-            # where the rest of the story is.
+            # SPEC 4.3: the --project form's record says which IDE ran it,
+            # which folder it took for the truth, and where the rest of the
+            # story is.
             result["ide"] = report.get("ide")
             result["report_path"] = self.report_path
+            result["sync_dir"] = self._sync_dir
         return report["results"]
 
     def _timed_out(self, pid):

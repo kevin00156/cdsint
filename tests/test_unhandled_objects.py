@@ -179,6 +179,12 @@ def one_bad_object(load_engine, monkeypatch, tmp_path):
         monkeypatch.setattr(body, "projects", projects, raising=False)
         monkeypatch.setattr(body, "system", DeafSystem(), raising=False)
     export, compare, imp = bodies
+    # An empty sync folder is refused before any tree walking happens
+    # (tests/test_empty_sync_folder.py owns that rule); these tests are about
+    # what the walk does with an object it cannot read. Putting a real .st
+    # here instead would give the import something to create, and the
+    # confirmation dialog for it lives in codesys_ui, which needs clr.
+    monkeypatch.setattr(imp, "has_st_files", lambda base_dir: True)
     return {
         "export": lambda: export.export_project(sync, projects),
         "compare": lambda: compare.compare_project(projects),

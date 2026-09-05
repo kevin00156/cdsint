@@ -193,7 +193,7 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 
 2 和 4 是同一個問題的兩種原因，都是「這個專案有沒有活著的 IDE」，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
 
-`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`data`。`--project` 形式再加 `ide`（用了哪套）、`report_path`。
+`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`。
 
 ### 4.4 專案屬性
 

@@ -91,6 +91,12 @@ exit code 1，**而且 IDE 裡什麼都不會變**——這是設計，不是失
 匯入是**磁碟贏**。磁碟上有、IDE 裡沒有的檔案會被建立成新物件；兩邊都有但內容不同的，
 以磁碟為準。這也是為什麼不確定的時候要先 `compare`。
 
+磁碟贏也表示：同步資料夾底下一個 `.st` 都沒有的時候，匯入會**拒絕執行**。空資料夾不是
+「這個專案應該是空的」這個答案，是還沒 export 或路徑指錯，照磁碟贏做下去等於把專案裡
+每一個物件都刪掉。三條路（選單、`--target`、`--project`）都一樣拒絕，訊息會說是哪個
+資料夾。碰到的話先跑 export，或去修 `cds-sync-folder`（`--project` 形式是修
+`--sync-dir`）。
+
 ### `build`：編譯，拿錯誤數
 
 ```
@@ -147,7 +153,8 @@ cdsint export
 - `needs_input` 有值代表「有個問題沒人回答」，裡面的 `arg` 直接告訴你該補哪個旗標。
 - `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
   `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
-- `--project` 形式的紀錄還多兩個欄位：`ide`（用了哪一套）與 `report_path`（完整報告在哪）。
+- `--project` 形式的紀錄還多三個欄位：`ide`（用了哪一套）、`sync_dir`（這一趟把哪個
+  資料夾當成事實來源）與 `report_path`（完整報告在哪）。
 
 ### `needs_input` 出現時
 
@@ -198,17 +205,22 @@ cdsint installs
 然後跟前面一樣的命令，換一組旗標：
 
 ```
-cdsint compare --project C:\p\line.project --install 3.5.21.40
-cdsint import -y --project C:\p\line.project --install 3.5.21.40
-cdsint build --project C:\p\line.project --install 3.5.21.40 --report r.json
+cdsint compare --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint import -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint build --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --report r.json
 ```
+
+`--sync-dir` 少了會被 argparse 擋下來，exit 2。原因是你指的專案很可能是一份副本，
+而副本身上帶著原專案的 `cds-sync-folder` 屬性——那常常是一個指向原專案同步資料夾的
+絕對路徑，export 會直接寫進去。呼叫端本來就知道這兩個路徑，所以由它明講。真正被採用的
+資料夾會印在輸出第一行，也寫在報告檔頂層的 `sync_dir`。
 
 只有這個形式才有的旗標：
 
 | 旗標 | 做什麼 |
 |---|---|
+| `--sync-dir D` | **必填**。這一趟用這個同步資料夾，不改專案裡存的那個 |
 | `--report FILE` | 把完整報告寫到這裡。不給就寫進 `%TEMP%\cdsint\` |
-| `--sync-dir D` | 這一趟用這個同步資料夾，不改專案裡存的那個 |
 | `--profile NAME` | 一套安裝有多個 profile 時指定用哪個 |
 | `--force-lock` | 明知鎖檔是舊的殘留，硬跑 |
 | `--answer KEY=VALUE` | 回答 IDE 自己彈的提示，可以給多個 |
@@ -216,7 +228,7 @@ cdsint build --project C:\p\line.project --install 3.5.21.40 --report r.json
 ### `verify`：一條命令跑完整趟
 
 ```
-cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+cdsint verify -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --report r.json
 ```
 
 它依序跑 import、export、compare、build，任何一步失敗就停在那裡。exit 0 的意思是四件事
@@ -224,7 +236,10 @@ cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
 中間那一步是關鍵——import 和 export 各自都可能「成功」卻其實什麼都沒做，只有事後問
 compare 還有沒有差異，這一輪才算被驗過。
 
-`verify` 會自己回答匯入的確認（匯入本來就是它的定義），但版本不符還是要你給 `--force`。
+`verify` 含匯入，所以跟 `import` 一樣要 `-y`，兩種形式都要。不帶 `-y` 的時候它只跑
+compare，把匯入那步會改幾個、建幾個、從 IDE 刪幾個列出來，然後回 `needs_input`、exit 1，
+IDE 一個物件都不動。看過那三個數字覺得對，再補 `-y` 跑一次。版本不符是另一回事，要給
+`--force`。
 
 ### 報告檔裡有什麼
 

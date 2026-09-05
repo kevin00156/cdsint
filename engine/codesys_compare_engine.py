@@ -528,6 +528,22 @@ def detect_moved_files(new_in_ide, new_on_disk):
     return moved, remaining_ide, remaining_disk
 
 
+def has_st_files(base_dir):
+    """Is there anything under base_dir an import could read as the truth?
+
+    The same walk scan_new_disk_files does, and for the same reason: a .st
+    that the disk scan will not look at cannot be a source of truth either.
+    Dot-folders are where backups and git keep their copies, and importing
+    those back would be a different bug from the one this answers.
+    """
+    for root, dirs, files in os.walk(base_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
+        for f in files:
+            if f.endswith(".st") and not f.startswith("."):
+                return True
+    return False
+
+
 def scan_new_disk_files(base_dir, ide_paths):
     """
     Walk the export directory and find .st / .xml files that are

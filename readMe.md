@@ -58,11 +58,19 @@ No IDE, no person. cdsint starts one, drives it and lets it go:
 
 ```
 cdsint installs                                     # what is on this machine
-cdsint verify --project C:\p\line.project --install 3.5.21.40 --report r.json
+cdsint verify -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --report r.json
 ```
 
 `verify` imports the text, exports it back, checks the IDE and the disk still
 agree about every object, and builds. Exit 0 means all four held.
+
+Two flags are not decoration. `-y` confirms the import, the same way `import`
+needs it: without it `verify` compares, prints what the import would have
+changed, created and deleted, and stops without touching the IDE. `--sync-dir`
+is required in this form, because the project you point at may be a copy whose
+`cds-sync-folder` still names the original's folder — and an export would then
+write there. The folder that run treated as the truth is the first line of the
+output and the `sync_dir` field of the report.
 
 ## Install
 
@@ -143,17 +151,35 @@ Every command that touches a project takes one of two forms, and never both:
 | `import -y [--force]` | yes | yes | read the `.st` back in, disk wins |
 | `compare` | yes | yes | list what differs, change nothing |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
-| `verify [--force]` | yes | yes | import, export, compare and build, all four or nothing |
+| `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
 | `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
 
 Shared flags: `--timeout SECONDS` (default 120), `--json` for the raw record.
-Only with `--project`: `--profile NAME` when an install has several,
-`--report FILE`, `--force-lock`, `--sync-dir D`, and `--answer KEY=VALUE`
-(repeatable) for the IDE's own prompts.
+Only with `--project`: `--sync-dir D` (required — see below), `--profile NAME`
+when an install has several, `--report FILE`, `--force-lock`, and
+`--answer KEY=VALUE` (repeatable) for the IDE's own prompts.
 
 **Every dialog of cdsint's own is answered by a flag, never guessed.** A question
 with no flag behind it comes back as `needs_input` naming the flag you need, exit
 code 1, and nothing in the IDE changed.
+
+### Two lines you cannot cross by accident
+
+Disk wins, so an import reads the sync folder as the answer to "what should this
+project contain". That makes two situations dangerous, and both are refused
+rather than measured:
+
+- **An empty sync folder.** No `.st` anywhere under it is not the answer
+  "nothing" — it is a folder nobody has exported to, or the wrong folder — so
+  `import` refuses it on all three routes (Scripts menu, `--target`,
+  `--project`) instead of deleting every object in the project.
+- **A copy that remembers where the original synced.** `--project` therefore
+  requires `--sync-dir`, and the resolved folder is printed first and written
+  into the report as `sync_dir`.
+
+`verify` contains an import, so it needs `-y` exactly as `import` does. Without
+it you get the comparison, the count of what the import would have changed,
+created and deleted, `needs_input`, exit 1, and an untouched IDE.
 
 ### Exit codes
 

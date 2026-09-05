@@ -297,6 +297,26 @@ def test_one_launch_serves_every_step(machine, monkeypatch):
 
 # --- reading what came back ------------------------------------------------
 
+def test_the_sync_folder_is_resolved_before_anyone_is_told_about_it(machine,
+                                                                    monkeypatch):
+    # The IDE side sets cds-sync-folder to this string, and the IDE's working
+    # directory is not the shell's, so a relative path would land somewhere
+    # neither of them meant.
+    started = make(machine, monkeypatch, sync_dir="exported")
+    assert os.path.isabs(started.sync_dir())
+    assert started.sync_dir().endswith("exported")
+
+
+def test_the_report_says_which_folder_the_run_used(machine, monkeypatch):
+    launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch, sync_dir=str(machine / "exported"))
+    results = started.run([("export", {})])
+    assert ipc.read_json(started.report_path)["sync_dir"] == started.sync_dir()
+    # And in the record, next to the other two facts only this form knows.
+    assert results[0]["sync_dir"] == started.sync_dir()
+
+
 def test_each_result_says_which_ide_ran_it(machine, monkeypatch):
     launching(monkeypatch)
     written_report(monkeypatch, OK_REPORT)

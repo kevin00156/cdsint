@@ -172,7 +172,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
-- [ ] **階段 2：無頭前門**（SPEC 10.2 階段 2）——施工項目與 worker 的驗收全過；監督者重現時抓到一個會清空專案的洞，收尾項目在本階段末尾，做完才算過。
+- [ ] **階段 2：無頭前門**（SPEC 10.2 階段 2）——施工項目與 worker 的驗收全過；監督者重現時抓到一個會清空專案的洞，收尾項目在本階段末尾，做完才算過。收尾四項與三條驗收 2026-09-05 做完（見底下），等監督者重現。
   - [x] `cdsint installs`：掃 `Program Files` 底下的 `CODESYS *`、`Delta Industrial Automation\DIAStudio\DIADesigner-AX*`、`Lenze\PlcDesigner\*`，還有 `Program Files (x86)\Lenze\PlcDesigner\*`；讀 `Profiles\*.profile.xml` 檔名當 profile 名；查登錄檔 `AppCompatFlags\Layers` 的 `RUNASADMIN`。——在 `cdsint/installs.py`。認一套安裝的條件是執行檔在，不是目錄名字像版本號，理由同安裝器那條 Ruling：這台的 `Lenze\PlcDesigner\` 底下有 `GatewayPLC`、`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們都會被當成一套。順帶也印 ScriptDir 與它要不要管理員。
   - [x] `--project P --install I` 形式：`cdsint/headless.py` 是 CLI 側，`cds/ide/headless.py` 是 IDE 側。SPEC 6.4 表的每一列都要保留，程式碼註解引 SPEC 6.4 的列。旗標 `--answer`、`--profile`、`--report`、`--force-lock`、`--sync-dir`；exit 3 逾時、exit 4 鎖檔或啟動失敗。
   - [x] `verify` 子命令，兩種形式都有。——`cdsint/verify.py`，import、export、compare、build 四步，compare 有任何差異就算沒過。
@@ -201,13 +201,13 @@ img/        readMe 用的圖
 
   - 監督者驗證（2026-09-05 18:40）：`python -m pytest tests -q` 與根目錄各 508 passed，監督者自己跑的。`cdsint installs` 七套全列、`cdsint/` 每個模組都在 300 行以下、`--target` 配 `--project` 是 exit 2、對使用者開著的 Shm 原檔 `compare --project` 是 exit 4 且訊息含 `.~u` 路徑，都是監督者自己跑的。兩個原始專案的修改時間都是 9 月 4 日，兩個來源 repo 的 `git status` 跟派工前一樣，沒有殘留的 IDE 行程。
   - **監督者重現 `verify --project` 時抓到的洞。** 監督者把 softplc 複製到暫存區，`--sync-dir` 指到一個**空的**資料夾，跑 `verify --project --install 3.5.21.40 --force`。第一步 import 把副本裡 178 個物件刪掉、51 個刪失敗（子物件在父物件刪掉之後才輪到，`Object reference not set`），然後存檔；exit 1 只是因為那 51 個失敗讓 `ok` 變 False。如果刪得乾淨，verify 會接著匯出一個空專案、compare 無差異、build 通過，回一個什麼都沒證明的綠燈。worker 的兩條驗收沒撞到，原因是它的副本旁邊已經有匯出過的同步資料夾。同一條命令用 `--target` 打在使用者開著的專案上，只要 `cds-sync-folder` 指錯，專案就會被清空。根因有兩個：`verify` 自己替匯入按了確認（worker 的 Ruling，監督者推翻），以及 import 把「同步資料夾是空的」當成正常輸入。
-  - [ ] 階段 2 收尾（監督者驗收後加的）：`verify` 不再自己替匯入按確認，跟 `import` 一樣需要 `-y`，兩種形式都是。沒給 `-y` 就把匯入那步的計畫印出來（modified、new on disk、delete 各幾個）、回 `needs_input`、exit 1，IDE 一個物件都不動。SPEC 4.2 的表改成 `verify -y`。
-  - [ ] 階段 2 收尾：`import` 的三條路（選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時直接拒絕，訊息說「同步資料夾 X 沒有任何 .st，拒絕刪掉專案裡每一個物件；先跑 export，或修正 `--sync-dir`／`cds-sync-folder`」。這不是門檻式的啟發，是「事實來源不存在」的前置檢查，跟現有的「登入中拒絕匯入」同一類。
-  - [ ] 階段 2 收尾：`--project` 形式一律要求 `--sync-dir`，沒給就 argparse 擋。解析後的同步資料夾印在輸出的第一行，並寫進 report 頂層（`sync_dir`）。理由：副本的 `cds-sync-folder` 屬性可能是指向原專案真實資料夾的絕對路徑，export 會寫進使用者 git 管理的目錄；scenario C 的呼叫端本來就知道兩個路徑，讓它明講比讓它猜安全。
-  - [ ] 階段 2 收尾：readMe、`docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md` 補上這三條：`verify` 要 `-y`；空同步資料夾會被拒絕；`--project` 必配 `--sync-dir`。第 7 節第 4 項分紙機 Makefile 的行跟著加 `-y` 與 `--sync-dir`。
-  - [ ] 驗收：測試涵蓋三條：verify 沒 `-y` 而匯入會刪東西時回 `needs_input` 且引擎的刪除沒被呼叫；空同步資料夾時 import 拒絕且引擎沒被呼叫；`--project` 少 `--sync-dir` 被 argparse 擋。
-  - [ ] 驗收（監督者會重現）：softplc 副本、空的 `--sync-dir`：`verify --project --install 3.5.21.40 --force -y` exit 1，訊息是空資料夾拒絕，副本裡的物件數仍是 229（跑一次 `compare --project` 看 `new_in_ide`）；同一副本先 `export --project --sync-dir S`，再 `verify --project -y --sync-dir S` exit 0，report 頂層有 `sync_dir`。
-  - [ ] 驗收：`verify --target <無頭掛看門人的實例>` 沒 `-y` 回 `needs_input`、exit 1；加 `-y` exit 0。
+  - [x] 階段 2 收尾（監督者驗收後加的）：`verify` 不再自己替匯入按確認，跟 `import` 一樣需要 `-y`，兩種形式都是。沒給 `-y` 就把匯入那步的計畫印出來（modified、new on disk、delete 各幾個）、回 `needs_input`、exit 1，IDE 一個物件都不動。SPEC 4.2 的表改成 `verify -y`。——做法：沒給 `-y` 的時候 `verify` 只跑 `compare` 這一步（四步裡唯一只讀的），再把它的三個計數換成匯入的計畫，多回一筆 `command` 是 `import`、`ok` 是 False、`needs_input.arg` 是 `yes` 的紀錄。理由見第 7 節。SPEC 4.2 的表監督者已經改過。
+  - [x] 階段 2 收尾：`import` 的三條路（選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時直接拒絕，訊息說「同步資料夾 X 沒有任何 .st，拒絕刪掉專案裡每一個物件；先跑 export，或修正 `--sync-dir`／`cds-sync-folder`」。這不是門檻式的啟發，是「事實來源不存在」的前置檢查，跟現有的「登入中拒絕匯入」同一類。——檢查放在 `engine/entry_import.py` 的 `import_project()`，位置在 `load_base_dir()` 之後、版本檢查之前，所以三條路都經過它，而且在讀 IDE 樹之前就結束。判斷式 `has_st_files()` 放在 `engine/codesys_compare_engine.py` 裡 `scan_new_disk_files()` 旁邊，走訪規則跟它一致。
+  - [x] 階段 2 收尾：`--project` 形式一律要求 `--sync-dir`，沒給就 argparse 擋。解析後的同步資料夾印在輸出的第一行，並寫進 report 頂層（`sync_dir`）。——六個有 `--project` 形式的命令都要，`config` 也不例外；少給是 `parser.error()`、exit 2。路徑在 CLI 側 `os.path.abspath` 解析完才送進去。那一行是 `sync folder: <路徑>`，`--json` 的時候不印（會弄壞 JSON），改成每一筆結果紀錄多一個 `sync_dir` 欄位，SPEC 4.3 補了這個欄位。理由：副本的 `cds-sync-folder` 屬性可能是指向原專案真實資料夾的絕對路徑，export 會寫進使用者 git 管理的目錄；scenario C 的呼叫端本來就知道兩個路徑，讓它明講比讓它猜安全。
+  - [x] 階段 2 收尾：readMe、`docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md` 補上這三條：`verify` 要 `-y`；空同步資料夾會被拒絕；`--project` 必配 `--sync-dir`。第 7 節第 4 項分紙機 Makefile 的行跟著加 `-y` 與 `--sync-dir`。——readMe 多一節「Two lines you cannot cross by accident」，命令表改 `verify -y [--force]`，旗標那段標 `--sync-dir` 必填；三份文件裡每一個 `--project` 的例子都補上 `--sync-dir`。Makefile 那段多一個 `CDS_SYNC` 變數，順手修好上一輪被吃掉的續行反斜線。
+  - [x] 驗收：測試涵蓋三條：verify 沒 `-y` 而匯入會刪東西時回 `needs_input` 且引擎的刪除沒被呼叫；空同步資料夾時 import 拒絕且引擎沒被呼叫；`--project` 少 `--sync-dir` 被 argparse 擋。——`tests/test_verify.py` 多 13 條（沒 `-y` 時只有 `compare` 被要求、拒絕紀錄的三個數字、六個命令各自少 `--sync-dir` 都是 exit 2、第一行印什麼、`--json` 還是合法 JSON）；`tests/test_empty_sync_folder.py` 是新檔 6 條，用一個間諜替掉 `find_all_changes`，證明拒絕發生在讀 IDE 之前；`tests/test_headless.py` 多 2 條（路徑解析成絕對、報告與紀錄都有 `sync_dir`）。全套 531 passed。
+  - [x] 驗收（監督者會重現）：softplc 副本、空的 `--sync-dir`：`verify --project --install 3.5.21.40 --force -y` exit 1，訊息是空資料夾拒絕，副本裡的物件數仍是 229（跑一次 `compare --project` 看 `new_in_ide`）；同一副本先 `export --project --sync-dir S`，再 `verify --project -y --sync-dir S` exit 0，report 頂層有 `sync_dir`。——**全過**。空資料夾那趟 72.3 秒 exit 1，import 那一步 3.1 秒就結束在拒絕訊息上（訊息帶著空資料夾的路徑），後面三步沒跑；接著 `compare --project` 回 `new_in_ide=229`、`different=0`，副本一個物件都沒少。然後 `export --project --sync-dir S` 寫出 229 個物件（73.0 秒），`verify -y --project --sync-dir S` 125.8 秒 exit 0，四步 import 23.5／export 14.6／compare 14.0／build 25.9 秒，compare 四個差異數全 0，build 0 errors 101 warnings，report 頂層 `sync_dir` 就是 S。
+  - [x] 驗收：`verify --target <無頭掛看門人的實例>` 沒 `-y` 回 `needs_input`、exit 1；加 `-y` exit 0。——用 `tools/headless_watch.py` 在原廠 3.5.21.40 起一個無頭 IDE 掛看門人（`softplc_copy-12972`，開的是同一份副本）。沒 `-y`：22.9 秒 exit 1，`--json` 回兩筆紀錄，`compare` ok 而 `import` 的 `needs_input.arg` 是 `yes`，計數全 0（那時磁碟與 IDE 已經一致）。加 `-y --force`：70.0 秒 exit 0，build 0 errors 101 warnings。跑完 `cdsint stop`，行程自己收掉；只有使用者原本開著的兩個 IDE（pid 17340、14012）還在，`%TEMP%\cdsint-work\` 已刪，來源專案最後寫入時間仍是 9 月 4 日 16:55。
 
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
@@ -260,18 +260,25 @@ img/        readMe 用的圖
 
    ```make
    # 這個專案的 .project 不在 repo 裡，它的 cds-sync-folder 已經指著 codesys_export/。
+   # --sync-dir 還是要寫：--project 形式一律要求它，理由是副本身上帶的屬性可能指到別處。
    CDS_PROJECT ?= D:\Acme\Site\SheetSplitter\PLC\.softplc\softplc_refactor.project
    CDS_INSTALL ?= 3.5.21.40
+   CDS_SYNC ?= $(CURDIR)/codesys_export
 
    # import、export、compare、build 一趟跑完。IDE 不能開著這個專案，
    # 開著的話 cdsint 讀鎖檔就 exit 4 並印出鎖檔路徑。
+   # -y 是「確認這一趟會改 IDE」，跟 cdsint import 的 -y 同一個意思；
+   # 不給的話 verify 只跑 compare，印出匯入會改幾個、建幾個、刪幾個就 exit 1。
    st-sync:
-   	cdsint verify --project "$(CDS_PROJECT)" --install "$(CDS_INSTALL)"    	    --report .cdsint-verify.json
+   	cdsint verify -y --project "$(CDS_PROJECT)" --install "$(CDS_INSTALL)" \
+   	    --sync-dir "$(CDS_SYNC)" --report .cdsint-verify.json
 
    st-verify: st-sync          # 這一行是唯一要改的既有行，其餘是新增
    ```
 
-   三個要提醒人的地方。一，`cds-sync-version` 屬性現在是 `k1.1.1` 而工具是 `0.0.1`，
+   四個要提醒人的地方。零，`-y` 少了 make 會停在 exit 1，那是設計不是故障；`--sync-dir`
+   少了會被 argparse 擋在 exit 2。
+   一，`cds-sync-version` 屬性現在是 `k1.1.1` 而工具是 `0.0.1`，
    第一次跑會撞版本不符，要 `--force`；那個屬性只有在專案存檔之後才會更新，而這個專案的
    `cds-sync-save-after-export` 是 False，所以它不會自己好起來——要嘛每次都帶 `--force`，
    要嘛人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。
@@ -282,13 +289,23 @@ img/        readMe 用的圖
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
 7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
 
+階段 2 收尾新增的：
+
+- Ruling: `verify` 沒給 `-y` 的時候跑一趟 `compare`，不是直接拒絕 — 工單要的是「把匯入那步的計畫印出來（modified、new on disk、delete 各幾個）」，而 compare 就是四步裡唯一只讀的那一步，它回的 `different`／`new_on_disk`／`new_in_ide` 換個名字就是那三個數字。少了它，拒絕只能說「你少給一個旗標」，說不出「你要同意的是刪掉 229 個物件」，而後者才是使用者該看的東西 — 錯了的代價是 `--project` 形式沒給 `-y` 也要付一次 IDE 啟動（這次量到 23 秒，`--target` 形式因為 IDE 已經開著）。
+- Ruling: 拒絕的時候多回一筆 `command` 是 `import` 的結果紀錄，`ok` False、`needs_input.arg` 是 `yes`、`data` 放那三個數字 — 那正是那一步「如果跑了」會長的樣子，所以兩種形式、`--json` 與人看的輸出全都不用特別處理它；SPEC 4.3 說 agent 讀 `needs_input.arg` 就知道要補哪個旗標，這樣它讀得到 — 錯了的代價是紀錄裡有一筆 IDE 其實沒跑過的步驟，`elapsed_s` 是 0.0。
+- Ruling: 「有沒有 `.st`」的判斷跟 `scan_new_disk_files` 用同一套走訪規則（跳過 `.` 開頭的資料夾與檔案、跳過 `__pycache__`），所以函式就放在它旁邊（`engine/codesys_compare_engine.py`） — 匯入看不到的 `.st` 不能算事實來源，否則一個只剩 `.project\backup.st` 的資料夾會通過檢查，然後把專案清空 — 錯了的代價是這兩段走訪規則以後要一起改；放在同一個檔案相鄰兩支函式是今天能做到最接近「一份事實」的形狀。附帶影響：`tests/test_unhandled_objects.py` 那個用空資料夾的 fixture 現在要明講「假設資料夾裡有東西」（monkeypatch `has_st_files`），因為放一個真的 `.st` 進去會讓匯入走到確認對話框，那個對話框在 CPython 底下 import 不起來。
+- Ruling: `--sync-dir` 是每一個有 `--project` 形式的命令都要，`config` 也不例外 — 一條沒有例外的規則比一條「除了 config」的規則好記，而且 `config set cds-sync-folder=X` 正是最需要講清楚「這一趟的事實來源是誰」的命令 — 錯了的代價是 `config get --project` 這種純讀的呼叫也要多打一個旗標。
+- Ruling: 少給 `--sync-dir` 走 `parser.error()`，exit 2，不是 `Failure` 的 exit 1 — 這是「旗標組合不合法」，跟 `--target` 配 `--project` 同一類，argparse 那類錯誤本來就是 exit 2（階段 2 的驗收已經記過那個 2）；exit 1 是「命令跑了但失敗」 — 錯了的代價是 SPEC 4.3 的 2 那一格意思變寬了一點：本來只寫「找不到看門人或不只一個」，現在也涵蓋用法錯誤。
+- Ruling: 解析同步資料夾在 CLI 側（`os.path.abspath`），不是 IDE 側 — IDE 行程的工作目錄不是 shell 的，相對路徑送過去會落在別的地方；而且報告要寫「這一趟用了哪個資料夾」，那個值必須在啟動之前就定下來 — 錯了的代價是無。
+- Ruling: 那一行印在 stdout，但 `--json` 的時候不印；`sync_dir` 同時進每一筆結果紀錄，SPEC 4.3 跟著補一個欄位 — 一行散文擋在 JSON 前面會讓 `json.loads(stdout)` 直接壞掉，那正是要通知的對象；`--json` 的呼叫端改從紀錄裡讀同一個事實 — 錯了的代價是 SPEC 4.3 的欄位表多一個欄位要維護。
+
 階段 2 新增的：
 
 - Ruling: 無頭那趟的工作內容走一個環境變數指向的 JSON 檔（`CDSINT_HEADLESS_JOB`），不是一堆環境變數 — SPEC 6.4 那一列說「專案路徑走環境變數，不走 `--project` 也不走 `--scriptargs`」，理由是 `--scriptargs` 是一個字串、空白切開、引號規則自成一格，而專案路徑帶中文帶空白。一個檔案滿足同一個理由，而且順帶解決了下一個問題：命令清單、`--answer` 的答案、同步資料夾、報告路徑，每加一樣就要多一個環境變數，兩側各記一次名字。IronPython 那邊的 json 已經在 `cds/core/ipc.py` 上跑過真專案 — 錯了的代價是多一個暫存檔（寫在 report 旁邊，叫 `<report>.job.json`），而它同時也是「這趟到底叫它做什麼」的紀錄。
 - Ruling: `park()`（`system.delay()` 那個迴圈）留在 `tools/`，不進 `cds/ide/headless.py` — 工單寫「`open_copy_and_watch.py` 與 `watch_harness.py` 併進 `cds/ide/headless.py` 後刪除（D16）」，而 D16 要消滅的是「開專案、設同步資料夾、存檔」這件事有兩份程式碼；那一半確實搬進去了。但 `park()` 用 `system.delay()`，SPEC D5 對這件事的措辭是「這條是絕對的，沒有例外」，把它放進 D5 管轄的那個目錄等於讓規則自己打自己。它現在在 `tools/headless_watch.py`，跑之前檢查 `system.ui_present`，有 UI 就拒絕停住並印一句為什麼 — 錯了的代價是 `tools/` 底下有一個會 `system.delay()` 的檔案，D5 的 grep 要記得它是例外；換來的是 `cds/ide/` 底下一個都沒有。這一條值得監督者裁。
 - Ruling: 一次 `--project` 呼叫起一個 IDE 跑完整串命令，不是一個命令一個 IDE — `verify` 是四個命令，而起 IDE 加開專案要三十幾秒；四趟就是兩分鐘的純等待，而且每一趟都要再問一次那些 IDE 自己的提示。工作檔裡放的是 commands 陣列，IDE 側依序跑、第一個失敗就停 — 錯了的代價是一個命令壞掉會連累後面的，但那正是想要的：匯入做了一半就匯出，等於把半成品寫回磁碟再說「這一輪很乾淨」。
 - Ruling: `verify` 的第三步是 `compare`，不是「比對同步資料夾的前後快照」 — SPEC 4.2 寫「import、export、比對磁碟有沒有 diff、build」。前後快照要先知道同步資料夾在哪，而 `--project` 形式在 IDE 開起來之前不知道（那是專案屬性），只能多起一次 IDE 去問。`compare` 回的 `data` 裡有 `different`、`new_in_ide`、`new_on_disk`、`moved` 四個數字，任何一個不是 0 就代表跑完一輪之後 IDE 跟磁碟還是不一致，那正是這一步要抓的 — 錯了的代價是「export 寫出來的位元組跟之前一模一樣」這件事沒有被直接驗；`compare` 驗的是「兩邊對每一個物件的看法一致」，比位元組比對寬一點。
-- Ruling: `verify` 自己回答匯入的確認，但不自己回答版本不符 — 匯入就是 `verify` 的定義，SPEC 4.2 的表上 `verify` 也沒有 `-y`；問一個只有一個有用答案的問題不是謹慎。版本不符不一樣，它說的是「這個同步資料夾是別的版本寫的」，那是呼叫端該知道並決定的事，所以 `verify` 多一個 `--force` 轉交給匯入與匯出 — 錯了的代價是每個既有專案第一次跑 `verify` 都要帶 `--force`（`cds-sync-version` 還是 `k1.1.1`），這件事寫進第 7 節第 4 項給人看。
+- ~~Ruling~~（監督者在階段 2 驗收後推翻，見底下「`verify` 需要 `-y`」；`--force` 那半仍然成立）: `verify` 自己回答匯入的確認，但不自己回答版本不符 — 匯入就是 `verify` 的定義，SPEC 4.2 的表上 `verify` 也沒有 `-y`；問一個只有一個有用答案的問題不是謹慎。版本不符不一樣，它說的是「這個同步資料夾是別的版本寫的」，那是呼叫端該知道並決定的事，所以 `verify` 多一個 `--force` 轉交給匯入與匯出 — 錯了的代價是每個既有專案第一次跑 `verify` 都要帶 `--force`（`cds-sync-version` 還是 `k1.1.1`），這件事寫進第 7 節第 4 項給人看。
 - Ruling: `--answer` 只在 `--project` 形式有效，不是共用旗標 — SPEC 4.2 把它列在「共用旗標」那一排，但那一排講的是「每個命令都有」，不是「兩種形式都有」。`--answer` 回答的是 IDE 自己彈的提示，而 `--target` 那半的 IDE 前面坐著一個人，那些提示是他的。收下一個什麼都不做的旗標比拒絕它更糟 — 錯了的代價是 SPEC 4.2 那一句要改（已改），而想在看門人那半預先回答 IDE 提示的人得自己想辦法。
 - Ruling: `--project` 形式一律不預先回答 `UpgradeProjectConfirmation` — 來源 repo 的 `open_copy_and_watch.py` 預設答 Yes，並在註解裡說「只有指向丟棄用的副本才安全」。cdsint 的 `--project` 收的是使用者給的任何一個 `.project`，而答 Yes 會改寫它的儲存格式，改完原本那套 IDE 就再也開不了它。這正是 D7 說的「永不猜」 — 錯了的代價是每個舊版存的專案第一次都要人自己加 `--answer UpgradeProjectConfirmation=Yes`；訊息會告訴他是哪個鍵、答 Yes 的後果是什麼。
 - Ruling: 「需要管理員」在 `cdsint installs` 裡指的是 ScriptDir 在 `Program Files` 底下，不含 `ProgramData` — 安裝器現在把 `C:\ProgramData\PLCDesigner\ScriptDir` 也當成要提權，而這台的 `icacls` 顯示那個目錄是 `Everyone:(F)`，Lenze 的安裝程式就是這樣建的。SPEC 5.3 的表也只在 Delta 那一列註「需要管理員」。`Program Files` 是唯一一個一般帳號一定寫不進去的位置 — 錯了的代價是某台機器的 `ProgramData` 真的被鎖起來時，`installs` 不會事先警告；安裝器仍然會在寫失敗時報出那一行。安裝器那條規則沒有跟著改，因為它試完才知道，報「存取被拒」比事先跳過一套裝得起來的 IDE 好。

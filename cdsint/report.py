@@ -23,6 +23,17 @@ def as_json(record):
     print(json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False))
 
 
+def show_sync_dir(path, want_json=False):
+    """Say which folder the run treats as the truth, before it uses it.
+
+    A --json caller reads it from the record and the report file instead: a
+    line of prose in front of the JSON would break the parse it was meant to
+    inform.
+    """
+    if path and not want_json:
+        print("sync folder: %s" % path)
+
+
 def show(result, want_json=False):
     """Print one command's result record."""
     if want_json:
