@@ -755,8 +755,49 @@ class ObjectManager(object):
         self._update_cache_entry(obj, rel_path, file_path, context, q_hash, s)
         return "identical"
 
+    def _disk_moved_since_sync(self, rel_path, file_path, context):
+        """Has somebody edited this file since the last sync? (SPEC 6.1)
+
+        Only ever asked once the two sides are known to differ, so a yes
+        means the disk is the side that moved and export must not write over
+        it. Disk is the source of truth: an edit nobody imported yet is work,
+        and overwriting work is the one failure this tool cannot apologise
+        for afterwards.
+
+        "No cache entry" is not "unchanged", it is "no idea": the cache is
+        local state and gitignored, so a fresh clone has none and a first
+        export there must still write. That is the known hole -- exporting
+        into a folder full of files this machine has never synced overwrites
+        them -- and closing it would mean refusing the ordinary first export
+        on a new machine.
+        """
+        cached = (context.get('cache_data') or {}).get('objects', {}).get(
+            normalize_path(rel_path))
+        if not cached:
+            return False
+        try:
+            signature = file_signature(file_path)
+        except OSError:
+            return False
+        return signature != (cached.get('disk_mtime'), cached.get('disk_size'))
+
+    def _pending(self, rel_path, context):
+        """Say this object was left alone, and keep its file off the orphan list.
+
+        exported_paths is what orphan cleanup reads as "the project still has
+        an object for this file". A file protected from being overwritten
+        that then gets offered for deletion is worse than no protection at
+        all, because the offer looks routine.
+        """
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        return "pending"
+
     def export(self, obj, context, rel_path=None):
         """Write this object to disk; return "new", "updated" or "identical".
+
+        "pending" means the file on disk holds an edit nobody imported yet,
+        so this object was deliberately left alone (SPEC 6.1).
 
         False means there was nothing to write, and it is the only thing
         False may mean. Anything that goes wrong RAISES, because the caller
@@ -892,7 +933,10 @@ class POUManager(ObjectManager):
                     return "identical"
             except:
                 pass  # If we can't read existing file, just overwrite
-            
+
+            if self._disk_moved_since_sync(rel_path, file_path, context):
+                return self._pending(rel_path, context)
+
         with codecs.open(file_path, "w", "utf-8") as f:
             f.write(content)
 
@@ -1112,6 +1156,9 @@ class PropertyManager(POUManager):
                     return "identical"
             except:
                 pass
+
+            if self._disk_moved_since_sync(rel_path, file_path, context):
+                return self._pending(rel_path, context)
 
         with codecs.open(file_path, "w", "utf-8") as f:
             f.write(content)
@@ -1360,7 +1407,13 @@ class NativeManager(ObjectManager):
             self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
             return "identical"
         
-        # Content changed or new - replace with temp file
+        # Content changed or new - replace with temp file, unless the change
+        # is somebody's, not the IDE's (SPEC 6.1).
+        if not is_new and self._disk_moved_since_sync(rel_path, file_path,
+                                                      context):
+            os.remove(tmp_path)
+            return self._pending(rel_path, context)
+
         if os.path.exists(file_path):
             os.remove(file_path)
         os.rename(tmp_path, file_path)

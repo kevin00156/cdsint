@@ -208,6 +208,13 @@ def perform_export(base_dir, selected, unchanged_count=0):
     # Property accessors collected dynamically during export loop
     property_accessors = {}
     
+    # No 'cache_data' on purpose, and it must stay that way: its absence is
+    # what switches off the dirty-file guard (SPEC 6.1, ObjectManager
+    # ._disk_moved_since_sync). That guard exists to stop an export nobody
+    # was watching from writing over an unimported edit. Here somebody was
+    # watching -- they read the difference in the compare dialog and picked
+    # the IDE side -- and refusing them would be refusing the answer they
+    # just gave.
     context = {
         'export_dir': base_dir,
         'exported_paths': set(),

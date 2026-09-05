@@ -214,6 +214,7 @@ def export_project(export_dir, projects_obj=None):
     exported_updated = 0
     exported_identical = 0
     exported_failed = 0
+    pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
     skipped_count = 0
     app_count = 0
     
@@ -346,7 +347,16 @@ def export_project(export_dir, projects_obj=None):
                 exported_updated += 1
             elif wrote == "identical":
                 exported_identical += 1
-                
+            elif wrote == "pending":
+                # Left alone on purpose: the file holds an edit nobody has
+                # imported yet (SPEC 6.1). Not a failure of this object, so
+                # it stays out of the unhandled register and gets its own
+                # list -- what the reader has to do about it is different.
+                pending_import.append(rel_path)
+                log_warning("Not overwriting " + rel_path + ": it has been "
+                            "edited on disk since the last sync. Import it "
+                            "first, or delete it and export again.")
+
         except Exception as e:
             exported_failed += 1
             unhandled.note(obj, e)
@@ -385,6 +395,8 @@ def export_project(export_dir, projects_obj=None):
 
     exported_total = exported_new + exported_updated + exported_identical
     summary = "Updated: " + str(exported_updated) + ", Created: " + str(exported_new) + ", Removed: " + str(removed_count) + ", Failed: " + str(exported_failed) + " (Identical: " + str(exported_identical) + ")"
+    if pending_import:
+        summary += ", Waiting to be imported: " + ", ".join(pending_import)
     log_info("Export complete! " + summary + " Time elapsed: " + elapsed_text)
 
     # Record sync version; metadata file is written in debug mode only
@@ -409,12 +421,14 @@ def export_project(export_dir, projects_obj=None):
     # It still wrote all the others: giving up on the first bad object
     # would be worse than reporting the ones that did not make it.
     missing = unhandled.names()
-    return entry.result(not missing, summary if not missing else
+    return entry.result(not missing and not pending_import,
+                        summary if not missing else
                         summary + " -- " + unhandled.summary(),
                         new=exported_new, updated=exported_updated,
                         identical=exported_identical, removed=removed_count,
                         failed=len(missing), total=exported_total,
-                        failed_objects=missing)
+                        failed_objects=missing,
+                        pending_import=pending_import)
 
 
 def main():
