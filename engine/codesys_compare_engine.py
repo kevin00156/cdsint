@@ -1,0 +1,1364 @@
+# -*- coding: utf-8 -*-
+"""
+codesys_compare_engine.py - Shared comparison and import engine
+
+Single engine used by both entry_compare.py and entry_import.py.
+Provides:
+  - find_all_changes()       : compare IDE objects with disk files  
+  - scan_new_disk_files()    : find files on disk not tracked in metadata
+  - perform_import_items()   : import selected items from disk to IDE
+  - create_import_managers() : create manager dict for import operations
+  - update_existing_object() : update an existing IDE object from disk file  
+  - create_new_object()      : create a new IDE object from disk file
+  - batch_import_native_xmls_with_children() : batch-import native XML objects with child restore
+  - update_object_metadata() : update metadata entry after import
+
+Saving and backing up the project is deliberately NOT done here; callers
+finish with codesys_utils.finalize_sync_operation().
+"""
+import os
+import codecs
+import tempfile
+import time
+from engine.codesys_constants import (
+    TYPE_GUIDS, EXPORTABLE_TYPES, XML_TYPES, IMPLEMENTATION_TYPES,
+    RESERVED_FILES, TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
+    kind_allows_export, kind_allows_import
+)
+from engine.codesys_utils import (
+    safe_str, calculate_hash, clean_filename, log_info, log_error, log_warning,
+    merge_native_xmls,
+    parse_st_file, build_object_cache, find_object_by_path,
+    ensure_folder_path, determine_object_type, find_object_by_name,
+    _find_child_transparent,
+    format_st_content, format_property_content,
+    load_sync_cache, save_sync_cache, normalize_path, get_quick_ide_hash,
+    parse_sync_pragmas, attrs_from_pragmas, read_ide_attrs,
+    normalize_sync_attrs, build_state_hash, render_sync_pragmas, file_signature
+)
+from engine.codesys_managers import (
+    NativeManager, FolderManager, PropertyManager, ConfigManager, POUManager,
+    collect_property_accessors, classify_object, get_container_prefix,
+    get_object_path, get_parent_pou_name, export_object_content,
+    build_expected_path, update_object_code, clear_path_caches
+)
+
+
+# The managers are stateless; one shared instance spares the engine from
+# constructing a new one inside per-object comparison loops.
+_NATIVE_MGR = NativeManager()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  COMPARISON ENGINE
+# ═══════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+#  COMPARISON ENGINE (2-WAY)
+# ═══════════════════════════════════════════════════════════════════
+
+# Removed local build_expected_path, now imported from codesys_managers
+
+
+def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl=False):
+    """Extract content and attributes from IDE object for comparison.
+
+    Returns:
+        (ide_content, ide_attrs) where ide_attrs is a dict of non-default
+        build attributes, or empty dict for XML objects or on error.
+    """
+    # Read the type once and pass it down; both branches below needed it and
+    # read_ide_attrs re-read it a third time.
+    obj_type = safe_str(obj.type)
+    ide_attrs = {} if is_xml else read_ide_attrs(obj, obj_type)
+
+    if is_xml:
+        clean_name = clean_filename(obj.get_name())
+        tmp_path = os.path.join(tempfile.gettempdir(), "cds_comp_" + clean_name + ".xml")
+        try:
+            # ConfigManager objects require recursive=True to include all children
+            monolithic_types = [
+                TYPE_GUIDS["task_config"], TYPE_GUIDS["alarm_config"],
+                TYPE_GUIDS["visu_manager"], TYPE_GUIDS["softmotion_pool"]
+            ]
+            recursive = obj_type in monolithic_types
+            
+            # Special logic for devices: only recursive if not a project container
+            if obj_type == TYPE_GUIDS["device"]:
+                from engine.codesys_utils import is_container_device
+                recursive = not is_container_device(obj)
+                
+            projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
+            if os.path.exists(tmp_path):
+                content = read_file(tmp_path)
+                os.remove(tmp_path)
+                return content, {}
+        except:
+            pass
+        return "", {}
+    
+    # ST content
+    obj_guid = safe_str(obj.guid)
+
+    if obj_type == TYPE_GUIDS["property"] and obj_guid in property_accessors:
+        prop_data = property_accessors[obj_guid]
+        declaration, _ = export_object_content(obj)
+
+        get_impl = None
+        if prop_data['get']:
+            get_decl, get_impl_raw = export_object_content(prop_data['get'])
+            get_impl = format_st_content(get_decl, get_impl_raw, False)
+
+        set_impl = None
+        if prop_data['set']:
+            set_decl, set_impl_raw = export_object_content(prop_data['set'])
+            set_impl = format_st_content(set_decl, set_impl_raw, False)
+
+        return format_property_content(declaration, get_impl, set_impl), ide_attrs
+
+    declaration, implementation = export_object_content(obj)
+    return format_st_content(declaration, implementation, can_have_impl), ide_attrs
+
+def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
+                       ide_attrs=None, disk_attrs=None):
+    """Compare two content strings, with XML-specific filtering.
+
+    For ST files, sync pragmas are stripped from the disk content before the
+    code comparison, and the pragma attributes are compared separately when
+    both attr dicts are provided. Returns True only if code AND attributes
+    match.
+    """
+    if not ide_content or not disk_content:
+        return ide_content == disk_content
+
+    if not is_xml:
+        # For ST files: strip pragmas from disk content for code comparison
+        _, clean_disk_st = parse_sync_pragmas(disk_content)
+        ide_hash = calculate_hash(ide_content)
+        disk_hash = calculate_hash(clean_disk_st)
+        if ide_hash != disk_hash:
+            log_info("Content mismatch for %s: IDE hash=%s, Disk hash=%s" % (rel_path, ide_hash, disk_hash))
+            return False
+
+        # Code matches - now compare attributes
+        if ide_attrs is not None and disk_attrs is not None:
+            if normalize_sync_attrs(ide_attrs) != normalize_sync_attrs(disk_attrs):
+                from engine.codesys_constants import ATTR_ORDER
+                attr_diff = []
+                for k in ATTR_ORDER:
+                    if ide_attrs.get(k) != disk_attrs.get(k):
+                        attr_diff.append("%s: IDE=%s Disk=%s" % (k, ide_attrs.get(k), disk_attrs.get(k)))
+                log_info("Attribute mismatch for %s: %s" % (rel_path, ", ".join(attr_diff)))
+                return False
+
+        return True
+    
+    # XML Comparison - use NativeManager's filtering logic. Both sides are
+    # already in memory, so hash them directly; this used to write each one to
+    # a temp file and read it back purely because _hash_file only took a path.
+    # The two fallback names below are the old temp filenames, kept so that an
+    # object whose content is entirely filtered away still compares as
+    # different exactly like before (see _hash_content).
+    try:
+        ide_hash = _NATIVE_MGR._hash_content(ide_content, "cds_comp_ide.xml")
+        disk_hash = _NATIVE_MGR._hash_content(disk_content, "cds_comp_disk.xml")
+
+        are_equal = ide_hash == disk_hash
+        if not are_equal:
+            log_info("Content match: IDE hash=%s, Disk hash=%s" % (ide_hash, disk_hash))
+            log_info("Content mismatch for %s (XML)" % rel_path)
+        return are_equal
+    except Exception as e:
+        log_warning("Error comparing XML contents for %s: %s" % (rel_path, str(e)))
+        return False
+
+def read_file(file_path):
+    """Read file content as UTF-8."""
+    if not os.path.exists(file_path):
+        return ""
+    try:
+        with codecs.open(file_path, "r", "utf-8") as f:
+            return f.read()
+    except:
+        return ""
+
+def find_all_changes(base_dir, projects_obj, export_xml=False):
+    """
+    Direct two-way comparison with Merkle Tree optimization.
+    
+    1. Pass 1: Quick IDE scan (.text only) and folder hash building.
+    2. Pass 2: Comparison using folder hashes to skip unchanged branches.
+    3. Pass 3: Disk scan for new files.
+    4. Pass 4: Detect moved/renamed files by cross-referencing new_in_ide vs new_on_disk.
+    """
+    total_start = time.time()
+    # Paths are memoized per ancestor; start from a clean slate in case an
+    # earlier operation in this session moved objects around.
+    clear_path_caches()
+    all_ide_objects = projects_obj.primary.get_children(recursive=True)
+    
+    # Load cache
+    cache_data = load_sync_cache(base_dir)
+    cached_objects = cache_data["objects"]
+    cached_folders = cache_data["folders"]
+    cached_types = cache_data.get("types", {})
+    
+    different = []
+    new_in_ide = []
+    unchanged_count = 0
+    cache_hits = 0
+    path_invalidations = 0
+    
+    ide_paths = {}    # rel_path -> obj
+    ide_hashes = {}   # norm_path -> ide_hash
+    ide_metadata = {} # norm_path -> (eff_type, is_xml)
+    current_types = {} # guid -> (eff_type, is_xml, rel_path)
+    property_accessors = {} # (parent_guid, name) -> obj
+    
+    # ── Pass 1: Quick Batch Scan (IDE only) ──
+    print("  Pass 1: Batch hashing IDE objects...")
+    p1_start = time.time()
+    path_cache_hits = 0
+    for obj in all_ide_objects:
+        obj_guid = safe_str(obj.guid)
+        
+        # Check type cache first to avoid classify_object AND path building
+        # Cache stores (eff_type, is_xml, cached_rel_path)
+        cached_info = cached_types.get(obj_guid)
+        cached_rel_path = cached_info[2] if (cached_info and len(cached_info) > 2) else None
+        if cached_rel_path:
+            # Fast path: trust the cache ONLY for objects that previously had a
+            # real path (i.e. were exported). Validate it against the live tree
+            # in case the object was moved/renamed in IDE.
+            eff_type, is_xml = cached_info[0], cached_info[1]
+            should_skip = False
+            fresh_path = build_expected_path(obj, eff_type, is_xml)
+            if fresh_path and fresh_path != cached_rel_path:
+                # Path disagrees with the cache: the object moved/renamed in the
+                # IDE, or the cached classification predates the current profile.
+                # Re-classify rather than keeping a stale (eff_type, is_xml) —
+                # those decide .st vs .xml, so half-trusting them yields a path
+                # that neither export nor import agrees on.
+                eff_type, is_xml, should_skip = classify_object(obj)
+                rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
+                path_invalidations += 1
+                log_info("Path invalidated for GUID %s: '%s' -> '%s'" % (obj_guid, cached_rel_path, rel_path))
+            else:
+                rel_path = cached_rel_path
+                path_cache_hits += 1
+        else:
+            # Cache miss OR a cached "skip" (rel_path None): always re-classify so
+            # newly-supported types aren't buried forever by a stale skip decision
+            # (which here would also get the disk file deleted as a false orphan).
+            eff_type, is_xml, should_skip = classify_object(obj)
+            rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
+
+        # ── CRITICAL: honor the same export_xml gate that export uses ──
+        # Export does NOT write XML-type objects to disk when export_xml is off
+        # (Library Manager, Visualizations, Alarm config, Trace, ...). Without
+        # the same gate here, Pass 2 sees "no disk file" for them, marks them as
+        # orphans, and import then DELETES them. Skip them entirely so they are
+        # never treated as orphans. task_config / NVL are always exported, so
+        # they are not skipped (matches entry_export.py).
+        if not export_xml and is_xml and eff_type in XML_TYPES:
+            if eff_type not in (TYPE_GUIDS["task_config"],
+                                TYPE_GUIDS["nvl_sender"],
+                                TYPE_GUIDS["nvl_receiver"]):
+                continue
+
+        # Per-kind sync direction (profiles/default.json): kinds that are not
+        # exported must never enter the comparison — a missing disk file would
+        # mark them is_orphan and import would delete them from the IDE.
+        if not kind_allows_export(eff_type):
+            continue
+
+        if should_skip or not rel_path:
+            continue
+        
+        # Optimization: Collect property accessors during this same loop
+        if eff_type == TYPE_GUIDS["property"]:
+            try:
+                if obj_guid not in property_accessors:
+                    property_accessors[obj_guid] = {'get': None, 'set': None}
+                
+                for child in obj.get_children():
+                    child_name = child.get_name().upper()
+                    if child_name == "GET":
+                        property_accessors[obj_guid]['get'] = child
+                    elif child_name == "SET":
+                        property_accessors[obj_guid]['set'] = child
+            except:
+                pass
+
+        # Update type cache with path
+        current_types[obj_guid] = (eff_type, is_xml, rel_path)
+
+        norm_path = normalize_path(rel_path)
+        ide_paths[rel_path] = obj
+        ide_metadata[norm_path] = (eff_type, is_xml)
+        
+        # Quick hash for ST
+        q_hash = get_quick_ide_hash(obj, is_xml)
+        
+        # For XML objects: use cached ide_hash to allow Merkle skip for mixed folders
+        if not q_hash and is_xml:
+            cached_entry = cached_objects.get(norm_path)
+            if cached_entry:
+                q_hash = cached_entry.get("ide_hash")
+                
+        ide_hashes[norm_path] = q_hash
+
+    # Build folder hashes (Merkle Tree)
+    from engine.codesys_utils import build_folder_hashes
+    ide_folder_hashes = build_folder_hashes(ide_hashes)
+    log_info("  Pass 1 complete ({} objects, {} path cache hits, {} invalidated) in {:.2f}s".format(
+        len(ide_hashes), path_cache_hits, path_invalidations, time.time() - p1_start))
+
+    # ── Pass 2: Comparison ──
+    print("  Pass 2: Comparing with disk...")
+    p2_start = time.time()
+    new_cache_objects = {}
+    
+    for rel_path, obj in ide_paths.items():
+        norm_path = normalize_path(rel_path)
+        eff_type, is_xml = ide_metadata[norm_path]
+        file_path = os.path.join(base_dir, rel_path.replace("/", os.sep))
+        type_name = TYPE_NAMES.get(eff_type, eff_type[:8])
+        
+        if os.path.exists(file_path):
+            # ── Fast path 1: Folder-level check ──
+            # If parent folder hash matches, IDE hasn't changed.
+            # We only need to check if disk file changed (mtime).
+            parent_folder = "/".join(norm_path.split("/")[:-1])
+            folder_match = False
+            if parent_folder and parent_folder in ide_folder_hashes:
+                if ide_folder_hashes[parent_folder] == cached_folders.get(parent_folder):
+                    folder_match = True
+            
+            # Disk check. file_signature() is the single source of truth for
+            # this pair -- computing it here independently is exactly how the
+            # export and compare sides ended up writing incompatible values
+            # under the same cache key.
+            mtime, size = file_signature(file_path)
+            cached_entry = cached_objects.get(norm_path)
+
+            disk_unchanged = cached_entry and \
+                             cached_entry.get("disk_mtime") == mtime and \
+                             cached_entry.get("disk_size") == size
+            
+            # ── CACHE HIT ──
+            if folder_match and disk_unchanged:
+                unchanged_count += 1
+                cache_hits += 1
+                new_cache_objects[norm_path] = cached_entry
+                continue
+                
+            # ── Slow path: Full Comparison ──
+            can_have_impl = eff_type in IMPLEMENTATION_TYPES
+            ide_content, ide_attrs = get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl)
+            disk_content = read_file(file_path)
+
+            # For ST files, parse pragmas from disk content for attribute comparison
+            disk_attrs = {}
+            if not is_xml and disk_content:
+                disk_pragmas, _ = parse_sync_pragmas(disk_content)
+                disk_attrs = attrs_from_pragmas(disk_pragmas)
+                # A kind mismatch is reported, never auto-fixed: recreating
+                # an object as another kind would destroy IDE-side state.
+                disk_kind = disk_pragmas.get("kind")
+                if disk_kind and kind_of(disk_kind) != kind_of(eff_type):
+                    log_warning("Kind mismatch for %s: disk pragma says '%s' "
+                                "but the IDE object is '%s'. Fix the pragma or "
+                                "the IDE object manually."
+                                % (rel_path, disk_kind, kind_of(eff_type) or eff_type))
+
+            if contents_are_equal(ide_content, disk_content, is_xml, rel_path, ide_attrs, disk_attrs):
+                unchanged_count += 1
+                # Update cache. An XML object's ide_hash must be written in the
+                # same form NativeManager.export() writes it, or the two sides
+                # disagree about a byte-identical object and the folder hash it
+                # feeds stops matching -- which costs every OTHER object in that
+                # folder its Merkle skip too.
+                q_hash = ide_hashes[norm_path]
+                if not q_hash:
+                    q_hash = (_NATIVE_MGR._hash_content(ide_content, os.path.basename(rel_path))
+                              if is_xml else build_state_hash(ide_content, ide_attrs))
+                new_cache_objects[norm_path] = {
+                    "ide_hash": q_hash,
+                    "disk_hash": calculate_hash(disk_content),
+                    "disk_mtime": mtime,
+                    "disk_size": size
+                }
+            else:
+                # Show the pragmas in the diff viewer so attr-only changes are visible
+                full_ide_content = ide_content
+                if not is_xml and ide_attrs:
+                    full_ide_content = render_sync_pragmas(ide_attrs, ide_content)
+
+                different.append({
+                    "name": obj.get_name(), "path": rel_path,
+                    "type": type_name, "type_guid": eff_type,
+                    "obj": obj, "ide_content": full_ide_content, "disk_content": disk_content,
+                    "ide_attrs": ide_attrs, "disk_attrs": disk_attrs
+                })
+        else:
+            new_in_ide.append({
+                "name": obj.get_name(), "path": rel_path,
+                "type": type_name, "type_guid": eff_type, "obj": obj,
+                "is_orphan": True
+            })
+
+    # Finalize cache with newly built folder hashes and types
+    save_sync_cache(base_dir, new_cache_objects, ide_folder_hashes, current_types)
+    
+    p2_elapsed = time.time() - p2_start
+    total_elapsed = time.time() - total_start
+    log_info("  Pass 2 complete in {:.2f}s".format(p2_elapsed))
+    log_info("  Sync cache updated: %d hits, %d entries total" % (cache_hits, len(new_cache_objects)))
+    print("  Compare engine finished in {:.2f}s".format(total_elapsed))
+
+    # Pass 3: Disk Scan
+    new_on_disk = scan_new_disk_files(base_dir, ide_paths)
+
+    # Pass 4: Detect moved/renamed files
+    moved, new_in_ide, new_on_disk = detect_moved_files(new_in_ide, new_on_disk)
+    if moved:
+        log_info("  Detected %d moved/renamed objects" % len(moved))
+
+    return {
+        "different": different,
+        "new_in_ide": new_in_ide,
+        "new_on_disk": new_on_disk,
+        "moved": moved,
+        "unchanged_count": unchanged_count
+    }
+
+
+def detect_moved_files(new_in_ide, new_on_disk):
+    """
+    Detect moved/renamed files by cross-referencing objects that exist
+    in the IDE but not on disk (new_in_ide) with files on disk that
+    don't match any IDE path (new_on_disk).
+    
+    Matching is done by object base name (case-insensitive).
+    
+    A "move" is when:
+    - IDE has object at path A, but file A doesn't exist on disk
+    - Disk has file at path B, but no IDE object maps to path B
+    - The base name matches (e.g. same "MyPOU.st" in different folders)
+    
+    Returns:
+        (moved_list, remaining_new_in_ide, remaining_new_on_disk)
+        
+        moved_list items: {
+            "name": str, "ide_path": str, "disk_path": str,
+            "type": str, "type_guid": str, "obj": CODESYS obj,
+            "file_path": str (absolute), "direction": "ide"|"disk"
+        }
+    """
+    if not new_in_ide or not new_on_disk:
+        return [], new_in_ide, new_on_disk
+    
+    moved = []
+    matched_ide_indices = set()
+    matched_disk_indices = set()
+    
+    # Build a lookup from base filename -> list of (index, item) for disk files
+    disk_by_name = {}  # base_name_lower -> [(index, item), ...]
+    for i, disk_item in enumerate(new_on_disk):
+        # Extract base filename from path for matching
+        disk_file = disk_item["path"].replace("\\", "/").split("/")[-1]
+        base_name = disk_file.lower()
+        if base_name not in disk_by_name:
+            disk_by_name[base_name] = []
+        disk_by_name[base_name].append((i, disk_item))
+    
+    # Try to match each IDE orphan to a disk orphan by filename
+    for ide_idx, ide_item in enumerate(new_in_ide):
+        ide_file = ide_item["path"].replace("\\", "/").split("/")[-1]
+        base_name = ide_file.lower()
+        
+        candidates = disk_by_name.get(base_name, [])
+        for disk_idx, disk_item in candidates:
+            if disk_idx in matched_disk_indices:
+                continue
+            
+            # Match found: same filename, different path
+            ide_path = ide_item["path"]
+            disk_path = disk_item["path"]
+            
+            if ide_path == disk_path:
+                # Same path — not a move (shouldn't happen but safety check)
+                continue
+            
+            # Determine direction: where is the "correct" location?
+            # IDE path = where the object currently lives in IDE
+            # Disk path = where the file currently lives on disk
+            moved.append({
+                "name": ide_item["name"],
+                "ide_path": ide_path,
+                "disk_path": disk_path,
+                "type": ide_item.get("type", "unknown"),
+                "type_guid": ide_item.get("type_guid", ""),
+                "obj": ide_item.get("obj"),
+                "file_path": disk_item.get("file_path", ""),
+            })
+            
+            matched_ide_indices.add(ide_idx)
+            matched_disk_indices.add(disk_idx)
+            log_info("Detected move: '%s' IDE:'%s' -> Disk:'%s'" % (
+                ide_item["name"], ide_path, disk_path))
+            break  # One match per IDE item
+    
+    # Filter out matched items from both lists
+    remaining_ide = [item for i, item in enumerate(new_in_ide) if i not in matched_ide_indices]
+    remaining_disk = [item for i, item in enumerate(new_on_disk) if i not in matched_disk_indices]
+    
+    return moved, remaining_ide, remaining_disk
+
+
+def scan_new_disk_files(base_dir, ide_paths):
+    """
+    Walk the export directory and find .st / .xml files that are
+    NOT matching any IDE object path.
+    
+    Returns:
+        list of {"name": str, "path": rel_path, "file_path": abs_path}
+    """
+    new_files = []
+    known_paths = set(ide_paths.keys())
+
+    for root, dirs, files in os.walk(base_dir):
+        # Skip hidden dirs and special dirs
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
+
+        rel_root = os.path.relpath(root, base_dir)
+        if rel_root == ".":
+            rel_root = ""
+
+        for f in files:
+            if not (f.endswith(".st") or f.endswith(".xml")):
+                continue
+            if f in RESERVED_FILES or f.startswith("."):
+                continue
+
+            if rel_root:
+                rel_path = rel_root.replace("\\", "/") + "/" + f
+            else:
+                rel_path = f
+
+            if rel_path not in known_paths:
+                abs_path = os.path.join(root, f)
+                name = os.path.splitext(f)[0]
+                if f.endswith(".xml") and "." in name:
+                    name_part, doc_type = name.rsplit(".", 1)
+                    if doc_type in KNOWN_TYPE_SUFFIXES:
+                        name = name_part
+
+                new_files.append({
+                    "name": name,
+                    "path": rel_path,
+                    "file_path": abs_path
+                })
+
+    return new_files
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  IMPORT ENGINE
+# ═══════════════════════════════════════════════════════════════════
+
+def create_import_managers():
+    """Create the standard manager dict used by import operations."""
+    return {
+        TYPE_GUIDS["folder"]: FolderManager(),
+        TYPE_GUIDS["property"]: PropertyManager(),
+        TYPE_GUIDS["task_config"]: ConfigManager(),
+        TYPE_GUIDS["alarm_config"]: ConfigManager(),
+        TYPE_GUIDS["visu_manager"]: ConfigManager(),
+        TYPE_GUIDS["device"]: ConfigManager(),
+        TYPE_GUIDS["softmotion_pool"]: ConfigManager(),
+        "default": POUManager(),
+        "native": NativeManager()
+    }
+
+
+def resolve_manager(import_managers, type_guid, rel_path):
+    """Pick the correct manager for a given type/path."""
+    if rel_path.endswith(".xml"):
+        return import_managers["native"]
+    mgr = import_managers.get(type_guid)
+    if not mgr:
+        if type_guid in XML_TYPES:
+            return import_managers["native"]
+        return import_managers["default"]
+    return mgr
+
+
+# Removed update_object_metadata (metadata files no longer used)
+
+
+def update_existing_object(obj, rel_path, file_path, import_managers):
+    """Update an existing IDE object from a disk file."""
+    # We no longer use obj_info/metadata hashes. Import always forces content update.
+    # managers[type].update already checks for change before applying to IDE.
+    manager = resolve_manager(import_managers, safe_str(obj.type), rel_path)
+    return manager.update(obj, file_path, {})
+
+
+def _is_pou_or_itf(obj):
+    """True when obj is a POU or an interface — the only kinds that can hold a
+    method/action/property.
+
+    A name match alone never identifies a member's parent: the export lays a
+    POU's members out under a folder named after the POU
+    ("Function Blocks/MC_BasicControl/MC_BasicControl.Main.st"), so the folder
+    and the POU inside it share a name.
+    """
+    if obj is None:
+        return False
+    try:
+        return kind_of(safe_str(obj.type)) in ("pou", "itf")
+    except Exception:
+        return False
+
+
+def find_parent_pou(container, parent_name):
+    """Find the POU/interface named parent_name in or below container.
+
+    _find_child_transparent() matches on name only and will happily return a
+    same-named FOLDER; members must land on the POU itself, so a folder hit is
+    treated as one more level to look through.
+    """
+    found = _find_child_transparent(container, parent_name)
+    if _is_pou_or_itf(found):
+        return found
+    if found is not None:
+        inner = _find_child_transparent(found, parent_name)
+        if _is_pou_or_itf(inner):
+            return inner
+    return None
+
+
+def create_new_object(rel_path, file_path, import_managers, name_map,
+                      folder_cache, project):
+    """Create a new IDE object from a disk file."""
+    path_parts = rel_path.split("/")
+    
+    # Ensure parent folder structure exists
+    if len(path_parts) > 1:
+        folder_path = "/".join(path_parts[:-1])
+        if folder_path in folder_cache:
+            container = folder_cache[folder_path]
+        else:
+            container = ensure_folder_path(folder_path, project)
+            folder_cache[folder_path] = container
+    else:
+        container = project
+        
+    if not container:
+        log_error("Could not find or create container for " + rel_path)
+        return None
+    
+    base_name = os.path.splitext(path_parts[-1])[0]
+    
+    if rel_path.endswith(".xml"):
+        # XML files are handled by batch_import_native_xmls_with_children
+        return None
+    
+    decl, impl, pragmas = parse_st_file(file_path)
+    content_check = decl if decl else impl
+    if not content_check:
+        return None
+
+    # The kind pragma wins over keyword sniffing: it carries the object
+    # kinds ST syntax alone cannot express (persistent GVL vs plain GVL,
+    # action bodies, ...). The kind name maps to the CURRENT profile's
+    # primary GUID, so files stay portable across CODESYS versions.
+    type_guid = determine_object_type(content_check)
+    kind_pragma = pragmas.get("kind")
+    if kind_pragma:
+        # kind_of() also resolves retired kind names, so a pragma written by an
+        # older version still maps onto the current profile's primary GUID.
+        pragma_guid = TYPE_GUIDS.get(kind_of(kind_pragma))
+        if not pragma_guid:
+            log_error("Unknown kind '%s' in pragma of %s - add it to "
+                      "guid_aliases in profiles/default.json. Skipping creation."
+                      % (kind_pragma, rel_path))
+            return None
+        type_guid = pragma_guid
+
+    # Handle nested objects (Action, Method, Property)
+    # A dotted base_name like "ST_PROGRAMM.ST_ACTION" means it's a child object.
+    # We check both: (a) when type_guid indicates a child type, and
+    #                 (b) when type_guid is None/unknown but filename has a dot.
+    name = base_name
+    nested_types = [TYPE_GUIDS.get("action"), TYPE_GUIDS.get("method"),
+                    TYPE_GUIDS.get("property"), TYPE_GUIDS.get("property_accessor"),
+                    TYPE_GUIDS.get("itf_method")]
+    is_nested = "." in base_name and (
+        type_guid in nested_types or       # Known child type (method, property, etc.)
+        not type_guid or                   # Unknown type (e.g. action with no keyword)
+        type_guid == TYPE_GUIDS.get("pou") # Misdetected as POU
+    )
+    if is_nested:
+        parts = base_name.rsplit(".", 1)
+        parent_name = parts[0]
+        child_name = parts[1]
+        log_info("Looking for parent POU: " + parent_name + " for child: " + child_name)
+
+        # Resolve the parent POU using several strategies, in order:
+        #   1. Objects created earlier in this same import session (name_map).
+        #   2. The already-resolved container may BE the parent FB — but only
+        #      when it is actually a POU/interface. The container is usually the
+        #      grouping FOLDER, which shares the FB's name; accepting it here
+        #      created every method as a stray standalone POU beside the real FB.
+        #   3. The parent POU normally lives directly inside the container
+        #      (grouping-folder layout "<FB>/<FB>.Method.st" and stripped layout
+        #      "<FB>.Method.st" both put the FB as a direct child of `container`).
+        #   4. Legacy path lookup for an extra nested-folder layout.
+        pou_parent = find_object_by_name(parent_name, name_map)
+        if not _is_pou_or_itf(pou_parent):
+            pou_parent = None
+
+        if not pou_parent and _is_pou_or_itf(container):
+            try:
+                if hasattr(container, "get_name") and container.get_name() == parent_name:
+                    pou_parent = container
+            except:
+                pass
+        if not pou_parent:
+            pou_parent = find_parent_pou(container, parent_name)
+
+        if not pou_parent:
+            parent_path = "/".join(path_parts[:-1])
+            parent_path_with_name = parent_path + "/" + parent_name
+            log_info("Parent '" + parent_name + "' not in container, trying path: " + parent_path_with_name)
+            pou_parent = find_object_by_path(parent_path_with_name, project)
+            if not _is_pou_or_itf(pou_parent):
+                pou_parent = None
+
+        if pou_parent:
+            log_info("Found parent POU: " + safe_str(pou_parent))
+            name = child_name
+            container = pou_parent
+            # If type_guid wasn't determined, infer from child name patterns
+            if not type_guid or type_guid == TYPE_GUIDS.get("pou"):
+                upper_child = child_name.upper()
+                if upper_child in ("GET", "SET"):
+                    type_guid = TYPE_GUIDS.get("property_accessor")
+                else:
+                    # Default to action for unknown nested children
+                    type_guid = TYPE_GUIDS.get("action")
+        else:
+            # Never fall back to creating a POU with a dotted name — CODESYS
+            # rejects object names containing '.'. Skip and report instead.
+            log_error("Could not find parent POU '" + parent_name + "' for child '" +
+                      child_name + "' (" + rel_path + "). Skipping to avoid invalid dotted-name object.")
+            return None
+
+    # Direction re-check now that the kind is known from the file content
+    # (new .st items reach perform_import_items without a type_guid).
+    created_kind = kind_of(type_guid or "")
+    if created_kind and not kind_allows_import(created_kind):
+        msg = ("Skipping creation of '%s' (%s): sync_direction=%s"
+               % (rel_path, created_kind, sync_direction_of(created_kind)))
+        print("  [!] " + msg)
+        log_warning(msg)
+        return None
+
+    manager = resolve_manager(import_managers, type_guid, rel_path)
+    res = manager.create(container, name, file_path, type_guid)
+    
+    if res:
+        obj_name = res.get_name()
+        if obj_name not in name_map:
+            name_map[obj_name] = []
+        name_map[obj_name].append(res)
+        log_info("Created " + rel_path)
+    else:
+        log_error("Failed to create " + rel_path)
+    
+    return res
+
+
+def save_pou_children(pou_obj):
+    """
+    Save child objects (methods, actions, properties) of a POU before XML import.
+    
+    Returns list of child info dicts:
+        [{'name': str, 'type_guid': str, 'declaration': str, 'implementation': str}, ...]
+    """
+    children_info = []
+    
+    child_types = [
+        TYPE_GUIDS.get("action"),
+        TYPE_GUIDS.get("method"),
+        TYPE_GUIDS.get("property")
+    ]
+    
+    try:
+        for child in pou_obj.get_children():
+            try:
+                child_type = safe_str(child.type)
+                if child_type in child_types:
+                    decl, impl = export_object_content(child)
+                    children_info.append({
+                        'name': child.get_name(),
+                        'type_guid': child_type,
+                        'declaration': decl,
+                        'implementation': impl
+                    })
+            except Exception as e:
+                log_warning("Could not save child " + safe_str(child) + ": " + safe_str(e))
+    except Exception as e:
+        log_warning("Could not get children of " + safe_str(pou_obj) + ": " + safe_str(e))
+    
+    return children_info
+
+
+def restore_pou_children(pou_obj, saved_children, import_managers, project):
+    """
+    Restore child objects (methods, actions, properties) after XML import.
+    
+    Updates existing children or creates new ones.
+    """
+    if not saved_children:
+        return
+    
+    try:
+        existing_children = {}
+        for child in pou_obj.get_children():
+            existing_children[child.get_name().lower()] = child
+    except Exception as e:
+        log_warning("Could not get children of POU " + safe_str(pou_obj) + ": " + safe_str(e))
+        return
+    
+    for child_info in saved_children:
+        try:
+            child_name = child_info['name']
+            child_type = child_info['type_guid']
+            decl = child_info['declaration']
+            impl = child_info['implementation']
+            
+            existing_child = existing_children.get(child_name.lower())
+            
+            if existing_child:
+                log_info("Restoring child " + child_name + " of " + safe_str(pou_obj))
+                if update_object_code(existing_child, decl, impl):
+                    log_info("  Successfully updated " + child_name)
+            else:
+                log_info("Creating child " + child_name + " of " + safe_str(pou_obj))
+                try:
+                    new_child = pou_obj.create_object(
+                        name=child_name,
+                        type_guid=child_type
+                    )
+                    if new_child:
+                        if update_object_code(new_child, decl, impl):
+                            log_info("  Successfully created " + child_name)
+                        else:
+                            log_warning("  Could not update code for new child " + child_name)
+                    else:
+                        log_warning("  Could not create child " + child_name)
+                except Exception as e:
+                    log_warning("  Failed to create child " + child_name + ": " + safe_str(e))
+        except Exception as e:
+            log_warning("Failed to restore child: " + safe_str(e))
+
+
+def batch_import_native_xmls_with_children(native_batches, import_managers, project, pou_children_info=None):
+    """
+    Process batched native XML imports to reduce dialogs.
+    Restores POU children after XML import to prevent deletion.
+    
+    Args:
+        native_batches: dict of {container: [(rel_path, abs_path, name, type_guid, is_new), ...]}
+        import_managers: dict of managers
+        project: CODESYS project
+        pou_children_info: dict of {pou_name_lower: saved_children} to restore after import
+    
+    Returns:
+        (updated_count, created_count, failed_count)
+    """
+    if pou_children_info is None:
+        pou_children_info = {}
+    
+    updated = 0
+    created = 0
+    failed = 0
+    
+    for container, items in native_batches.items():
+        print("  Batch importing " + str(len(items)) + " native objects into " + safe_str(container))
+        temp_xml = os.path.join(tempfile.gettempdir(), "cds_sync_batch.xml")
+        file_paths = [item[1] for item in items]
+        
+        if merge_native_xmls(file_paths, temp_xml):
+            try:
+                if hasattr(container, "import_native"):
+                    container.import_native(temp_xml)
+                else:
+                    project.import_native(temp_xml)
+                
+                # Restore POU children after XML import
+                # Find POUs by name in the container
+                for rel_path, file_path, name, type_guid, is_new in items:
+                    pou_name_lower = name.lower()
+                    if pou_name_lower in pou_children_info:
+                        children = pou_children_info[pou_name_lower]
+                        # Find the POU object in the container
+                        pou_obj = None
+                        try:
+                            for child in container.get_children():
+                                if child.get_name().lower() == pou_name_lower:
+                                    pou_obj = child
+                                    break
+                        except Exception as e:
+                            log_warning("Could not find POU " + name + " in container: " + safe_str(e))
+                        
+                        if pou_obj:
+                            try:
+                                restore_pou_children(pou_obj, children, import_managers, project)
+                            except Exception as e:
+                                log_warning("Could not restore children for POU " + name + ": " + safe_str(e))
+                
+                for rel_path, file_path, name, type_guid, is_new in items:
+                    res = None
+                    try:
+                        for child in container.get_children():
+                            if child.get_name().lower() == name.lower():
+                                res = child
+                                break
+                    except:
+                        pass
+                    
+                    if res:
+                        if is_new:
+                            created += 1
+                        else:
+                            updated += 1
+                            print("  Updated (native batch): " + rel_path)
+                    else:
+                        log_error("Batch import could not find " + name + " after import.")
+                        failed += 1
+                        
+            except Exception as e:
+                log_error("Batch import failed for " + safe_str(container) + ": " + safe_str(e))
+                failed += len(items)
+        else:
+            log_error("Failed to merge XML for " + safe_str(container))
+            failed += len(items)
+        
+        if os.path.exists(temp_xml):
+            try:
+                os.remove(temp_xml)
+            except:
+                pass
+    
+    return updated, created, failed
+
+
+# finalize_import() used to live here and saved the project (and, with
+# cds-sync-backup-binary on, copied the whole .project binary) at the end of
+# perform_import_items. Every caller -- Project_import and Project_compare --
+# then called finalize_sync_operation(), which does exactly the same thing, so
+# each import saved twice on top of the pre-import safety backup's own save.
+#
+# On a 9.7 MB project that is three CODESYS saves and three full-file copies
+# for one import, and it is what made the run keep going long after the
+# completion popup. The single save now happens in finalize_sync_operation(),
+# at the one place that owns end-of-operation bookkeeping.
+
+
+def order_st_files_parents_first(items):
+    """Order ST import items so a parent POU is created before its nested children.
+
+    A nested child file is named "<Parent>.<Child>.st" (one extra dot in the base
+    name) and depends on its parent "<Parent>.st" existing first. Sorting by
+    base-name dot-count (stable) yields "<FB>.st" before "<FB>.Method.st" before
+    "<FB>.Prop.Get.st", regardless of disk-scan order. Returns a new list.
+    """
+    def depth(item):
+        base = os.path.splitext(item.get("path", "").replace("\\", "/").split("/")[-1])[0]
+        return base.count(".")
+    return sorted(items, key=depth)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  DEVICE-NAME REMAP (import safety)
+# ═══════════════════════════════════════════════════════════════════
+
+def build_device_remap(project, to_sync):
+    """Map an export's device-folder names onto the IDE's actual device names.
+
+    The first path segment of any device-contained object IS the device name
+    (see get_container_prefix). When an export made under device 'A' is imported
+    into a project whose device is now named 'B', every disk path still begins
+    with 'A/...'. find_object_by_path / ensure_folder_path then fail to locate
+    'A' under the project root and SILENTLY create a bogus top-level folder 'A',
+    nesting every object outside the real device. The objects exist in the
+    project (compare's recursive scan sees them) but are invisible under the
+    device in the IDE — exactly the "imported but nothing shows up" symptom.
+
+    Returns {leading_segment_lower: real_device_name} for segments that can be
+    positively tied to a device, and {} when nothing needs remapping.
+
+    A segment is only remapped when an IDE device already contains a child that
+    matches the segment's second path level (e.g. 'Application'). That structural
+    confirmation is what distinguishes a renamed device from a legitimate new
+    project-global top-level folder (whose second level is a plain file), so we
+    never wrongly bury a global pool inside a device.
+    """
+    try:
+        root_children = project.get_children()
+    except Exception:
+        return {}
+
+    root_names_lower = set()
+    devices = []  # (name, obj)
+    for child in root_children:
+        try:
+            root_names_lower.add(safe_str(child.get_name()).lower())
+            if safe_str(child.type) == TYPE_GUIDS["device"]:
+                devices.append((safe_str(child.get_name()), child))
+        except Exception:
+            continue
+
+    if not devices:
+        return {}
+
+    # Distinct leading segments of the import paths, with the set of second-level
+    # segments seen under each (used to structurally confirm a device match).
+    leading_display = {}   # lead_lower -> original-cased leading segment
+    second_levels = {}     # lead_lower -> set of second-segment names
+    for item in to_sync:
+        path = item.get("path") or ""
+        parts = [p for p in path.replace("\\", "/").split("/") if p]
+        if not parts:
+            continue
+        lead_l = parts[0].lower()
+        leading_display.setdefault(lead_l, parts[0])
+        if len(parts) >= 2:
+            second_levels.setdefault(lead_l, set()).add(parts[1])
+
+    remap = {}
+    for lead_l, lead_disp in leading_display.items():
+        if lead_l in root_names_lower:
+            continue  # already resolves to a real root child — nothing to do
+
+        # Which IDE devices already contain one of this segment's second levels?
+        matched = []
+        for dev_name, dev_obj in devices:
+            for sec in second_levels.get(lead_l, ()):
+                if _find_child_transparent(dev_obj, sec) is not None:
+                    matched.append(dev_name)
+                    break
+
+        if len(matched) == 1:
+            remap[lead_l] = matched[0]
+        elif len(matched) > 1:
+            log_warning("Device remap ambiguous for export folder '%s': matches "
+                        "IDE devices %s. Leaving paths unchanged." % (lead_disp, matched))
+        # No structural match -> leave unmapped (probably a project-global folder,
+        # or a device whose Application name also differs). Fail safe.
+
+    return remap
+
+
+def remap_path_device(path_str, remap):
+    """Rewrite the leading device segment of an IDE path using a device remap.
+
+    Only the first segment is touched; the absolute on-disk file path is never
+    remapped (the file genuinely lives under the export's device folder).
+    """
+    if not path_str or not remap:
+        return path_str
+    parts = path_str.replace("\\", "/").split("/")
+    if parts and parts[0].lower() in remap:
+        parts[0] = remap[parts[0].lower()]
+        return "/".join(parts)
+    return path_str
+
+
+def apply_device_remap(to_sync, remap):
+    """Rewrite logical IDE path fields of every import item in place.
+
+    Touches 'path', 'disk_path' and 'ide_path' (all device-prefixed IDE paths),
+    but never 'file_path' (the real disk location of the file being read).
+    """
+    if not remap:
+        return
+    for item in to_sync:
+        for key in ("path", "disk_path", "ide_path"):
+            if item.get(key):
+                item[key] = remap_path_device(item[key], remap)
+
+
+def summarize_device_remap(to_sync, remap):
+    """Return readable 'OldFolder -> NewDevice' lines for an applied remap.
+
+    The remap is keyed by lowercased segment; this recovers the original-cased
+    export folder name from the import paths for display.
+    """
+    if not remap:
+        return []
+    old_display = {}
+    for item in to_sync:
+        parts = [p for p in (item.get("path") or "").replace("\\", "/").split("/") if p]
+        if parts:
+            key = parts[0].lower()
+            if key in remap and key not in old_display:
+                old_display[key] = parts[0]
+    return ["%s -> %s" % (old_display.get(key, key), new) for key, new in remap.items()]
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  HIGH-LEVEL IMPORT ORCHESTRATOR
+# ═══════════════════════════════════════════════════════════════════
+
+def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
+    """
+    Import selected items from disk to IDE.
+    
+    Handles both ST (textual) and XML (native) objects.
+    XML objects are batched per container for a single import dialog.
+    
+    Args:
+        primary_project: The CODESYS primary project object
+        base_dir: Export/import directory path
+        to_sync: list of item dicts (must have "path", "name", "type_guid"; optionally "obj")
+        globals_ref: unused. Kept so existing callers keep working; it used to
+            resolve the projects object for the save that now lives in the
+            caller's finalize_sync_operation().
+    
+    Returns:
+        (updated_count, created_count, failed_count, deleted_count, moved_count)
+    """
+    import_managers = create_import_managers()
+    folder_cache = {}
+    name_map = {}
+
+    updated_count = 0
+    created_count = 0
+    deleted_count = 0
+    failed_count = 0
+    moved_count = 0
+
+    native_batches = {}
+    st_files_to_import = []
+    pou_children_info = {}
+
+    # ── Device-name reconciliation ──
+    # If the export was made under a different device name than the IDE's current
+    # device, rewrite the leading device segment of every import path onto the
+    # real device. Without this, new objects get created in a phantom top-level
+    # folder named after the old device and never appear under the device.
+    device_remap = build_device_remap(primary_project, to_sync)
+    if device_remap:
+        for line in summarize_device_remap(to_sync, device_remap):
+            msg = ("Device name mismatch (export -> IDE): %s. "
+                   "Remapping import paths onto the real device." % line)
+            print("  " + msg)
+            log_warning(msg)
+        apply_device_remap(to_sync, device_remap)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    #  PASS 1: Collect XML batches and ST files, save POU children
+    # ═══════════════════════════════════════════════════════════════════
+    for item in to_sync:
+        try:
+            # Per-kind sync direction (profiles/default.json): never import,
+            # overwrite or DELETE kinds the profile marks export_only/disabled
+            # (e.g. the Library Manager) — their disk file is a projection for
+            # Git visibility, not a source of truth.
+            item_kind = kind_of(item.get("type_guid") or "")
+            if item_kind and not kind_allows_import(item_kind):
+                msg = ("Skipping import of '%s' (%s): sync_direction=%s"
+                       % (item.get("name"), item_kind,
+                          sync_direction_of(item_kind)))
+                print("  [!] " + msg)
+                log_warning(msg)
+                continue
+
+            # Handle Deletions (Orphans)
+            if item.get("is_orphan"):
+                obj = item.get("obj")
+                if obj:
+                    try:
+                        obj.remove()
+                        deleted_count += 1
+                    except Exception as e:
+                        log_error("Failed to delete " + item["name"] + ": " + safe_str(e))
+                        failed_count += 1
+                    continue
+
+            rel_path = item["path"]
+            abs_path = item.get("file_path") or os.path.join(base_dir, rel_path.replace("/", os.sep))
+
+            if not os.path.exists(abs_path):
+                continue
+
+            # XML files → batch
+            if rel_path.endswith(".xml"):
+                obj = item.get("obj")
+                if not obj:
+                    obj = find_object_by_path(rel_path, primary_project)
+
+                container = primary_project
+                is_new = True
+                if obj:
+                    # ── HANDLE MOVES (XML IMPORT) ──
+                    if item.get("is_moved"):
+                        target_rel_path = item.get("disk_path")
+                        if target_rel_path:
+                            path_parts = target_rel_path.split("/")
+                            if len(path_parts) > 1:
+                                folder_path = "/".join(path_parts[:-1])
+                                target_container = ensure_folder_path(folder_path, primary_project)
+                                if target_container and target_container != obj.parent:
+                                    log_info("Moving XML object '%s' in IDE: %s -> %s" % (
+                                        item["name"], item.get("ide_path"), folder_path))
+                                    try:
+                                        obj.move(target_container)
+                                        moved_count += 1
+                                    except Exception as me:
+                                        log_warning("Failed to move XML %s: %s" % (item["name"], safe_str(me)))
+
+                    try:
+                        container = obj.parent
+                        is_new = False
+                    except:
+                        pass
+                else:
+                    # New XML file: resolve correct container from path
+                    # e.g. "CODESYS_HMI/HMI_Application/MFL_VISU/Screen2.xml"
+                    #   → container = MFL_VISU folder object
+                    path_parts = rel_path.replace("\\", "/").split("/")
+                    if len(path_parts) > 1:
+                        parent_path = "/".join(path_parts[:-1])
+                        resolved = ensure_folder_path(parent_path, primary_project)
+                        if resolved:
+                            container = resolved
+
+                if container not in native_batches:
+                    native_batches[container] = []
+                native_batches[container].append((
+                    rel_path, abs_path, item.get("name", os.path.basename(rel_path)),
+                    item.get("type_guid"), is_new
+                ))
+                continue
+
+            # ST files → collect for later import
+            st_files_to_import.append(item)
+
+        except Exception as e:
+            log_error("Failed to process " + item.get("path", "unknown") + ": " + safe_str(e))
+            failed_count += 1
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  PASS 2: Save POU children from existing POUs before XML import
+    # ═══════════════════════════════════════════════════════════════════
+    for container, items in native_batches.items():
+        for rel_path, abs_path, name, type_guid, is_new in items:
+            if type_guid == TYPE_GUIDS.get("pou") and not is_new:
+                try:
+                    for child in container.get_children():
+                        if child.get_name().lower() == name.lower():
+                            children = save_pou_children(child)
+                            if children:
+                                # Store children by POU name (not object) to find after import
+                                pou_children_info[name.lower()] = children
+                            break
+                except Exception as e:
+                    log_warning("Could not save children for POU " + name + ": " + safe_str(e))
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  PASS 3: Process batched XML imports (restores children)
+    # ═══════════════════════════════════════════════════════════════════
+    if native_batches:
+        u, c, f = batch_import_native_xmls_with_children(
+            native_batches, import_managers, primary_project, pou_children_info
+        )
+        updated_count += u
+        created_count += c
+        failed_count += f
+        
+        # Update name_map with newly created POUs from XML import
+        for container, items in native_batches.items():
+            for rel_path, abs_path, name, type_guid, is_new in items:
+                if is_new and type_guid == TYPE_GUIDS.get("pou"):
+                    try:
+                        for child in container.get_children():
+                            if child.get_name().lower() == name.lower():
+                                obj_name = child.get_name()
+                                if obj_name not in name_map:
+                                    name_map[obj_name] = []
+                                if child not in name_map[obj_name]:
+                                    name_map[obj_name].append(child)
+                                log_info("Added new POU to name_map: " + obj_name)
+                                break
+                    except Exception as e:
+                        log_warning("Could not update name_map for new POU " + name + ": " + safe_str(e))
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  PASS 4: Import ST files (after POUs exist)
+    # ═══════════════════════════════════════════════════════════════════
+
+    # Create parents before their nested children (methods/actions/properties),
+    # otherwise a child's "<FB>.<Child>.st" may be processed before "<FB>.st" and
+    # fail to find its parent POU.
+    st_files_to_import = order_st_files_parents_first(st_files_to_import)
+
+    for item in st_files_to_import:
+        try:
+            rel_path = item["path"]
+            abs_path = item.get("file_path") or os.path.join(base_dir, rel_path.replace("/", os.sep))
+            
+            if not os.path.exists(abs_path):
+                continue
+            
+            # ST files → find or create
+            obj = item.get("obj")
+            if not obj:
+                obj = find_object_by_path(rel_path, primary_project)
+
+            if obj:
+                # ── HANDLE MOVES (IMPORT DIRECTION) ──
+                # If disk path doesn't match current IDE path, move the object in IDE
+                if item.get("is_moved"):
+                    target_rel_path = item.get("disk_path")
+                    if target_rel_path:
+                        path_parts = target_rel_path.split("/")
+                        if len(path_parts) > 1:
+                            folder_path = "/".join(path_parts[:-1])
+                            target_container = ensure_folder_path(folder_path, primary_project)
+                            if target_container and target_container != obj.parent:
+                                log_info("Moving object '%s' in IDE: %s -> %s" % (
+                                    item["name"], item.get("ide_path"), folder_path))
+                                try:
+                                    obj.move(target_container)
+                                    moved_count += 1
+                                except Exception as me:
+                                    log_warning("Failed to move %s: %s" % (item["name"], safe_str(me)))
+
+                if update_existing_object(obj, rel_path, abs_path, import_managers):
+                    updated_count += 1
+                    log_info("Updated " + item["name"])
+            else:
+                res = create_new_object(
+                    rel_path, abs_path, import_managers, name_map,
+                    folder_cache, primary_project
+                )
+                if res:
+                    created_count += 1
+                else:
+                    failed_count += 1
+
+        except Exception as e:
+            log_error("Failed to import ST " + item.get("path", "unknown") + ": " + safe_str(e))
+            failed_count += 1
+
+    # No save here: the caller finishes with finalize_sync_operation(), which
+    # owns saving and backup. Doing it in both places saved the project twice
+    # per import.
+    return updated_count, created_count, failed_count, deleted_count, moved_count

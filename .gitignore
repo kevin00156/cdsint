@@ -7,3 +7,7 @@ __pycache__/
 sync_cache.json
 sync_metadata.json
 *.log
+
+# Written by the installer, one line: the install root the stubs import from.
+# It is a path on this machine, so it never belongs to anyone else's clone.
+stub/body.path

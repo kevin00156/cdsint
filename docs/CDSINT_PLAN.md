@@ -55,7 +55,7 @@ SPEC 第 3 節的 D1 到 D16 全部適用。本工單另外定的：
 | 搬法 | 直接搬進 SPEC 5.1 的佈局，不先平搬再移 | 搬兩次等於每個 import 改兩次 |
 | 階段 0 不改邏輯 | 只搬、只改 import 與路徑、只刪規格點名要刪的 | 搬家與改行為混在一起，測試紅了分不清是哪個 |
 | git 歷史 | 從本 repo 的第一個 commit 開始，不 `git filter-repo` 也不 subtree | 來源 repo 留著就是歷史 |
-| 版本號 | `SCRIPT_VERSION` 維持 `k1.1.1` 到階段 0 結束；cdsint 第一個版號由人決定 | 發版是人的決定 |
+| 版本號 | 階段 0 就把 `SCRIPT_VERSION` 與 `pyproject.toml` 的 `version` 都改成 `0.0.1` | 監督者裁的，見第 7 節 |
 | CHANGELOG | 來源的整份搬過來，頂上加「Unreleased：搬進 cdsint」一段 | 引擎行為的歷史使用者還在依賴 |
 | Python 版本 | 本機 3.14，CI 3.12，`pyproject.toml` 要求 3.11 以上 | SPEC 4.2 |
 | 測試怎麼跑 | `python -m pytest tests -q` 是基準；根目錄 `python -m pytest` 也要能跑 | 來源 repo 根目錄跑會在收集階段就死 |
@@ -227,11 +227,11 @@ img/        readMe 用的圖
 4. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
 5. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
 6. 分紙機 Makefile 要改的行（階段 2 寫下，人做）。
-7. cdsint 第一個版號（人決定）。
-8. GitHub 遠端叫什麼、什麼時候建（人決定）。
 
 監督者已裁的：
 
+- Ruling: cdsint 第一個版號是 `0.0.1`，階段 0 就把 `SCRIPT_VERSION` 與 `pyproject.toml` 的 `version` 一起改掉 — 監督者 2026-09-05 裁的；產品換了名字，繼續掛 `k1.1.1` 這個上游分叉的編號會讓「這是哪一版」變成要先問是哪個 repo — 錯了的代價是既有專案的 `cds-sync-version` 屬性跟新版號不符，下次匯出匯入會跳一次版本不符警告，按 `--force` 或在對話框按繼續就過，之後屬性自動寫成新值。
+- Ruling: GitHub 遠端叫 `cdsint`，建立與 push 由人做，worker 不碰 — 監督者 2026-09-05 裁的，對外動作歸人 — 錯了的代價是沒有，worker 本來就只在本機 `main` commit。
 - Ruling: 開新 repo，程式碼搬過來 — 使用者 2026-09-05 明確選的；SPEC D1 已改寫 — 錯了的代價是來源 repo 的歷史查起來要跨 repo，可接受。
 - Ruling: 階段 0 只搬不改邏輯 — 搬家與改行為混在一起，測試紅了分不清 — 錯了的代價是階段 0 結束時 `engine/` 裡暫時有 directory 與 parameters 兩支等著階段 1 併掉，多活一個階段。
 - Ruling: 階段 0 的 stub 有五支，階段 1 減到三支 — 階段 0 結束時工具要跟來源一樣可用 — 錯了的代價是多寫兩支各十行的檔案再刪。

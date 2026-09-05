@@ -1,0 +1,1428 @@
+# -*- coding: utf-8 -*-
+"""
+codesys_managers.py - Object Manager classes for CODESYS synchronization
+
+Extracts object-specific logic for export and import operations.
+"""
+import os
+import codecs
+import tempfile
+import zlib
+import time
+from engine.codesys_utils import (
+    safe_str, clean_filename, calculate_hash, log_info, log_error, log_warning,
+    format_st_content, format_property_content, parse_property_content,
+    resolve_projects, is_container_device, get_quick_ide_hash, normalize_path,
+    read_ide_attrs, write_ide_attrs, render_sync_pragmas, build_state_hash,
+    parse_sync_pragmas, attrs_from_pragmas, needs_kind_pragma, file_signature,
+    ide_flag
+)
+from engine.codesys_constants import (
+    TYPE_GUIDS, XML_TYPES, EXPORTABLE_TYPES, IMPLEMENTATION_TYPES,
+    XML_TYPES as XML_TYPES_CONST, kind_of, sync_direction_of
+)
+
+# Distinguishes "property absent" from "property present and falsy" when
+# reading an IDE object with a single getattr instead of hasattr-then-read.
+_MISSING = object()
+
+# --- Helper Functions ---
+
+def get_task_for_write(obj, project):
+    """
+    Extract the 'TaskForWrite' (assigned task) GUID from a Task Local GVL
+    by exporting it to native XML and parsing the TaskForWrite field.
+    Returns (task_guid, task_name) or (None, None) if not found.
+    """
+    import tempfile, re
+    try:
+        tmp_path = os.path.join(tempfile.gettempdir(), "tlgvl_%s.xml" % safe_str(obj.guid)[:8])
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+        project.export_native([obj], tmp_path, recursive=False)
+
+        if not os.path.exists(tmp_path):
+            return None, None
+
+        import codecs as _codecs
+        with _codecs.open(tmp_path, "r", "utf-8") as xf:
+            xml_content = xf.read()
+        os.remove(tmp_path)
+
+        # Parse <Single Name="TaskForWrite" Type="System.Guid">GUID</Single>
+        match = re.search(r'<Single Name="TaskForWrite" Type="System\.Guid">([^<]+)</Single>', xml_content)
+        if not match:
+            return None, None
+
+        task_guid = match.group(1).strip()
+
+        # Look up the task name by GUID in the project
+        task_name = task_guid  # fallback to GUID if name not found
+        try:
+            all_objs = project.get_children(recursive=True)
+            for candidate in all_objs:
+                if safe_str(candidate.guid) == task_guid:
+                    task_name = safe_str(candidate.get_name())
+                    break
+        except:
+            pass
+
+        return task_guid, task_name
+
+    except Exception as e:
+        log_warning("Could not extract TaskForWrite for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+        return None, None
+
+def is_nvl(obj):
+    """
+    Detect if a GVL object is actually a Network Variable List (NVL).
+    
+    CODESYS reports NVLs with the same type GUID as standard GVLs.
+    The only way to distinguish them is by exporting to native XML 
+    and checking for NVL-specific elements like ListIdentifier or NetworkType.
+    
+    Returns True if the object is an NVL, False otherwise.
+    """
+    import tempfile, re
+    try:
+        projects_obj = resolve_projects()
+        if not projects_obj or not projects_obj.primary:
+            return False
+            
+        tmp_path = os.path.join(tempfile.gettempdir(), "nvl_check_%s.xml" % safe_str(obj.guid)[:8])
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+        projects_obj.primary.export_native([obj], tmp_path, recursive=False)
+
+        if not os.path.exists(tmp_path):
+            return False
+
+        import codecs as _codecs
+        with _codecs.open(tmp_path, "r", "utf-8") as xf:
+            xml_content = xf.read()
+        os.remove(tmp_path)
+
+        # NVL XML contains ListIdentifier and/or NetworkType elements
+        if 'ListIdentifier' in xml_content or 'NetworkType' in xml_content:
+            return True
+        
+        return False
+
+    except Exception as e:
+        log_warning("Could not check NVL status for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+        return False
+
+def is_graphical_pou(obj):
+    """
+    Detect if a POU uses a graphical language (LD, CFC, FBD) instead of ST/IL.
+
+    CODESYS assigns the same type GUID to all POUs regardless of language.
+    The distinguishing factor is that graphical POUs do NOT have a textual
+    implementation body — the implementation exists only in the native XML
+    (graphical data). ST/IL POUs always have has_textual_implementation=True.
+
+    Returns True if the POU's implementation is graphical (needs XML export),
+    False if it is text-based (ST/IL, can be exported as .st).
+    """
+    try:
+        # One read, not two: hasattr() is itself a property read. A sentinel
+        # rather than ide_flag() because "missing" and "present but False" mean
+        # opposite things here -- missing is the safe textual default, present
+        # and False is what identifies a graphical POU.
+        value = getattr(obj, 'has_textual_implementation', _MISSING)
+        if value is _MISSING:
+            # Attribute missing: cannot determine — treat as textual (safe default)
+            return False
+        return not value
+    except Exception as e:
+        log_warning("Could not check graphical POU status for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+        return False
+
+# ── Ancestor-chain memoization ──────────────────────────────────────────
+# Both path helpers below walk from an object up towards the project root, and
+# every step reads .type / .get_name() / .parent off a live IDE object -- a
+# .NET round trip each. build_expected_path() calls both, so each object used
+# to pay for two full root walks, and it is called for every object on every
+# run (the type cache stores a path but the caller re-derives one to validate
+# it, so the walk is never skipped).
+#
+# Objects in the same container share an ancestor chain, so the answer is
+# cached per ancestor. A project with 150 objects across 44 folders goes from
+# ~300 root walks to ~44.
+_container_prefix_cache = {}
+_object_path_cache = {}
+
+
+def clear_path_caches():
+    """Drop the memoized ancestor lookups.
+
+    Call before computing paths in a fresh pass. The caches are keyed by
+    object GUID, which survives a move, so anything that relocates objects in
+    the IDE must clear them before paths are derived again.
+    """
+    _container_prefix_cache.clear()
+    _object_path_cache.clear()
+
+
+def _cache_key(obj):
+    """Stable identity for an IDE object, or None when it cannot be keyed."""
+    try:
+        return safe_str(obj.guid) or None
+    except:
+        return None
+
+
+def _parent_of(obj):
+    # One read, not two. hasattr() is itself a property read, and this runs for
+    # every node of every chain walk -- the guarded form doubled the cost of
+    # the single most-repeated lookup in path building.
+    try:
+        return getattr(obj, "parent", None)
+    except:
+        return None
+
+
+def _node_type(obj):
+    """Type GUID of an IDE node, or None when it cannot be read.
+
+    Replaces `hasattr(o,'type') and hasattr(o,'get_name')` followed by
+    `safe_str(o.type)`: three crossings into .NET where one suffices. A node
+    whose type is unreadable is treated as the end of the walk, exactly as the
+    hasattr guards did.
+    """
+    try:
+        value = getattr(obj, "type", None)
+    except:
+        return None
+    if value is None:
+        return None
+    if not hasattr(obj, "get_name"):
+        return None
+    return safe_str(value)
+
+
+def _container_names(obj, obj_guid=None):
+    """(device_name, app_name) considering obj and every ancestor.
+
+    The original walked upwards letting each higher ancestor overwrite what a
+    lower one had set, so the OUTERMOST device/application wins. This collects
+    the uncached part of the chain first, then fills it in from the top down,
+    which reproduces that precedence while letting every node keep its own
+    answer.
+    """
+    chain = []
+    device_name = None
+    app_name = None
+
+    current = obj
+    key = obj_guid if obj_guid is not None else _cache_key(obj)
+    while current is not None:
+        if key is not None and key in _container_prefix_cache:
+            device_name, app_name = _container_prefix_cache[key]
+            break
+        chain.append((key, current))
+        current = _parent_of(current)
+        key = _cache_key(current) if current is not None else None
+
+    for key, node in reversed(chain):
+        try:
+            node_type = safe_str(node.type)
+            # Only fill a slot that is still empty: whatever came from above
+            # is the outer one and takes precedence.
+            if node_type == TYPE_GUIDS.get("application"):
+                if app_name is None:
+                    app_name = clean_filename(node.get_name())
+            elif node_type == TYPE_GUIDS.get("device"):
+                if device_name is None:
+                    device_name = clean_filename(node.get_name())
+        except:
+            pass
+        if key is not None:
+            _container_prefix_cache[key] = (device_name, app_name)
+
+    return device_name, app_name
+
+
+def _path_stop_types(stop_at_application):
+    """Ancestor types that end a path walk and contribute no folder name."""
+    stops = [TYPE_GUIDS["plc_logic"], TYPE_GUIDS["device"],
+             # Tasks are exported inside the monolithic Task Configuration XML,
+             # so they must not produce subfolders on disk.
+             TYPE_GUIDS["task_config"], TYPE_GUIDS["task"]]
+    if stop_at_application:
+        stops.append(TYPE_GUIDS["application"])
+    return stops
+
+
+def _ancestor_path(node, stop_types):
+    """Folder names for node and its ancestors, outermost first. Cached."""
+    chain = []
+    names = ()
+
+    current = node
+    while current is not None:
+        key = _cache_key(current)
+        if key is not None and key in _object_path_cache:
+            names = _object_path_cache[key]
+            break
+        current_type = _node_type(current)
+        if current_type is None:
+            break
+        if current_type in stop_types:
+            # A stop node contributes nothing, and nothing above it counts.
+            if key is not None:
+                _object_path_cache[key] = ()
+            names = ()
+            break
+        chain.append((key, current))
+        current = _parent_of(current)
+
+    for key, ancestor in reversed(chain):
+        try:
+            names = names + (clean_filename(ancestor.get_name()),)
+        except:
+            pass
+        if key is not None:
+            _object_path_cache[key] = names
+
+    return names
+
+
+def get_object_path(obj, stop_at_application=True, parent=None):
+    """
+    Build the path from object to Application root.
+    Returns list of folder names from Application (exclusive) to object (exclusive).
+
+    Pass `parent` when the caller already holds it; fetching it is a round trip.
+    """
+    if parent is None:
+        parent = _parent_of(obj)
+    if parent is None:
+        return []
+    stop_types = _path_stop_types(stop_at_application)
+    if not stop_at_application:
+        # Rare enough not to be worth a second cache keyed on the flag.
+        return list(_uncached_ancestor_path(parent, stop_types))
+    return list(_ancestor_path(parent, stop_types))
+
+
+def _uncached_ancestor_path(node, stop_types):
+    names = []
+    current = node
+    while current is not None:
+        current_type = _node_type(current)
+        if current_type is None or current_type in stop_types:
+            break
+        try:
+            names.insert(0, clean_filename(current.get_name()))
+        except:
+            break
+        current = _parent_of(current)
+    return names
+
+
+def get_container_prefix(obj, obj_guid=None):
+    """Walk up from obj to find its Device and Application names.
+    Returns list like ['PLC', 'ST_Application'] or [] for global objects.
+
+    Pass `obj_guid` when the caller already has it; reading .guid is a round trip.
+    """
+    device_name, app_name = _container_names(obj, obj_guid)
+    parts = []
+    if device_name: parts.append(device_name)
+    if app_name: parts.append(app_name)
+    return parts
+
+# Kinds that can own an action/method/property. Built once: the tuple was
+# rebuilt on every call, and TYPE_GUIDS is fixed at import.
+_MEMBER_PARENT_TYPES = (TYPE_GUIDS["pou"], TYPE_GUIDS["itf"])
+
+
+def get_parent_pou_name(obj, parent=None):
+    """Get parent POU/Interface name for nested objects (actions, methods, properties).
+
+    Pass `parent` when the caller already has it. Every `obj.parent` is a .NET
+    round trip, and this used to take six of them -- two to test it exists and
+    is truthy, two more for hasattr checks, then one each for .type and
+    .get_name() -- to read at most one name. hasattr() is a getattr() under the
+    covers, so testing before reading doubled every lookup; try/except reads
+    each property exactly once instead.
+    """
+    try:
+        if parent is None:
+            parent = getattr(obj, "parent", None)
+        if not parent:
+            return None
+        try:
+            parent_type = safe_str(parent.type)
+        except:
+            return None
+        if parent_type in _MEMBER_PARENT_TYPES:
+            return parent.get_name()
+    except:
+        pass
+    return None
+
+def build_expected_path(obj, effective_type, is_xml):
+    """Build the expected rel_path for an IDE object."""
+    from engine.codesys_constants import TYPE_NAMES, TYPE_GUIDS, kind_of
+
+    # obj.guid and obj.parent are each a .NET round trip, and this function is
+    # on the per-object path for both export and compare. The helpers below
+    # used to fetch them independently -- guid twice, parent twice, plus six
+    # more parent reads inside get_parent_pou_name -- so read each once here
+    # and hand them down.
+    obj_guid = _cache_key(obj)
+    parent = _parent_of(obj)
+
+    container = get_container_prefix(obj, obj_guid=obj_guid)
+    path_parts = get_object_path(obj, parent=parent)
+    obj_name = obj.get_name()
+    clean_name = clean_filename(obj_name)
+
+    if is_xml:
+        # Special case: POUs exported as XML (graphical) use 'pou_xml' extension
+        if effective_type == TYPE_GUIDS["pou"]:
+            type_name = "pou_xml"
+        else:
+            type_name = TYPE_NAMES.get(effective_type, effective_type[:8])
+        file_name = clean_name + "." + type_name + ".xml"
+    else:
+        # kind_of(effective_type), not kind_of(obj.type): they agree on this
+        # branch, and the caller already has effective_type. classify_object
+        # sets effective_type to the normalized GUID for the object's own kind,
+        # and the two cases where it deviates -- an NVL masquerading as a GVL,
+        # a graphical POU -- both set is_xml and so never reach here.
+        obj_kind = kind_of(effective_type)
+        parent_pou = get_parent_pou_name(obj, parent=parent)
+        # Nested objects (Action, Method, Property) prefix filename with parent POU name
+        if parent_pou and obj_kind in ("action", "method", "property", "itf_method"):
+            file_name = clean_filename(parent_pou) + "." + clean_name + ".st"
+            clean_parent_pou = clean_filename(parent_pou)
+            # If the path already has the parent name as a folder, remove it to avoid redundancy
+            if path_parts and path_parts[-1] == clean_parent_pou:
+                path_parts = path_parts[:-1]
+        elif obj_kind == "folder":
+            # Folders use their own name as the last part of path
+            file_name = ""
+        else:
+            file_name = clean_name + ".st"
+
+    full_path_parts = container + path_parts
+    if not file_name:
+        return "/".join(full_path_parts)
+    
+    if full_path_parts:
+        return "/".join(full_path_parts) + "/" + file_name
+    return file_name
+
+def export_interface_declaration(obj):
+    """Extract interface declaration via native XML export fallback."""
+    import re
+    try:
+        projects_obj = resolve_projects()
+        if not projects_obj or not projects_obj.primary:
+            return None
+            
+        tmp_path = os.path.join(tempfile.gettempdir(), "itf_%s.xml" % safe_str(obj.guid)[:8])
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+        projects_obj.primary.export_native([obj], tmp_path, recursive=False)
+
+        if not os.path.exists(tmp_path):
+            return None
+
+        with codecs.open(tmp_path, "r", "utf-8") as xf:
+            xml_content = xf.read()
+        os.remove(tmp_path)
+
+        match = re.search(r'<Declaration><!\[CDATA\[(.*?)\]\]></Declaration>', xml_content, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+    except Exception as e:
+        log_warning("Could not extract interface declaration for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+    return None
+
+def export_object_content(obj):
+    """Extract declaration and implementation text from object."""
+    declaration = None
+    implementation = None
+    # getattr-with-default rather than hasattr()-then-read: hasattr() is itself
+    # a read, so the guarded form fetched each has_textual_* flag twice.
+    try:
+        if ide_flag(obj, "has_textual_declaration"):
+            declaration = obj.textual_declaration.text
+    except: pass
+
+    if declaration is None and safe_str(obj.type) == TYPE_GUIDS["itf"]:
+        declaration = export_interface_declaration(obj)
+
+    try:
+        if ide_flag(obj, "has_textual_implementation"):
+            implementation = obj.textual_implementation.text
+    except: pass
+    return declaration, implementation
+
+def update_object_code(obj, declaration, implementation):
+    """Update object's textual declaration and/or implementation.
+    
+    Handles multiple CODESYS versions:
+    - Some allow direct .text assignment
+    - Some have read-only .text but support .replace(new_content) with a single string arg
+    """
+    updated = False
+    try:
+        if declaration is not None and hasattr(obj, "has_textual_declaration") and obj.has_textual_declaration:
+            doc = obj.textual_declaration
+            if doc.text != declaration:
+                try:
+                    doc.text = declaration
+                    updated = True
+                except:
+                    # Fallback: ScriptTextDocument.replace(new_content)
+                    # takes a single string argument to replace the entire content
+                    doc.replace(declaration)
+                    updated = True
+
+        if implementation is not None and hasattr(obj, "has_textual_implementation") and obj.has_textual_implementation:
+            doc = obj.textual_implementation
+            if doc.text != implementation:
+                try:
+                    doc.text = implementation
+                    updated = True
+                except:
+                    doc.replace(implementation)
+                    updated = True
+    except Exception as e:
+        log_error("Error updating " + safe_str(obj.get_name()) + ": " + safe_str(e))
+    return updated
+
+def parse_accessor_content(combined_content):
+    """Split combined accessor content into (declaration, implementation).
+    
+    Args:
+        combined_content: String containing declaration and optionally
+                          IMPL_MARKER followed by implementation code.
+    
+    Returns:
+        tuple: (declaration, implementation) — implementation may be None.
+    """
+    from engine.codesys_constants import IMPL_MARKER
+    if IMPL_MARKER in combined_content:
+        parts = combined_content.split(IMPL_MARKER, 1)
+        decl = parts[0].strip()
+        code = parts[1].strip() if len(parts) > 1 else None
+        return decl, code
+    return combined_content.strip(), None
+
+def collect_property_accessors(all_objects):
+    """Collect property Get/Set accessors grouped by parent property GUID.
+    
+    Uses two passes:
+    1. Scan all objects for property_accessor type
+    2. Check each property's children directly (fallback)
+    
+    Returns:
+        dict: {property_guid: {'get': obj|None, 'set': obj|None, 'parent_obj': obj}}
+    """
+    property_accessors = {}
+    
+    # Pass 1: Find accessors by type
+    for obj in all_objects:
+        try:
+            if not hasattr(obj, 'type') or not hasattr(obj, 'get_name'):
+                continue
+            obj_type = safe_str(obj.type)
+            if obj_type == TYPE_GUIDS["property_accessor"]:
+                if hasattr(obj, "parent") and obj.parent:
+                    parent_type = safe_str(obj.parent.type)
+                    if parent_type == TYPE_GUIDS["property"]:
+                        parent_guid = safe_str(obj.parent.guid)
+                        if parent_guid not in property_accessors:
+                            property_accessors[parent_guid] = {
+                                'get': None, 'set': None, 'parent_obj': obj.parent
+                            }
+                        name = obj.get_name().lower()
+                        if name == "get":
+                            property_accessors[parent_guid]['get'] = obj
+                        elif name == "set":
+                            property_accessors[parent_guid]['set'] = obj
+        except:
+            continue
+    
+    # Pass 2: Check property children directly
+    for obj in all_objects:
+        try:
+            if not hasattr(obj, 'type'):
+                continue
+            obj_type = safe_str(obj.type)
+            if obj_type == TYPE_GUIDS["property"]:
+                obj_guid = safe_str(obj.guid)
+                try:
+                    if obj_guid not in property_accessors:
+                        property_accessors[obj_guid] = {
+                            'get': None, 'set': None, 'parent_obj': obj
+                        }
+                    children = obj.get_children()
+                    for child in children:
+                        child_type = safe_str(child.type)
+                        if child_type == TYPE_GUIDS["property_accessor"]:
+                            child_name = child.get_name().lower()
+                            if child_name == "get":
+                                property_accessors[obj_guid]['get'] = child
+                            elif child_name == "set":
+                                property_accessors[obj_guid]['set'] = child
+                except:
+                    pass
+        except:
+            continue
+    
+    return property_accessors
+
+def classify_object(obj):
+    """
+    Determine the effective export type for a CODESYS object.
+
+    Returns:
+        (effective_type, is_xml, should_skip)
+        - effective_type: the resolved type GUID (e.g. NVL replaces GVL)
+        - is_xml: True if object should be exported/compared as native XML
+        - should_skip: True if object should be ignored (property_accessor, task, etc.)
+    """
+    obj_type = safe_str(obj.type)
+    kind = kind_of(obj_type)
+    # Normalize alias GUIDs (alternate method/enum variants, ...) onto the
+    # kind's primary GUID so downstream comparisons, filenames and the sync
+    # cache all see one GUID per kind.
+    effective_type = TYPE_GUIDS[kind] if kind else obj_type
+    is_xml = False
+
+    # Skip structurally non-exportable kinds: accessor content is folded into
+    # the property file; tasks are exported inside task_config's XML.
+    if kind in ("property_accessor", "task"):
+        return effective_type, False, True
+
+    # Per-kind sync policy from profiles/default.json (e.g. device and
+    # device_module are 'disabled' - too unstable for XML sync)
+    if kind and sync_direction_of(kind) == "disabled":
+        return effective_type, False, True
+
+    # Skip all children of monolithic containers - they are exported as
+    # recursive XML with their parent. Prevents duplicate export/sync.
+    # Logic for devices: Containers (PLCs) are NOT monolithic, so we don't
+    # skip their children (Applications and sub-devices).
+    monolithic_kinds = ("alarm_config", "visu_manager", "task_config",
+                        "softmotion_pool")
+    # obj.parent read once: the guarded form below used to be
+    # `hasattr(obj,'parent') and obj.parent` then `obj.parent.type` and then
+    # `obj.parent` again for the device check -- four crossings into .NET for
+    # one parent, on a function that runs for every skipped object.
+    parent = _parent_of(obj)
+    try:
+        parent_type = safe_str(parent.type) if parent else ""
+        parent_kind = kind_of(parent_type)
+        if parent_kind in monolithic_kinds:
+            return effective_type, False, True
+
+        # Device recursion check:
+        # If parent is a device, we only skip if the parent IS a monolithic unit.
+        if parent_kind == "device":
+            if not is_container_device(parent):
+                # Parent is functional device (monolithic), so skip children.
+                return effective_type, False, True
+    except:
+        pass
+
+    # Skip per-POU alarm groups/classes — these are auto-generated children of
+    # POUs and can't be independently exported. Only alarm groups under the
+    # Alarm Configuration tree are valid standalone exports.
+    if kind in ("alarm_group", "alarm_class"):
+        try:
+            if kind_of(safe_str(parent.type)) != "alarm_config":
+                return effective_type, False, True
+        except:
+            pass
+
+    # Skip auto-generated VisualizationStyle objects
+    # These are created by CODESYS at multiple locations (Visualization Manager,
+    # Application root, project root) and should never be exported/synced.
+    if kind == "visu_style":
+        return effective_type, False, True
+
+    # NVL detection: GVL that is actually a Network Variable List
+    if kind == "gvl":
+        try:
+            if is_nvl(obj):
+                effective_type = TYPE_GUIDS["nvl_sender"]
+                is_xml = True
+        except:
+            pass
+
+    # Graphical POU detection (LD, CFC, FBD → XML)
+    if not is_xml and kind in ("pou", "action", "method"):
+        try:
+            if is_graphical_pou(obj):
+                is_xml = True
+        except:
+            pass
+
+    # XML_TYPES are always XML
+    if effective_type in XML_TYPES:
+        is_xml = True
+
+    # Check if type is exportable at all
+    if effective_type not in EXPORTABLE_TYPES and effective_type not in XML_TYPES:
+        return effective_type, is_xml, True
+
+    return effective_type, is_xml, False
+
+# --- Manager Classes ---
+
+class ObjectManager(object):
+    """Base class for managing CODESYS objects"""
+    def _update_cache_entry(self, obj, rel_path, file_path, context, q_hash=None, stat_info=None):
+        """Update the shared context cache with latest object metadata."""
+        if 'new_cache' not in context or not os.path.exists(file_path):
+            return
+        
+        norm_path = normalize_path(rel_path)
+        try:
+            # If q_hash not provided, calculate it based on type
+            if q_hash is None:
+                q_hash = get_quick_ide_hash(obj, False)
+
+            disk_mtime, disk_size = file_signature(file_path, stat_info)
+            context['new_cache'][norm_path] = {
+                "ide_hash": q_hash,
+                "disk_mtime": disk_mtime,
+                "disk_size": disk_size
+            }
+        except: pass
+
+    def _try_cache_skip(self, obj, rel_path, file_path, context, is_xml=False):
+        """Attempt to skip export via IDE-cache-disk fast path.
+
+        If the IDE state matches the cache AND the disk file matches the
+        cache, then IDE == disk and the slow extraction can be skipped.
+        Returns "identical" if skip succeeds, None otherwise.
+
+        The disk-side checks run first on purpose. They cost a dict lookup and
+        one os.stat(), whereas get_quick_ide_hash() reads the object's
+        declaration and implementation back out of the IDE. Testing the cheap
+        half first means a new or genuinely-edited object never pays for a
+        hash that was always going to be thrown away.
+        """
+        norm_path = normalize_path(rel_path)
+        cache = context.get('cache_data')
+        if not cache:
+            return None
+
+        cached_obj = cache.get('objects', {}).get(norm_path)
+        if not cached_obj:
+            return None
+
+        try:
+            s = os.stat(file_path)
+        except OSError:
+            return None
+
+        disk_mtime, disk_size = file_signature(file_path, s)
+        if disk_mtime != cached_obj.get('disk_mtime') or disk_size != cached_obj.get('disk_size'):
+            return None
+
+        q_hash = get_quick_ide_hash(obj, is_xml)
+        if not q_hash or cached_obj.get('ide_hash') != q_hash:
+            return None
+
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        self._update_cache_entry(obj, rel_path, file_path, context, q_hash, s)
+        return "identical"
+
+    def export(self, obj, context, rel_path=None):
+        """Export object to file system and update metadata"""
+        pass
+    
+    def update(self, obj, file_path, obj_info):
+        """Update existing object from file system"""
+        pass
+    
+    def create(self, container, name, file_path, type_guid):
+        """Create new object from file system"""
+        pass
+
+class FolderManager(ObjectManager):
+    """Handle folder creation and management"""
+    def export(self, obj, context, rel_path=None):
+        if rel_path is None:
+            rel_path = build_expected_path(obj, safe_str(obj.type), False)
+        
+        # Track and cache
+        file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        
+        # Folders use a constant hash since we just want to track their path/mtime
+        self._update_cache_entry(obj, rel_path, file_path, context, q_hash="folder")
+
+        # Skip creating folders for special XML containers
+        if safe_str(obj.type) in [TYPE_GUIDS["task_config"], TYPE_GUIDS["alarm_config"]]:
+            return "identical"
+            
+        return "identical"
+
+    def update(self, obj, file_path, obj_info=None):
+        # Folders don't have textual content to update
+        return False
+
+    def create(self, container, name, file_path, type_guid):
+        # For folders, container should be the parent folder/application
+        # But we also have absolute path in file_path (which is relative in metadata)
+        from engine.codesys_utils import ensure_folder_path
+        try:
+            # In CODESYS, 'projects' is an environment global, no need to import it
+            # file_path in this context is the rel_path from metadata e.g. "src/Folder/Sub"
+            projects_obj = resolve_projects()
+            if projects_obj and projects_obj.primary:
+                return ensure_folder_path(file_path, projects_obj.primary)
+            return None
+        except:
+            return None
+
+class POUManager(ObjectManager):
+    """Handle standard textual objects (POUs, GVLs, DUTs)"""
+
+    # Kinds whose IDE object is a MEMBER of a parent POU/interface, mapped to
+    # the ScriptEngine creator the container must expose. Keyed by KIND, not by
+    # GUID: 'itf_method' is a distinct GUID from 'method' (a method on an
+    # interface), and comparing GUIDs directly left it with no creator at all.
+    MEMBER_CREATORS = {
+        "method": "create_method",
+        "itf_method": "create_method",
+        "property": "create_property",
+        "action": "create_action",
+    }
+
+    # Top-level kinds with a dedicated creator; anything else uses create_pou.
+    TOPLEVEL_CREATORS = {
+        "gvl": "create_gvl",
+        "dut": "create_dut",
+        "itf": "create_interface",
+    }
+
+    def export(self, obj, context, rel_path=None):
+        # Build path and filename
+        if rel_path is None:
+            effective_type = context.get('effective_type', safe_str(obj.type))
+            rel_path = build_expected_path(obj, effective_type, False)
+        
+        # Determine target directory and file path
+        file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
+        target_dir = os.path.dirname(file_path)
+        file_name = os.path.basename(rel_path)
+        
+        # --- CACHE SKIP OPTIMIZATION ---
+        skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
+        if skip:
+            return skip
+        # -------------------------------
+
+        declaration, implementation = export_object_content(obj)
+        # Check if this object type can have implementation even if empty
+        obj_type_guid = safe_str(obj.type)
+        can_have_impl = obj_type_guid in IMPLEMENTATION_TYPES
+        clean_content = format_st_content(declaration, implementation, can_have_impl)
+
+        if not clean_content.strip():
+            return False
+
+        # Read IDE attributes and render sync pragmas. Kinds the ST text
+        # alone cannot express (persistent GVL, action, ...) also get a kind
+        # pragma so import can recreate the right object kind. The kind is
+        # identity metadata: it goes in the file but NOT in the state hash.
+        attrs = read_ide_attrs(obj, obj_type_guid)
+        pragmas = dict(attrs)
+        obj_kind = kind_of(context.get('effective_type', safe_str(obj.type)))
+        if obj_kind and needs_kind_pragma(obj_kind, clean_content):
+            pragmas["kind"] = obj_kind
+        content = render_sync_pragmas(pragmas, clean_content)
+
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+
+        content_hash = build_state_hash(clean_content, attrs)
+        is_new = not os.path.exists(file_path)
+
+        # Check if content is identical to existing file
+        if not is_new:
+            try:
+                with codecs.open(file_path, "r", "utf-8") as f:
+                    existing_content = f.read()
+                if calculate_hash(existing_content) == calculate_hash(content):
+                    # Track path and return
+                    if 'exported_paths' in context:
+                        context['exported_paths'].add(rel_path)
+                    
+                    self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
+                    return "identical"
+            except:
+                pass  # If we can't read existing file, just overwrite
+            
+        try:
+            with codecs.open(file_path, "w", "utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            log_error("Failed to write ST file " + file_name + ": " + safe_str(e))
+            return False
+            
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
+        return "new" if is_new else "updated"
+
+    def update(self, obj, file_path, obj_info=None):
+        from engine.codesys_utils import parse_st_file
+        declaration, implementation, pragmas = parse_st_file(file_path)
+        if declaration is None and implementation is None:
+            return False
+
+        # We assume the engine already decided we need to update based on content hash
+        updated = update_object_code(obj, declaration, implementation)
+        write_ide_attrs(obj, attrs_from_pragmas(pragmas))
+        return updated
+
+    def create(self, container, name, file_path, type_guid):
+        from engine.codesys_utils import parse_st_file
+        declaration, implementation, pragmas = parse_st_file(file_path)
+
+        obj = None
+        try:
+            special_kind = kind_of(type_guid) if type_guid else None
+            if special_kind in ("persistent_gvl", "task_local_gvl", "param_list"):
+                obj = self._create_special_gvl(container, name, type_guid, special_kind)
+                if obj is None:
+                    return None
+            elif special_kind in self.MEMBER_CREATORS:
+                obj = self._create_member(container, name, special_kind)
+                if obj is None:
+                    return None
+            elif (special_kind in self.TOPLEVEL_CREATORS
+                  and hasattr(container, self.TOPLEVEL_CREATORS[special_kind])):
+                obj = getattr(container, self.TOPLEVEL_CREATORS[special_kind])(name)
+            elif hasattr(container, "create_pou"):
+                # Always create as Program first — update_object_code will replace
+                # the declaration with the correct FUNCTION / FUNCTION_BLOCK header.
+                # PouType is a CODESYS global (like 'projects', 'system'), NOT an import.
+                p_type = None
+                # Strategy 1: Direct global (how it works in CODESYS environment)
+                try:
+                    p_type = PouType.Program
+                except NameError:
+                    pass
+                # Strategy 2: __main__ module
+                if p_type is None:
+                    try:
+                        import __main__
+                        p_type = __main__.PouType.Program
+                    except:
+                        pass
+                # Strategy 3: ScriptEngine import
+                if p_type is None:
+                    try:
+                        from ScriptEngine import PouType as _PT
+                        p_type = _PT.Program
+                    except:
+                        pass
+                # Strategy 4: sys.modules scan
+                if p_type is None:
+                    try:
+                        for mod in sys.modules.values():
+                            if hasattr(mod, "PouType"):
+                                p_type = mod.PouType.Program
+                                break
+                    except:
+                        pass
+
+                if p_type is not None:
+                    obj = container.create_pou(name, p_type)
+                else:
+                    log_error("Cannot resolve PouType enum. Falling back to create_child.")
+                    obj = container.create_child(name, type_guid) if hasattr(container, "create_child") else None
+            elif hasattr(container, "create_child"):
+                obj = container.create_child(name, type_guid)
+                
+            if obj:
+                update_object_code(obj, declaration, implementation)
+                write_ide_attrs(obj, attrs_from_pragmas(pragmas))
+                return obj
+        except Exception as e:
+            log_error("Failed to create " + name + ": " + safe_str(e))
+        return None
+
+    def _create_member(self, container, name, kind):
+        """Create a method/action/property on its parent POU or interface.
+
+        Fails loud instead of falling through to create_pou(). A container that
+        exposes no creator for the kind means the caller resolved the wrong
+        parent - typically a FOLDER that shares its name with the POU inside it
+        ("Function Blocks/MC_BasicControl/MC_BasicControl"). Creating a
+        standalone PROGRAM there produced a stray object that the next compare
+        then deleted as an orphan, so every import created and destroyed the
+        same objects in a loop.
+        """
+        creator = self.MEMBER_CREATORS[kind]
+        if not hasattr(container, creator):
+            log_error("Cannot create %s '%s': its container %s exposes no %s(). "
+                      "The parent POU/interface was not resolved - refusing to "
+                      "create a stray standalone object in its place."
+                      % (kind, name, safe_str(container), creator))
+            return None
+        obj = getattr(container, creator)(name)
+        if obj is None:
+            log_error("%s('%s') returned nothing on %s (kind=%s)."
+                      % (creator, name, safe_str(container), kind))
+        return obj
+
+    def _create_special_gvl(self, container, name, type_guid, kind):
+        """Create GVL variants that ST syntax alone cannot express
+        (persistent GVL, task-local GVL, parameter list).
+
+        Tries a kind-specific creator if the container exposes one, then the
+        generic typed child API. Fails loud on purpose: before the kind
+        pragma existed these files fell through to the create_pou fallback
+        and were silently created as PROGRAM POUs.
+        """
+        attempted = []
+
+        creator_candidates = {
+            "persistent_gvl": ["create_persistent_gvl"],
+            "task_local_gvl": ["create_task_local_gvl"],
+            "param_list": ["create_parameter_list"],
+        }
+        for creator in creator_candidates.get(kind, []):
+            if hasattr(container, creator):
+                attempted.append(creator)
+                try:
+                    obj = getattr(container, creator)(name)
+                    if obj:
+                        return obj
+                except Exception as e:
+                    log_warning("%s('%s') failed: %s" % (creator, name, safe_str(e)))
+
+        if hasattr(container, "create_child"):
+            attempted.append("create_child")
+            try:
+                obj = container.create_child(name, type_guid)
+                if obj:
+                    return obj
+            except Exception as e:
+                log_warning("create_child('%s', %s) failed: %s" % (name, type_guid, safe_str(e)))
+
+        log_error("Cannot create %s '%s': this CODESYS version exposes no "
+                  "scriptable creation API for that kind (tried: %s). Create "
+                  "the object manually in the IDE, then re-import to fill in "
+                  "its content." % (kind, name, ", ".join(attempted) or "none"))
+        return None
+
+class PropertyManager(POUManager):
+    """Handle properties specifically (combining declaration, Get, and Set)"""
+    def export(self, obj, context, rel_path=None):
+        obj_guid = safe_str(obj.guid)
+        
+        if obj_guid not in context['property_accessors']:
+            prop_data = {'get': None, 'set': None, 'parent_obj': obj}
+        else:
+            prop_data = context['property_accessors'][obj_guid]
+        
+        if rel_path is None:
+            effective_type = context.get('effective_type', safe_str(obj.type))
+            rel_path = build_expected_path(obj, effective_type, False)
+        
+        # Determine target directory and file path
+        file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
+        target_dir = os.path.dirname(file_path)
+        file_name = os.path.basename(rel_path)
+        
+        # --- CACHE SKIP OPTIMIZATION ---
+        skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
+        if skip:
+            return skip
+        # -------------------------------
+        
+        obj_name = obj.get_name()
+
+        # Export Declaration
+        declaration, _ = export_object_content(obj)
+        
+        # Get GET accessor
+        get_impl = None
+        if prop_data['get']:
+            get_decl, get_impl_raw = export_object_content(prop_data['get'])
+            get_impl = format_st_content(get_decl, get_impl_raw)
+            
+        # Get SET accessor
+        set_impl = None
+        if prop_data['set']:
+            set_decl, set_impl_raw = export_object_content(prop_data['set'])
+            set_impl = format_st_content(set_decl, set_impl_raw)
+            
+        # Export even if implementations are empty
+            
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+            
+        # Combine into Property Format
+        combined_content = format_property_content(declaration, get_impl, set_impl)
+
+        # Read IDE attributes and render sync pragmas
+        attrs = read_ide_attrs(obj)
+        content = render_sync_pragmas(attrs, combined_content)
+        content_hash = build_state_hash(combined_content, attrs)
+
+        is_new = not os.path.exists(file_path)
+
+        # Check if content is identical to existing file
+        if not is_new:
+            try:
+                with codecs.open(file_path, "r", "utf-8") as f:
+                    existing_content = f.read()
+                if calculate_hash(existing_content) == calculate_hash(content):
+                    if 'exported_paths' in context:
+                        context['exported_paths'].add(rel_path)
+
+                    self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
+                    return "identical"
+            except:
+                pass
+
+        try:
+            with codecs.open(file_path, "w", "utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            log_error("Failed to write Property file " + file_name + ": " + safe_str(e))
+            return False
+            
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
+        return "new" if is_new else "updated"
+
+    def update(self, obj, file_path, obj_info=None):
+        try:
+            with codecs.open(file_path, "r", "utf-8") as f:
+                raw_content = f.read()
+        except: return False
+
+        pragmas, clean_content = parse_sync_pragmas(
+            raw_content.replace('\r\n', '\n').replace('\r', '\n'))
+
+        declaration, get_impl_combined, set_impl_combined = parse_property_content(clean_content)
+        updated = False
+        
+        if declaration and update_object_code(obj, declaration, None):
+            updated = True
+            
+        # Update GET accessor
+        if get_impl_combined:
+            for child in obj.get_children():
+                if child.get_name().lower() == "get":
+                    g_decl, g_code = parse_accessor_content(get_impl_combined)
+                    if update_object_code(child, g_decl, g_code):
+                        updated = True
+                    break
+                    
+        # Update SET accessor
+        if set_impl_combined:
+            for child in obj.get_children():
+                if child.get_name().lower() == "set":
+                    s_decl, s_code = parse_accessor_content(set_impl_combined)
+                    if update_object_code(child, s_decl, s_code):
+                        updated = True
+                    break
+
+        # Unconditional so a pragma removed on disk clears the IDE flag
+        # (same semantics as POUManager.update).
+        write_ide_attrs(obj, attrs_from_pragmas(pragmas))
+
+        return updated
+
+    def create(self, container, name, file_path, type_guid):
+        try:
+            with codecs.open(file_path, "r", "utf-8") as f:
+                raw_content = f.read()
+        except: return None
+
+        pragmas, clean_content = parse_sync_pragmas(
+            raw_content.replace('\r\n', '\n').replace('\r', '\n'))
+
+        declaration, get_impl_combined, set_impl_combined = parse_property_content(clean_content)
+
+        obj = None
+        try:
+            if hasattr(container, "create_property"):
+                obj = container.create_property(name)
+            elif hasattr(container, "create_child"):
+                obj = container.create_child(name, type_guid)
+                
+            if obj:
+                if declaration:
+                    update_object_code(obj, declaration, None)
+                
+                if get_impl_combined and hasattr(obj, "create_get_accessor"):
+                    get_obj = obj.create_get_accessor()
+                    g_decl, g_code = parse_accessor_content(get_impl_combined)
+                    update_object_code(get_obj, g_decl, g_code)
+                    
+                if set_impl_combined and hasattr(obj, "create_set_accessor"):
+                    set_obj = obj.create_set_accessor()
+                    s_decl, s_code = parse_accessor_content(set_impl_combined)
+                    update_object_code(set_obj, s_decl, s_code)
+
+                attrs = attrs_from_pragmas(pragmas)
+                if attrs:
+                    write_ide_attrs(obj, attrs)
+
+                return obj
+        except Exception as e:
+            log_error("Failed to create property " + name + ": " + safe_str(e))
+        return None
+
+class NativeManager(ObjectManager):
+    """Handle objects exported as native CODESYS XML"""
+    def _hash_file(self, file_path):
+        """Calculate CRC32 hash of a file's content, ignoring dynamic bits like timestamps."""
+        try:
+            with codecs.open(file_path, "r", "utf-8") as f:
+                content_full = f.read()
+        except:
+            return ""
+        return self._hash_content(content_full, os.path.basename(file_path))
+
+    def _hash_content(self, content_full, fallback_name=""):
+        """Hash native XML text, ignoring the parts CODESYS rewrites on every
+        export (timestamps, internal GUIDs, volatile instance ids).
+
+        Split out of _hash_file so callers that already hold the XML as a
+        string can reach this logic directly. The compare engine holds both
+        sides in memory and used to write each one back out to a temp file
+        purely because this function only accepted a path -- three writes and
+        three reads per differing object, on files up to a third of a
+        megabyte.
+
+        fallback_name is only consulted when the filters leave nothing stable
+        to hash; see the note at that branch.
+        """
+        try:
+            lines = content_full.splitlines(True)  # Keep line endings
+
+            # Detect if this is an AlarmGroup-related file that can have type conversions
+            is_alarm_group = 'AlarmGroup' in content_full and 'GlobalTextList' not in content_full
+            is_textlist = '<Single Name="Name" Type="string">GlobalTextList' in content_full
+            is_alarm_config = 'Alarm Configuration' in content_full
+            is_device = '225bfe47-7336-4dbc-9419-4105a7c831fa' in content_full or '<Device' in content_full
+            
+            # Special handling for AlarmGroup and GlobalTextList: filter out dynamic content
+            if is_alarm_group or is_textlist or is_alarm_config or is_device:
+                # Extract only stable metadata that shouldn't change
+                stable_content = []
+                for line in lines:
+                    # Filter out timestamps and dynamic GUIDs for all these types
+                    if 'Name="Timestamp"' in line: continue
+                    if 'Name="Guid"' in line and 'Type="System.Guid"' in line: continue
+                    if '<Timestamp>' in line: continue # Device specific timestamp
+                    
+                    # For GlobalTextList, keep most content except dynamic parts
+                    if is_textlist:
+                        stable_content.append(line)
+                    # For devices, we want to keep most content but be wary of dynamic IDs
+                    elif is_device:
+                        # Skip lines that look like dynamic IDs or timestamps
+                        if 'vqid' in line.lower() or 'instanceid' in line.lower(): continue
+                        stable_content.append(line)
+                    # For AlarmGroup, keep only basic identifying information  
+                    elif is_alarm_group:
+                        if '<Single Name="Name" Type="string">' in line and 'AlarmGroup' in line:
+                            stable_content.append(line)
+                        elif 'CODESYS_HMI' in line and 'HMI_Application' in line and 'Alarm Configuration' in line:
+                            stable_content.append(line)
+                        # Also keep the object type identifier for more precise comparison
+                        elif '<Object Guid="' in line and ('Type="type_21f"' in line or 'Type="textlist"' in line):
+                            stable_content.append(line)
+                    elif is_alarm_config:
+                        # For alarm config, keep identifying info
+                        if '<Single Name="Name" Type="string">' in line:
+                            stable_content.append(line)
+                        elif 'CODESYS_HMI' in line:
+                            stable_content.append(line)
+                
+                if stable_content:
+                    content = "".join(stable_content).encode("utf-8")
+                    return str(zlib.crc32(content) & 0xFFFFFFFF)
+                else:
+                    # Fallback: nothing survived the filters, so hash the name.
+                    # NOTE: this makes the hash depend on where the content came
+                    # from rather than what it is. contents_are_equal() passes
+                    # two deliberately different names to keep the historic
+                    # outcome (such an object always compares as different);
+                    # that is preserved here, not endorsed.
+                    return str(zlib.crc32(fallback_name.encode("utf-8")) & 0xFFFFFFFF)
+            
+            # Filter out lines that often contain changing timestamps or metadata
+            filtered = []
+            skip_next = False
+            for line in lines:
+                if skip_next:
+                    skip_next = False
+                    continue
+                
+                # Strip internal CODESYS timestamp
+                if 'Name="Timestamp"' in line: continue
+                
+                # Strip dynamic GUIDs that can change between exports
+                # These are internal CODESYS identifiers that don't affect functionality
+                if 'Name="Guid"' in line and 'Type="System.Guid"' in line: continue
+                
+                # For visualization files, also strip object GUIDs that can change
+                if line.strip().startswith('<Object Guid="') and ('visu' in line.lower() or 'frame' in line.lower()):
+                    continue
+                    
+                filtered.append(line)
+                
+            content = "".join(filtered).encode("utf-8")
+            return str(zlib.crc32(content) & 0xFFFFFFFF)
+        except:
+            return ""
+
+    def export(self, obj, context, recursive=False, rel_path=None):
+        if rel_path is None:
+            effective_type = context.get('effective_type', safe_str(obj.type))
+            rel_path = build_expected_path(obj, effective_type, True)
+        
+        # Determine target directory and file path
+        file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
+        target_dir = os.path.dirname(file_path)
+        file_name = os.path.basename(rel_path)
+        is_new = not os.path.exists(file_path)
+        # --- CACHE SKIP OPTIMIZATION ---
+        skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=True)
+        if skip:
+            return skip
+        # -------------------------------
+
+        # Get existing file hash before overwriting
+        old_hash = "" if is_new else self._hash_file(file_path)
+        
+        # Export to a temp file first, then compare
+        tmp_path = file_path + ".tmp"
+        try:
+            projects_obj = resolve_projects()
+            if projects_obj and projects_obj.primary:
+                if not os.path.exists(target_dir):
+                    os.makedirs(target_dir)
+                projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
+            else:
+                log_error("Native export failed: 'projects' object not found or no primary project.")
+                return False
+        except Exception as e:
+            log_error("Native export failed for " + obj.get_name() + ": " + safe_str(e))
+            if os.path.exists(tmp_path):
+                try: os.remove(tmp_path)
+                except: pass
+            return False
+            
+        if not os.path.exists(tmp_path):
+            return False
+        
+        new_hash = self._hash_file(tmp_path)
+        
+        # Compare hashes
+        if not is_new and old_hash and old_hash == new_hash:
+            # Content identical - remove temp, keep original
+            try: os.remove(tmp_path)
+            except: pass
+            if 'exported_paths' in context:
+                context['exported_paths'].add(rel_path)
+            self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
+            return "identical"
+        
+        # Content changed or new - replace with temp file
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            os.rename(tmp_path, file_path)
+        except Exception as e:
+            log_error("Failed to replace XML file " + file_name + ": " + safe_str(e))
+            return False
+            
+        if 'exported_paths' in context:
+            context['exported_paths'].add(rel_path)
+        self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
+            
+        return "new" if is_new else "updated"
+
+    def update(self, obj, file_path, obj_info=None):
+        obj_name = obj.get_name() if obj else "Unknown"
+        try:
+            # Try parent-level import first (more precise)
+            try:
+                parent = obj.parent
+            except:
+                parent = None
+            
+            if parent and hasattr(parent, "import_native"):
+                log_info("Updating native object " + obj_name + " via parent import.")
+                parent.import_native(file_path)
+                return True
+            else:
+                # Fallback to project-level import (object ref may be stale)
+                log_info("Updating native object " + obj_name + " via project import.")
+                projects_obj = resolve_projects()
+                if projects_obj and projects_obj.primary:
+                    projects_obj.primary.import_native(file_path)
+                    return True
+                return False
+        except Exception as e:
+            log_error("Native update failed for " + obj_name + ": " + safe_str(e))
+            return False
+
+    def create(self, container, name, file_path, type_guid):
+        try:
+            # CODESYS import_native imports into the project/container
+            # If container is provided, use its import_native method
+            if container and hasattr(container, "import_native"):
+                container.import_native(file_path)
+            else:
+                # Fallback to project-level import
+                projects_obj = resolve_projects()
+                if projects_obj and projects_obj.primary:
+                    projects_obj.primary.import_native(file_path)
+            
+            # Find newly created object
+            if container:
+                for child in container.get_children():
+                    if child.get_name().lower() == name.lower():
+                        return child
+            return None
+        except Exception as e:
+            log_error("Native import failed for " + name + ": " + safe_str(e))
+            return None
+
+class ConfigManager(NativeManager):
+    """Specialized handling for configurations (forced XML)"""
+    def export(self, obj, context, rel_path=None):
+        # Devices are monolithic only if they are not containers (Project Roots)
+        recursive = True
+        if safe_str(obj.type) == TYPE_GUIDS["device"]:
+            if is_container_device(obj):
+                recursive = False
+        
+        return super(ConfigManager, self).export(obj, context, recursive=recursive, rel_path=rel_path)
+    
+    def create(self, container, name, file_path, type_guid):
+        return super(ConfigManager, self).create(container, name, file_path, type_guid)
+
+    def update(self, obj, file_path, obj_info):
+        return super(ConfigManager, self).update(obj, file_path, obj_info)

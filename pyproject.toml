@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdsint"
+version = "0.0.1"
+description = "Drive CODESYS-family IDEs from outside: sync .st text, build, verify"
+readme = "readMe.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.scripts]
+cdsint = "cdsint.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/kevin00156/cdsint"
+
+# engine/ and cds/ are shipped because the IDE-side code has to sit next to the
+# CLI in one install root (SPEC 5.3): the stubs put that root on sys.path and
+# import both halves from it. Only cdsint/ is ever imported by CPython.
+[tool.setuptools]
+packages = ["cds", "cds.core", "cds.ide", "cdsint", "engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
