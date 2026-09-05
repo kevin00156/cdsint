@@ -155,7 +155,7 @@ img/        readMe 用的圖
   - [x] 驗收：`stub/` 每個檔案 `wc -l` 不超過 15。
   - 監督者驗證（2026-09-05 15:40）：`python -m pytest tests -q` 與根目錄 `python -m pytest -q` 各 390 passed，監督者自己跑的。`tools/probe_imports.py` 在原廠 3.5.21.40 無頭重跑一次，27 秒，最後一行 `OK`。來源 repo 的 `git status` 跟派工前一字不差。兩條 grep 驗收監督者重跑，結果同 worker 回報；`imp.load_source` 唯一一筆命中是 `tools/probe_imports.py` 的 docstring 在講歷史，不是呼叫。worker 起過的六個無頭行程都已不在，`%TEMP%\cdsint-work\` 已空。
 
-- [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
+- [x] **階段 1：三個入口**（SPEC 10.2 階段 1）——監督者 2026-09-05 17:10 驗收通過；只剩底下兩條「還需要人」，依使用者指示等基本開發全部做完再處理。
   - [x] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
   - [x] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
   - [x] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
@@ -167,6 +167,7 @@ img/        readMe 用的圖
   - [x] 驗收：對 Shm 副本，用 Delta 1.10 起無頭 IDE 掛看門人（事實 18 的路），`cdsint export --target`、`cdsint import -y --target`、`cdsint compare --target`、`cdsint build --target` 四個都 exit 0，`--json` 的 `ok` 是 true。做完把自己起的 IDE 收掉。——**Delta 1.10 四個全過**（export 16.6s、import 14.2s、compare 13.2s、build 31.3s，229 個物件，build 0 errors 101 warnings）。**原廠 3.5.21.40 只有 export 過**；compare 與 import 掛在 `classify_object` 對缺外掛的物件丟 `SystemError`，build 因為缺 Delta 的函式庫而有 502 個編譯錯誤所以 exit 1。兩者都不是階段 1 造成的，原因是這是 Delta 的專案、原廠 CODESYS 沒裝 Delta 的裝置描述與函式庫，見第 7 節的裁決請求。自己起的六個無頭行程都已收掉，`%TEMP%\cdsint-work\` 已刪。
   - [x] 驗收（監督者改寫）：原廠 3.5.21.40 用**它自己開得了的專案**驗四個命令：`D:\Acme\Site\SheetSplitter\PLC\.softplc\softplc_refactor.project`（Shm 的重構分支，一樣 229 個物件，上一輪在原廠 build 是 0 errors，見 `docs/history/WATCHER_CLI_PLAN.md` 第 16 節）。先複製到 `%TEMP%\cdsint-work\`，不碰 `.softplc\` 裡任何東西。四個命令都 exit 0，`ok` 是 true，build 0 errors。——**全過**：export 19.4s（229 個新檔）、import 13.4s（229 identical）、compare 13.4s（229 unchanged）、build 22.1s（0 errors、101 warnings）。四個的 `data.failed_objects` 都是空的。
   - [x] 驗收（監督者改寫）：跨家的情況變成收尾那條的驗收：原廠 3.5.21.40 開 Shm 副本，`export`、`compare`、`import -y` 三個都 exit 1，`--json` 的 `data` 裡列出那 7 個物件的名字，輸出裡沒有 traceback；`build` exit 1 帶錯誤數是預期（缺 Delta 函式庫），不算失敗。——**全過**：三個都 exit 1、`ok` false、`data.failed_objects` 是同樣的七個（`ArchiveObject`、`Hardware Configuration`、`Network Configuration`、`EtherCAT Topology`，另外三個連 `get_name()` 都丟例外，退而顯示物件本身的字串，是 GUID 形狀的識別碼），`error` 裡沒有 traceback。`build` exit 1，502 errors 101 warnings，也沒有 traceback。自己起的三個無頭行程都收掉了，`%TEMP%\cdsint-work\` 已刪，兩個來源專案一個位元組都沒動。
+  - 監督者驗證（2026-09-05 17:10，收尾之後）：`python -m pytest tests -q` 與根目錄各 427 passed，監督者自己跑的。`engine/unhandled.py` 讀過，攔截點與登記簿的設計接受（見第 7 節）。`softplc_refactor.project` 最後寫入時間是 9 月 4 日，鎖檔的更新來自使用者自己開著的 CODESYS（pid 17340），worker 沒有寫過來源。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 不存在，使用者看門人心跳 17:02。真 IDE 的四個命令這一輪由 worker 跑，監督者沒有重跑；階段 2 的 `verify --project` 驗收會由監督者親自重現，那條一次涵蓋這四個命令。
   - 監督者驗證（2026-09-05 16:40）：`python -m pytest tests -q` 與根目錄各 416 passed，監督者自己跑的。`irm\setup.ps1 -List` 列出這台正好五個 ScriptDir。監督者自己對一個假 ScriptDir 跑 `-Clone`，裡面只有一個叫 `cdsint` 的 junction 指向 `stub/`；用原廠無頭跑那份 `Project_watch.py`，26 秒，exit 0，輸出 `cdsint: listening as unsaved-16500`，登記檔建在 `%LOCALAPPDATA%\cdsint\instances`（監督者跑完自己刪了）。來源 repo、五個 junction、使用者的看門人（心跳 16:35）都沒被碰；沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\` 不存在。
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
@@ -273,6 +274,7 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 1 收尾驗收後）: worker 收尾的四條 Ruling 全部接受 — 攔截點放在「一個迴圈處理一個物件」那一步（兩處）而不是 `classify_object` 一處，理由成立：缺外掛的物件每個屬性都丟例外，只包分類那一行擋不住 Pass 1 讀 `obj.guid`；登記簿用模組層級狀態，在 D5 單執行緒、一次一個命令的前提下是安全的，而且省掉五個呼叫點各自「記得收集」的規則；有物件處理不了就不刪孤兒檔，這是 worker 自己看出來的爆炸半徑，`ok=False` 只是回報、刪掉的檔案救不回來，這條比監督者要求的多想了一步；`_report` 改成清單一行一項是 `data` 出現清單的必然結果 — 錯了的代價：登記簿若有一天 IDE 側出現第二條執行路徑（D5 改了），它會混在一起；那時 D5 本身就是更大的事。
 - Ruling（階段 1 驗收後）: `classify_object` 丟例外的問題**現在修，當階段 1 的收尾**，不留到階段 4 — 它擋住的是「跨家開專案」這個真實情境，而且階段 2 的 `verify` 會把 compare 與 import 串在一起跑，留著等於把一個已知會整個死掉的路徑帶進下一階段的驗收。修法的約束寫在階段 1 收尾那一項：一個地方處理、名字進 `data`、`ok` 為 False — 錯了的代價是階段 1 多一個 commit 的引擎改動，跟「階段 1 改行為」的定位一致。
 - Ruling（階段 1 驗收後）: 有物件處理不了就 `ok=False`，推翻 worker「`ok` 一比一複製舊判決、7 個失敗仍算成功」的做法 — 磁碟是事實來源（SPEC 目標 1），少 7 個物件的匯出不是完成；場景 C 的 pipeline 拿 `ok` 當閘門，一個放行「有 7 個沒匯出」的閘門是壞的；D13 要的「以名字報出來」靠 `data` 滿足，`ok=False` 讓呼叫端不用先讀 `data` 才知道要讀 `data`。同一家 IDE 開自己的專案時 failed 是 0，所以日常路徑沒有任何變化 — 錯了的代價是某天出現「有一個物件永遠處理不了但大家都不在乎」的專案，每次同步都 exit 1；那時該修的是引擎或 profile，不是把閘門放寬。
 - Ruling（階段 1 驗收後）: `cds/ide/silent.py` 以字串名字載入 `engine.codesys_ui` 這件事，接受為 SPEC D12 的唯一例外並寫進規格 — 替身 UI 的工作就是把引擎的三個對話框函式換掉，這個相依在來源 repo 就存在，只是以前靠入口腳本順手載好；知識方向沒有反過來，引擎仍然不認識 `cds/ide`。更乾淨的做法是本體改成接一個 `ui` 參數不再猴子補丁，但那要動 `codesys_utils` 裡每一個對話框呼叫點，現在沒有理由做 — 錯了的代價是 D12 的 grep 規則多一行例外，已寫進 SPEC D12 現況。
