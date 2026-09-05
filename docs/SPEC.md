@@ -106,11 +106,11 @@
 
 **D11 四支入口回傳結果，替身 UI 讀回傳值判斷成功失敗。**
 理由：現在四支 `main()` 不管成功失敗都回 `None`，替身 UI 只能看 `system.ui.warning` 和 `error` 有沒有被呼叫來推。這讓「warning 只准在中止點呼叫」變成所有未來作者都得記住的規則，違反的後果離現場很遠：有人在匯出中途寫一句無害的 warning，一次成功的匯出就變成 exit 1。
-現況：已做（階段 1）。回傳的形狀是 `engine/entry.py` 的 `result(ok, summary, **data)`，替身 UI 讀 `ok`；回傳 `None` 算失敗。
+現況：已做（階段 1）。回傳的形狀是 `engine/entry.py` 的 `result(ok, summary, **data)`，替身 UI 讀 `ok`；回傳 `None` 算失敗。`ok` 的意思是「這個命令把該做的每個物件都做完了」：任何一個物件分類不出來、建不出來、匯不出去，`ok` 就是 False，名字列在 `data` 裡（D13）；命令仍然把其他物件做完，不中途放棄。
 
 **D12 三條可以用 grep 驗的分層規則。** `cds/core` 不准 import `system`、`projects`、`online`、`clr`。`cds/ide` 不准 import `online`，不准 import 引擎模組。引擎不准 import `cds/ide`。
 理由：`cds/core` 要在 CI 上被完整測。`cds/ide` 只做管線，也就是協定端點、計時器、替身 UI、prompt 答案、狀態視窗、無頭模式的 `projects.open`。走物件樹和碰 PLC 的事全在引擎。依賴方向是 `cds/ide` 用入口名字驅動引擎，不反過來。
-現況：三條今天都成立。唯一例外是 `cds/ide/session.py` 用 `imp.load_source` 讀 `codesys_constants` 拿版本號，要在程式碼裡註明。
+現況：三條都成立。唯一例外是 `cds/ide/silent.py` 以字串名字載入 `engine.codesys_ui`，只為了把三個對話框函式換成替身再換回去，不呼叫它任何東西；程式碼用 `__import__` 並附註解說明，grep 規則以 `from engine`、`import engine` 為準。原本 `session.py` 讀版本號的例外在階段 0 消失了。
 
 **D13 不准靜默跳過物件。** 分類不出來、建不出來、匯不進去都要以名字報出來。
 理由：目標 6。

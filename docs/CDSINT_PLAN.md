@@ -163,7 +163,11 @@ img/        readMe 用的圖
   - [x] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。——416 passed，grep 零。
   - [x] 驗收：`stub/` 只有三個檔案。——三支 `.py`，各 15、15、14 行；另外有一個 `body.path`，那是安裝器寫的、gitignore 的機器專屬路徑檔，不是第四支腳本。
   - [x] 驗收：安裝器對 `%TEMP%\cdsint-work\scriptdir\` 裝完，裡面只有 `cdsint\Project_export.py`、`cdsint\Project_import.py`、`cdsint\Project_watch.py` 三個 `.py`。用原廠 3.5.21.40 無頭 `--runscript` 跑那份 `Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback。——過。第一次跑掛在 `body.path` 的 BOM 上（`ImportError: No module named cds.ide`），修掉後 exit 0，輸出是 `cdsint: listening as unsaved-21556`。
-  - [ ] 驗收：對 Shm 副本，用原廠與 Delta 1.10 各起一次無頭 IDE 掛看門人（事實 18 的路），`cdsint export --target`、`cdsint import -y --target`、`cdsint compare --target`、`cdsint build --target` 四個都 exit 0，`--json` 的 `ok` 是 true。做完把自己起的 IDE 收掉。——**Delta 1.10 四個全過**（export 16.6s、import 14.2s、compare 13.2s、build 31.3s，229 個物件，build 0 errors 101 warnings）。**原廠 3.5.21.40 只有 export 過**；compare 與 import 掛在 `classify_object` 對缺外掛的物件丟 `SystemError`，build 因為缺 Delta 的函式庫而有 502 個編譯錯誤所以 exit 1。兩者都不是階段 1 造成的，原因是這是 Delta 的專案、原廠 CODESYS 沒裝 Delta 的裝置描述與函式庫，見第 7 節的裁決請求。自己起的六個無頭行程都已收掉，`%TEMP%\cdsint-work\` 已刪。
+  - [ ] 階段 1 收尾（監督者驗收後加的）：物件處理不了的時候，引擎要在**一個地方**把它變成有名字的正常結果，不是五個呼叫點各包一層 `try/except`。`classify_object` 現在有五個呼叫點（`entry_export` 兩處、`entry_compare` 一處、`codesys_compare_engine` 兩處），匯出那邊包了、比對那邊沒包，所以原廠開 Delta 專案時 export 活著而 compare 與 import 死掉。做法由 worker 定，約束是：任何命令碰到分類不出來、建不出來、匯不出去的物件，都把名字列進回傳結果的 `data`（例如 `data.failed_objects`），而且 `ok` 為 False；不准有 traceback 逃出來。加一個測試：假物件讀 `.type` 就丟例外，三個命令都回 `ok=False` 且名字在 `data` 裡。這條同時推翻 worker「`ok` 一比一複製舊判決」的做法，理由見第 7 節。
+  - [x] 驗收：對 Shm 副本，用 Delta 1.10 起無頭 IDE 掛看門人（事實 18 的路），`cdsint export --target`、`cdsint import -y --target`、`cdsint compare --target`、`cdsint build --target` 四個都 exit 0，`--json` 的 `ok` 是 true。做完把自己起的 IDE 收掉。——**Delta 1.10 四個全過**（export 16.6s、import 14.2s、compare 13.2s、build 31.3s，229 個物件，build 0 errors 101 warnings）。**原廠 3.5.21.40 只有 export 過**；compare 與 import 掛在 `classify_object` 對缺外掛的物件丟 `SystemError`，build 因為缺 Delta 的函式庫而有 502 個編譯錯誤所以 exit 1。兩者都不是階段 1 造成的，原因是這是 Delta 的專案、原廠 CODESYS 沒裝 Delta 的裝置描述與函式庫，見第 7 節的裁決請求。自己起的六個無頭行程都已收掉，`%TEMP%\cdsint-work\` 已刪。
+  - [ ] 驗收（監督者改寫）：原廠 3.5.21.40 用**它自己開得了的專案**驗四個命令：`D:\Acme\Site\SheetSplitter\PLC\.softplc\softplc_refactor.project`（Shm 的重構分支，一樣 229 個物件，上一輪在原廠 build 是 0 errors，見 `docs/history/WATCHER_CLI_PLAN.md` 第 16 節）。先複製到 `%TEMP%\cdsint-work\`，不碰 `.softplc\` 裡任何東西。四個命令都 exit 0，`ok` 是 true，build 0 errors。
+  - [ ] 驗收（監督者改寫）：跨家的情況變成收尾那條的驗收：原廠 3.5.21.40 開 Shm 副本，`export`、`compare`、`import -y` 三個都 exit 1，`--json` 的 `data` 裡列出那 7 個物件的名字，輸出裡沒有 traceback；`build` exit 1 帶錯誤數是預期（缺 Delta 函式庫），不算失敗。
+  - 監督者驗證（2026-09-05 16:40）：`python -m pytest tests -q` 與根目錄各 416 passed，監督者自己跑的。`irm\setup.ps1 -List` 列出這台正好五個 ScriptDir。監督者自己對一個假 ScriptDir 跑 `-Clone`，裡面只有一個叫 `cdsint` 的 junction 指向 `stub/`；用原廠無頭跑那份 `Project_watch.py`，26 秒，exit 0，輸出 `cdsint: listening as unsaved-16500`，登記檔建在 `%LOCALAPPDATA%\cdsint\instances`（監督者跑完自己刪了）。來源 repo、五個 junction、使用者的看門人（心跳 16:35）都沒被碰；沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\` 不存在。
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
@@ -178,7 +182,7 @@ img/        readMe 用的圖
   - [ ] readMe 依 SPEC 第 9 節全面改寫。`docs/AI_WORKFLOW.md` 與 `skills/cdsint/SKILL.md` 加 `--project` 形式那一段。`docs/history/WORKFLOW.md` 還成立的內容併進三個場景。
   - [ ] 驗收：`python -m pytest tests -q` 綠；`cdsint/` 底下每個模組 `wc -l` 不超過 300。
   - [ ] 驗收：`cdsint installs` 列出這台七套（3.5.19.10、3.5.20.40、3.5.21.40、Lenze 3.24、Lenze 4.0、Delta 1.8、Delta 1.10），每套有 profile 名，兩套 Delta 標需要管理員。
-  - [ ] 驗收：`cdsint verify --project <Shm 副本> --install 3.5.21.40 --report r.json` 與 `--install "DIADesigner-AX 1.10"` 各一次 exit 0。report 裡 stdout 有回來、report 寫的退出碼跟實際收到的一致、匯出後同步資料夾無差異、build 0 errors。每一步的秒數記進第 7 節。
+  - [ ] 驗收：`cdsint verify --project <softplc 副本> --install 3.5.21.40 --report r.json` 與 `cdsint verify --project <Shm 副本> --install "DIADesigner-AX 1.10"` 各一次 exit 0（每家 IDE 用它自己開得了的專案，副本路徑見階段 1）。report 裡 stdout 有回來、report 寫的退出碼跟實際收到的一致、匯出後同步資料夾無差異、build 0 errors。每一步的秒數記進第 7 節。
   - [ ] 驗收：對使用者開著的專案原檔跑 `cdsint compare --project "P:\Shared\Acme\Site\SheetSplitter\PLC\Shm_2026.07.29.project" --install "DIADesigner-AX 1.10"`，exit 4 且訊息含鎖檔路徑。這條只讀鎖檔就退出，不起 IDE，不寫原檔。
   - [ ] 驗收：`--timeout 5` 對一個會跑超過五秒的命令 exit 3，report 記逾時並註明疑似有對話框卡住，用自己記的 pid 確認行程已經不在。
   - [ ] 驗收：`cdsint export --target X --project P` 被 argparse 拒絕。
@@ -264,6 +268,11 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 1 驗收後）: `classify_object` 丟例外的問題**現在修，當階段 1 的收尾**，不留到階段 4 — 它擋住的是「跨家開專案」這個真實情境，而且階段 2 的 `verify` 會把 compare 與 import 串在一起跑，留著等於把一個已知會整個死掉的路徑帶進下一階段的驗收。修法的約束寫在階段 1 收尾那一項：一個地方處理、名字進 `data`、`ok` 為 False — 錯了的代價是階段 1 多一個 commit 的引擎改動，跟「階段 1 改行為」的定位一致。
+- Ruling（階段 1 驗收後）: 有物件處理不了就 `ok=False`，推翻 worker「`ok` 一比一複製舊判決、7 個失敗仍算成功」的做法 — 磁碟是事實來源（SPEC 目標 1），少 7 個物件的匯出不是完成；場景 C 的 pipeline 拿 `ok` 當閘門，一個放行「有 7 個沒匯出」的閘門是壞的；D13 要的「以名字報出來」靠 `data` 滿足，`ok=False` 讓呼叫端不用先讀 `data` 才知道要讀 `data`。同一家 IDE 開自己的專案時 failed 是 0，所以日常路徑沒有任何變化 — 錯了的代價是某天出現「有一個物件永遠處理不了但大家都不在乎」的專案，每次同步都 exit 1；那時該修的是引擎或 profile，不是把閘門放寬。
+- Ruling（階段 1 驗收後）: `cds/ide/silent.py` 以字串名字載入 `engine.codesys_ui` 這件事，接受為 SPEC D12 的唯一例外並寫進規格 — 替身 UI 的工作就是把引擎的三個對話框函式換掉，這個相依在來源 repo 就存在，只是以前靠入口腳本順手載好；知識方向沒有反過來，引擎仍然不認識 `cds/ide`。更乾淨的做法是本體改成接一個 `ui` 參數不再猴子補丁，但那要動 `codesys_utils` 裡每一個對話框呼叫點，現在沒有理由做 — 錯了的代價是 D12 的 grep 規則多一行例外，已寫進 SPEC D12 現況。
+- Ruling（階段 1 驗收後）: 原廠的真 IDE 驗收改用 softplc 副本，Delta 用 Shm 副本，階段 2 的 `verify` 驗收同樣分開 — 工單原本一句「原廠與 Delta 各跑 Shm」是監督者寫錯，Shm 是 Delta 建的專案，原廠沒有它的裝置描述與函式庫，build 不可能是 0 errors — 錯了的代價是無，softplc 就是上一輪在原廠驗過的那個。
+- Ruling（階段 1 驗收後）: worker 階段 1 其餘的 Ruling（`-y` 別名、`entry.result` 不裸 import、`messages.py` 一則壞訊息不毀整份、安裝器一律 junction、認 IDE 看執行檔、拿掉互動選單）全部接受 — 每一條有理由與代價，`-y` 那條是規格與程式碼不一致而規格是對的 — 錯了的代價是無。
 - Ruling（階段 0 驗收後）: `cdsint list` 找不到看門人回 exit 0，工單原本的驗收句寫錯了 — worker 的理由成立：`list` 問的是「有誰在聽」，空清單是答案；SPEC 4.3 的 exit 2 是給需要一個目標的命令用的。SPEC 4.3 補一句把這條講明 — 錯了的代價是包 cdsint 的腳本要讀 `--json` 的空陣列來判斷有沒有 IDE，不能看 exit code；這本來就是比較穩的做法。
 - Ruling（階段 0 驗收後）: `tools/cache_doctor.py` 在階段 4 修，不在階段 1 — 它是離線診斷工具，不擋任何入口；階段 4 是引擎品質，改成 import `file_signature()` 正好歸那裡 — 錯了的代價是它帶著「已過時」的檔頭多活三個階段，有人拿它看 cache 會被警告擋住而不是被錯數字騙。
 - Ruling（階段 0 驗收後）: worker 在階段 0 做的七條 Ruling 全部接受，不翻案 — 每一條都有理由與代價，而且 `script_version()` 那條讓 D12 一個例外都不剩，比工單原本寫的更好 — 錯了的代價是無。
