@@ -387,6 +387,8 @@ D8 的落地。
 | 無頭 boot app 產出 | 未驗 | 未驗 | 未驗 | 未驗 | 失敗，NullReferenceException |
 | PLC connect、download | 未驗 | 未驗 | 未驗 | 未驗 | 未驗 |
 
+「CLI export、import、build」那一列的原廠格子有一個界線是 9 月 5 日階段 1 驗收才發現的：那是拿 Delta 的專案在原廠 CODESYS 上驗的，而原廠沒有 Delta 的裝置描述與函式庫。匯出照樣完成（7 個物件失敗、有名字），但比對與匯入會中止，因為 `classify_object` 對那些缺外掛的物件丟 `SystemError`；同一個專案在 Delta 1.10 上四個命令全過。所以這一格的正確讀法是「同一家 IDE 開自己的專案時驗過」，跨家開專案還有一個引擎要補的洞。
+
 效能基準，229 個物件，main 上 9 月 5 日的數字，perf 分支的改善還沒量：
 
 | 操作 | 原廠 | Delta |
