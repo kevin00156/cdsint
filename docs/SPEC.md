@@ -181,7 +181,7 @@
 | 4 | 無頭模式：專案被別的行程開著，或 IDE 啟動失敗 |
 | 5 | 權限拒絕：專案屬性 `cds-sync-plc` 沒有開放這個命令 |
 
-2 和 4 是同一個問題的兩種原因，都是「這個專案有沒有活著的 IDE」，對 agent 有用所以分開。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
+2 和 4 是同一個問題的兩種原因，都是「這個專案有沒有活著的 IDE」，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
 
 `--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`data`。`--project` 形式再加 `ide`（用了哪套）、`report_path`。
 

@@ -147,18 +147,19 @@ img/        readMe 用的圖
   - [x] CHANGELOG：頂上加 Unreleased 一段，說明搬進 cdsint、來源 repo 是哪個、來源 k1.1.1 之後沒發版的內容（來源 `git log --oneline 81d994e..9aa9886`，perf 與存檔一次那幾個 commit）寫症狀、根因、改法。
   - [x] readMe：先寫最小版。定位一段（SPEC 第 0 節）、來源 repo 一句、開發模式安裝（junction 指 `stub/`，三家 ScriptDir 的表）、CLI 命令表（現有的八個）、exit code。全面改寫留到階段 2。
   - [x] 驗收：根目錄 `python -m pytest -q` 與 `python -m pytest tests -q` 都綠，通過數不少於 389。
-  - [~] 驗收：在 `%TEMP%\cdsint-work\clone\` 對本 repo `git clone`、`pip install -e .`、`cdsint --help` 列出八個命令——過。`cdsint list` 訊息說沒有看門人——過，但 exit 是 0 不是 2，見第 7 節第 9 項的 Ruling。
+  - [x] 驗收：在 `%TEMP%\cdsint-work\clone\` 對本 repo `git clone`、`pip install -e .`、`cdsint --help` 列出八個命令——過。`cdsint list` 訊息說沒有看門人——過。exit 是 0 不是本句原本寫的 2，監督者裁定 0 才對，見第 7 節第 5 項；SPEC 4.3 已補一句。
   - [x] 驗收：`grep -rn "cds-text-sync" --include=*.py --include=*.md --include=*.toml --include=*.ps1 --include=*.yml .` 剩下的只有 pragma 前綴 `cds-text-sync.<key>`、屬性 `cds-text-sync-multipleApps`、來源與上游的出處註記、`docs/history/` 底下的。
   - [x] 驗收：`grep -rn "WATCHER_CLI_PLAN\|imp.load_source\|_load_hidden_module" --include=*.py .` 為零。
   - [x] 驗收：一支放在 `tools/` 的探針腳本，把本 repo 根目錄插進 `sys.path`，import `engine` 底下七個模組、四支本體、`cds.core`、`cds.ide.session`，成功印 `OK` 並寫檔。用原廠 3.5.21.40、Lenze 3.24、Delta 1.10 各無頭跑一次，三份輸出都有 `OK`、沒有 traceback。
   - [x] 驗收：用原廠 3.5.21.40 無頭跑 `stub/Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback；跑 `stub/Project_export.py`，輸出說沒有開啟的專案、沒有 traceback。
   - [x] 驗收：`stub/` 每個檔案 `wc -l` 不超過 15。
+  - 監督者驗證（2026-09-05 15:40）：`python -m pytest tests -q` 與根目錄 `python -m pytest -q` 各 390 passed，監督者自己跑的。`tools/probe_imports.py` 在原廠 3.5.21.40 無頭重跑一次，27 秒，最後一行 `OK`。來源 repo 的 `git status` 跟派工前一字不差。兩條 grep 驗收監督者重跑，結果同 worker 回報；`imp.load_source` 唯一一筆命中是 `tools/probe_imports.py` 的 docstring 在講歷史，不是呼叫。worker 起過的六個無頭行程都已不在，`%TEMP%\cdsint-work\` 已空。
 
 - [ ] **階段 1：三個入口**（SPEC 10.2 階段 1）
   - [ ] 四支本體的 `main()` 回傳第 4 節的結果；`cds/ide/silent.py` 改讀回傳值，刪 `BAD_LEVELS`；`tests/test_silent.py` 的等級測試換成回傳值測試。
   - [ ] 設定流程（SPEC 6.7）併進匯出匯入的本體；刪 `engine/` 裡 directory 與 parameters 的本體和它們的 stub，`stub/` 剩三支；狀態視窗加「設定」按鈕，開跟原本 `Project_parameters.py` 一樣的對話框。
   - [ ] 安裝器 `irm/setup.ps1` 改寫：依 SPEC 5.3 的表判斷三家 ScriptDir、本體裝到 `%LOCALAPPDATA%\cdsint\` 或指向 clone、寫 stub 與找本體的檔、開發模式用 junction 指 `stub/`；下載來源改本 repo。接受 `-ScriptDir` 覆寫，讓驗收能對假目錄裝。
-  - [ ] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗（來源 `codesys_ui.pyw` 第 254 行）。
+  - [x] 視窗標題改 `cdsint`：狀態視窗、比對結果視窗。階段 0 已做，見第 7 節 worker 的 Ruling。
   - [ ] 驗收：`python -m pytest tests -q` 綠。`grep -rn "BAD_LEVELS" cds/ engine/ stub/ cdsint/` 為零。
   - [ ] 驗收：`stub/` 只有三個檔案。
   - [ ] 驗收：安裝器對 `%TEMP%\cdsint-work\scriptdir\` 裝完，裡面只有 `cdsint\Project_export.py`、`cdsint\Project_import.py`、`cdsint\Project_watch.py` 三個 `.py`。用原廠 3.5.21.40 無頭 `--runscript` 跑那份 `Project_watch.py`，輸出裡有看門人的啟動訊息、沒有 traceback。
@@ -195,6 +196,7 @@ img/        readMe 用的圖
   - [ ] `cds-sync-` 前綴收成一個常數，事實 12 的每一處改用它。`cds-text-sync-multipleApps` 是否併入見第 7 節第 3 項。
   - [ ] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [ ] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
+  - [ ] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [ ] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
   - [ ] 驗收：`grep -rn "time.sleep\|threading\|Thread(" engine/ cds/ide/ stub/` 為零。
@@ -240,6 +242,9 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 0 驗收後）: `cdsint list` 找不到看門人回 exit 0，工單原本的驗收句寫錯了 — worker 的理由成立：`list` 問的是「有誰在聽」，空清單是答案；SPEC 4.3 的 exit 2 是給需要一個目標的命令用的。SPEC 4.3 補一句把這條講明 — 錯了的代價是包 cdsint 的腳本要讀 `--json` 的空陣列來判斷有沒有 IDE，不能看 exit code；這本來就是比較穩的做法。
+- Ruling（階段 0 驗收後）: `tools/cache_doctor.py` 在階段 4 修，不在階段 1 — 它是離線診斷工具，不擋任何入口；階段 4 是引擎品質，改成 import `file_signature()` 正好歸那裡 — 錯了的代價是它帶著「已過時」的檔頭多活三個階段，有人拿它看 cache 會被警告擋住而不是被錯數字騙。
+- Ruling（階段 0 驗收後）: worker 在階段 0 做的七條 Ruling 全部接受，不翻案 — 每一條都有理由與代價，而且 `script_version()` 那條讓 D12 一個例外都不剩，比工單原本寫的更好 — 錯了的代價是無。
 - Ruling: cdsint 第一個版號是 `0.0.1`，階段 0 就把 `SCRIPT_VERSION` 與 `pyproject.toml` 的 `version` 一起改掉 — 監督者 2026-09-05 裁的；產品換了名字，繼續掛 `k1.1.1` 這個上游分叉的編號會讓「這是哪一版」變成要先問是哪個 repo — 錯了的代價是既有專案的 `cds-sync-version` 屬性跟新版號不符，下次匯出匯入會跳一次版本不符警告，按 `--force` 或在對話框按繼續就過，之後屬性自動寫成新值。
 - Ruling: GitHub 遠端叫 `cdsint`，建立與 push 由人做，worker 不碰 — 監督者 2026-09-05 裁的，對外動作歸人 — 錯了的代價是沒有，worker 本來就只在本機 `main` commit。
 - Ruling: 開新 repo，程式碼搬過來 — 使用者 2026-09-05 明確選的；SPEC D1 已改寫 — 錯了的代價是來源 repo 的歷史查起來要跨 repo，可接受。
