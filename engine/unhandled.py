@@ -21,6 +21,8 @@ did not. Safe as module state because IDE-side code never starts a thread
 """
 from __future__ import print_function
 
+from cds.core.text import as_text as _text
+
 _REGISTER = []
 
 
@@ -84,12 +86,3 @@ def name_of(obj):
         return _text(obj)
     except Exception:
         return "an object that will not say its name"
-
-
-def _text(value):
-    """Bytes or unicode in, unicode out. IronPython 2.7 hands back both."""
-    if isinstance(value, type(u"")):
-        return value
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return type(u"")(value)

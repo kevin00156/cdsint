@@ -24,7 +24,7 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 
 # What is left, 2026-09-05. Lower these; do not raise them.
 ALLOWED = {
-    "engine/codesys_compare_engine.py": 7,
+    "engine/codesys_compare_engine.py": 6,
     "engine/codesys_managers.py": 29,
     "engine/codesys_ui.py": 6,
     "engine/codesys_ui_diff.py": 3,

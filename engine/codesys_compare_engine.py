@@ -315,8 +315,14 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
                             property_accessors[obj_guid]['get'] = child
                         elif child_name == "SET":
                             property_accessors[obj_guid]['set'] = child
-                except:
-                    pass
+                except Exception as e:
+                    # Without its accessors the property is compared as
+                    # if GET and SET were empty, so "different" and
+                    # "identical" are both guesses. Export says whose
+                    # (entry_export.py); silence here was the odd one
+                    # out (SPEC D13).
+                    log_warning("Could not read the accessors of %s: %s"
+                                % (unhandled.name_of(obj), safe_str(e)))
 
             # Update type cache with path
             current_types[obj_guid] = (eff_type, is_xml, rel_path)

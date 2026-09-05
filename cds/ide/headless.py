@@ -35,6 +35,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from cds.core import commands, ipc, props   # noqa: E402
+from cds.core.text import as_text  # noqa: E402
 from cds.ide import entries, project, silent  # noqa: E402
 
 JOB_ENV = "CDSINT_HEADLESS_JOB"
@@ -231,10 +232,8 @@ def _why_nothing_opened(job):
 
 
 def _text(value):
-    """Bytes or unicode in, something json.dumps will take out."""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return None if value is None else type(u"")(value)
+    """as_text, but None stays None: an empty report field is null."""
+    return None if value is None else as_text(value)
 
 
 if __name__ == "__main__":

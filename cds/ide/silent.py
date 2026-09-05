@@ -28,6 +28,8 @@ import codecs
 import collections
 import sys
 
+from cds.core.text import as_text as _text
+
 # Dialog title -> (the command argument that answers it, the default).
 # A default of None means the caller has to say; this will not guess.
 YES_NO = {
@@ -392,12 +394,3 @@ class _Tee(object):
         if self._partial:
             lines.append(self._partial)
         return u"\n".join(lines)
-
-
-def _text(value):
-    """Bytes or unicode in, unicode out. IronPython 2.7 hands back both."""
-    if isinstance(value, type(u"")):
-        return value
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return type(u"")(value)
