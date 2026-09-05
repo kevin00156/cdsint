@@ -188,7 +188,9 @@ def perform_import(primary_project, base_dir, selected, unchanged_count=0):
     finalize_sync_operation(base_dir, projects_obj, is_import=True)
 
     missing = unhandled.names()
-    return entry.result(not missing, summary,
+    return entry.result(not missing,
+                        summary if not missing else
+                        summary + " -- " + unhandled.summary(),
                         updated=updated, created=created, moved=moved,
                         deleted=deleted, failed=failed,
                         identical=unchanged_count, failed_objects=missing)
@@ -231,6 +233,7 @@ def perform_export(base_dir, selected, unchanged_count=0):
                     count_removed += 1
                 except Exception as e:
                     log_error("Could not remove orphaned file " + item.get("path") + ": " + safe_str(e))
+                    unhandled.note(item.get("path"), e)
                     count_failed += 1
             continue
         
@@ -289,6 +292,7 @@ def perform_export(base_dir, selected, unchanged_count=0):
                         log_warning("Could not remove old moved file: " + safe_str(e2))
         except Exception as e:
             log_error("Export failed for " + item["name"] + ": " + safe_str(e))
+            unhandled.note(obj, e)
             count_failed += 1
     
     summary = "Updated: {}, Created: {}, Removed: {}, Failed: {} (Identical: {})".format(
@@ -301,7 +305,9 @@ def perform_export(base_dir, selected, unchanged_count=0):
     finalize_sync_operation(base_dir, projects_obj, is_import=False)
 
     missing = unhandled.names()
-    return entry.result(not missing, summary,
+    return entry.result(not missing,
+                        summary if not missing else
+                        summary + " -- " + unhandled.summary(),
                         updated=count_updated, created=count_created,
                         removed=count_removed, failed=count_failed,
                         identical=unchanged_count, failed_objects=missing)

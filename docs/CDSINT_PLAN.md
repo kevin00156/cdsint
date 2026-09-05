@@ -227,7 +227,7 @@ img/        readMe 用的圖
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
 
 - [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
-  - [ ] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
+  - [x] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
   - [ ] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [ ] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
   - [ ] `engine/codesys_ui.py` 的 `show_toast` 改 WinForms Timer（D5）。`engine/codesys_utils.py` 的 `threading.Lock` 去留寫進第 7 節第 4 項。
@@ -301,6 +301,12 @@ img/        readMe 用的圖
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
 7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+
+階段 4 新增的：
+
+- Ruling: `manager.export()` 出錯一律丟例外，回傳 `False` 只剩「沒有東西要寫」一個意思 — 原本 `False` 同時代表「這個物件沒有文字內容」和「檔案寫不出去」，而兩個呼叫端（`entry_export.export_project` 與 `entry_compare.perform_export`）都只看回傳值等不等於 `new`／`updated`／`identical`，所以寫失敗被當成沒事發生。兩個呼叫端本來就各有一個「處理這一個物件」的 try/except，例外一丟就落進去，一個命令仍然只有一個地方認定失敗，跟 `engine/unhandled.py` 檔頭講的理由同一條 — 錯了的代價是原本安靜回 `False` 的三種罕見情形（`export_native` 沒產出檔案、沒有 primary project、XML 換檔失敗）現在會讓整趟匯出 `ok=False`；如果某個物件種類本來就合法地不產出 XML，那種專案會開始每次匯出都 exit 1，那時要修的是分類而不是把判決放寬。
+- Ruling: 路徑超過 Windows 260 字元不做匯出前的預檢，也不改用 `\\?\` 前綴，就照 D13 一個一個報出名字 — 預檢要精確就得先把整棵樹分類一次才知道最長的檔名會有多長，那是多走一趟專案，違反 PRINCIPLES 第 3 條；`\\?\` 那條路在這裡沒有驗證過而且很可能不成立，引擎跑在 IDE 內的 IronPython 2.7 上，檔案是 .NET Framework 開的，那一層自己就擋 `MAX_PATH`，就算開得成，寫出來的 `.st` 是 git 與編輯器打不開的路徑，等於把失敗推到一個完全沒有登記簿的地方 — 錯了的代價是同步資料夾放得太深的人拿到的是一串逐物件的失敗清單，而不是開頭一句「你的資料夾太深」，要自己從錯誤訊息看出路徑長度是原因。
+- Ruling: `entry_compare.perform_export` 與 `perform_import` 的 summary 在有失敗時也接上 `unhandled.summary()`，跟 `export_project`、`compare_project`、`import_project` 一致 — `entry.result` 的約定是「`ok` 為 false 時 summary 就是呼叫端拿到的錯誤文字」，一句只有 `Failed: 1` 的文字沒說是誰 — 錯了的代價是無。
 
 階段 3 新增的：
 

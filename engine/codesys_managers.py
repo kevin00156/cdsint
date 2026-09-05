@@ -756,7 +756,17 @@ class ObjectManager(object):
         return "identical"
 
     def export(self, obj, context, rel_path=None):
-        """Export object to file system and update metadata"""
+        """Write this object to disk; return "new", "updated" or "identical".
+
+        False means there was nothing to write, and it is the only thing
+        False may mean. Anything that goes wrong RAISES, because the caller
+        already has one place per command that turns a raised object into a
+        named entry in engine/unhandled.py (SPEC D13) and a run that is not
+        ok (D11). A write that failed used to return False as well, so a
+        sync folder deep enough to push paths past Windows' 260 characters
+        reported a clean export of 87 files while 130 objects never reached
+        the disk at all.
+        """
         pass
     
     def update(self, obj, file_path, obj_info):
@@ -835,8 +845,7 @@ class POUManager(ObjectManager):
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
         target_dir = os.path.dirname(file_path)
-        file_name = os.path.basename(rel_path)
-        
+
         # --- CACHE SKIP OPTIMIZATION ---
         skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
         if skip:
@@ -884,13 +893,9 @@ class POUManager(ObjectManager):
             except:
                 pass  # If we can't read existing file, just overwrite
             
-        try:
-            with codecs.open(file_path, "w", "utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            log_error("Failed to write ST file " + file_name + ": " + safe_str(e))
-            return False
-            
+        with codecs.open(file_path, "w", "utf-8") as f:
+            f.write(content)
+
         if 'exported_paths' in context:
             context['exported_paths'].add(rel_path)
         self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
@@ -1057,15 +1062,12 @@ class PropertyManager(POUManager):
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
         target_dir = os.path.dirname(file_path)
-        file_name = os.path.basename(rel_path)
-        
+
         # --- CACHE SKIP OPTIMIZATION ---
         skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
         if skip:
             return skip
         # -------------------------------
-        
-        obj_name = obj.get_name()
 
         # Export Declaration
         declaration, _ = export_object_content(obj)
@@ -1111,13 +1113,9 @@ class PropertyManager(POUManager):
             except:
                 pass
 
-        try:
-            with codecs.open(file_path, "w", "utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            log_error("Failed to write Property file " + file_name + ": " + safe_str(e))
-            return False
-            
+        with codecs.open(file_path, "w", "utf-8") as f:
+            f.write(content)
+
         if 'exported_paths' in context:
             context['exported_paths'].add(rel_path)
         self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
@@ -1317,7 +1315,6 @@ class NativeManager(ObjectManager):
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
         target_dir = os.path.dirname(file_path)
-        file_name = os.path.basename(rel_path)
         is_new = not os.path.exists(file_path)
         # --- CACHE SKIP OPTIMIZATION ---
         skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=True)
@@ -1330,25 +1327,27 @@ class NativeManager(ObjectManager):
         
         # Export to a temp file first, then compare
         tmp_path = file_path + ".tmp"
+        projects_obj = resolve_projects()
+        if not (projects_obj and projects_obj.primary):
+            raise RuntimeError("Native export failed: 'projects' object not "
+                               "found or no primary project.")
         try:
-            projects_obj = resolve_projects()
-            if projects_obj and projects_obj.primary:
-                if not os.path.exists(target_dir):
-                    os.makedirs(target_dir)
-                projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
-            else:
-                log_error("Native export failed: 'projects' object not found or no primary project.")
-                return False
-        except Exception as e:
-            log_error("Native export failed for " + obj.get_name() + ": " + safe_str(e))
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir)
+            projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
+        except Exception:
+            # The half-written temp file goes, the reason does not: the
+            # caller records the object by name (SPEC D13).
             if os.path.exists(tmp_path):
-                try: os.remove(tmp_path)
-                except: pass
-            return False
-            
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+            raise
+
         if not os.path.exists(tmp_path):
-            return False
-        
+            raise RuntimeError("export_native wrote no file for " + rel_path)
+
         new_hash = self._hash_file(tmp_path)
         
         # Compare hashes
@@ -1362,14 +1361,10 @@ class NativeManager(ObjectManager):
             return "identical"
         
         # Content changed or new - replace with temp file
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            os.rename(tmp_path, file_path)
-        except Exception as e:
-            log_error("Failed to replace XML file " + file_name + ": " + safe_str(e))
-            return False
-            
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        os.rename(tmp_path, file_path)
+
         if 'exported_paths' in context:
             context['exported_paths'].add(rel_path)
         self._update_cache_entry(obj, rel_path, file_path, context, new_hash)

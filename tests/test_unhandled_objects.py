@@ -212,3 +212,133 @@ def test_export_does_not_delete_orphans_it_cannot_account_for(one_bad_object,
     result = one_bad_object["export"]()
     assert orphan.exists()
     assert result["data"]["removed"] == 0
+
+
+# --- a write the disk refuses ----------------------------------------------
+
+class Text(object):
+    def __init__(self, text):
+        self.text = text
+
+
+class Pou(object):
+    """An ordinary POU with content, which export will try to write out."""
+
+    has_textual_declaration = True
+    has_textual_implementation = True
+    parent = None
+
+    def __init__(self, name="MC_Main"):
+        from engine.codesys_constants import TYPE_GUIDS
+        self._name = name
+        self.type = TYPE_GUIDS["pou"]
+        self.guid = "guid-" + name
+        self.textual_declaration = Text(u"FUNCTION_BLOCK %s\nEND_VAR\n" % name)
+        self.textual_implementation = Text(u"x := 1;\n")
+
+    def get_name(self):
+        return self._name
+
+    def get_children(self, recursive=False):
+        return []
+
+
+class RefusingCodecs(object):
+    """The codecs module, but every write raises the way a long path does.
+
+    Windows answers a path over 260 characters with "The system cannot find
+    a part of the path", which is what the supervisor saw 130 times in one
+    run while the result said the export was fine.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def open(self, path, mode="r", *args, **kwargs):
+        if "w" in mode:
+            raise IOError(3, "The system cannot find the path specified", path)
+        return self._real.open(path, mode, *args, **kwargs)
+
+
+@pytest.fixture
+def export_onto_a_disk_that_refuses(load_engine, monkeypatch, tmp_path):
+    """An export of one healthy object whose file cannot be written."""
+    import codecs
+
+    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
+                "codesys_compare_engine"):
+        load_engine(dep)
+    export = load_engine("entry_export")
+    managers = sys.modules["engine.codesys_managers"]
+
+    sync = str(tmp_path)
+    version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
+    project = Project({"cds-sync-folder": sync, "cds-sync-version": version},
+                      [Pou()], str(tmp_path / "Fake.project"))
+    projects = Projects(project)
+    monkeypatch.setattr(export, "projects", projects, raising=False)
+    monkeypatch.setattr(export, "system", DeafSystem(), raising=False)
+    # Only the manager's writes are refused: the export writes .gitattributes
+    # and the sync cache through other modules, and those are not what this
+    # test is about.
+    monkeypatch.setattr(managers, "codecs", RefusingCodecs(codecs))
+    return lambda: export.export_project(sync, projects)
+
+
+def test_a_file_that_could_not_be_written_is_named_and_the_export_is_not_ok(
+        export_onto_a_disk_that_refuses):
+    # Disk is the source of truth, so an object whose .st never reached the
+    # disk did not get exported, however cleanly the rest of the run went.
+    result = export_onto_a_disk_that_refuses()
+    assert result["ok"] is False
+    assert result["data"]["failed_objects"] == ["MC_Main"]
+    assert "MC_Main" in result["summary"]
+
+
+# --- the same, from the compare dialog's export action ----------------------
+
+@pytest.fixture
+def compare_export(load_engine, monkeypatch, tmp_path):
+    """The compare dialog's "export" action, ready to be handed a selection."""
+    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
+                "codesys_compare_engine"):
+        load_engine(dep)
+    compare = load_engine("entry_compare")
+
+    version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
+    project = Project({"cds-sync-folder": str(tmp_path),
+                       "cds-sync-version": version},
+                      [], str(tmp_path / "Fake.project"))
+    monkeypatch.setattr(compare, "projects", Projects(project), raising=False)
+    monkeypatch.setattr(compare, "system", DeafSystem(), raising=False)
+    return compare
+
+
+def test_compare_export_names_an_object_it_could_not_write(
+        compare_export, monkeypatch, tmp_path):
+    import codecs
+
+    monkeypatch.setattr(sys.modules["engine.codesys_managers"], "codecs",
+                        RefusingCodecs(codecs))
+    selected = [{"obj": Pou(), "name": "MC_Main", "path": "MC_Main.st"}]
+
+    result = compare_export.perform_export(str(tmp_path), selected)
+
+    assert result["ok"] is False
+    assert result["data"]["failed_objects"] == ["MC_Main"]
+    assert "MC_Main" in result["summary"]
+
+
+def test_compare_export_names_an_orphan_it_could_not_delete(
+        compare_export, tmp_path):
+    # Windows refuses to delete a file another handle still has open, which
+    # is the everyday version of this: the .st is open in an editor.
+    doomed = tmp_path / "Somebody.st"
+    doomed.write_text(u"FUNCTION_BLOCK Somebody\n", encoding="utf-8")
+    selected = [{"obj": None, "file_path": str(doomed), "path": "Somebody.st"}]
+
+    with open(str(doomed)) as _holding_it_open:
+        result = compare_export.perform_export(str(tmp_path), selected)
+
+    assert result["ok"] is False
+    assert result["data"]["failed_objects"] == ["Somebody.st"]
