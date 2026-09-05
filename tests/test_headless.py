@@ -468,6 +468,25 @@ def test_the_lock_our_own_killed_ide_left_behind_is_cleared(machine,
     assert "lock" in capsys.readouterr().err
 
 
+def test_a_lock_that_was_there_before_we_started_is_left_alone(machine,
+                                                               monkeypatch,
+                                                               capsys):
+    # Suggestion 1. --force-lock says "go ahead anyway", not "that lock is
+    # mine". If the other IDE really was open, clearing its lock on the way
+    # out lets the next run in beside it, and two IDEs writing one .project
+    # ends with the later save winning.
+    (machine / "line.project").write_text("binary", encoding="utf-8")
+    (machine / "line.project.~u").write_text("", encoding="utf-8")
+    launching(monkeypatch, code=None)
+    started = make(machine, monkeypatch, timeout=0.01, force_lock=True)
+
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+
+    assert os.path.exists(started.project + ".~u")
+    assert "was there before" in capsys.readouterr().err
+
+
 def test_a_process_that_survives_its_own_kill_keeps_its_lock(machine,
                                                              monkeypatch):
     # Still running means still possibly writing the project file. A lock

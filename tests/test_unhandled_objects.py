@@ -9,6 +9,7 @@ compare and import lost all 229 objects to a traceback. The fix is one place
 not ok (SPEC D13).
 """
 import sys
+import types
 
 import pytest
 
@@ -212,6 +213,28 @@ def test_export_does_not_delete_orphans_it_cannot_account_for(one_bad_object,
     result = one_bad_object["export"]()
     assert orphan.exists()
     assert result["data"]["removed"] == 0
+
+
+def test_import_does_not_create_objects_for_files_it_cannot_account_for(
+        one_bad_object, tmp_path, monkeypatch):
+    # Suggestion 2, the mirror of the orphan rule above. The unreadable
+    # object never reaches Pass 2, so nothing claims its .st and the file
+    # looks new. Creating an object for it makes a duplicate of something
+    # the project already has -- or, paired with an orphan by filename, a
+    # move of the wrong thing.
+    said_yes = types.ModuleType("engine.codesys_ui")
+    said_yes.ask_yes_no = lambda title, message: True
+    said_yes.ask_yes_no_cancel = lambda title, message: True
+    monkeypatch.setitem(sys.modules, "engine.codesys_ui", said_yes)
+    stray = tmp_path / "Somebody.st"
+    stray.write_text(u"FUNCTION_BLOCK Somebody\nEND_VAR\n", encoding="utf-8")
+
+    result = one_bad_object["import"]()
+
+    assert result["data"]["created"] == 0
+    assert result["data"]["not_created"] == ["Somebody.st"]
+    # And it says so, rather than reporting a clean "nothing to import".
+    assert "Somebody.st" in result["summary"]
 
 
 # --- a write the disk refuses ----------------------------------------------

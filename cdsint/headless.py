@@ -61,6 +61,10 @@ class Headless(object):
         # cds-sync-folder, and the IDE's working directory is not the shell's.
         self._sync_dir = os.path.abspath(sync_dir) if sync_dir else None
         self.timeout = timeout
+        # Remembered before anything of ours could have made one, because
+        # _clear_our_lock has no other way to tell its own mess from
+        # somebody else's (--force-lock lets a real one through).
+        self._lock_was_there = lock.held(self.project) is not None
         self._check_project(force_lock)
         installs.warn_if_elevated(self.install)
 
@@ -185,13 +189,23 @@ class Headless(object):
         return None
 
     def _clear_our_lock(self):
-        """Remove the lock the IDE we killed left behind. It is ours.
+        """Remove the lock the IDE we killed left behind, if it is ours.
 
         A project closed properly takes its own lock with it; one that was
         killed cannot. cdsint started that IDE and knows which project it
         opened, so making the caller pass --force-lock next time would be
         asking them to vouch for a mess this made (SPEC 6.4).
+
+        Ours means there was no lock when this object was built. With
+        --force-lock there may have been a real one -- another IDE with the
+        project genuinely open -- and clearing that would let the next run
+        open it alongside, which ends with one of the two saves lost.
         """
+        if self._lock_was_there:
+            print("the lock file was there before we started, so it is not "
+                  "ours to remove: " + (lock.held(self.project) or ""),
+                  file=sys.stderr)
+            return
         removed, failures = lock.clear(self.project)
         for path in removed:
             print("removed the lock file left by the IDE we killed: " + path,

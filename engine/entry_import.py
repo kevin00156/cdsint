@@ -111,6 +111,26 @@ def import_project(projects_obj=None):
     new_on_disk = results["new_on_disk"]
     unchanged_count = results["unchanged_count"]
     
+    # An object this run could not read never reached the comparison, so
+    # nothing claims its .st and the file looks new. Creating an object for
+    # it duplicates something the project already has, or -- paired with a
+    # real orphan by filename -- moves the wrong one. Export refuses to
+    # delete orphans for the same reason and in the same words
+    # (entry_export.cleanup_orphaned_files); this is that rule pointed the
+    # other way. Updates and deletions still run: each names an IDE object
+    # this run did read.
+    not_created = []
+    withheld = ""
+    if unhandled.any_so_far() and new_on_disk:
+        not_created = [item["path"] for item in new_on_disk]
+        new_on_disk = []
+        withheld = ("Not creating %d file(s) this run cannot account for: it "
+                    "could not read every object, so some of those files may "
+                    "already belong to one of them. %s"
+                    % (len(not_created), ", ".join(not_created)))
+        print(withheld)
+        log_warning(withheld)
+
     # For import, we care about ANY difference (disk or ide side) — disk wins
     # Also include new files found on disk, and DELETE orphans from IDE
     to_import = []
@@ -144,6 +164,8 @@ def import_project(projects_obj=None):
     if not to_import:
         elapsed = time.time() - start_time - get_interaction_seconds()
         msg = "No changes to import.\nAll " + str(unchanged_count) + " objects are in sync."
+        if withheld:
+            msg += "\n" + withheld
         print(msg)
         system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
         missing = unhandled.names()
@@ -152,7 +174,7 @@ def import_project(projects_obj=None):
         return entry.result(not missing, msg, updated=0, created=0, moved=0,
                             deleted=0, failed=len(missing),
                             identical=unchanged_count,
-                            failed_objects=missing)
+                            failed_objects=missing, not_created=not_created)
 
 
     # Show what we're about to import
@@ -207,6 +229,8 @@ def import_project(projects_obj=None):
     print("")
     print("=== Import Complete ===")
     summary = "Updated: " + str(updated) + ", Created: " + str(created) + ", Moved: " + str(moved) + ", Deleted: " + str(deleted) + ", Failed: " + str(failed) + " (Identical: " + str(unchanged_count) + ")"
+    if withheld:
+        summary += " -- " + withheld
     print(summary)
     if backup_filename:
         print("Backup created: .project/" + backup_filename)
@@ -245,7 +269,8 @@ def import_project(projects_obj=None):
                         summary + " -- " + unhandled.summary(),
                         updated=updated, created=created, moved=moved,
                         deleted=deleted, failed=failed,
-                        identical=unchanged_count, failed_objects=missing)
+                        identical=unchanged_count, failed_objects=missing,
+                        not_created=not_created)
 
 
 def main():
