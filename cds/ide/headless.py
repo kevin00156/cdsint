@@ -138,6 +138,7 @@ def run_one(ide_globals, command, args):
         messages=outcome.messages,
         stdout_tail=entries.tail(ide_globals, command, outcome),
         data=outcome.data(),
+        denied=outcome.denied,
         needs_input=None if outcome.needs is None else outcome.needs.as_record())
 
 

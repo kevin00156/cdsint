@@ -100,7 +100,10 @@
 
 **D8 只有碰 PLC 的動作受權限管，兩層。** 專案屬性 `cds-sync-plc` 決定這個專案允不允許，`-y` 確認這一次呼叫。看門人模式一律拒絕 PLC 命令。
 理由：一個 agent 下錯命令現在能直接下載到 PLC。`export`、`import`、`compare`、`build` 不碰硬體，把它們放進權限清單只會讓每個命令多一次預檢，換來三個場景都用不到的功能。看門人跑在使用者的 IDE 裡，登入會搶走使用者的線上狀態。
-現況：沒有。
+現況：已做（階段 3）。第一層在 `cds/ide/permit.py`，攔在 `cds/ide/entries.py` 按下引擎本體之前，不通過就回 exit 5；
+第二層是 `-y`，走 `cds/ide/silent.py` 那張對話框表，跟匯入的 `-y` 同一個機制。
+看門人那半有兩道：CLI 的 argparse 收下 `--target` 再拒絕並說明理由（exit 2），
+`cds/ide/entries.py` 的 `WATCHER_REFUSES` 讓手寫的命令檔也得到同一句話而不是「不認得這個命令」。
 
 **D9 產品名是 `cdsint`。** 同一個字串用在 pip 套件、Python 套件、命令、`%LOCALAPPDATA%` 目錄、ScriptDir 子資料夾、視窗標題。
 理由：上游同名、93 顆星，readMe 與安裝腳本到今天還指著上游。沒有連字號，所以 pip 名、import 名、命令名不用兩種拼法。`cds-ide` 會跟它驅動的 IDE 撞名，寫文件時每句都得多解釋一次。
@@ -124,7 +127,9 @@
 
 **D14 帳密不准出現在命令列、檔案、report 裡。** 只從環境變數讀。
 理由：report 會進 git 或被貼到工單。
-現況：探路腳本已經這樣做。
+現況：已做（階段 3）。`engine/entry_plc.py` 的 `USER_ENV`、`PASS_ENV` 是唯一讀它們的地方；
+密碼交給 `set_default_credentials` 之後就不再出現在任何字串裡，帳號名字會出現在 notes（誰登入的是事後判讀的依據）。
+`tests/test_plc.py` 有一條跑完一整趟下載再確認結果紀錄、stdout、messages 裡都沒有那個密碼。
 
 **D15 `.st` 格式與 pragma 名稱不准改。** 要改就是一個大版本。
 理由：現有專案的 git 歷史都是這個格式，這是相容性的底線。
@@ -193,7 +198,9 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 
 2 和 4 是同一個問題的兩種原因，都是「這個專案有沒有活著的 IDE」，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
 
-`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`。
+`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`denied`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`。
+
+`denied` 平常是 `null`，被專案屬性擋下來的時候是 `{"property", "action"}`，exit code 就是從它決定 5 的。它跟 `needs_input` 分開兩個欄位，因為兩者要呼叫端做的事不一樣：`needs_input` 是「補一個旗標再跑一次」，`denied` 是「請人去 IDE 裡改一個屬性」。
 
 ### 4.4 專案屬性
 
@@ -366,15 +373,28 @@ D8 的落地。
 
 其他所有命令不受權限管。
 
+現況：已做（階段 3），在 `cds/ide/permit.py`。屬性以逗號切開、去空白、轉小寫再跟 `connect`、`download` 兩個字對照，
+所以 `DOWNLOAD ` 算數而 `downlaod` 什麼都不開；拼錯的字不會被猜成正確的那個，而是原樣出現在拒絕訊息裡讓人看見。
+拒絕訊息說三件事：現在的值是什麼、要改成什麼、去哪裡改（Project Information > Properties）。
+`config set` 那條原本就有，現在跟 `permit.PROPERTY` 共用同一個字串常數。
+
 ### 6.6 PLC 連線與下載
 
-從探針搬，放在引擎裡跟 `codesys_online.pyw` 並排（D12），只在 `--project` 形式提供（D8）。
+從探針搬，放在引擎裡跟 `codesys_online.py` 並排（D12），只在 `--project` 形式提供（D8）。
 
 - `connect`：`online.set_auth_fallback_modes(None)` 關掉憑證對話框，帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀（D14）。列閘道，`find_address_by_ip`，`set_gateway_and_ip_address` 設到裝置節點，`create_online_device` 連線，列 `PlcLogic/Application`，拉 `Application.crc`，跟本機 `create_boot_application` 產出的 `.crc` 比第 5 到 8 個位元組。有原始碼封存就拉回來。
 - `download`：`login(OnlineChangeOption.Never, False)` 完整下載，`create_boot_application`，`start`，`logout`，再建一次 boot app 比 CRC。
 - 這兩個命令的 report 要包含比對結果 `MATCH` 或 `DIFFERENT`，pipeline 拿這個當閘門。
 
-現況：探針的程式碼有，註解裡有實測痕跡，但 9 月 4 日留下的 report 沒跑到這段。搬過來之後要在台架上重驗一次。
+現況：已搬（階段 3），在 `engine/entry_plc.py`，跟 `codesys_online.py` 並排。台架上還沒驗過，那一條要人。
+
+搬過來時定的幾件事。`connect` 只在給了 `--gateway` 的時候才動裝置節點的閘道設定；沒給就用專案自己帶的，
+因為那是別人設過的答案，一個唯讀命令不該順手改掉它。`--port` 不給就用 11740。
+專案裡不只一個裝置節點時兩個命令都拒絕並列出名字，沒有旗標可以指定哪一個，猜一個下載目標不是可以有預設值的事（D7）。
+比對的三種答案是 `MATCH`、`DIFFERENT`、`UNKNOWN`，兩邊有一邊拿不到就是 `UNKNOWN`；只有 `MATCH` 是 exit 0，
+理由是這兩個命令外面沒有 `verify` 那種把發現變成判決的東西，退出碼本身就得是判決。
+本機的 boot application 與從 PLC 拉回來的檔案寫在 `%TEMP%\cdsint\plc\<專案名>\`，同一個專案每次覆蓋，
+寫之前先刪，免得某次呼叫沒寫檔而讓上一趟的答案被讀成這一趟的。
 
 ### 6.7 設定流程
 

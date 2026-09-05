@@ -11,13 +11,18 @@ this file never imports the engine, which is the direction SPEC D12 forbids.
 `config` is the exception: project properties are plumbing, not object-tree
 work, so cds/ide/config.py answers it and the result is wrapped to look like
 any other command's.
+
+The plc commands are the other odd pair. They reach the same engine bodies
+the same way, but only one of the two callers may press them and only when
+the project says so, so both gates — cds/ide/permit.py and WATCHER_REFUSES
+below — sit here, in front of the press.
 """
 from __future__ import print_function
 
 import os
 import sys
 
-from cds.ide import config, messages, silent
+from cds.ide import config, messages, permit, silent
 
 # The install root, the directory that holds engine/ and cds/:
 # cds/ide/entries.py -> ../../
@@ -26,16 +31,37 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 ENGINE_PACKAGE = "engine"
 
 # Command -> the entry body it presses, and the function that is its button.
-# These are the bodies in engine/, not the stubs the IDE menu scans.
+# These are the bodies in engine/, not the stubs the IDE menu scans. The two
+# plc commands share a file and differ by which function is pressed, so the
+# action needs no dispatcher of its own.
 SCRIPTS = {
     "export": ("entry_export.py", "main"),
     "import": ("entry_import.py", "main"),
     "compare": ("entry_compare.py", "main"),
     "build": ("entry_build.py", "main"),
+    "plc connect": ("entry_plc.py", "connect"),
+    "plc download": ("entry_plc.py", "download"),
 }
 
-# Every command a project has to be open for, in the order verify runs them.
-COMMANDS = sorted(SCRIPTS) + ["config"]
+# What the watcher will not run, whoever asks. Logging into a PLC takes the
+# online session away from the person sitting in front of that IDE, so the
+# watcher has no business doing it (SPEC D8). The CLI stops a `plc --target`
+# at the parser; this is the same rule where a hand-written command file
+# would otherwise land, and it answers by name rather than by pretending the
+# command does not exist.
+WATCHER_REFUSES = dict(
+    (name, "%s only runs in the --project form. The watcher lives inside an "
+           "IDE somebody is using, and logging into a PLC would take their "
+           "online session away from them (SPEC D8)." % name)
+    for name in SCRIPTS if name.startswith("plc "))
+
+# Every command the watcher answers by pressing an engine body.
+COMMANDS = sorted(set(SCRIPTS) - set(WATCHER_REFUSES)) + ["config"]
+
+# What the two layers of the PLC gate are called on the wire, so the pieces
+# either side of it — the CLI's subcommand, this table, cds/ide/permit.py —
+# do not each spell the split their own way.
+PLC_PREFIX = "plc "
 
 
 def forget_engine():
@@ -60,10 +86,30 @@ def run(ide_globals, command, args):
     """
     if command == "config":
         return silent.Outcome([], "", result=config.run(ide_globals, args))
+    refused = _not_allowed(ide_globals, command)
+    if refused is not None:
+        return refused
     script, entry = SCRIPTS[command]
     forget_engine()
     return silent.run(ide_globals, os.path.join(REPO_ROOT, "engine", script),
                       entry, args)
+
+
+def _not_allowed(ide_globals, command):
+    """The refusal when the project does not allow this PLC command, else None.
+
+    Checked here rather than inside the body because the body is the thing
+    being guarded: an engine module that has already been loaded and handed
+    the IDE's globals has started, and "it stopped early" is not the same
+    promise as "it never ran" (SPEC 6.5).
+    """
+    if not command.startswith(PLC_PREFIX):
+        return None
+    action = command[len(PLC_PREFIX):]
+    reason = permit.refusal(ide_globals.get("projects"), action)
+    if reason is None:
+        return None
+    return silent.Outcome([], "", error=reason, denied=permit.record(action))
 
 
 def tail(ide_globals, command, outcome):

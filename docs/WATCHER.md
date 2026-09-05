@@ -70,11 +70,14 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 {"id": "1725453665123-a3f9c1", "ok": true, "command": "import",
  "started_at": "...", "finished_at": "...", "elapsed_s": 4.2,
  "messages": [{"level": "info", "text": "Import complete! ..."}],
- "stdout_tail": "…最後 200 行…", "error": null, "needs_input": null, "data": null}
+ "stdout_tail": "…最後 200 行…", "error": null, "needs_input": null,
+ "denied": null, "data": null}
 ```
 
 - `ok` 是 false 的時候 `error` 一定有文字。
 - 引擎問了問題而命令參數沒帶答案，`ok` 是 false，`needs_input` 放問題原文與該用哪個旗標回答。
+- `denied` 只有專案屬性擋下 `plc` 命令的時候才有值，而看門人根本不跑 `plc`（見底下的命令表），
+  所以走這個協定的結果檔裡它永遠是 null。它在這裡是因為兩種形式共用同一個結果紀錄。
 - 寫檔一律先寫 `<名稱>.tmp` 再 rename 成正式名稱，讀的一方永遠看不到半個檔，也永遠忽略 `.tmp`。
 - CLI 讀到結果檔就刪掉。看門人啟動時清掉 `result\` 裡超過一小時的殘留。
 
@@ -89,6 +92,8 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 | `import` | `yes` 必要、`force` 預設 false | 「Confirm Import」由 `yes` 回答，沒給回 `needs_input`；「Version Mismatch」與「Computer Mismatch」由 `force` 回答，預設不繼續 |
 | `compare` | 無 | 互動式挑選視窗在無人模式開不了，換成一則寫著數字的訊息；逐物件的清單本來就印在 stdout，會進 `stdout_tail` |
 | `build` | 多個 application 時要 `app` | `system.ui.choose` 用 `app` 的名字對應選項，沒給回 `needs_input` |
+| `config` | `key`、`value`（`value` 是 None 就是讀） | 無 |
+| `plc connect`、`plc download` | — | 看門人一律拒絕，回一句說明理由的錯誤。理由是它跑在別人正在用的 IDE 裡，登入控制器會搶走那個人的線上狀態（SPEC D8）。這兩個命令只有 `--project` 形式有 |
 
 ## 5. 一拍做什麼
 

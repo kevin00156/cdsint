@@ -218,10 +218,11 @@ img/        readMe 用的圖
 
   - 監督者驗證（2026-09-05 19:50，收尾二之後）：`python -m pytest tests -q` 與根目錄各 535 passed，監督者自己跑的。監督者親自在 `%TEMP%\cdsint-sup\` 底下複製 softplc、`export --project` 229 個物件 0 失敗，再 `verify -y --project` **不帶 `--timeout`**：exit 0，122 秒，report `timed_out` false、`exit_code_trusted` true、四步全 ok、build 0 errors，副本旁沒有鎖檔。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 不存在。
 
-- [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
-  - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
-  - [ ] 驗收：用假 IDE 物件的測試涵蓋四條：屬性空時 `plc download -y` exit 5 且引擎的 login 沒被呼叫；屬性有 `download` 但沒 `-y` 時回 `needs_input`、exit 1、login 沒被呼叫；`plc connect --target` 被拒絕；report 的 CRC 欄位 `MATCH` 與 `DIFFERENT` 兩種各有測試。
-  - [ ] 驗收：`grep -rn "CDS_DEV_PASS" .` 只出現在讀環境變數的那一行與文件裡。
+- [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）——施工做完，只剩台架那條「還需要人」。
+  - [x] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。——權限在新的 `cds/ide/permit.py`，攔在 `cds/ide/entries.py` 按下引擎本體之前；exit 5 靠結果紀錄新的 `denied` 欄位決定。引擎本體是新的 `engine/entry_plc.py`。`--target` 由 argparse 收下再拒絕（exit 2），訊息說 D8 的理由；看門人那邊也有一份同樣的拒絕，給手寫命令檔用。`config set cds-sync-plc` 原本就拒絕，現在跟 `permit.PROPERTY` 共用同一個常數。
+  - [x] 驗收：用假 IDE 物件的測試涵蓋四條：屬性空時 `plc download -y` exit 5 且引擎的 login 沒被呼叫；屬性有 `download` 但沒 `-y` 時回 `needs_input`、exit 1、login 沒被呼叫；`plc connect --target` 被拒絕；report 的 CRC 欄位 `MATCH` 與 `DIFFERENT` 兩種各有測試。——`tests/test_plc.py` 61 條，四條都有；「login 沒被呼叫」那兩條除了看假的 online 物件沒被登入，還多一條證明引擎根本沒被載入。全套 596 passed。
+  - [x] 驗收：`grep -rn "CDS_DEV_PASS" .` 只出現在讀環境變數的那一行與文件裡。——程式碼裡只有 `engine/entry_plc.py:46` 的 `PASS_ENV = "CDS_DEV_PASS"` 一處，其餘三處在 `docs/SPEC.md` 與本工單。另外有一條測試：把密碼設成一個哨兵字串跑完一整趟下載，確認結果紀錄、stdout、messages 裡都沒有它。
+  - [x] 驗收（工單沒寫，worker 加的）：新模組在真的 IronPython 裡 import 得起來。——`tools/probe_imports.py` 在原廠 3.5.21.40（IronPython 2.7.12）34.7 秒與 Lenze 3.24（2.7.7）173.7 秒各無頭跑一次，32 個模組全 ok、最後一行 OK。順手修好那份清單：它還列著階段 1 就刪掉的 `engine.entry_directory` 與 `engine.entry_parameters`，現在跑一定 FAILED。兩個行程都自己退出，`%TEMP%\cdsint-work\` 已刪。
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。
 
 - [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
@@ -298,6 +299,22 @@ img/        readMe 用的圖
 5. `cdsint list` 找不到看門人時的 exit code。工單階段 0 的驗收寫 exit 2，程式碼與 `tests/test_cli.py` 都是 exit 0。見底下的 Ruling。
 6. `tools/cache_doctor.py` 要重寫成呼叫 `file_signature()`。它現在重放的是 `95fdfbf` 修掉的舊判斷式，對現行的 cache 會報出沒有意義的數字。檔頭已加警告，程式沒動。（監督者已裁：階段 4 做。）
 7. 階段 2 冒出來、沒有處理的：這台機器上的既有專案 `cds-sync-version` 是 `k1.1.1`，而工具是 `0.0.1`，所以每一趟 `import`／`export`／`verify` 都撞版本不符。`save_sync_metadata` 會把屬性寫成新值，但只有在專案存檔之後才留得住，而 softplc 與 Shm 兩個專案的 `cds-sync-save-after-export` 都是 False，所以它不會自己好起來。今天的解法是每次帶 `--force`，或人跑一次 `cdsint config set cds-sync-version=0.0.1`（那個命令會存檔）。這是引擎行為，不在階段 2 的範圍內；記在這裡是因為它讓每一條真 IDE 的驗收都要多一個旗標。
+
+階段 3 新增的：
+
+- Ruling: `denied` 是結果紀錄的一個獨立欄位，不是 `error` 裡的一句話 — exit code 是一個決定，而從錯誤訊息的字串比對出「這是被拒絕」不是決定，是猜；`needs_input` 早就是這個形狀，兩者要呼叫端做的事也剛好相反（補旗標 vs. 請人去改屬性） — 錯了的代價是 SPEC 4.3 的欄位表多一格，而看門人那條路上它永遠是 null。
+- Ruling: 兩個 PLC 命令在協定上叫 `plc connect` 與 `plc download`，不是一個 `plc` 配 args 裡的 action — `cds/ide/entries.py` 那張表就分得開「一個唯讀、一個會改機器」，不必再寫一個 dispatcher 把差別讀回來；報告與輸出上也直接看得出跑的是哪一個 — 錯了的代價是 `SCRIPTS` 的鍵帶一個空白。
+- Ruling: 權限攔在 `cds/ide/entries.py` 按下引擎本體之前，不在引擎本體裡 — 引擎正是被守的那個東西，一個已經載入、已經拿到 IDE 全域的模組就是已經開始跑了，「它中途就停了」跟「它從來沒跑」不是同一個承諾 — 錯了的代價是 `cds/ide/` 多一個檔案（`permit.py`）。
+- Ruling: `plc` 配 `--target` 走 `parser.error()`、exit 2，不是收下之後回 exit 5 — 這是「旗標組合不合法」，跟 `--target` 配 `--project` 同一類（階段 2 收尾那條 Ruling）；exit 5 的意思只有一個：專案屬性沒開放 — 錯了的代價是無，訊息裡照樣說 D8 的理由。
+- Ruling: 比對有三種答案，`UNKNOWN` 跟 `DIFFERENT` 一樣是 exit 1 — 「比不出來」讀起來絕不能跟「一致」一樣，那正是 SPEC 目標 6 要消掉的沉默失敗；而它跟 `DIFFERENT` 分開，是因為兩者要人做的事不同：`DIFFERENT` 要下載，`UNKNOWN` 要先查為什麼沒東西可比 — 錯了的代價是控制器上什麼都沒載入的時候 `connect` 也是 exit 1；summary 會把缺的是哪一半講清楚。
+- Ruling: 兩個命令都是「只有 `MATCH` 才 exit 0」 — `compare` 可以回報差異又算 `ok`，因為外面有 `verify` 把它的數字變成判決；PLC 這兩個外面沒有那種東西，退出碼本身就得是判決，而 SPEC 6.6 說的「pipeline 拿這個當閘門」講的正是只讀退出碼的呼叫端 — 錯了的代價是想「只看看」的人也會拿到非零退出碼；`--json` 的 `data.crc` 仍然分得出三種情況。
+- Ruling: 沒給 `--gateway` 就完全不動專案的閘道設定 — 專案裡帶的是別人設過的答案，一個唯讀命令順手改掉它就是在改被問的那個東西；`--gateway` 是給「同一個專案換一套 IDE 開，閘道跟著 profile 走」那個已知情況用的逃生口 — 錯了的代價是那個情況下第一次跑會拿到 "Gateway not configured properly"，要自己補 `--gateway`。`--port` 不給用 11740。
+- Ruling: 專案裡不只一個裝置節點就拒絕並列出名字 — 下載到哪一台控制器沒有安全的預設值，也沒有旗標可以回答（D7） — 錯了的代價是真的有多裝置專案的人要等一個 `--device` 旗標；今天先讓它停下來說清楚。
+- Ruling: 下載的 `-y` 走 `cds/ide/silent.py` 那張對話框表（新標題 `Confirm PLC Download`），不是在引擎裡直接讀 `command_args["yes"]` — 走那張表它才跟 `import` 的 `-y` 是同一個東西：`needs_input.arg` 自己就會是 `yes`，兩種形式與 `--json` 都不用特別處理 — 錯了的代價是 `tests/test_silent.py` 的 `DRIVEN_FILES` 要加 `engine/entry_plc.py`（那條測試會抓）。
+- Ruling: `--gateway`、`--port` 走一個注入的全域 `command_args`（`silent.ARGS_GLOBAL`），不是新增一種呼叫慣例 — 這個 codebase 現有的每一個旗標都是某個對話框的答案，而閘道位址不是任何人被問過的問題，走不了那條路；引擎本體本來就靠 CODESYS 注入的全域（`system`、`projects`）拿東西，多一個同類的比改掉四支本體的呼叫形狀便宜。注入在 exec 之後做，所以本體寫的模組層預設值不會反過來蓋掉它 — 錯了的代價是現在只有一個檔案用它，讀 `entry_plc.py` 的人得先知道這個名字是誰放進來的（檔頭有寫）。
+- Ruling: `plc` 也要 `--sync-dir` — 階段 2 收尾定的是「每一個有 `--project` 形式的命令都要，`config` 也不例外」，一條沒有例外的規則比一條「除了 plc」好記 — 錯了的代價是 `plc` 根本不讀同步資料夾，呼叫端還是要多打一個旗標。
+- Ruling: `cdsint/cli.py` 拆出 `cdsint/flags.py` — 加完 plc 之後 cli.py 是 354 行，超過階段 2 那條「`cdsint/` 每個模組不超過 300 行」的驗收；拆的判準跟階段 2 那次一樣是「這段話是關於誰的」：命令列長什麼樣、哪些旗標組合不合法是一件事，解析完之後要做什麼是另一件 — 錯了的代價是多一個檔案要開；cli.py 回到 133 行，flags.py 250 行。
+- Ruling: PLC 的暫存檔（本機 boot application、從控制器拉回來的 `.crc` 與原始碼封存）寫在 `%TEMP%\cdsint\plc\<專案名>\`，同一個專案每次覆蓋，而且每個檔案寫之前先刪 — 用固定路徑是為了不在 TEMP 留一串編號目錄，而固定路徑的代價就是「某次呼叫回來了但沒寫檔」會讓上一趟的答案被讀成這一趟的，所以先刪；`tests/test_plc.py` 有一條就是拿一個「回來但不寫檔」的假 IDE 釘住這件事 — 錯了的代價是同一個專案兩個 cdsint 同時跑 PLC 命令會互相踩；那件事今天不會發生，因為控制器一次只接一個。
 
 階段 2 收尾二新增的：
 

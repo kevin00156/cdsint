@@ -36,7 +36,7 @@ def find_logged_in_applications(project, caller_globals=None):
     Empty when nothing is logged in, and equally when the online API is absent
     or unable to answer (no gateway, script run outside the IDE, ...).
     """
-    online_api = _resolve_online(caller_globals)
+    online_api = resolve_online(caller_globals)
     if online_api is None:
         log_warning("Login pre-flight skipped: the CODESYS 'online' API is not "
                     "reachable from this script run")
@@ -56,9 +56,7 @@ def logged_in_block_message(app_labels):
     )
 
 
-# --- Internals ---
-
-def _resolve_online(caller_globals=None):
+def resolve_online(caller_globals=None):
     """The CODESYS 'online' scripting global, or None outside the IDE.
 
     Mirrors resolve_system in codesys_utils: the global is injected into the
@@ -76,6 +74,8 @@ def _resolve_online(caller_globals=None):
         pass
     return sys.modules.get("online")
 
+
+# --- Internals ---
 
 def _find_applications(project):
     """Every application object in the project (bounded, pruned walk).

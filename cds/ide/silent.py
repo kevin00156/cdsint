@@ -34,6 +34,7 @@ YES_NO = {
     "Delete Orphaned Files?": ("delete_orphans", False),
     "Version Mismatch Warning": ("force", False),
     "Confirm Import": ("yes", None),
+    "Confirm PLC Download": ("yes", None),
 }
 
 # Answering "yes" here would open the sync-folder dialog, which needs a
@@ -43,6 +44,18 @@ YES_NO_CANCEL = {
 }
 
 STDOUT_TAIL_LINES = 200
+
+# The name the command's flags appear under inside a body's namespace. The
+# bodies were menu scripts: CODESYS drops `system` and `projects` straight
+# into a script's globals and the script reads them from there, so a flag the
+# menu never had is one more injected global rather than a new calling
+# convention. It goes in after the body's module-level code has run, so a
+# body that defines a default cannot end up reading its own placeholder.
+#
+# Only engine/entry_plc.py needs it: every other flag this codebase has is
+# the answer to a dialog, and those arrive through YES_NO above. A gateway
+# address is not a question anybody was asked.
+ARGS_GLOBAL = "command_args"
 
 # The engine package, by name only. Importing it here would point cds/ide at
 # the engine, which is the one direction SPEC D12 rules out.
@@ -74,12 +87,16 @@ class Outcome(object):
     """
 
     def __init__(self, messages, stdout_tail, needs=None, error=None,
-                 result=None):
+                 result=None, denied=None):
         self.messages = messages
         self.stdout_tail = stdout_tail
         self.needs = needs
         self.error = error
         self.result = result
+        # Set when the project's own policy refused the command before it ran
+        # (cds/ide/permit.py). Carried separately from error because it is
+        # what earns exit 5 (SPEC 4.3).
+        self.denied = denied
 
     def ok(self):
         return not self.error_text()
@@ -212,6 +229,7 @@ def _call(namespace, entry, silent, ui, args):
             "the stand-in UI could not take over the engine's dialogs, so "
             "the command was not run:\n" + traceback.format_exc()))
     sys.stdout = tee
+    namespace[ARGS_GLOBAL] = dict(args or {})
     try:
         result = namespace[entry]()
         return Outcome(ui.messages, tee.tail(), result=result)

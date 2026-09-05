@@ -25,6 +25,23 @@ about a version mismatch once and then records the new number.
   `python cli/cds_ide.py`. The instance directory moved to
   `%LOCALAPPDATA%\cdsint\instances`; a watcher started before the move is
   invisible to the new CLI, and restarting it is the whole migration.
+- **An agent that could build could also download to the machine.** There was
+  nothing between `cdsint` and a PLC but the absence of a command; the probe
+  script that knew how to log in, write a boot application and start it was one
+  copy away from being one. `plc connect` and `plc download` are now that
+  command, and they are the only two with a permission layer in front of them:
+  the project property `cds-sync-plc` says whether this project allows the
+  action at all (exit 5 if not, and only a person in the IDE can change it —
+  `config set` refuses to write that one property), and `-y` says the caller
+  means this call. There is no `--target` form, because the watcher lives in an
+  IDE somebody is using and a login would take their online session. Both
+  commands end in the same check, which is the reason to have them: the boot
+  application this project compiles to, against the one the controller holds,
+  compared on the four bytes that identify it. Only `MATCH` exits 0 —
+  `DIFFERENT` means the machine runs something else, and `UNKNOWN` means one
+  side could not be read, which is not agreement. Credentials come from
+  `CDS_DEV_USER` and `CDS_DEV_PASS` and reach no command line, file or report.
+  Not yet run against real hardware.
 
 Behaviour that was in `main` but never released:
 

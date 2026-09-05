@@ -58,6 +58,8 @@ class Watcher(object):
         }
         for name in entries.COMMANDS:
             self.handlers[name] = self._run_script
+        for name in entries.WATCHER_REFUSES:
+            self.handlers[name] = self._refuse
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -228,6 +230,17 @@ class Watcher(object):
         return commands.new_result(cmd, True, started_at=started,
                                    messages=[_info("stopping " + self.instance_id)])
 
+    def _refuse(self, cmd, started):
+        """A command this watcher knows and will not run (entries.py).
+
+        Answered rather than dropped: "unknown command" would send the
+        reader looking for a typo, when what they need is the reason and
+        the other form.
+        """
+        return commands.new_result(
+            cmd, False, started_at=started,
+            error=entries.WATCHER_REFUSES[cmd["command"]])
+
     def _run_script(self, cmd, started):
         """Press the button on one of the commands in cds/ide/entries.py."""
         command = cmd["command"]
@@ -241,6 +254,7 @@ class Watcher(object):
             messages=outcome.messages,
             stdout_tail=entries.tail(self.ide, command, outcome),
             data=outcome.data(),
+            denied=outcome.denied,
             needs_input=None if outcome.needs is None else outcome.needs.as_record())
 
     # -- instance record ---------------------------------------------------

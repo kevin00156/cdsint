@@ -369,13 +369,13 @@ def test_saying_it_is_complete_is_not_enough_on_its_own(tmp_path, ide):
 # --- the dialog titles are copies of literals in four other files ----------
 
 DRIVEN_FILES = (
-    # What the four commands actually execute, relative to the repo root.
+    # What the commands actually execute, relative to the repo root.
     # engine/settings.py is left out on purpose: every dialog it opens sits
     # behind show_sync_folder_dialog, which the stand-in UI refuses outright
     # (test_the_sync_folder_dialog_is_refused_rather_than_opened), so silent
     # mode never reaches them.
     "engine/entry_export.py", "engine/entry_import.py",
-    "engine/entry_compare.py", "engine/entry_build.py",
+    "engine/entry_compare.py", "engine/entry_build.py", "engine/entry_plc.py",
     "engine/codesys_utils.py", "engine/codesys_managers.py",
     "engine/codesys_compare_engine.py", "engine/codesys_online.py",
 )

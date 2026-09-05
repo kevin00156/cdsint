@@ -12,7 +12,7 @@ already reads cds-sync-folder the same way.
 """
 from __future__ import print_function
 
-from cds.ide import project
+from cds.ide import permit, project
 
 # The properties a caller may read and write, and what each one is for. This
 # is SPEC 4.4's table in the form a program can use: a name that is not here
@@ -33,10 +33,10 @@ PROPERTIES = {
 }
 
 # Readable, never writable from here. The property means "a person decided
-# this in the IDE", and a CLI that can write it erases that meaning. It is a
-# policy, not a wall: headless mode already runs arbitrary IronPython inside
-# the IDE, so anyone who wants to get past it can (SPEC 6.5).
-READ_ONLY = "cds-sync-plc"
+# this in the IDE", and a CLI that can write it erases that meaning. Named
+# from cds/ide/permit.py, which is the code that acts on it: two spellings of
+# one property name is one of them going stale.
+READ_ONLY = permit.PROPERTY
 
 
 def run(ide_globals, args):

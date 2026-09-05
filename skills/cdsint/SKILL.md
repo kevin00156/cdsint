@@ -1,6 +1,6 @@
 ---
 name: cdsint
-description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, or building a PLC application (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC).
+description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, building a PLC application, or downloading to a controller and checking what it runs (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC、下載到 PLC).
 ---
 
 # Driving a CODESYS IDE from the shell
@@ -89,12 +89,39 @@ IDE's own prompts get no default answer — a project saved by an older IDE asks
 `UpgradeProjectConfirmation`, and yes rewrites its storage format so that older IDE
 can never open it again. The message names the key; the user decides.
 
+## Talking to a controller: `plc`
+
+```
+cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+```
+
+`plc download` is the only command that changes a machine, and it has two gates in
+front of it. **The project has to allow it**: the property `cds-sync-plc` lists
+`connect`, `download`, or both, and a command that is not listed is exit 5 with the
+current value quoted back. No flag answers that one — `cdsint config set` refuses
+to write this property, because its whole meaning is that a person decided in the
+IDE. Ask the user to set it in **Project Information > Properties**. **And the call
+has to be confirmed**: `plc download` takes `-y`, exactly as `import` does.
+
+There is no `--target` form. The watcher runs inside an IDE somebody is using, and
+a PLC login would take their online session away from them.
+
+Both commands answer one question — is the machine running this tree — by comparing
+the boot application this project compiles to against the one on the controller.
+`data.crc` is `MATCH` (exit 0), `DIFFERENT` (exit 1: it is running something else)
+or `UNKNOWN` (exit 1: one side could not be read, which is not agreement).
+Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
+`--gateway IP [--port N]` overrides the project's own gateway settings; without it
+the project's are left alone.
+
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` no single live IDE
 matched, `3` timed out with no report to show for it (raise `--timeout`: it
 bounds one step, default 120s, and big imports and builds need more), `4` the
-project is open elsewhere or the IDE would not start.
+project is open elsewhere or the IDE would not start, `5` the project's
+`cds-sync-plc` does not allow this `plc` command.
 
 A `--project` run that was killed after its report was written is not exit 3:
 the report is the answer, and the exit code is the thing that went missing. The
@@ -103,7 +130,8 @@ lock file such a kill leaves behind is cleared by cdsint itself.
 With `--json`: `messages` carries what the IDE would have shown a person,
 `stdout_tail` carries the detail (compare's per-object list, build's error list
 with line numbers), `error` explains a failure, `needs_input` names the flag that
-was missing, and `data` holds this command's own numbers — the counts, and
+was missing, `denied` says the project's own policy refused the command (only
+`plc`, and no flag fixes it), and `data` holds this command's own numbers — the counts, and
 `failed_objects` naming anything the command could not handle.
 
 ## Flags answer the questions a person would have
@@ -114,7 +142,7 @@ A question with no flag behind it comes back as `needs_input`, exit code 1, and
 
 | `arg` | flag | the question |
 |---|---|---|
-| `yes` | `--yes` | "import N changes into the IDE?" — required for `import` |
+| `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify` and `plc download` |
 | `force` | `--force` | version or computer mismatch; stop and ask the user instead of forcing |
 | `app` | `--app NAME` | which application to build |
 | `delete_orphans` | `--delete-orphans` | export found sync files with no object behind them |

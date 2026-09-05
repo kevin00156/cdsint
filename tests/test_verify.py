@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from cdsint import cli, verify
+from cdsint import cli, flags, verify
 from cdsint.exits import EXIT_FAILED, EXIT_OK
 
 
@@ -139,7 +139,7 @@ def test_without_yes_a_compare_that_fails_is_reported_as_itself():
 # --- the CLI surface -------------------------------------------------------
 
 def parse(argv):
-    return cli.build_parser().parse_args(argv)
+    return flags.build_parser().parse_args(argv)
 
 
 def test_the_two_forms_cannot_be_given_together():
@@ -207,23 +207,23 @@ def test_json_output_stays_json(monkeypatch, capsys):
 
 
 def test_config_get_with_no_name_asks_for_everything():
-    assert cli.command_args(parse(["config", "get"])) == {"key": None,
+    assert flags.command_args(parse(["config", "get"])) == {"key": None,
                                                           "value": None}
 
 
 def test_config_get_names_one_property():
-    assert cli.command_args(parse(["config", "get", "cds-sync-debug"])) == {
+    assert flags.command_args(parse(["config", "get", "cds-sync-debug"])) == {
         "key": "cds-sync-debug", "value": None}
 
 
 def test_config_set_splits_the_assignment():
-    assert cli.command_args(parse(["config", "set", "cds-sync-debug=true"])) == {
+    assert flags.command_args(parse(["config", "set", "cds-sync-debug=true"])) == {
         "key": "cds-sync-debug", "value": "true"}
 
 
 def test_config_set_with_an_empty_value_is_still_a_write():
     # "" and "leave it alone" are different, and only one of them is a set.
-    assert cli.command_args(parse(["config", "set", "cds-sync-backup-name="])) \
+    assert flags.command_args(parse(["config", "set", "cds-sync-backup-name="])) \
         == {"key": "cds-sync-backup-name", "value": ""}
 
 

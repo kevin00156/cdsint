@@ -12,7 +12,7 @@ import pytest
 
 from cds.core import commands, instances, ipc
 from cds.ide import watcher
-from cdsint import cli, target
+from cdsint import cli, flags, target
 from tests.test_watcher import make_globals
 
 
@@ -170,7 +170,7 @@ def test_a_question_with_no_flag_behind_it_does_not_invent_one(watch,
 # --- the flags the four real commands take ---------------------------------
 
 def parse(argv):
-    return cli.command_args(cli.build_parser().parse_args(argv))
+    return flags.command_args(flags.build_parser().parse_args(argv))
 
 
 def test_export_passes_the_orphan_choice():

@@ -153,6 +153,8 @@ Every command that touches a project takes one of two forms, and never both:
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
 | `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
+| `plc connect [--gateway IP --port N]` | — | yes | read the controller and compare its CRC with this project |
+| `plc download -y` | — | yes | download to the controller, then read the CRC back |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
@@ -185,6 +187,36 @@ rather than measured:
 it you get the comparison, the count of what the import would have changed,
 created and deleted, `needs_input`, exit 1, and an untouched IDE.
 
+### Talking to a controller
+
+`plc download` is the only command that changes a machine, so it is the only
+one with a permission layer in front of it, and the layer has two parts that
+cannot stand in for each other.
+
+- **The project has to allow it.** The project property `cds-sync-plc` is a
+  comma-separated list, and it recognises exactly `connect` and `download`. A
+  command that is not in it comes back as exit 5 with the property's current
+  value quoted at you. Only a person can change that — set it in **Project
+  Information > Properties**. `cdsint config set` refuses to write this one
+  property, because the whole meaning of it is that somebody decided in the
+  IDE.
+- **This call has to be confirmed.** `plc download` needs `-y`, the same `-y`
+  as `import` and `verify`. Without it: what the download would do,
+  `needs_input`, exit 1, controller untouched.
+
+`plc` has no `--target` form at all. The watcher lives inside an IDE somebody
+is using, and a PLC login would take their online session away from them, so a
+PLC command always starts an IDE of its own.
+
+Both commands end in the same comparison: the boot application this project
+compiles to, against the one the controller holds, on the four bytes that
+identify it. `MATCH` is the only answer that exits 0 — `DIFFERENT` means the
+machine is running something else, and `UNKNOWN` means one of the two sides
+could not be read, which is not the same as agreement.
+
+Credentials come from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment,
+never from a flag, a file or the report.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -194,6 +226,7 @@ created and deleted, `needs_input`, exit 1, and an untouched IDE.
 | 2 | no single listening IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, or the IDE would not start |
+| 5 | the project's `cds-sync-plc` does not allow this `plc` command |
 
 ## FAQ
 

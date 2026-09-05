@@ -131,6 +131,7 @@ cdsint export
 | 2 | 找不到、或找不清是哪個 IDE | 跑 `list` 看有幾個，用 `--target` 指定 |
 | 3 | 等結果等到逾時，而且沒有拿到報告 | 加大 `--timeout`（預設 120 秒，指的是**一個步驟**的上限），大專案的匯入會超過 |
 | 4 | 專案被別的行程開著，或 IDE 起不來 | 只有 `--project` 形式會出現，見第 4 節 |
+| 5 | 這個專案沒有開放你下的那個 `plc` 命令 | 沒有旗標可以補。要人去 IDE 裡改屬性，見第 6 節 |
 
 ### `--json` 的結構
 
@@ -143,6 +144,7 @@ cdsint export
   "stdout_tail": "…腳本印出來的最後 200 行…",
   "error": null,
   "needs_input": null,
+  "denied": null,
   "data": null
 }
 ```
@@ -151,6 +153,8 @@ cdsint export
 - `stdout_tail` 是細節：compare 的逐物件差異、build 的錯誤清單都在這裡。
 - `error` 有值就代表失敗，`ok` 一定是 false。
 - `needs_input` 有值代表「有個問題沒人回答」，裡面的 `arg` 直接告訴你該補哪個旗標。
+- `denied` 有值代表這個專案不准你下這個命令（只有 `plc` 會出現），exit code 是 5。
+  這個不是補旗標能解決的，見第 6 節。
 - `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
   `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
 - `--project` 形式的紀錄還多三個欄位：`ide`（用了哪一套）、`sync_dir`（這一趟把哪個
@@ -282,7 +286,41 @@ cdsint config set cds-sync-debug=true
 
 ---
 
-## 6. 多個 IDE 同時開著
+## 6. 碰控制器：`plc`
+
+`plc download` 是唯一一個會改到機器的命令，所以它前面有兩道關，而且兩道都得過。
+
+第一道是專案准不准。專案屬性 `cds-sync-plc` 是逗號分隔的清單，只認 `connect` 與 `download`
+兩個字。你下的命令不在裡面就是 exit 5，訊息會把那個屬性現在的值原樣印出來。
+**這一道你補不了旗標**，`cdsint config set` 也拒絕寫這個屬性——它的意思就是「有人在 IDE 裡決定過」。
+要開的話請人去 Project Information > Properties 改。
+
+第二道是這一次算不算數。`plc download` 要 `-y`，跟 `import`、`verify` 的 `-y` 同一個意思。
+沒給就印出這趟會做什麼，回 `needs_input`、exit 1，控制器一個位元組都不動。
+
+`plc` 沒有 `--target` 形式。看門人跑在別人正在用的 IDE 裡，登入控制器會搶走那個人的線上狀態，
+所以 PLC 命令一律自己起一個 IDE。
+
+```
+cdsint plc connect  --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported     --gateway 192.168.1.5 --report r.json
+```
+
+兩個命令最後都回同一個問題的答案：機器上跑的是不是這棵樹。比法是把這個專案編出來的
+boot application 的 `.crc`，跟控制器上那顆比，`data.crc` 有三種值：
+
+| `data.crc` | 意思 | exit code |
+|---|---|---|
+| `MATCH` | 機器上跑的就是這個專案 | 0 |
+| `DIFFERENT` | 機器上跑的是別的東西 | 1 |
+| `UNKNOWN` | 有一邊拿不到，比不了——不等於一致 | 1 |
+
+帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，不進命令列、不進報告。
+`--gateway` 不給的話就用專案自己帶的閘道設定；給了才會去改裝置節點，`--port` 不給是 11740。
+
+---
+
+## 7. 多個 IDE 同時開著
 
 `list` 會列出全部。有超過一個的時候，每個命令都要指定 `--target`，
 不指定的話會以 exit code 2 結束並列出候選：
@@ -296,7 +334,7 @@ cdsint build --target Shm_2026.07.29
 
 ---
 
-## 7. `.st` 檔的格式
+## 8. `.st` 檔的格式
 
 一個檔案就是一個物件，宣告區和實作區用一行標記分開：
 
@@ -321,7 +359,7 @@ count := count + 1;
 
 ---
 
-## 8. 不要做的事
+## 9. 不要做的事
 
 - **不要改 `.project` 檔。** 那是二進位的，你改了會壞掉。
 - **不要改同步資料夾以外的東西。** `sync_cache.json` 是機器本地的快取，不要碰也不要提交。
@@ -333,7 +371,7 @@ count := count + 1;
 
 ---
 
-## 9. 一輪完整的例子
+## 10. 一輪完整的例子
 
 ```bash
 # 這個 IDE 開著什麼、同步資料夾在哪
