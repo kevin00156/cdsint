@@ -243,6 +243,13 @@ img/        readMe 用的圖
   - [x] 驗收：SPEC 第 7 節的 perf 表有新數字。
   - 監督者驗證（2026-09-05 22:30）：`python -m pytest tests -q` 與根目錄各 757 passed，監督者自己跑的。`grep "time.sleep\|threading\|Thread("` 在 `engine/ cds/ide/ stub/` 只剩兩處 docstring 在講「沒有執行緒」；`"cds-sync-` 字面值只剩 `cds/core/props.py:20`；PLC 本體拆成四個檔，最長 243 行。監督者在真 IDE（原廠 3.5.21.40，softplc 副本，`%TEMP%\cdsint-sup\`）重現髒檔保護：export 229 個，改磁碟上 `FB_LowPass.st` 一行，再 export：那個檔的雜湊值前後相同、`data.pending_import` 列出它、`ok` false、其他 228 個 identical。使用者的兩個 IDE（pid 14012、17340）都在 20:48 前後自己關掉（Shm 原檔 20:47:59 有一次存檔，登記檔最後心跳 20:48:24），worker 第一次起無頭 IDE 是 21:29，監督者最後一次碰是 20:37；兩個原始專案的內容沒有被 cdsint 寫過。沒有殘留的 IDE 行程。
   - [ ] 驗收（還需要人）：比對視窗的托盤氣泡改成 Timer 之後，在有畫面的 IDE 裡按一次「存到 .diff」，氣泡有出現又消失。原因：`codesys_ui.py` 第一行 import clr，CI 跑不了，而氣泡只有眼睛看得到。
+  - [ ] **階段 4 收尾（審查後）**：全新上下文的只讀審查在 `docs/history/REVIEW_2026-09-05.md`（HEAD `49aa6a5`），兩支重現腳本 `docs/history/repro_compare_drops_guard.py`、`repro_stale_report.py` 用 `tests/` 的假物件就能跑。監督者裁定：**三條必修全部修，十二條建議全部做**；做的時候發現某條的代價不對，不做也可以，但要在第 7 節寫取捨。每一條修完要有一條會在修之前紅的測試，兩支重現腳本修完要跑不出問題。
+  - [ ] 必修 1：`find_all_changes` 對「不同」與「處理不了」的物件保留舊快取項目（它描述的仍是上次同步時磁碟長什麼樣），只看的命令不再把髒檔保護的依據丟掉；順便做建議 11（比對視窗的 export 也更新快取）。測試：edit → compare → export，檔案還在、`pending_import` 有它；edit → `import`（沒 `-y`）→ export 同樣。
+  - [ ] 必修 2：`cdsint/headless.py` 的 `run()` 啟動前刪掉舊的 report 檔。測試：上一趟的 report 在、這趟沒寫 → raise 逾時或啟動失敗，不回傳舊結果。
+  - [ ] 必修 3：`cds/ide/headless.py` 的 `point_sync_folder` 失敗就不跑命令，report 記原因，`intended_exit` 是失敗。
+  - [ ] 建議 1 到 12（見審查檔）。特別是：`--force-lock` 那條路上 kill 之後不清別人的鎖（啟動前記下鎖在不在）；有登記簿項目時 import 不做 create／move（跟 export 不刪孤兒同形）；`cds-sync-version` 移到存檔之前寫；缺 `print_function` 的檔全部補上；`cds/ide/headless._text` 改成先判 unicode 並考慮三個 `_text` 收成 `cds/core` 一支；Ctrl-C 要 kill 自己起的 IDE；D12 加 `tests/test_layering.py` 用 AST 守。
+  - [ ] 驗收：`python -m pytest tests -q` 綠；兩支重現腳本各自跑完印出「檔案還在／有 raise」；`grep -L "print_function" engine/*.py cds/ide/*.py cds/core/*.py stub/*.py` 為空。
+  - [ ] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。
 
 ---
 
@@ -429,6 +436,9 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（審查後）: 審查的三條必修全修、十二條建議全做 — 必修 1 是髒檔保護在真實流程（先 compare 再 export）下失效，等於 SPEC 6.1 那條沒做到；必修 2 讓 verify 可能拿上一趟的答案當這一趟的判決；必修 3 是階段 2 那道 `--sync-dir` 牆有個沒關的門。建議裡 1、2、3、10 也碰資料安全，其餘都小到一次做完比留著再開一輪便宜 — 錯了的代價是這一輪多花一兩小時。
+- Ruling（審查後）: 修法選「保留舊快取項目」不選「只看的命令不寫快取」 — 快取是下一趟加速的依據，只看的命令更新它是對的；錯的是把「還沒同步的東西」的紀錄丟掉。前者是一行加一個條件，後者要在三個命令裡分兩種模式 — 錯了的代價是快取裡留著一筆「上次同步時的樣子」直到真的匯入，那正是它該記的東西。
+- Ruling（審查後）: 工單在所有人力項目做完之前留在 `docs/`，不移到 `docs/history/` — 它還有四條「還需要人」在追蹤，移走等於沒有人看得到 — 錯了的代價是 `docs/` 多一份活文件。
 - Ruling（階段 4 驗收後）: worker 階段 4 的二十七條 Ruling 全部接受，特別是 `props` 遮蔽回歸的處理（改區域變數不改模組名，補六條直接測回傳值的測試，順手把吞掉它的空白 `except:` 改成會說原因的）、`manager.export()` 契約收成「出錯一律丟例外」、perf 表冷熱兩欄、`threading.Lock` 直接刪 — 每條都有理由與代價 — 錯了的代價是無。
 - Ruling（階段 4 驗收後）: `cds/ide/silent.py` 403 行，接受 worker「已經超過的不准再長」的解讀，不為三行拆檔；下一次有人為了功能碰它，就照「對話框答案表」與「exec 與替身安裝」兩件事拆開 — 為三行切一個只做一件事的檔是湊數字 — 錯了的代價是它成為 `cds/ide/` 底下唯一超過上限的檔，`tests/test_bare_excepts.py` 那種棘輪測試可以照樣釘住它的行數。
 - Ruling（階段 4 驗收後）: SPEC 11.1（換成 `export_native` 整包倒出）**不做**，留在未決事項 — 熱機時 229 個物件 export 12 秒、compare 11 秒，對場景 A 與 B 夠用；場景 C 的瓶頸是 IDE 啟動的三十幾秒不是引擎；而且非目標第一條就是不重寫引擎 — 錯了的代價是某個上千物件的專案 export 要幾分鐘，那時再拿這組冷熱數字當基準來比。
