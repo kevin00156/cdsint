@@ -172,7 +172,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
-- [ ] **階段 2：無頭前門**（SPEC 10.2 階段 2）——施工項目與 worker 的驗收全過；監督者重現時抓到一個會清空專案的洞，收尾項目在本階段末尾，做完才算過。收尾四項與三條驗收 2026-09-05 做完（見底下），等監督者重現。
+- [x] **階段 2：無頭前門**（SPEC 10.2 階段 2）——監督者 2026-09-05 19:50 驗收通過。施工項目、兩輪收尾（會清空專案的洞、逾時語意）都由監督者親自重現過，見各段的「監督者驗證」。
   - [x] `cdsint installs`：掃 `Program Files` 底下的 `CODESYS *`、`Delta Industrial Automation\DIAStudio\DIADesigner-AX*`、`Lenze\PlcDesigner\*`，還有 `Program Files (x86)\Lenze\PlcDesigner\*`；讀 `Profiles\*.profile.xml` 檔名當 profile 名；查登錄檔 `AppCompatFlags\Layers` 的 `RUNASADMIN`。——在 `cdsint/installs.py`。認一套安裝的條件是執行檔在，不是目錄名字像版本號，理由同安裝器那條 Ruling：這台的 `Lenze\PlcDesigner\` 底下有 `GatewayPLC`、`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們都會被當成一套。順帶也印 ScriptDir 與它要不要管理員。
   - [x] `--project P --install I` 形式：`cdsint/headless.py` 是 CLI 側，`cds/ide/headless.py` 是 IDE 側。SPEC 6.4 表的每一列都要保留，程式碼註解引 SPEC 6.4 的列。旗標 `--answer`、`--profile`、`--report`、`--force-lock`、`--sync-dir`；exit 3 逾時、exit 4 鎖檔或啟動失敗。
   - [x] `verify` 子命令，兩種形式都有。——`cdsint/verify.py`，import、export、compare、build 四步，compare 有任何差異就算沒過。
@@ -215,6 +215,8 @@ img/        readMe 用的圖
   - [x] 階段 2 收尾二：CLI 自己 kill 掉的 IDE 留下的鎖檔（`<project>.~u`）由 CLI 自己清掉並說明；只清自己起的那個行程開的那個專案的鎖。——kill 之後等行程真的不在了才清（`process.wait` 沒逾時才算），清完每個檔印一行；行程沒死就不清，並印一行說下一趟要 `--force-lock`。鎖檔的兩種檔名、查詢與清除收成新的 `cdsint/lock.py`，起動前的拒絕與 kill 後的清理是同一個概念的兩個方向。原因：監督者被 kill 那趟之後再跑同一個副本，立刻 exit 4，得手動加 `--force-lock`；那把鎖是 cdsint 自己造成的，它知道是誰的。
   - [x] 驗收：測試涵蓋三條：期限的推導、report 完整時逾時不算失敗、kill 之後鎖檔被清。——`tests/test_headless.py` 多 4 條：四步的等待時間等於公式算出來的值、report 完整的 kill 回得出結果而且 `error` 裡沒有「對話框」那句、kill 之後鎖檔不見了、kill 不死的行程鎖檔留著。假的行程現在會模擬「被 kill 之後 wait 才回來」，因為那正是能不能清鎖的判準。全套 535 passed。
   - [x] 驗收（監督者會重現）：`verify -y --project` 用**預設** timeout 在原廠 softplc 副本（`%TEMP%` 底下的短路徑）exit 0，report `timed_out` 是 false。——**過**：133.0 秒 exit 0，`timed_out` false、`exit_code_trusted` true、實際與打算用的退出碼都是 0，四步 import 24.6／export 15.1／compare 14.3／build 25.5 秒，全部 ok。跑完 `%TEMP%\cdsint-work\` 已刪，副本旁邊沒有留下鎖檔，只有使用者原本開著的兩個 IDE（pid 17340、14012）還在。
+
+  - 監督者驗證（2026-09-05 19:50，收尾二之後）：`python -m pytest tests -q` 與根目錄各 535 passed，監督者自己跑的。監督者親自在 `%TEMP%\cdsint-sup\` 底下複製 softplc、`export --project` 229 個物件 0 失敗，再 `verify -y --project` **不帶 `--timeout`**：exit 0，122 秒，report `timed_out` false、`exit_code_trusted` true、四步全 ok、build 0 errors，副本旁沒有鎖檔。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 不存在。
 
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
@@ -376,6 +378,7 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 2 收尾二驗收後）: worker 收尾二的七條 Ruling 全部接受，包括 `timed_out` 在 report 完整時仍為 true（事實就是被殺了，區分「有沒有答案」的是 `error` 與結果）、寬限常數取量到的數倍（它們只在掛住時起作用）、`cdsint/lock.py` 獨立出來 — 每條都有理由與代價 — 錯了的代價是無。
 - Ruling（階段 2 收尾驗收後）: worker 收尾的七條 Ruling 全部接受，包括沒 `-y` 時仍跑一趟 `compare` 來印計畫（多付一次 IDE 啟動，換來「你要同意的是刪 229 個」這句話，值得）與 `--sync-dir` 連 `config` 都要（一條沒有例外的規則） — 錯了的代價是 `config get --project` 多打一個旗標。
 - Ruling（階段 2 收尾驗收後）: `--timeout` 是每一步的上限，`--project` 形式的行程期限從它推導，不另設一個「無頭專用的預設」 — 一個旗標兩種意思是特殊情況；推導公式讓 `--timeout 120` 在兩種形式下說的都是「一個命令最多 120 秒」 — 錯了的代價是 `--project` 形式的實際等待上限比旗標的字面值大，文件要講清楚。
 - Ruling（階段 2 收尾驗收後）: 逾時以 report 為準；kill 掉自己起的 IDE 之後清掉它留下的鎖檔 — 兩件都是「cdsint 知道的事不要假裝不知道」：report 完整就不是對話框卡住，鎖是自己造成的就不該要使用者 `--force-lock` — 錯了的代價是若 kill 的行程其實還在寫專案檔，清鎖會讓下一趟開到半寫的檔；用 kill 之後等行程真的不在了再清來擋。
