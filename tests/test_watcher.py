@@ -5,7 +5,7 @@ The watcher takes the CODESYS globals as an argument instead of reaching for
 them, and its timer comes from an injected factory, so a fake `system`, a fake
 `projects` and a fake timer are enough to drive everything under CPython.
 What this cannot show is whether the real IDE is clickable while the watcher
-runs — that needs real mouse input (WATCHER_CLI_PLAN.md 14.5).
+runs — that needs real mouse input (docs/WATCHER.md 8).
 """
 import os
 import sys

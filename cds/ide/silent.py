@@ -163,7 +163,7 @@ def running():
 
     It does NOT see a script the user started from the Tools menu: that goes
     through the IDE's own executor and never reaches this module. There is no
-    known way to detect one from here (WATCHER_CLI_PLAN.md 15).
+    known way to detect one from here (docs/WATCHER.md 9).
     """
     return _RUNNING["depth"] > 0
 

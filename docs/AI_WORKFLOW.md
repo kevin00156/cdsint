@@ -17,7 +17,7 @@ IDE 照常可以用，但它留下了一個監聽器。
 你這邊確認它在：
 
 ```
-python cli/cds_ide.py list
+cdsint list
 ```
 
 看得到一行就對了，長這樣：
@@ -32,7 +32,7 @@ Shm_2026.07.29-14012    idle    D:\...\Shm_2026.07.29.project
 同步資料夾在哪，問 `status`：
 
 ```
-python cli/cds_ide.py status --json
+cdsint status --json
 ```
 
 回來的 JSON 裡 `data.sync_dir` 就是那個資料夾的絕對路徑。**這是你唯一該編輯的地方。**
@@ -45,11 +45,11 @@ python cli/cds_ide.py status --json
 ```
 編輯 sync_dir 底下的 .st
         ↓
-python cli/cds_ide.py compare          看差異，什麼都不會被改
+cdsint compare          看差異，什麼都不會被改
         ↓
-python cli/cds_ide.py import --yes     把磁碟上的改動送進 IDE
+cdsint import --yes     把磁碟上的改動送進 IDE
         ↓
-python cli/cds_ide.py build            編譯，看錯誤數
+cdsint build            編譯，看錯誤數
         ↓
 有錯 → 讀錯誤訊息 → 回到第一步
 ```
@@ -59,7 +59,7 @@ python cli/cds_ide.py build            編譯，看錯誤數
 ### `compare`：先看清楚再動手
 
 ```
-python cli/cds_ide.py compare
+cdsint compare
 ```
 
 它只讀不寫。人類可讀的輸出有兩層：一行摘要（改了幾個、只在 IDE 有幾個、只在磁碟有幾個），
@@ -71,7 +71,7 @@ python cli/cds_ide.py compare
 ### `import`：磁碟蓋過 IDE
 
 ```
-python cli/cds_ide.py import --yes
+cdsint import --yes
 ```
 
 `--yes` 是必要的，那是「我確定要改這個專案」的意思。不帶它的話命令會回 `needs_input`、
@@ -83,8 +83,8 @@ exit code 1，**而且 IDE 裡什麼都不會變**——這是設計，不是失
 ### `build`：編譯，拿錯誤數
 
 ```
-python cli/cds_ide.py build
-python cli/cds_ide.py build --app MyApplication     # 專案有多個 application 時
+cdsint build
+cdsint build --app MyApplication     # 專案有多個 application 時
 ```
 
 結果的 `messages` 裡會有 application 名稱、錯誤數、警告數、耗時。錯誤數大於 0 時
@@ -95,7 +95,7 @@ exit code 是 1，錯誤的詳細內容（訊息、物件、行號）在 `stdout
 ### `export`：從 IDE 倒出來
 
 ```
-python cli/cds_ide.py export
+cdsint export
 ```
 
 方向相反：把 IDE 裡的東西寫成 `.st` 檔。你通常在開工前跑一次，確保磁碟上的檔案是最新的；
@@ -161,7 +161,7 @@ IDE 會停止回應**——匯出、匯入、編譯都是這樣。原因是 CODE
 二是大專案的匯入或編譯可能超過預設的 120 秒逾時，該加大就加大：
 
 ```
-python cli/cds_ide.py import --yes --timeout 600
+cdsint import --yes --timeout 600
 ```
 
 ---
@@ -172,7 +172,7 @@ python cli/cds_ide.py import --yes --timeout 600
 不指定的話會以 exit code 2 結束並列出候選：
 
 ```
-python cli/cds_ide.py build --target Shm_2026.07.29
+cdsint build --target Shm_2026.07.29
 ```
 
 `--target` 收兩種值：完整的 instance id（例如 `Shm_2026.07.29-14012`），
@@ -220,22 +220,22 @@ count := count + 1;
 
 ```bash
 # 這個 IDE 開著什麼、同步資料夾在哪
-python cli/cds_ide.py status --json
+cdsint status --json
 
 # 先確保磁碟是最新的
-python cli/cds_ide.py export
+cdsint export
 
 # 改一個 POU（用你平常編輯檔案的方式）
 #   <sync_dir>/Application/POUs/Counter.st
 
 # 看看只有它變了
-python cli/cds_ide.py compare
+cdsint compare
 
 # 送進 IDE
-python cli/cds_ide.py import --yes
+cdsint import --yes
 
 # 編譯
-python cli/cds_ide.py build --json
+cdsint build --json
 
 # 錯誤數不是 0 的話，錯誤清單在 stdout_tail，修完回到第三步
 ```

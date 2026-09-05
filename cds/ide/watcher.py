@@ -4,7 +4,7 @@
 Nothing here starts or stops a watcher — cds/ide/session.py does that, and it
 does it by arming a timer and letting the script end, because a script that
 keeps running holds the main thread and leaves the IDE unclickable
-(WATCHER_CLI_PLAN.md 14). Keeping that half out of this file is what lets this
+(docs/WATCHER.md 6). Keeping that half out of this file is what lets this
 half be tested under CPython.
 
 Ticks land on the UI thread, so object-model calls from them are legal and no

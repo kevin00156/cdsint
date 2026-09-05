@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Acceptance launcher: put a watcher on a throwaway project, then get out.
 
-For the real-input acceptance in WATCHER_CLI_PLAN.md 14.5. Start an IDE with
+For the real-input acceptance in docs/WATCHER.md 8. Start an IDE with
 
     <exe> --profile="<name>" --culture=en --runscript="<this file>"
 

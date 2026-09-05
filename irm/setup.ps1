@@ -1,12 +1,19 @@
+# DO NOT RUN THIS YET. It still installs the pre-split flat layout: the
+# whole tree under one ScriptDir folder, which the IDE scans recursively,
+# so the Scripts menu would list every .py in engine/, tools/ and tests/.
+# It also knows only one of the three ScriptDir locations (SPEC 5.3).
+# Until it is rewritten, install by hand: see 'Development install' in
+# readMe.md. Only the names and URLs below have been moved to this repo.
+
 # Set encoding to UTF8 for correct character display
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$repoUrl = "https://github.com/ArthurkaX/cds-text-sync"
+$repoUrl = "https://github.com/kevin00156/cdsint"
 $targetBaseDir = Join-Path $env:LOCALAPPDATA "CODESYS\ScriptDir"
-$repoName = "cds-text-sync"
+$repoName = "cdsint"
 $fullPath = Join-Path $targetBaseDir $repoName
 
-Write-Host "--- Environment Setup: cds-text-sync ---" -ForegroundColor Cyan
+Write-Host "--- Environment Setup: cdsint ---" -ForegroundColor Cyan
 
 # 2. Get available stable releases
 Write-Host "`n[*] Fetching available versions..." -ForegroundColor Cyan
@@ -81,17 +88,17 @@ if (-not (Test-Path $targetBaseDir)) {
 }
 
 # 6. Download and install
-$tempZipPath = "$env:TEMP\cds-text-sync-$versionName.zip"
-$tempExtractPath = "$env:TEMP\cds-text-sync-temp-$versionName"
+$tempZipPath = "$env:TEMP\cdsint-$versionName.zip"
+$tempExtractPath = "$env:TEMP\cdsint-temp-$versionName"
 
 try {
-    Write-Host "[*] Downloading cds-text-sync ($versionName)..." -ForegroundColor Cyan
+    Write-Host "[*] Downloading cdsint ($versionName)..." -ForegroundColor Cyan
     Invoke-WebRequest -Uri $zipUrl -OutFile $tempZipPath -UseBasicParsing
     
     Write-Host "[*] Extracting archive..." -ForegroundColor Cyan
     Expand-Archive -Path $tempZipPath -DestinationPath $tempExtractPath -Force
     
-    # Find the extracted folder (it will be named "cds-text-sync-main" or "cds-text-sync-v1.7.3")
+    # Find the extracted folder (it will be named "cdsint-main" or "cdsint-v1.7.3")
     $extractedFolder = Get-ChildItem $tempExtractPath -Directory | Select-Object -First 1
     $extractedPath = $extractedFolder.FullName
     
@@ -110,7 +117,7 @@ try {
         
         Write-Host "[+] Update completed." -ForegroundColor Green
     } else {
-        Write-Host "[*] Installing cds-text-sync to $fullPath..." -ForegroundColor Cyan
+        Write-Host "[*] Installing cdsint to $fullPath..." -ForegroundColor Cyan
         Move-Item -Path $extractedPath -Destination $fullPath
         Write-Host "[+] Installation completed!" -ForegroundColor Green
     }

@@ -2,12 +2,11 @@
 
 ## Supported Versions
 
-Currently, the following versions of `cds-text-sync` are supported with security updates:
+Currently, the following versions of `cdsint` are supported with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.9.x   | :white_check_mark: |
-| < 0.9.x | :x:                |
+| 0.0.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 

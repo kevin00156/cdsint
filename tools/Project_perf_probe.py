@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """Project_perf_probe.py - Instrument the REAL sync engine and rank its costs.
 
-Unlike Project_perf_test.py (which re-implements Pass 1 and has drifted from
-the engine), this wraps the actual functions in place and then runs the real
-export or compare. Whatever the engine does, the numbers below describe.
+It wraps the actual engine functions in place and then runs the real export
+or compare, so whatever the engine does, the numbers below describe. The
+predecessor it replaced re-implemented Pass 1 and had drifted away from what
+the engine was really doing; it did not come across in the move to cdsint.
 
 Every wrapped call records inclusive and exclusive time. Rank by EXCL to find
 where time is really spent; read CALLS to spot per-object IDE round-trips.
@@ -15,8 +16,8 @@ Usage inside CODESYS (Scripting > Execute Script File):
 
 Notes:
   * export and import modes run the REAL operation. Import CREATES, UPDATES,
-    MOVES and DELETES objects in the open project, exactly as Project_import
-    would; take a backup first and expect the usual confirmation dialog.
+    MOVES and DELETES objects in the open project, exactly as the import
+    entry would; take a backup first and expect the usual confirmation dialog.
   * compare mode touches nothing in the IDE, but it does rewrite
     sync_cache.json.
   * An import is two phases with very different costs: find_all_changes
@@ -32,11 +33,11 @@ import os
 import sys
 import time
 
-# NOTE: `imp` is imported inside main(), not here. It is gone in CPython 3, and
-# keeping it out of module scope lets the instrumentation below be imported and
-# self-tested outside CODESYS.
-
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# tools/ sits beside engine/, and the IDE runs this file by absolute path, so
+# nothing else puts the install root on sys.path for us.
+_INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _INSTALL_ROOT not in sys.path:
+    sys.path.insert(0, _INSTALL_ROOT)
 
 # High-resolution timer. On Python 2 / Windows time.clock() is
 # QueryPerformanceCounter; time.time() only has ~15 ms granularity there, which
@@ -109,10 +110,10 @@ def _patch_function(name, label=None, bucket_of=None):
             candidate = getattr(module, name, None)
         except Exception:
             continue
-        # Accept the entry-point scripts too, not just the codesys_* engine
-        # modules: cleanup_orphaned_files lives in Project_export.
+        # Anything under engine/, which is both the codesys_* modules and the
+        # entry bodies: cleanup_orphaned_files lives in entry_export.
         owner = getattr(candidate, "__module__", None) if candidate is not None else None
-        if owner and (owner.startswith("codesys_") or owner.startswith("Project_")):
+        if owner and owner.startswith("engine."):
             original = candidate
             break
     if original is None:
@@ -245,28 +246,28 @@ def install_probes():
             sites += n
 
     methods = [
-        ("codesys_managers", "ObjectManager", "_try_cache_skip",
+        ("engine.codesys_managers", "ObjectManager", "_try_cache_skip",
          "mgr:_try_cache_skip", _skip_bucket),
-        ("codesys_managers", "ObjectManager", "_update_cache_entry",
+        ("engine.codesys_managers", "ObjectManager", "_update_cache_entry",
          "mgr:_update_cache_entry", None),
-        ("codesys_managers", "POUManager", "export", "mgr:POUManager.export", _export_bucket),
-        ("codesys_managers", "PropertyManager", "export", "mgr:PropertyManager.export", _export_bucket),
-        ("codesys_managers", "NativeManager", "export", "mgr:NativeManager.export", _export_bucket),
-        ("codesys_managers", "ConfigManager", "export", "mgr:ConfigManager.export", _export_bucket),
-        ("codesys_managers", "FolderManager", "export", "mgr:FolderManager.export", None),
-        ("codesys_managers", "NativeManager", "_hash_file", "mgr:_hash_file", None),
-        ("codesys_managers", "NativeManager", "_hash_content", "mgr:_hash_content", None),
+        ("engine.codesys_managers", "POUManager", "export", "mgr:POUManager.export", _export_bucket),
+        ("engine.codesys_managers", "PropertyManager", "export", "mgr:PropertyManager.export", _export_bucket),
+        ("engine.codesys_managers", "NativeManager", "export", "mgr:NativeManager.export", _export_bucket),
+        ("engine.codesys_managers", "ConfigManager", "export", "mgr:ConfigManager.export", _export_bucket),
+        ("engine.codesys_managers", "FolderManager", "export", "mgr:FolderManager.export", None),
+        ("engine.codesys_managers", "NativeManager", "_hash_file", "mgr:_hash_file", None),
+        ("engine.codesys_managers", "NativeManager", "_hash_content", "mgr:_hash_content", None),
         # import side
-        ("codesys_managers", "POUManager", "update", "mgr:POUManager.update", None),
-        ("codesys_managers", "POUManager", "create", "mgr:POUManager.create", None),
-        ("codesys_managers", "PropertyManager", "update", "mgr:PropertyManager.update", None),
-        ("codesys_managers", "PropertyManager", "create", "mgr:PropertyManager.create", None),
-        ("codesys_managers", "NativeManager", "update", "mgr:NativeManager.update", None),
-        ("codesys_managers", "NativeManager", "create", "mgr:NativeManager.create", None),
-        ("codesys_managers", "ConfigManager", "update", "mgr:ConfigManager.update", None),
-        ("codesys_managers", "ConfigManager", "create", "mgr:ConfigManager.create", None),
-        ("codesys_managers", "FolderManager", "update", "mgr:FolderManager.update", None),
-        ("codesys_managers", "FolderManager", "create", "mgr:FolderManager.create", None),
+        ("engine.codesys_managers", "POUManager", "update", "mgr:POUManager.update", None),
+        ("engine.codesys_managers", "POUManager", "create", "mgr:POUManager.create", None),
+        ("engine.codesys_managers", "PropertyManager", "update", "mgr:PropertyManager.update", None),
+        ("engine.codesys_managers", "PropertyManager", "create", "mgr:PropertyManager.create", None),
+        ("engine.codesys_managers", "NativeManager", "update", "mgr:NativeManager.update", None),
+        ("engine.codesys_managers", "NativeManager", "create", "mgr:NativeManager.create", None),
+        ("engine.codesys_managers", "ConfigManager", "update", "mgr:ConfigManager.update", None),
+        ("engine.codesys_managers", "ConfigManager", "create", "mgr:ConfigManager.create", None),
+        ("engine.codesys_managers", "FolderManager", "update", "mgr:FolderManager.update", None),
+        ("engine.codesys_managers", "FolderManager", "create", "mgr:FolderManager.create", None),
     ]
     for module_name, class_name, method_name, label, bucket in methods:
         n = _patch_method(module_name, class_name, method_name, label, bucket)
@@ -392,19 +393,16 @@ def build_report(mode, wall_seconds, object_count, functions, sites,
 #  DRIVER
 # ═══════════════════════════════════════════════════════════════════
 
-# Each entry script deletes every codesys_* module from sys.modules and
-# reloads it at import time, so only ONE may be loaded per probe run and the
-# probes must go in afterwards -- loading a second would wipe them.
+# The probes go in after the entry body is imported: importing it is what
+# pulls in the codesys_* modules the probes rebind.
 _ENTRY_FOR_MODE = {
-    "export": "Project_export",
-    "compare": "Project_export",   # find_all_changes comes along with it
-    "import": "Project_import",
+    "export": "entry_export",
+    "compare": "entry_export",   # find_all_changes comes along with it
+    "import": "entry_import",
 }
 
 
 def main():
-    import imp  # IronPython 2.7 only; see module header
-
     mode = "export"
     for arg in sys.argv[1:]:
         low = str(arg).strip().lower()
@@ -412,16 +410,14 @@ def main():
             mode = low
 
     entry_name = _ENTRY_FOR_MODE[mode]
-    entry_path = os.path.join(_SCRIPT_DIR, entry_name + ".py")
-    if not os.path.exists(entry_path):
-        print(entry_name + ".py not found next to this script.")
-        return
-    entry = imp.load_source(entry_name, entry_path)
+    # __import__ with a fromlist hands back the submodule itself, and it
+    # means the same thing in IronPython 2.7 and CPython 3.
+    entry = __import__("engine." + entry_name, {}, {}, [entry_name])
 
-    utils = sys.modules.get("codesys_utils")
-    engine = sys.modules.get("codesys_compare_engine")
+    utils = sys.modules.get("engine.codesys_utils")
+    engine = sys.modules.get("engine.codesys_compare_engine")
     if utils is None or engine is None:
-        print("Could not load the codesys_* modules.")
+        print("Could not load the engine modules.")
         return
 
     projects_obj = utils.resolve_projects(None, globals())

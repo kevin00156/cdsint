@@ -6,7 +6,7 @@ While a script runs the main thread belongs to it, and system.delay() pumps
 repaints and posted messages but NOT mouse and keyboard — the window looks
 alive and cannot be clicked. So the script arms a WinForms timer and returns,
 and the watcher lives on in the IDE's own message loop
-(WATCHER_CLI_PLAN.md 14; do not undo this without reading that section).
+(docs/WATCHER.md 6; do not undo this without reading that section).
 
 Two consequences shape this module. The watcher has to be kept somewhere that
 outlives the script's namespace, which is why it is parked on `sys`. And the

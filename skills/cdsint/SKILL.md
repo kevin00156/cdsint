@@ -1,6 +1,6 @@
 ---
-name: cds-ide
-description: Drive a running CODESYS or DIADesigner-AX IDE from the shell with cds_ide.py — edit .st files, compare, import them into the IDE, build, and read the compile errors. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, or building a PLC application (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC).
+name: cdsint
+description: Drive a running CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, or building a PLC application (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC).
 ---
 
 # Driving a CODESYS IDE from the shell
@@ -10,13 +10,14 @@ CODESYS project files are binary and cannot be edited. What can be edited are th
 back in. The IDE must be open — this drives a running IDE, it is not a headless
 compiler.
 
-`cds_ide.py` lives at `cli/cds_ide.py` inside the cds-text-sync repo. If it is not
-in the current project, ask the user where that repo is checked out.
+`cdsint` is a console command, installed with `pip install -e .` from a clone of
+the cdsint repo. If the command is not on PATH, ask the user where that repo is
+checked out and run `python -m cdsint.cli` from it instead.
 
 ## Before anything: is an IDE listening?
 
 ```
-python cli/cds_ide.py list
+cdsint list
 ```
 
 One line per listening IDE. **Nothing listed means nobody can be driven** — ask the
@@ -28,7 +29,7 @@ another IDE already has open.
 Find the sync folder — the only directory to edit — from:
 
 ```
-python cli/cds_ide.py status --json      # data.sync_dir
+cdsint status --json      # data.sync_dir
 ```
 
 `null` there means the project has no `cds-sync-folder` property set. Ask the user
@@ -38,9 +39,9 @@ to set it; do not guess a path.
 
 ```
 edit .st files under sync_dir
-python cli/cds_ide.py compare            # read-only, shows what differs
-python cli/cds_ide.py import --yes       # disk wins, writes into the IDE
-python cli/cds_ide.py build              # or build --app NAME
+cdsint compare            # read-only, shows what differs
+cdsint import --yes       # disk wins, writes into the IDE
+cdsint build              # or build --app NAME
 # errors > 0 → read them, fix, go again
 ```
 
@@ -111,4 +112,4 @@ new `.st` file creates a new object in the IDE, at the tree position matching it
 folder.
 
 Fuller detail, including every flag and the whole result schema, is in
-`docs/AI_WORKFLOW.md` in the cds-text-sync repo.
+`docs/AI_WORKFLOW.md` in the cdsint repo.

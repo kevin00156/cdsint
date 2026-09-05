@@ -1,13 +1,19 @@
-# Setup Script for cds-text-sync
+# Setup Script for cdsint
 
-This directory contains a PowerShell setup script designed to automate the installation and update process for the `cds-text-sync` tool.
+> **Not rewritten yet.** This describes what `setup.ps1` does today, which is
+> the pre-split flat install: the whole tree into one ScriptDir folder that
+> the IDE scans recursively. The layout it should install is SPEC 5.3 — three
+> stubs in ScriptDir, the body outside it — and three ScriptDir locations, not
+> one. Until then, install by hand: see "Development install" in `readMe.md`.
+
+This directory contains a PowerShell setup script designed to automate the installation and update process for the `cdsint` tool.
 
 ## How to execute
 
 You can run the script directly from GitHub using a single command in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/ArthurkaX/cds-text-sync/main/irm/setup.ps1 | iex
+irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
 ```
 
 **No Git installation required** - the script downloads clean zip archives from GitHub.
@@ -26,7 +32,7 @@ irm https://raw.githubusercontent.com/ArthurkaX/cds-text-sync/main/irm/setup.ps1
     - Downloads the selected version as a clean zip archive from GitHub.
     - **Stable releases**: Downloads from `archive/refs/tags/vX.Y.Z.zip` - no `.git` folder, smaller size.
     - **Latest version**: Downloads from `archive/refs/heads/main.zip` - also clean archive without `.git`.
-    - Extracts to `%LOCALAPPDATA%\CODESYS\ScriptDir\cds-text-sync`.
+    - Extracts to `%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint`.
 4.  **Update**:
     - If an existing installation is found, it creates a backup.
     - Downloads and extracts the new version.

@@ -4,6 +4,76 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — moved into cdsint
+
+**The tool became a product with its own repo.** The code came out of
+`kevin-cds-text-sync` (branch `fix/member-creation-parent-resolution`, commit
+`9aa9886`) and moved here unchanged in behaviour; that repo keeps the history
+up to that commit. Version numbering restarts at `0.0.1` — the `k1.x` line was
+a fork of upstream `cds-text-sync` and does not carry over. `cds-sync-version`
+is compared as a plain string, so the first sync of an existing project warns
+about a version mismatch once and then records the new number.
+
+- **The IDE's Scripts menu listed eleven entries, and there was no way to hide
+  them.** The menu is a recursive scan of ScriptDir for `.py`, so every module
+  had to live at the top level, be named `.pyw` to stay out of the list, and be
+  loaded through `imp.load_source`. The bodies now live in `engine/`, outside
+  ScriptDir, and only ten-line stubs sit where the IDE scans. Ordinary imports
+  replace the loader, which also removed the last `imp` call — a module CPython
+  3.12 no longer ships.
+- **The command is `cdsint`**, installed from `pyproject.toml`, replacing
+  `python cli/cds_ide.py`. The instance directory moved to
+  `%LOCALAPPDATA%\cdsint\instances`; a watcher started before the move is
+  invisible to the new CLI, and restarting it is the whole migration.
+
+Behaviour that was in `main` but never released:
+
+- **Export and compare each rejected every cache entry the other wrote.** Both
+  read and write `sync_cache.json` under the same keys, but derived
+  `disk_mtime` independently: `int(st.st_mtime)` on the export side, a float
+  from `os.path.getmtime()` on the compare side. NTFS stamps almost always
+  carry a fraction, so on a real 148-object project the export side accepted
+  100% of its own entries and the compare side accepted 0%. Because the two
+  alternate in normal use, whichever ran last left the cache in a format the
+  next one could not read, and every run re-processed every object. One
+  `file_signature()` helper now feeds both, reporting milliseconds as an int:
+  whole seconds would miss an edit made inside the same second, and a float
+  would make cache equality depend on `repr()` surviving a JSON round trip.
+- **One operation saved and copied the project two or three times.** Import
+  ended with `finalize_import()`, which saved and — with
+  `cds-sync-backup-binary` on — copied the whole `.project`; then its caller
+  called `finalize_sync_operation()`, which did it again. Export copied the
+  binary before and after, to the same filename, so the second copy just
+  overwrote an identical first. On a 9.7 MB project each copy is a CODESYS save
+  plus a full file copy, and they ran *after* the completion popup, which is why
+  the tool looked like it kept working long after it said it was done.
+  `finalize_sync_operation()` is now the single owner of end-of-operation
+  saving. Import keeps two saves on purpose: the safety backup has to capture
+  the state before the import.
+- **"Time elapsed" measured the operator, not the sync.** The timed region
+  spanned blocking dialogs and ended before the final save, so an 83-second
+  export was overstated at one end and understated at the other. Prompts go
+  through `timed_prompt()` and their duration is subtracted; the final save
+  moved inside the measured region.
+- **Almost all of an unchanged export was spent proving nothing had changed.**
+  461 objects, 99.6% cache hits, 13.4 seconds, one object actually exported —
+  and 5.0 of those seconds went to four helpers reading the same property off a
+  live CODESYS object two to six times per call. The cause is that
+  `hasattr(o, n) and o.n` is two crossings into .NET, not one. Each property is
+  now read once. `update_application_count_flag` was another 1.63 seconds
+  fetching its own copy of the project tree for a flag export never reads; the
+  count now falls out of the classification the export already does.
+  Ancestor paths are memoised per ancestor, turning ~300 root walks into ~44 on
+  a 150-object project, and `test_read_budget_per_object` pins the ceiling so
+  the next regression fails a test instead of showing up as seconds.
+- **New diagnostics.** `tools/cache_doctor.py` replays both cache-hit
+  predicates against a sync directory offline, so "is the cache working at
+  all?" no longer needs CODESYS open — it is what found the `disk_mtime`
+  split. `tools/Project_perf_probe.py` wraps the real engine functions in place
+  and runs a real export, compare or import, ranking them by exclusive time.
+
+---
+
 ### Unreleased
 
 **Drive a running IDE from a terminal.** `Project_watch.py` (Tools > Scripting) arms a timer and returns immediately, leaving a listener in the IDE; `cli/cds_ide.py` then runs export, import, compare and build in it from any shell, without the project being closed. Run `Project_watch.py` a second time, or `cds_ide.py stop`, to shut the listener down.

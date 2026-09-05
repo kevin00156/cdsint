@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Click an IDE's File menu for real, repeatedly, and say whether it opened.
 
-The measurement that decided the watcher's design (WATCHER_CLI_PLAN.md 14.2):
+The measurement that decided the watcher's design (docs/WATCHER.md 6):
 a window can be repainting, answering sent messages and processing posted ones
 while still refusing every click, because system.delay() does not pump input.
 Nothing short of real mouse input tells you which.

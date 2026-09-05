@@ -7,7 +7,7 @@ picture should be is made there, where CPython can test it.
 
 Shown with Show(), never ShowDialog(): a modal would hold the main thread and
 put the IDE straight back in the state the whole timer design exists to avoid
-(WATCHER_CLI_PLAN.md 14). Owned by the IDE's main window rather than TopMost,
+(docs/WATCHER.md 6). Owned by the IDE's main window rather than TopMost,
 so it floats over the IDE and minimises with it instead of sitting on top of
 whatever else the user is doing.
 """

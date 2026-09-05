@@ -23,7 +23,7 @@ from cds.core import ipc
 STATE_IDLE = "idle"
 STATE_BUSY = "busy"
 
-# Starting points, not settled numbers (WATCHER_CLI_PLAN.md 11.3).
+# Starting points, not settled numbers (docs/WATCHER.md 2.1).
 HEARTBEAT_INTERVAL_S = 2.0
 ALIVE_TIMEOUT_S = 10.0
 BUSY_TIMEOUT_S = 120.0

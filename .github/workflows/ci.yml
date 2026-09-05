@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # Every branch, not just main: a branch whose tests nobody ran is a
+  # branch nobody can merge without running them by hand (SPEC 8).
   push:
-    branches: [main, "claude/**"]
   pull_request:
   workflow_dispatch:
 

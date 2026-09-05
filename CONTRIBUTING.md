@@ -1,6 +1,6 @@
-# Contributing to cds-text-sync
+# Contributing to cdsint
 
-First off, thank you for your interest in `cds-text-sync`! It's great to see the community engaging with modern workflows for CODESYS.
+First off, thank you for your interest in `cdsint`! It's great to see the community engaging with modern workflows for CODESYS.
 
 ## 🛡️ Development Policy
 
