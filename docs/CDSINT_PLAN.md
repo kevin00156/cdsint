@@ -172,7 +172,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：把五個 junction 改指本 repo 的 `stub/` 之後，三家 IDE 的 Scripts 選單各只有三項，toolbar 按鈕不用重設。原因：junction 是使用者的機器設定，選單也只有人看得到。
   - [ ] 驗收（還需要人）：看門人跑著時從 Scripts 選單啟動別的腳本沒問題（SPEC 11.3）。原因：要在有畫面的 IDE 裡點選單。
 
-- [x] **階段 2：無頭前門**（SPEC 10.2 階段 2）
+- [ ] **階段 2：無頭前門**（SPEC 10.2 階段 2）——施工項目與 worker 的驗收全過；監督者重現時抓到一個會清空專案的洞，收尾項目在本階段末尾，做完才算過。
   - [x] `cdsint installs`：掃 `Program Files` 底下的 `CODESYS *`、`Delta Industrial Automation\DIAStudio\DIADesigner-AX*`、`Lenze\PlcDesigner\*`，還有 `Program Files (x86)\Lenze\PlcDesigner\*`；讀 `Profiles\*.profile.xml` 檔名當 profile 名；查登錄檔 `AppCompatFlags\Layers` 的 `RUNASADMIN`。——在 `cdsint/installs.py`。認一套安裝的條件是執行檔在，不是目錄名字像版本號，理由同安裝器那條 Ruling：這台的 `Lenze\PlcDesigner\` 底下有 `GatewayPLC`、`DIAStudio\` 底下有一個沒有版本號的 `DIADesigner-AX`，只看目錄名的話它們都會被當成一套。順帶也印 ScriptDir 與它要不要管理員。
   - [x] `--project P --install I` 形式：`cdsint/headless.py` 是 CLI 側，`cds/ide/headless.py` 是 IDE 側。SPEC 6.4 表的每一列都要保留，程式碼註解引 SPEC 6.4 的列。旗標 `--answer`、`--profile`、`--report`、`--force-lock`、`--sync-dir`；exit 3 逾時、exit 4 鎖檔或啟動失敗。
   - [x] `verify` 子命令，兩種形式都有。——`cdsint/verify.py`，import、export、compare、build 四步，compare 有任何差異就算沒過。
@@ -199,6 +199,16 @@ img/        readMe 用的圖
     | 一整趟（含啟動） | 124.6 秒 | 142.3 秒 |
     | `verify --target`（Delta，IDE 已經開著） | — | 50.4 秒 |
 
+  - 監督者驗證（2026-09-05 18:40）：`python -m pytest tests -q` 與根目錄各 508 passed，監督者自己跑的。`cdsint installs` 七套全列、`cdsint/` 每個模組都在 300 行以下、`--target` 配 `--project` 是 exit 2、對使用者開著的 Shm 原檔 `compare --project` 是 exit 4 且訊息含 `.~u` 路徑，都是監督者自己跑的。兩個原始專案的修改時間都是 9 月 4 日，兩個來源 repo 的 `git status` 跟派工前一樣，沒有殘留的 IDE 行程。
+  - **監督者重現 `verify --project` 時抓到的洞。** 監督者把 softplc 複製到暫存區，`--sync-dir` 指到一個**空的**資料夾，跑 `verify --project --install 3.5.21.40 --force`。第一步 import 把副本裡 178 個物件刪掉、51 個刪失敗（子物件在父物件刪掉之後才輪到，`Object reference not set`），然後存檔；exit 1 只是因為那 51 個失敗讓 `ok` 變 False。如果刪得乾淨，verify 會接著匯出一個空專案、compare 無差異、build 通過，回一個什麼都沒證明的綠燈。worker 的兩條驗收沒撞到，原因是它的副本旁邊已經有匯出過的同步資料夾。同一條命令用 `--target` 打在使用者開著的專案上，只要 `cds-sync-folder` 指錯，專案就會被清空。根因有兩個：`verify` 自己替匯入按了確認（worker 的 Ruling，監督者推翻），以及 import 把「同步資料夾是空的」當成正常輸入。
+  - [ ] 階段 2 收尾（監督者驗收後加的）：`verify` 不再自己替匯入按確認，跟 `import` 一樣需要 `-y`，兩種形式都是。沒給 `-y` 就把匯入那步的計畫印出來（modified、new on disk、delete 各幾個）、回 `needs_input`、exit 1，IDE 一個物件都不動。SPEC 4.2 的表改成 `verify -y`。
+  - [ ] 階段 2 收尾：`import` 的三條路（選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時直接拒絕，訊息說「同步資料夾 X 沒有任何 .st，拒絕刪掉專案裡每一個物件；先跑 export，或修正 `--sync-dir`／`cds-sync-folder`」。這不是門檻式的啟發，是「事實來源不存在」的前置檢查，跟現有的「登入中拒絕匯入」同一類。
+  - [ ] 階段 2 收尾：`--project` 形式一律要求 `--sync-dir`，沒給就 argparse 擋。解析後的同步資料夾印在輸出的第一行，並寫進 report 頂層（`sync_dir`）。理由：副本的 `cds-sync-folder` 屬性可能是指向原專案真實資料夾的絕對路徑，export 會寫進使用者 git 管理的目錄；scenario C 的呼叫端本來就知道兩個路徑，讓它明講比讓它猜安全。
+  - [ ] 階段 2 收尾：readMe、`docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md` 補上這三條：`verify` 要 `-y`；空同步資料夾會被拒絕；`--project` 必配 `--sync-dir`。第 7 節第 4 項分紙機 Makefile 的行跟著加 `-y` 與 `--sync-dir`。
+  - [ ] 驗收：測試涵蓋三條：verify 沒 `-y` 而匯入會刪東西時回 `needs_input` 且引擎的刪除沒被呼叫；空同步資料夾時 import 拒絕且引擎沒被呼叫；`--project` 少 `--sync-dir` 被 argparse 擋。
+  - [ ] 驗收（監督者會重現）：softplc 副本、空的 `--sync-dir`：`verify --project --install 3.5.21.40 --force -y` exit 1，訊息是空資料夾拒絕，副本裡的物件數仍是 229（跑一次 `compare --project` 看 `new_in_ide`）；同一副本先 `export --project --sync-dir S`，再 `verify --project -y --sync-dir S` exit 0，report 頂層有 `sync_dir`。
+  - [ ] 驗收：`verify --target <無頭掛看門人的實例>` 沒 `-y` 回 `needs_input`、exit 1；加 `-y` exit 0。
+
 - [ ] **階段 3：權限與 PLC**（SPEC 10.2 階段 3）
   - [ ] 讀 `cds-sync-plc` 屬性與 exit 5。`plc connect`、`plc download -y` 引擎側從探路腳本搬，放 `engine/` 跟 `codesys_online` 並排（D12）。`--target` 形式拒絕並說明 D8 的理由。`config set cds-sync-plc` 拒絕。帳密只從 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，任何輸出、report、log 都不含它們（D14）。
   - [ ] 驗收：用假 IDE 物件的測試涵蓋四條：屬性空時 `plc download -y` exit 5 且引擎的 login 沒被呼叫；屬性有 `download` 但沒 `-y` 時回 `needs_input`、exit 1、login 沒被呼叫；`plc connect --target` 被拒絕；report 的 CRC 欄位 `MATCH` 與 `DIFFERENT` 兩種各有測試。
@@ -212,6 +222,7 @@ img/        readMe 用的圖
   - [ ] PRINCIPLES.md 依 SPEC 第 8 節改成兩級。
   - [ ] 碰到的函式順手把空白 `except:` 改成具體例外，不要求全清。回報清了幾處、剩幾處。
   - [ ] `tools/cache_doctor.py` 改成直接 import 引擎的 `file_signature()` 來判讀快取，拿掉它自己重放的舊判斷式與檔頭的「已過時」警告（第 7 節第 6 項）。
+  - [ ] import 刪物件的順序：父物件（POU）刪掉之後它的成員再被輪到就丟 `Object reference not set`，監督者在階段 2 重現時一次看到 51 個。改成先刪成員再刪父物件，或父物件刪掉時把它的成員從待刪清單拿掉；有測試。
   - [ ] perf 量測：對 Shm 副本用階段 2 的 `--project` 形式量 export、compare（只改一個 POU）、build，各三次取中位數，原廠與 Delta 各一組，更新 SPEC 第 7 節的表並註明日期與 commit。
   - [ ] 驗收：磁碟改了沒匯入就跑 export，該檔沒被覆蓋且被列為待匯入，有測試涵蓋。
   - [ ] 驗收：`grep -rn "time.sleep\|threading\|Thread(" engine/ cds/ide/ stub/` 為零。
@@ -330,6 +341,12 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 2 驗收後）: `verify` 需要 `-y`，推翻 worker「匯入就是 verify 的定義，問一個只有一個答案的問題不是謹慎」那條 — 那個問題有第二個有用的答案：同步資料夾指錯的時候，「不要」就是唯一對的答案。監督者用一個空的 `--sync-dir` 重現，verify 第一步就把 229 個物件裡的 178 個刪掉並存檔。SPEC 4.2 對 `-y` 的定義是「確認這一步會改狀態」，verify 含匯入，就該跟匯入共用同一條規則，一條規則沒有例外 — 錯了的代價是 pipeline 的呼叫多打兩個字元。
+- Ruling（階段 2 驗收後）: 同步資料夾裡一個 `.st` 都沒有時 `import` 拒絕，三條路一致 — 「磁碟是事實來源」的前提是磁碟上有一份事實；空資料夾不是「什麼都沒有」這個事實，是「還沒 export」或「路徑指錯」，兩種都該停下來。這跟「登入中拒絕匯入」一樣是前置檢查，不是門檻式的啟發 — 錯了的代價是真的想把專案清空的人要自己動手；那種需求不存在。
+- Ruling（階段 2 驗收後）: `--project` 形式必給 `--sync-dir` — 副本帶著原專案的 `cds-sync-folder`，那可能是指向使用者 git 目錄的絕對路徑；scenario C 的呼叫端本來就知道兩個路徑，讓它明講比讓 cdsint 從副本的屬性猜安全 — 錯了的代價是每次呼叫多一個旗標，分紙機 Makefile 的行多一個參數。
+- Ruling（階段 2 驗收後）: worker 階段 2 其餘的 Ruling 全部接受，包括 `park()` 留在 `tools/headless_watch.py`（D5 管的是產品的 IDE 側，測試用的支架撐住一個 `--noUI` 行程不算，SPEC D5 現況已註明）與 `entry_build.py` 在 Delta 上 build 兩次（跟階段 1 那條同形：擋著驗收、而且會把騙人的綠燈帶進下一階段） — 錯了的代價是 D5 的 grep 多一筆例外要記得。
+- Ruling（階段 2 驗收後）: 真 IDE 驗收從此一定含一個「剛複製、同步資料夾是空的」情境 — worker 兩次驗收都用已經一致的副本，正好繞過最危險的路徑；監督者的重現才撞到 — 錯了的代價是每次驗收多兩分鐘。
+- Ruling（階段 2 驗收後）: 第 7 節第 7 項（既有專案的 `cds-sync-version` 還是 `k1.1.1`）留給使用者，等基本開發做完一起處理；期間 `verify`／`import` 帶 `--force` — 這是使用者的專案設定 — 錯了的代價是無。
 - Ruling（階段 1 收尾驗收後）: worker 收尾的四條 Ruling 全部接受 — 攔截點放在「一個迴圈處理一個物件」那一步（兩處）而不是 `classify_object` 一處，理由成立：缺外掛的物件每個屬性都丟例外，只包分類那一行擋不住 Pass 1 讀 `obj.guid`；登記簿用模組層級狀態，在 D5 單執行緒、一次一個命令的前提下是安全的，而且省掉五個呼叫點各自「記得收集」的規則；有物件處理不了就不刪孤兒檔，這是 worker 自己看出來的爆炸半徑，`ok=False` 只是回報、刪掉的檔案救不回來，這條比監督者要求的多想了一步；`_report` 改成清單一行一項是 `data` 出現清單的必然結果 — 錯了的代價：登記簿若有一天 IDE 側出現第二條執行路徑（D5 改了），它會混在一起；那時 D5 本身就是更大的事。
 - Ruling（階段 1 驗收後）: `classify_object` 丟例外的問題**現在修，當階段 1 的收尾**，不留到階段 4 — 它擋住的是「跨家開專案」這個真實情境，而且階段 2 的 `verify` 會把 compare 與 import 串在一起跑，留著等於把一個已知會整個死掉的路徑帶進下一階段的驗收。修法的約束寫在階段 1 收尾那一項：一個地方處理、名字進 `data`、`ok` 為 False — 錯了的代價是階段 1 多一個 commit 的引擎改動，跟「階段 1 改行為」的定位一致。
 - Ruling（階段 1 驗收後）: 有物件處理不了就 `ok=False`，推翻 worker「`ok` 一比一複製舊判決、7 個失敗仍算成功」的做法 — 磁碟是事實來源（SPEC 目標 1），少 7 個物件的匯出不是完成；場景 C 的 pipeline 拿 `ok` 當閘門，一個放行「有 7 個沒匯出」的閘門是壞的；D13 要的「以名字報出來」靠 `data` 滿足，`ok=False` 讓呼叫端不用先讀 `data` 才知道要讀 `data`。同一家 IDE 開自己的專案時 failed 是 0，所以日常路徑沒有任何變化 — 錯了的代價是某天出現「有一個物件永遠處理不了但大家都不在乎」的專案，每次同步都 exit 1；那時該修的是引擎或 profile，不是把閘門放寬。

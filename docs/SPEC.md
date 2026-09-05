@@ -164,17 +164,19 @@
 | `import -y [--force]` | 有 | 有 | 把 `.st` 讀回 IDE，磁碟贏 |
 | `compare` | 有 | 有 | 列出 IDE 與磁碟的差異 |
 | `build [--app NAME]` | 有 | 有 | 編譯，回錯誤清單 |
-| `verify` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完 |
+| `verify -y [--force]` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完。含匯入，所以跟 `import` 一樣要 `-y` |
 | `plc connect [--gateway IP --port N]` | 拒絕 | 有 | 唯讀：列檔案、拉 `Application.crc`、比對 |
 | `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、比 CRC |
 | `config get`、`config set KEY=VALUE` | 有 | 有 | 讀寫 4.4 的屬性，`cds-sync-plc` 除外 |
 
 共用旗標：`--timeout 秒`（預設 120）、`--json`。
-只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`、
+只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`（必填，理由在下面）、
 `--answer KEY=VALUE`（可多個，D7）。`--answer` 回答的是 IDE 自己的提示，而 `--target` 那半的
 IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那一排。
 
-`-y` 的意思統一是「確認這一步會改狀態」，`import` 和 `plc download` 共用。沒給就印出這趟會做什麼，回 `needs_input`，exit 1，什麼都不改。沒有 `-N`，因為沒給 `-y` 就已經是「不做」，其他有安全預設值的對話框各自有具名旗標，`--force` 答版本和電腦不符，`--delete-orphans` 答刪孤兒。
+兩條跟「磁碟贏」有關的安全界線。`import`（三條路都是：選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時拒絕，因為那不是「磁碟上什麼都沒有」這個事實，是還沒 export 或路徑指錯，照磁碟贏的規則做下去等於把專案清空。`--project` 形式必給 `--sync-dir`，因為副本帶著原專案的 `cds-sync-folder`，那可能是指向使用者 git 目錄的絕對路徑，export 會寫進去；呼叫端本來就知道兩個路徑，讓它明講。解析後的同步資料夾印在輸出第一行並寫進 report 的 `sync_dir`。
+
+`-y` 的意思統一是「確認這一步會改狀態」，`import`、`verify` 和 `plc download` 共用。沒給就印出這趟會做什麼，回 `needs_input`，exit 1，什麼都不改。沒有 `-N`，因為沒給 `-y` 就已經是「不做」，其他有安全預設值的對話框各自有具名旗標，`--force` 答版本和電腦不符，`--delete-orphans` 答刪孤兒。
 
 `plc` 命令拒絕 `--target` 形式的原因見 D8。
 
