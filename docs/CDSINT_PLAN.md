@@ -249,7 +249,8 @@ img/        readMe 用的圖
   - [x] 必修 3：`cds/ide/headless.py` 的 `point_sync_folder` 失敗就不跑命令，report 記原因，`intended_exit` 是失敗。
   - [x] 建議 1 到 12（見審查檔）。特別是：`--force-lock` 那條路上 kill 之後不清別人的鎖（啟動前記下鎖在不在）；有登記簿項目時 import 不做 create／move（跟 export 不刪孤兒同形）；`cds-sync-version` 移到存檔之前寫；缺 `print_function` 的檔全部補上；`cds/ide/headless._text` 改成先判 unicode 並考慮三個 `_text` 收成 `cds/core` 一支；Ctrl-C 要 kill 自己起的 IDE；D12 加 `tests/test_layering.py` 用 AST 守。
   - [x] 驗收：`python -m pytest tests -q` 綠；兩支重現腳本各自跑完印出「檔案還在／有 raise」；`grep -L "print_function" engine/*.py cds/ide/*.py cds/core/*.py stub/*.py` 為空。
-  - [ ] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。
+  - [x] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。——監督者 2026-09-05 23:20 在原廠 3.5.21.40、softplc 副本上跑：export 229 → 改 `FB_LowPass.st` 一行 → compare 回 `different=1` → export：那個檔的雜湊值前後相同、`pending_import` 列出它、其餘 228 identical、`ok` false。
+  - 監督者驗證（2026-09-05 23:25，審查修正之後）：`python -m pytest tests -q` 與根目錄各 897 passed，監督者自己跑的。兩支重現腳本監督者自己跑：`repro_compare_drops_guard.py` 印 `disk still holds my edit: True`，`repro_stale_report.py` 印 `run 2 raised Failure (correct)`。`grep -L print_function` 在 IDE 側全部檔案為空；`tests/test_layering.py` 74 條綠。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 空，來源 repo 的 `git status` 跟派工前一字不差。**階段 0 到 4 全部做完。**
 
 ---
 
@@ -461,6 +462,8 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（審查修正驗收後）: worker 這一輪的十一條 Ruling 全部接受，包括 stub 行數上限從 15 放到 17（多的兩行是 `print_function`，不是邏輯）、必修 1 保留的範圍擴到「Pass 1 走到了但沒走完 Pass 2」的每一個物件、建議 7 死碼那一半沒有紅測試（不可達的分支寫不出行為測試，刪掉的證據是整套綠） — 錯了的代價是無。
+- Ruling（審查修正驗收後）: 基本開發到此結束。階段 0 到 4 的施工與能自動驗的驗收全部完成並由監督者重現過；剩下的全是「還需要人」：建遠端並 push、把五個 junction 改指本 repo 的 `stub/`、三家 IDE 的選單、看門人跑著時從選單啟動別的腳本、台架上的 PLC 下載、托盤氣泡看一眼、分紙機 Makefile、既有專案的版本戳。工單留在 `docs/` 追蹤它們 — 錯了的代價是無。
 - Ruling（審查後）: 審查的三條必修全修、十二條建議全做 — 必修 1 是髒檔保護在真實流程（先 compare 再 export）下失效，等於 SPEC 6.1 那條沒做到；必修 2 讓 verify 可能拿上一趟的答案當這一趟的判決；必修 3 是階段 2 那道 `--sync-dir` 牆有個沒關的門。建議裡 1、2、3、10 也碰資料安全，其餘都小到一次做完比留著再開一輪便宜 — 錯了的代價是這一輪多花一兩小時。
 - Ruling（審查後）: 修法選「保留舊快取項目」不選「只看的命令不寫快取」 — 快取是下一趟加速的依據，只看的命令更新它是對的；錯的是把「還沒同步的東西」的紀錄丟掉。前者是一行加一個條件，後者要在三個命令裡分兩種模式 — 錯了的代價是快取裡留著一筆「上次同步時的樣子」直到真的匯入，那正是它該記的東西。
 - Ruling（審查後）: 工單在所有人力項目做完之前留在 `docs/`，不移到 `docs/history/` — 它還有四條「還需要人」在追蹤，移走等於沒有人看得到 — 錯了的代價是 `docs/` 多一份活文件。
