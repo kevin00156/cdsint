@@ -149,6 +149,47 @@ def test_the_sync_folder_is_pointed_where_the_caller_said(ide, tmp_path,
     assert ide["projects"].primary.props["cds-sync-folder"] == "D:\\sync"
 
 
+def test_a_sync_folder_that_would_not_stick_stops_the_run(ide, tmp_path,
+                                                          monkeypatch):
+    # --sync-dir is what stops a --project run from writing into whatever
+    # folder the copy happens to carry (SPEC 4.2). set_prop swallows its
+    # failures into a False, and that False used to be dropped: the commands
+    # ran anyway, against the project's own cds-sync-folder, while the report
+    # still claimed the run used --sync-dir.
+    ran = []
+    step = one_step()
+
+    def record(ide_globals, name, args):
+        ran.append(name)
+        return step(ide_globals, name, args)
+
+    monkeypatch.setattr(entries, "run", record)
+    monkeypatch.setattr(ide_side, "point_sync_folder",
+                        lambda projects_obj, sync_dir: False)
+
+    report = ide_side.run_job(ide, job(tmp_path, sync_dir="D:\sync",
+                                       commands=[{"command": "export",
+                                                  "args": {}}]))
+
+    assert ran == []
+    assert report["intended_exit"] == ide_side.EXIT_FAILED
+    assert "D:\sync" in report["error"]
+
+
+def test_the_report_names_the_folder_the_engine_read(machine, monkeypatch):
+    # Suggestion 8: this run does change the project's cds-sync-folder, and
+    # the following export saves it. The CLI used to write its own flag into
+    # this field, so the report said --sync-dir whichever folder the engine
+    # had actually been left with.
+    launching(monkeypatch, code=0)
+    written_report(monkeypatch, dict(OK_REPORT, sync_dir="D:\what-ran"))
+    started = make(machine, monkeypatch, sync_dir="D:\what-was-asked")
+
+    started.run([("export", {})])
+
+    assert ipc.read_json(started.report_path)["sync_dir"] == "D:\what-ran"
+
+
 def test_the_report_is_written_where_the_job_asked(ide, tmp_path, monkeypatch):
     monkeypatch.setattr(entries, "run", one_step())
     record = job(tmp_path, commands=[{"command": "export", "args": {}}])
@@ -458,6 +499,37 @@ def test_a_timeout_is_written_into_the_report(machine, monkeypatch):
     # A caller reading only the report has to find the conclusion there: the
     # exit code it would otherwise reason from is what a kill takes away.
     assert saved["timed_out"] is True and "dialog" in saved["error"]
+
+
+def test_the_last_run_report_is_not_read_as_this_run_answer(machine,
+                                                            monkeypatch):
+    # default_report keeps the file on purpose, so the same project's report
+    # path already holds the last run when this one starts. An IDE that hangs
+    # on a dialog and writes nothing used to leave that file for _collect to
+    # read: intended_exit was there, so the run counted as finished, and
+    # verify passed on the previous run's numbers.
+    started = make(machine, monkeypatch, timeout=0.01)
+    ipc.write_json(started.report_path, OK_REPORT)
+    launching(monkeypatch, code=None)
+
+    with pytest.raises(Failure) as raised:
+        started.run([("import", {"yes": True})])
+
+    assert raised.value.code == EXIT_TIMEOUT
+
+
+def test_the_last_run_report_is_not_read_after_a_silent_exit(machine,
+                                                             monkeypatch):
+    # The same hole without a timeout: the IDE exits by itself having written
+    # nothing, and the leftover report answers for it.
+    started = make(machine, monkeypatch)
+    ipc.write_json(started.report_path, OK_REPORT)
+    launching(monkeypatch, code=0)
+
+    with pytest.raises(Failure) as raised:
+        started.run([("import", {"yes": True})])
+
+    assert raised.value.code == EXIT_HEADLESS
 
 
 def test_an_ide_that_wrote_no_report_is_a_launch_failure(machine, monkeypatch):

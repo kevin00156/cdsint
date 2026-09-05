@@ -84,6 +84,13 @@ class Headless(object):
                "commands": [{"command": c, "args": a} for c, a in steps]}
         job_path = self.report_path + ".job.json"
         ipc.write_json(job_path, job)
+        # The report path is stable across runs on purpose (report
+        # .default_report keeps the file, and --report is often a fixed name
+        # in a Makefile), so anything there now belongs to the last run. Read
+        # as this run's answer it says "finished" for an IDE that hung on a
+        # dialog and wrote nothing. stdout and stderr are already truncated
+        # each launch; this makes the report agree with them.
+        ipc.remove_file(self.report_path)
         deadline = self.deadline(len(steps))
         started = time.time()
         code, pid = self._launch(job_path, deadline)
@@ -205,7 +212,10 @@ class Headless(object):
         finished = report.get("intended_exit") is not None
         report.update({
             "install": self.install["name"], "profile": self.profile,
-            "report_path": self.report_path, "sync_dir": self._sync_dir,
+            "report_path": self.report_path,
+            # The IDE side's value if it got that far, because that is the
+            # folder the engine read; the flag only says what was asked for.
+            "sync_dir": report.get("sync_dir") or self._sync_dir,
             "elapsed_s": round(elapsed, 3),
             "pid": pid, "exit_code_actual": code, "timed_out": code is None,
             "stdout_path": self.stdout_path(),

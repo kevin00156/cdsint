@@ -76,6 +76,7 @@ def run_job(ide_globals, job):
         "results": [],
         "error": None,
         "opened": False,
+        "sync_dir": None,
         "intended_exit": EXIT_FAILED,
     }
     answer_prompts(ide_globals, job.get("answers"))
@@ -92,7 +93,24 @@ def run_job(ide_globals, job):
     report["opened"] = True
     report["project"] = _text(getattr(opened, "path", job.get("project")))
     if job.get("sync_dir"):
-        point_sync_folder(ide_globals.get("projects"), job["sync_dir"])
+        # --sync-dir is the whole reason a --project run is safe to point at
+        # a project it did not make: without it the commands read whatever
+        # cds-sync-folder the file carries, which SPEC 4.2 says is an
+        # absolute path into somebody's git working copy. set_prop turns
+        # every failure into a False -- a read-only project, user management,
+        # a project_info that throws -- so a False here means the run would
+        # be against the wrong folder, and there is no safe way to continue.
+        if not point_sync_folder(ide_globals.get("projects"),
+                                 job["sync_dir"]):
+            report["error"] = ("could not point cds-sync-folder at "
+                               + _text(job["sync_dir"]) + ". Nothing ran: "
+                               "the commands would have used the folder the "
+                               "project already carries.")
+            return report
+        # What the engine will actually read, as opposed to what the caller
+        # asked for. The CLI used to fill this field in from its own flag, so
+        # the report said "--sync-dir" no matter which folder the run used.
+        report["sync_dir"] = _text(job["sync_dir"])
     report["results"] = run_commands(ide_globals, job.get("commands") or [])
     if all(result["ok"] for result in report["results"]):
         report["intended_exit"] = EXIT_OK
@@ -182,9 +200,15 @@ def open_project(ide_globals, path):
 def point_sync_folder(projects_obj, sync_dir):
     """Set cds-sync-folder for this run. Absolute, so nothing is ambiguous.
 
-    Not saved: the caller asked where the .st files are for this run, not to
-    change the project on disk. `cdsint config set` is how you change it for
-    good.
+    Not saved here -- but do not read that as "the project on disk is left
+    alone". Every export and import that follows ends in
+    finalize_sync_operation, and save-after-export/import default to true, so
+    this value does reach the .project file for any run that gets that far.
+    Harmless for the copy this form is meant for; on a real project it is a
+    property change the caller did not ask for. `cdsint config set` is how
+    you change it deliberately.
+
+    False means the write did not stick; run_job refuses to go on.
     """
     return project.set_prop(projects_obj, props.FOLDER, sync_dir)
 
