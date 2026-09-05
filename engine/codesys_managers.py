@@ -761,11 +761,11 @@ class ObjectManager(object):
     def _disk_moved_since_sync(self, rel_path, file_path, context):
         """Has somebody edited this file since the last sync? (SPEC 6.1)
 
-        Only ever asked once the two sides are known to differ, so a yes
-        means the disk is the side that moved and export must not write over
-        it. Disk is the source of truth: an edit nobody imported yet is work,
-        and overwriting work is the one failure this tool cannot apologise
-        for afterwards.
+        Only ever asked at the point where this run would otherwise write:
+        the file is not identical to what the IDE holds, or could not be read
+        to find out. A yes means the disk is the side that moved. Disk is the
+        source of truth, an edit nobody imported yet is work, and overwriting
+        work is the one failure this tool cannot apologise for afterwards.
 
         "No cache entry" is not "unchanged", it is "no idea": the cache is
         local state and gitignored, so a fresh clone has none and a first

@@ -25,7 +25,7 @@ from engine.codesys_utils import (
 )
 
 SETTINGS = (
-    # property suffix          dialog key            default
+    # property                 dialog key            default
     (props.EXPORT_XML, "export_xml", False),
     (props.BACKUP_BINARY, "backup_binary", False),
     (props.SAVE_AFTER_IMPORT, "save_after_import", True),

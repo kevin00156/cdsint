@@ -427,6 +427,11 @@ def export_project(export_dir, projects_obj=None):
     # objects behind is not a finished export, however many it did write.
     # It still wrote all the others: giving up on the first bad object
     # would be worse than reporting the ones that did not make it.
+    #
+    # Two ways to be left behind, and they need different things from the
+    # reader: an object this run could not handle (D13) wants somebody to
+    # find out why, and a file holding an unimported edit (6.1) wants an
+    # import. Both mean the disk does not match the IDE, so both mean not ok.
     missing = unhandled.names()
     return entry.result(not missing and not pending_import,
                         summary if not missing else
