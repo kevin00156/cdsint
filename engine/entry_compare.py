@@ -270,8 +270,11 @@ def perform_export(base_dir, selected, unchanged_count=0):
                         context['property_accessors'][obj_guid]['get'] = child
                     elif child_name == "SET":
                         context['property_accessors'][obj_guid]['set'] = child
-            except:
-                pass
+            except Exception as e:
+                # Without its accessors the property still gets a file, but
+                # an empty GET/SET, so say whose (SPEC D13).
+                log_warning("Could not read the accessors of %s: %s"
+                            % (unhandled.name_of(obj), safe_str(e)))
 
         if is_xml:
             mgr = managers.get(effective_type, managers["native"])

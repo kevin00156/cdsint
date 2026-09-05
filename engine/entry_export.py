@@ -79,7 +79,9 @@ def cleanup_orphaned_files(export_dir, current_objects):
     try:
         from engine.codesys_utils import get_project_prop
         auto_delete = get_project_prop(props.AUTO_DELETE_ORPHANS, False)
-    except:
+    except Exception:
+        # Reading a project property is an IDE call and can raise anything.
+        # Not knowing means not deleting.
         auto_delete = False
 
     if auto_delete:
@@ -141,8 +143,8 @@ def cleanup_orphaned_files(export_dir, current_objects):
                     if not os.listdir(root):
                         os.rmdir(root)
                         print("Deleted empty folder: " + rel_path)
-                except:
-                    pass
+                except OSError:
+                    pass  # Not empty, or gone already. Either way, leave it.
         return removed_count
     elif choice_idx == 1: # Ignore
         print("Orphaned files ignored.")
@@ -303,8 +305,11 @@ def export_project(export_dir, projects_obj=None):
                             context['property_accessors'][obj_guid]['get'] = child
                         elif child_name == "SET":
                             context['property_accessors'][obj_guid]['set'] = child
-                except:
-                    pass
+                except Exception as e:
+                    # Without its accessors the property still gets a file,
+                    # but an empty GET/SET, so say whose (SPEC D13).
+                    log_warning("Could not read the accessors of %s: %s"
+                                % (unhandled.name_of(obj), safe_str(e)))
             
             # --- PERSIST CACHE FOR SKIPPED OBJECTS ---
             if cache_data and norm_path:
@@ -312,7 +317,8 @@ def export_project(export_dir, projects_obj=None):
                     cached_obj = cache_data.get('objects', {}).get(norm_path)
                     if cached_obj:
                         new_cache[norm_path] = cached_obj
-                except: pass
+                except (AttributeError, TypeError):
+                    pass  # A cache file of the wrong shape is no cache.
             # ----------------------------------------
 
             if should_skip:

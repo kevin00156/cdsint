@@ -713,7 +713,10 @@ class ObjectManager(object):
                 "disk_mtime": disk_mtime,
                 "disk_size": disk_size
             }
-        except: pass
+        except Exception:
+            # A cache entry that cannot be written costs the next run its
+            # fast path and nothing else, so it is not worth failing over.
+            pass
 
     def _try_cache_skip(self, obj, rel_path, file_path, context, is_xml=False):
         """Attempt to skip export via IDE-cache-disk fast path.
@@ -931,8 +934,8 @@ class POUManager(ObjectManager):
                     
                     self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
                     return "identical"
-            except:
-                pass  # If we can't read existing file, just overwrite
+            except (IOError, OSError, UnicodeDecodeError):
+                pass  # Unreadable or not utf-8: treat it as needing a rewrite
 
             if self._disk_moved_since_sync(rel_path, file_path, context):
                 return self._pending(rel_path, context)
@@ -1154,8 +1157,8 @@ class PropertyManager(POUManager):
 
                     self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
                     return "identical"
-            except:
-                pass
+            except (IOError, OSError, UnicodeDecodeError):
+                pass  # Unreadable or not utf-8: treat it as needing a rewrite
 
             if self._disk_moved_since_sync(rel_path, file_path, context):
                 return self._pending(rel_path, context)
@@ -1400,8 +1403,10 @@ class NativeManager(ObjectManager):
         # Compare hashes
         if not is_new and old_hash and old_hash == new_hash:
             # Content identical - remove temp, keep original
-            try: os.remove(tmp_path)
-            except: pass
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
             if 'exported_paths' in context:
                 context['exported_paths'].add(rel_path)
             self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
