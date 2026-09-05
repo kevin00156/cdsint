@@ -28,7 +28,7 @@ ALLOWED = {
     "engine/codesys_managers.py": 29,
     "engine/codesys_ui.py": 6,
     "engine/codesys_ui_diff.py": 3,
-    "engine/codesys_utils.py": 34,
+    "engine/codesys_utils.py": 33,
     "engine/entry_build.py": 6,
     "engine/entry_compare.py": 2,
     "tools/Project_discover.py": 5,

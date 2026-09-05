@@ -53,9 +53,9 @@ class Logger:
             # In CODESYS, 'projects' is a global object provided by the environment
             if projects.primary:
                 info = projects.primary.get_project_info()
-                props = info.values if hasattr(info, "values") else info
-                if props.FOLDER in props:
-                    folder = props[props.FOLDER]
+                values = info.values if hasattr(info, "values") else info
+                if props.FOLDER in values:
+                    folder = values[props.FOLDER]
                     if folder and os.path.exists(folder):
                         self.log_file = os.path.join(folder, "sync_debug.log")
                         self.is_final = True # We found the real path
@@ -389,9 +389,9 @@ def get_project_prop(key, default=None):
         info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
         if not info: return default
         
-        props = info.values if hasattr(info, "values") else info
+        values = info.values if hasattr(info, "values") else info
         try:
-            val = props[key]
+            val = values[key]
             if val is None: return default
             # Auto-convert types if they look like numbers or booleans
             s_val = str(val)
@@ -405,7 +405,13 @@ def get_project_prop(key, default=None):
         return default
 
 def set_project_prop(key, value):
-    """Safely set a project property."""
+    """Write one project property. True when it landed.
+
+    Says why when it does not. This used to swallow the reason and hand back
+    a bare False, which is how a shadowed name in this very function went
+    unnoticed: every write in the product failed and the only trace was
+    callers politely reporting "could not write".
+    """
     try:
         projects_obj = resolve_projects()
         if not projects_obj or not projects_obj.primary:
@@ -416,12 +422,14 @@ def set_project_prop(key, value):
         info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
         if not info: return False
         
-        props = info.values if hasattr(info, "values") else info
-        props[key] = str(value)
+        values = info.values if hasattr(info, "values") else info
+        values[key] = str(value)
         if key == props.DEBUG:
             reset_debug_cache()
         return True
-    except:
+    except Exception as e:
+        log_error("Could not write project property %s: %s"
+                  % (key, safe_str(e)))
         return False
 
 _debug_flag = []  # empty until first read; holds one bool afterwards
@@ -468,14 +476,16 @@ def set_application_count_flag(app_count):
             return False
 
         has_multiple_apps = (app_count > 1)
-        log_info("Application count summary: Found %d applications. Setting props.MULTIPLE_APPS flag to %s" % (app_count, str(has_multiple_apps)))
+        log_info("Application count summary: Found %d applications. "
+                 "Setting %s to %s"
+                 % (app_count, props.MULTIPLE_APPS, str(has_multiple_apps)))
 
         # Cleanup old 'boolean' flag if it exists (prevents clutter)
         try:
             info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
-            props = info.values if hasattr(info, "values") else info
-            if "boolean" in props:
-                del props["boolean"]
+            values = info.values if hasattr(info, "values") else info
+            if "boolean" in values:
+                del values["boolean"]
         except:
             pass
 
@@ -529,7 +539,7 @@ def update_application_count_flag(all_objs=None):
         return False
 
 def load_base_dir():
-    """Load base directory from the project property props.FOLDER.
+    """Load base directory from the project's sync-folder property.
     
     Supports both absolute and relative paths:
     - Absolute paths: Used as-is (e.g., C:\\MySync\\)
