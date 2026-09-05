@@ -169,11 +169,11 @@ when an install has several, `--report FILE`, `--force-lock`, and
 with no flag behind it comes back as `needs_input` naming the flag you need, exit
 code 1, and nothing in the IDE changed.
 
-### Two lines you cannot cross by accident
+### Three lines you cannot cross by accident
 
-Disk wins, so an import reads the sync folder as the answer to "what should this
-project contain". That makes two situations dangerous, and both are refused
-rather than measured:
+Disk wins. That cuts both ways: an import reads the sync folder as the answer to
+"what should this project contain", and an export must not scribble over that
+answer. Three situations are therefore refused rather than measured:
 
 - **An empty sync folder.** No `.st` anywhere under it is not the answer
   "nothing" — it is a folder nobody has exported to, or the wrong folder — so
@@ -182,6 +182,12 @@ rather than measured:
 - **A copy that remembers where the original synced.** `--project` therefore
   requires `--sync-dir`, and the resolved folder is printed first and written
   into the report as `sync_dir`.
+- **A file you edited and have not imported.** `export` leaves it alone, names
+  it in `data.pending_import`, and the run is not ok. Run `import` first, or
+  delete the file if you did not want the edit. This one only applies when the
+  sync folder has been synced from this machine before: the answer comes from
+  `sync_cache.json`, which is local and gitignored, so a fresh clone has no
+  record to compare against and the first export there writes.
 
 `verify` contains an import, so it needs `-y` exactly as `import` does. Without
 it you get the comparison, the count of what the import would have changed,
