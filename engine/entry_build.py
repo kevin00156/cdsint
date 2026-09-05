@@ -11,6 +11,84 @@ import sys
 from engine.codesys_utils import safe_str, init_logging, load_base_dir, resolve_projects, update_application_count_flag
 from engine import entry
 
+# Every severity a build message can carry, ORed into one flags value.
+SEVERITY_NAMES = ("FatalError", "Error", "Warning", "Information")
+
+
+def run_build(app, system, category, severity_enum):
+    """Build the application and collect what the IDE said. (messages, seconds).
+
+    Builds a second time when the first said nothing at all, because on
+    Delta 1.10 the first build() in a process does not compile: measured on
+    one project, three builds in one IDE gave 7.4s and no messages, then
+    31.7s with 101 warnings, then 5.8s with the same 101. A headless run only
+    ever gets a first build, so without this `cdsint build --project` there
+    reports a clean build of code it never compiled — a green light for
+    nothing, which is exactly the silent failure SPEC goal 6 rules out.
+
+    "Nothing at all" is the signal rather than a count, because a real build
+    always writes at least its own started and completed lines into the
+    category; those are asked for (the mask includes Information) and then
+    skipped when counting. Twice and no further: if the second is silent too,
+    the caller is told that instead of a number.
+    """
+    started = time.time()
+    app.build()
+    messages = build_messages(system, category, severity_enum)
+    if not messages:
+        app.build()
+        messages = build_messages(system, category, severity_enum)
+    return messages, time.time() - started
+
+
+def build_messages(system, category, severity_enum):
+    """What the IDE has to say about the build, or nothing when it said nothing.
+
+    ScriptEngine 4.0.0.0 — Delta 1.8 and 1.10, Lenze 3.24 — wants two things
+    from get_message_objects that this used to give it one of. Both of its
+    overloads take a severity mask as well as the category, and the category
+    has to be one that is actually holding messages: a build that recompiled
+    nothing leaves Build registered but empty, and asking it for messages
+    then raises "Value cannot be null. Parameter name: category", which
+    turned a clean build into a traceback. Both measured on Delta 1.10;
+    4.2.0.0 tolerates each, which is why stock CODESYS never showed either.
+
+    Asking which categories are active first is what separates "the build had
+    nothing to say" from "the build could not be read" — and only the first
+    of those is safe to report as zero errors.
+    """
+    if not holds_messages(system, category):
+        return []
+    return system.get_message_objects(category, every_severity(severity_enum))
+
+
+def holds_messages(system, category):
+    """Is this category one of the ones with something in it right now?"""
+    wanted = str(category).lower()
+    return any(str(found).lower() == wanted
+               for found in system.get_message_categories(True))
+
+
+def every_severity(severity_enum):
+    """The severity mask that means "all of them".
+
+    The members are named rather than a literal mask written out, so a
+    ScriptEngine that does not have one of them is a name that is missing
+    here, not a count that is silently wrong.
+    """
+    wanted = None
+    for name in SEVERITY_NAMES:
+        member = getattr(severity_enum, name, None)
+        if member is None:
+            continue
+        wanted = member if wanted is None else wanted | member
+    if wanted is None:
+        raise AttributeError(
+            "this IDE's Severity has none of %s, so there is no way to ask "
+            "for the build's messages" % (", ".join(SEVERITY_NAMES),))
+    return wanted
+
+
 def build_project(projects_obj=None):
     """Build the active application in CODESYS and generate build.log"""
     from System import Guid
@@ -95,8 +173,6 @@ def build_project(projects_obj=None):
     except:
         pass
 
-    start_time = time.time()
-    
     # Log Header for build.log
     log_lines = []
     log_lines.append("------ Build started: Application: {} ------".format(safe_str(app.get_name())))
@@ -104,15 +180,21 @@ def build_project(projects_obj=None):
     
     try:
         # Trigger Build
-        app.build()
-        elapsed = time.time() - start_time
-        
-        # Retrieve messages
-        messages = system.get_message_objects(BUILD_CATEGORY)
-        
+        messages, elapsed = run_build(app, system, BUILD_CATEGORY, Severity)
+        if not messages:
+            nothing = ("{} built in {:.2f}s and the IDE reported nothing at "
+                       "all, not even its own summary line, so there is no "
+                       "build result here to trust".format(
+                           safe_str(app.get_name()), elapsed))
+            print(nothing)
+            system.ui.error(nothing)
+            return entry.result(False, nothing,
+                                application=safe_str(app.get_name()),
+                                errors=0, warnings=0)
+
         error_count = 0
         warning_count = 0
-        
+
         # Try to get project name safely
         project_name = "Unknown Project"
         try:
@@ -391,8 +473,14 @@ def build_project(projects_obj=None):
                             warnings=warning_count)
 
     except Exception as e:
+        # The traceback goes to stdout, which reaches the caller as
+        # stdout_tail. A .NET exception's message on its own can be as
+        # useless as "值不能為 null。參數名稱: category" — true, and no help
+        # at all in saying which of these calls said it.
+        import traceback
         failure = "Build process failed: " + str(e)
         print("Build Error: " + str(e))
+        print(traceback.format_exc())
         system.ui.error(failure)
         return entry.result(False, failure)
 

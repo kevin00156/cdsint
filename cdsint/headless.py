@@ -160,7 +160,7 @@ class Headless(object):
         report.update({
             "install": self.install["name"], "profile": self.profile,
             "report_path": self.report_path, "elapsed_s": round(elapsed, 3),
-            "pid": pid, "exit_code_actual": code,
+            "pid": pid, "exit_code_actual": code, "timed_out": code is None,
             "stdout_path": self.stdout_path(),
             "stderr_path": self.stderr_path(),
             "stdout_reached": self._stdout_reached(),
@@ -170,14 +170,11 @@ class Headless(object):
         # this compares (SPEC 6.4).
         intended = report.get("intended_exit")
         report["exit_code_trusted"] = (intended is not None and code == intended)
+        if code is None:
+            report["error"] = self._timed_out(pid)
         ipc.write_json(self.report_path, report)
         if code is None:
-            raise Failure(
-                "%s did not finish within %gs and was killed (pid %s). Under "
-                "--noUI that usually means a dialog opened with nothing to "
-                "close it; %s has what it was doing."
-                % (self.install["name"], self.timeout, pid, self.stdout_path()),
-                EXIT_TIMEOUT)
+            raise Failure(report["error"], EXIT_TIMEOUT)
         self._say_if_untrusted(report)
         if not report.get("opened"):
             raise Failure(report.get("error")
@@ -189,6 +186,18 @@ class Headless(object):
             result["ide"] = report.get("ide")
             result["report_path"] = self.report_path
         return report["results"]
+
+    def _timed_out(self, pid):
+        """The conclusion, not just the symptom, and it goes in the report.
+
+        A caller reading only the report file has to find "this hung" there,
+        because the exit code it would otherwise reason from is the one thing
+        a killed process cannot give it.
+        """
+        return ("%s did not finish within %gs and was killed (pid %s). Under "
+                "--noUI that usually means a dialog opened with nothing to "
+                "close it; %s has what it was doing."
+                % (self.install["name"], self.timeout, pid, self.stdout_path()))
 
     def _say_if_untrusted(self, report):
         if report.get("exit_code_trusted") or report.get("intended_exit") is None:

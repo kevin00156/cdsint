@@ -357,6 +357,9 @@ def test_a_timeout_is_written_into_the_report(machine, monkeypatch):
         started.run([("export", {})])
     saved = ipc.read_json(started.report_path)
     assert saved["exit_code_actual"] is None and saved["pid"] == 4321
+    # A caller reading only the report has to find the conclusion there: the
+    # exit code it would otherwise reason from is what a kill takes away.
+    assert saved["timed_out"] is True and "dialog" in saved["error"]
 
 
 def test_an_ide_that_wrote_no_report_is_a_launch_failure(machine, monkeypatch):
@@ -381,3 +384,16 @@ def test_a_report_path_survives_a_project_name_with_spaces_and_chinese(machine):
     made = cli_side._default_report(u"C:\\p\\\u4e09\u660e \u5206\u7d19\u6a5f.project")
     assert made.endswith(".json") and " " not in os.path.basename(made)
     assert os.path.basename(made).encode("ascii")
+
+
+def test_an_open_that_throws_gets_the_same_hint_as_one_that_returns_nothing(
+        ide, tmp_path, monkeypatch):
+    # Cancelling the upgrade prompt shows up both ways: open() returning
+    # nothing, and it throwing "Do not upgrade the older version project".
+    def refuse(path):
+        raise RuntimeError("Do not upgrade the older version project")
+    ide["projects"].open = refuse
+    report = ide_side.run_job(ide, job(tmp_path))
+    assert report["opened"] is False
+    assert "--answer KEY=VALUE" in report["error"]
+    assert "Do not upgrade" in report["error"]

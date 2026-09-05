@@ -86,7 +86,7 @@ def run_job(ide_globals, job):
         opened = open_project(ide_globals, job["project"])
     except Exception:
         import traceback
-        report["error"] = ("the project could not be opened:\n"
+        report["error"] = (_why_nothing_opened(job) + "\n\n"
                            + traceback.format_exc())
         return report
     if opened is None:
@@ -192,17 +192,19 @@ def point_sync_folder(projects_obj, sync_dir):
 
 
 def _why_nothing_opened(job):
-    """open() came back with no project, which is what a cancelled prompt does.
+    """The open produced no project, which is what a cancelled prompt does.
 
-    The usual one is the storage-format upgrade: headless the default answer
-    is no, and no cancels the open. The key is on stdout thanks to
-    LogMessageKeys, but naming the likely one here saves a reader the hunt.
+    Cancelling shows up two ways — open() returning nothing, and it throwing
+    "Do not upgrade the older version project" — and both mean the same
+    thing, so both get told the same thing. The keys are on stdout thanks to
+    LogMessageKeys, but naming the likely one saves a reader the hunt.
     """
     return ("%s did not open. A prompt this run had no answer for is the "
             "usual reason — the keys are on stdout, and --answer KEY=VALUE "
             "answers them. A project saved by an older IDE asks "
             "UpgradeProjectConfirmation, and saying Yes rewrites its storage "
-            "format so that older IDE can no longer open it."
+            "format so that older IDE can no longer open it, which is why "
+            "nothing here answers it for you."
             % (job.get("project"),))
 
 
