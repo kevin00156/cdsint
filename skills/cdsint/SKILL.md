@@ -134,6 +134,10 @@ was missing, `denied` says the project's own policy refused the command (only
 `plc`, and no flag fixes it), and `data` holds this command's own numbers — the counts, and
 `failed_objects` naming anything the command could not handle.
 
+export adds `data.pending_import`: files you edited on disk and have not
+imported yet. It does not overwrite those, and the run is not ok. That is not
+an error — run `import` first, or delete the file if you do not want the edit.
+
 ## Flags answer the questions a person would have
 
 A question with no flag behind it comes back as `needs_input`, exit code 1, and

@@ -157,6 +157,9 @@ cdsint export
   這個不是補旗標能解決的，見第 6 節。
 - `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
   `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
+- 匯出還有一個 `data.pending_import`：那些檔案你在磁碟上改過而還沒匯入，匯出不會覆蓋它們，
+  也會讓那一趟 `ok` 是 false。這不是錯誤，是提醒你先跑一次 `import`（或者你不要那份改動，
+  就把檔案刪掉再匯出一次）。
 - `--project` 形式的紀錄還多三個欄位：`ide`（用了哪一套）、`sync_dir`（這一趟把哪個
   資料夾當成事實來源）與 `report_path`（完整報告在哪）。
 
