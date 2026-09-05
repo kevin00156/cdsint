@@ -226,7 +226,7 @@ img/        readMe 用的圖
   - [ ] 驗收（還需要人）：台架上 `plc connect` 列出裝置、`plc download -y` 下載成功且 CRC `MATCH`。原因：要接真 PLC 與憑證。
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
 
-- [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）
+- [ ] **階段 4：引擎品質**（SPEC 10.2 階段 4）——worker 2026-09-05 22:26 做完，監督者的驗證見本階段末尾；全新上下文的審查在跑，必修修完才打大勾。
   - [x] **先做這條（D13 的洞）**：匯出寫檔失敗的物件沒進登記簿。監督者把同步資料夾放在一個 168 字元長的路徑底下匯出 softplc 副本：229 個物件裡 87 個寫出、12 個「路徑超過 260 字元」有進 `failed_objects`，另外 130 個「Failed to write ST file: Could not find a part of the path」只印在 log，`data.failed` 沒算它們，`failed_objects` 沒有它們的名字。也就是說如果只有這 130 個失敗，`ok` 會是 True。修法：`entry_export.py` 寫檔那一層的失敗跟其他失敗一樣 `unhandled.note`；有測試（假的寫檔函式丟 `IOError`）。順便決定要不要在匯出前檢查最長路徑會不會超過 260 並提前拒絕（跟空資料夾那條同類的前置檢查），或改用 `\\?\` 前綴開長路徑；第 7 節寫回。
   - [x] `engine/entry_plc.py` 607 行，是階段 3 新寫的程式碼，超過 PRINCIPLES 的 400 行硬上限（SPEC 第 8 節：新寫的程式碼適用硬上限，`engine/` 只對舊碼放寬）。照「這段話是關於誰的」拆開，例如連線與閘道、下載與開機應用程式、CRC 比對與封存各一個模組，每個不超過 300 行；行為與 `tests/test_plc.py` 的 61 條測試不變。
   - [x] 髒檔保護（SPEC 6.1 第一條）。匯出時磁碟上自上次同步後被改過而還沒匯入的 `.st` 不覆蓋，列成待匯入。
@@ -241,6 +241,8 @@ img/        readMe 用的圖
   - [x] 驗收：IDE 側沒有 sleep、沒有執行緒。由 `tests/test_single_threaded_ide_side.py` 守著，不是靠人跑 grep；見底下的 Ruling。
   - [x] 驗收：`grep -rn '"cds-sync-' engine/ cds/ cdsint/ tools/` 只剩常數定義那一處。
   - [x] 驗收：SPEC 第 7 節的 perf 表有新數字。
+  - 監督者驗證（2026-09-05 22:30）：`python -m pytest tests -q` 與根目錄各 757 passed，監督者自己跑的。`grep "time.sleep\|threading\|Thread("` 在 `engine/ cds/ide/ stub/` 只剩兩處 docstring 在講「沒有執行緒」；`"cds-sync-` 字面值只剩 `cds/core/props.py:20`；PLC 本體拆成四個檔，最長 243 行。監督者在真 IDE（原廠 3.5.21.40，softplc 副本，`%TEMP%\cdsint-sup\`）重現髒檔保護：export 229 個，改磁碟上 `FB_LowPass.st` 一行，再 export：那個檔的雜湊值前後相同、`data.pending_import` 列出它、`ok` false、其他 228 個 identical。使用者的兩個 IDE（pid 14012、17340）都在 20:48 前後自己關掉（Shm 原檔 20:47:59 有一次存檔，登記檔最後心跳 20:48:24），worker 第一次起無頭 IDE 是 21:29，監督者最後一次碰是 20:37；兩個原始專案的內容沒有被 cdsint 寫過。沒有殘留的 IDE 行程。
+  - [ ] 驗收（還需要人）：比對視窗的托盤氣泡改成 Timer 之後，在有畫面的 IDE 裡按一次「存到 .diff」，氣泡有出現又消失。原因：`codesys_ui.py` 第一行 import clr，CI 跑不了，而氣泡只有眼睛看得到。
 
 ---
 
@@ -427,6 +429,10 @@ img/        readMe 用的圖
 
 監督者已裁的：
 
+- Ruling（階段 4 驗收後）: worker 階段 4 的二十七條 Ruling 全部接受，特別是 `props` 遮蔽回歸的處理（改區域變數不改模組名，補六條直接測回傳值的測試，順手把吞掉它的空白 `except:` 改成會說原因的）、`manager.export()` 契約收成「出錯一律丟例外」、perf 表冷熱兩欄、`threading.Lock` 直接刪 — 每條都有理由與代價 — 錯了的代價是無。
+- Ruling（階段 4 驗收後）: `cds/ide/silent.py` 403 行，接受 worker「已經超過的不准再長」的解讀，不為三行拆檔；下一次有人為了功能碰它，就照「對話框答案表」與「exec 與替身安裝」兩件事拆開 — 為三行切一個只做一件事的檔是湊數字 — 錯了的代價是它成為 `cds/ide/` 底下唯一超過上限的檔，`tests/test_bare_excepts.py` 那種棘輪測試可以照樣釘住它的行數。
+- Ruling（階段 4 驗收後）: SPEC 11.1（換成 `export_native` 整包倒出）**不做**，留在未決事項 — 熱機時 229 個物件 export 12 秒、compare 11 秒，對場景 A 與 B 夠用；場景 C 的瓶頸是 IDE 啟動的三十幾秒不是引擎；而且非目標第一條就是不重寫引擎 — 錯了的代價是某個上千物件的專案 export 要幾分鐘，那時再拿這組冷熱數字當基準來比。
+- Ruling（階段 4 驗收後）: 托盤氣泡的 Timer 版沒有在真 IDE 上看過，列成「還需要人」，不擋階段 4 — 它是純視覺、無法無頭驗證，而守得住的部分（沒有執行緒）有測試 — 錯了的代價是氣泡不出現或不消失，不影響任何資料。
 - Ruling（階段 3 驗收後）: worker 階段 3 的十二條 Ruling 全部接受 — `denied` 獨立欄位（exit 5 從紀錄決定不從字串猜）、只有 `MATCH` 才 exit 0 且 `UNKNOWN` 跟 `DIFFERENT` 同樣非零（比不出來不能讀成一致）、權限攔在按下本體之前、多裝置專案拒絕、`--gateway` 沒給就不動專案設定，每條都有理由與代價 — 錯了的代價是無。
 - Ruling（階段 3 驗收後）: `engine/entry_plc.py` 607 行違反新碼的 400 行硬上限，排進階段 4 拆，不擋階段 3 — 拆檔不改行為，而 PLC 這兩個命令在台架驗過之前本來就不會發版；階段 4 就是品質階段 — 錯了的代價是拆完要再跑一次 IronPython 的 import 探針。
 - Ruling（階段 2 收尾二驗收後）: worker 收尾二的七條 Ruling 全部接受，包括 `timed_out` 在 report 完整時仍為 true（事實就是被殺了，區分「有沒有答案」的是 `error` 與結果）、寬限常數取量到的數倍（它們只在掛住時起作用）、`cdsint/lock.py` 獨立出來 — 每條都有理由與代價 — 錯了的代價是無。
