@@ -219,6 +219,19 @@ def test_the_compare_dialog_export_writes_what_the_person_chose(
     assert result["ok"] is True
 
 
+def test_the_export_does_not_print_a_count_nothing_ever_counts(
+        a_synced_project, capsys):
+    # Suggestion 7. "Skipped: 0 objects (no textual content)" was printed by
+    # every export ever run: nothing has incremented that counter since the
+    # line was written. A number that is always zero is not a measurement,
+    # it is a reader wondering which objects it means.
+    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
+
+    a_synced_project.export()
+
+    assert "Skipped:" not in capsys.readouterr().out
+
+
 def test_a_compare_between_the_edit_and_the_export_does_not_lose_the_guard(
         a_synced_project):
     # compare only looks, so it must not throw away what the guard reads.

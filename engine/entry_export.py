@@ -33,8 +33,12 @@ from engine import entry, unhandled
 
 
 def cleanup_orphaned_files(export_dir, current_objects):
-    """
-    Find and optionally delete files in export_dir that are not in current_objects.
+    """Delete the files in export_dir no object claims. Returns how many.
+
+    The dialog has two buttons, so there are two answers and both are a
+    number. It used to carry a third branch for a Cancel button that no
+    version of this dialog has ever had, and export read the None it
+    would have returned as "cancelled" -- a state nothing could reach.
     """
     orphaned_items = []
     
@@ -87,7 +91,7 @@ def cleanup_orphaned_files(export_dir, current_objects):
         auto_delete = False
 
     if auto_delete:
-        choice_idx = 0 # Delete
+        delete_them = True
     else:
         # Prompt user
         message = "The following files exist in the export directory but are NOT in the CODESYS project (orphans):\n\n"
@@ -102,58 +106,53 @@ def cleanup_orphaned_files(export_dir, current_objects):
         # buttons: Delete (Yes), Ignore (No)
         from engine.codesys_ui import ask_yes_no
         from engine.codesys_utils import timed_prompt
-        if timed_prompt(ask_yes_no, "Delete Orphaned Files?", message):
-            choice_idx = 0 # Delete
-        else:
-            choice_idx = 1 # Ignore
+        delete_them = timed_prompt(ask_yes_no, "Delete Orphaned Files?",
+                                   message)
     
     removed_count = 0
-    if choice_idx == 0: # Delete
-        print("Cleaning up orphaned files...")
-        for rel_path in orphaned_items:
-            full_path = os.path.join(export_dir, rel_path.replace("/", os.sep))
-            try:
-                if os.path.exists(full_path):
-                    os.remove(full_path)
-                    removed_count += 1
-                    print("Deleted: " + rel_path)
-            except Exception as e:
-                print("Error deleting " + rel_path + ": " + safe_str(e))
-        
-        # Now clean up empty directories
-        # Use topdown=False to delete subdirectories before parents
-        for root, dirs, files in os.walk(export_dir, topdown=False):
-            # Also skip hidden dirs here
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-            
-            rel_root = os.path.relpath(root, export_dir)
-            if rel_root == "." or not rel_root:
-                continue
-            
-            rel_path = rel_root.replace("\\", "/")
-            
-            # Check if this folder or any of its children should exist
-            folder_needed = False
-            for obj_path in current_objects:
-                if obj_path.startswith(rel_path + "/"):
-                    folder_needed = True
-                    break
-            
-            if not folder_needed and rel_path not in current_objects:
-                # If directory is empty, delete it
-                try:
-                    if not os.listdir(root):
-                        os.rmdir(root)
-                        print("Deleted empty folder: " + rel_path)
-                except OSError:
-                    pass  # Not empty, or gone already. Either way, leave it.
-        return removed_count
-    elif choice_idx == 1: # Ignore
+    if not delete_them:
         print("Orphaned files ignored.")
         return 0
-    else: # Cancel
-        print("Export cancelled during cleanup.")
-        return None
+
+    print("Cleaning up orphaned files...")
+    for rel_path in orphaned_items:
+        full_path = os.path.join(export_dir, rel_path.replace("/", os.sep))
+        try:
+            if os.path.exists(full_path):
+                os.remove(full_path)
+                removed_count += 1
+                print("Deleted: " + rel_path)
+        except Exception as e:
+            print("Error deleting " + rel_path + ": " + safe_str(e))
+    
+    # Now clean up empty directories
+    # Use topdown=False to delete subdirectories before parents
+    for root, dirs, files in os.walk(export_dir, topdown=False):
+        # Also skip hidden dirs here
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        
+        rel_root = os.path.relpath(root, export_dir)
+        if rel_root == "." or not rel_root:
+            continue
+        
+        rel_path = rel_root.replace("\\", "/")
+        
+        # Check if this folder or any of its children should exist
+        folder_needed = False
+        for obj_path in current_objects:
+            if obj_path.startswith(rel_path + "/"):
+                folder_needed = True
+                break
+        
+        if not folder_needed and rel_path not in current_objects:
+            # If directory is empty, delete it
+            try:
+                if not os.listdir(root):
+                    os.rmdir(root)
+                    print("Deleted empty folder: " + rel_path)
+            except OSError:
+                pass  # Not empty, or gone already. Either way, leave it.
+    return removed_count
 
 
 
@@ -220,7 +219,6 @@ def export_project(export_dir, projects_obj=None):
     exported_identical = 0
     exported_failed = 0
     pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
-    skipped_count = 0
     app_count = 0
     
     # Metadata migration - no longer used
@@ -375,8 +373,6 @@ def export_project(export_dir, projects_obj=None):
 
     # Orphan cleanup now uses exported_paths set directly
     removed_count = cleanup_orphaned_files(export_dir, exported_paths)
-    if removed_count is None:
-        return entry.result(False, "Export cancelled during orphan cleanup.")
 
     # Calculate folder hashes (Merkle Tree) and save the updated cache
     if new_cache:
@@ -398,7 +394,6 @@ def export_project(export_dir, projects_obj=None):
     elapsed_time = time.time() - start_time - interaction_time
     elapsed_text = format_elapsed(elapsed_time, interaction_time)
     print("New: " + str(exported_new) + ", Updated: " + str(exported_updated) + ", Identical: " + str(exported_identical) + ", Removed: " + str(removed_count))
-    print("Skipped: " + str(skipped_count) + " objects (no textual content)")
     print("Time elapsed: " + elapsed_text)
     print("Completed at: " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
 
