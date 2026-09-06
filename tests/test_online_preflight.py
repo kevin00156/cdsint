@@ -16,13 +16,13 @@ import sys
 
 import pytest
 
+from engine import codesys_online
+
 
 @pytest.fixture(scope="module")
-def env(load_engine):
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers"):
-        load_engine(dep)
+def env():
     constants = sys.modules["engine.codesys_constants"]
-    module = load_engine("codesys_online")
+    module = codesys_online
     return module, constants.TYPE_GUIDS, constants.KIND_GUIDS
 
 

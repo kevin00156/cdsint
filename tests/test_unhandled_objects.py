@@ -14,6 +14,9 @@ import types
 
 import pytest
 
+from engine import (codesys_managers, entry_compare, entry_export,
+                    entry_import)
+
 from cds.core import settings
 
 # Every setting at its default: these tests are about the engine's
@@ -93,10 +96,8 @@ def test_the_summary_names_them_and_stops_at_ten():
 # --- the one place that catches it -----------------------------------------
 
 @pytest.fixture(scope="module")
-def managers(load_engine):
-    load_engine("codesys_constants")
-    load_engine("codesys_utils")
-    return load_engine("codesys_managers")
+def managers():
+    return codesys_managers
 
 
 def test_classify_object_names_it_instead_of_raising(managers):
@@ -163,18 +164,14 @@ class DeafSystem(object):
 
 
 @pytest.fixture
-def one_bad_object(load_engine, monkeypatch, tmp_path):
+def one_bad_object(monkeypatch, tmp_path):
     """The three entry bodies, lent an IDE holding one unreadable object.
 
     Lent the same way engine/entry.py lends the IDE's globals to a body when
     the menu presses it — the bodies read `projects` and `system` as plain
     globals of their own module.
     """
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
-                "codesys_compare_engine"):
-        load_engine(dep)
-    bodies = [load_engine(name) for name in
-              ("entry_export", "entry_compare", "entry_import")]
+    bodies = [entry_export, entry_compare, entry_import]
 
     sync = str(tmp_path)
     project = Project({}, [Missing()], str(tmp_path / "Fake.project"))
@@ -287,14 +284,11 @@ class RefusingCodecs(object):
 
 
 @pytest.fixture
-def export_onto_a_disk_that_refuses(load_engine, monkeypatch, tmp_path):
+def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     """An export of one healthy object whose file cannot be written."""
     import codecs
 
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
-                "codesys_compare_engine"):
-        load_engine(dep)
-    export = load_engine("entry_export")
+    export = entry_export
     managers = sys.modules["engine.codesys_managers"]
 
     sync = str(tmp_path)

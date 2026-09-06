@@ -11,17 +11,17 @@ import sys
 
 import pytest
 
-
-@pytest.fixture(scope="module")
-def constants(load_engine):
-    return load_engine("codesys_constants")
+from engine import codesys_constants, codesys_managers
 
 
 @pytest.fixture(scope="module")
-def managers(load_engine):
-    for dep in ("codesys_constants", "codesys_utils"):
-        load_engine(dep)
-    return load_engine("codesys_managers")
+def constants():
+    return codesys_constants
+
+
+@pytest.fixture(scope="module")
+def managers():
+    return codesys_managers
 
 
 # The exact k1.0.2 hardcoded table (pre-profile), used as golden reference.

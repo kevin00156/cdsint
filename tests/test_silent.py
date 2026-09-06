@@ -386,20 +386,29 @@ def test_saying_it_is_complete_is_not_enough_on_its_own(tmp_path, ide):
 
 # --- the dialog titles are copies of literals in four other files ----------
 
-DRIVEN_FILES = (
-    # What the commands actually execute, relative to the repo root.
-    # engine/settings.py is left out on purpose: every dialog it opens sits
-    # behind show_sync_folder_dialog, which the stand-in UI refuses outright
-    # (test_the_sync_folder_dialog_is_refused_rather_than_opened), so silent
-    # mode never reaches them.
-    "engine/entry_export.py", "engine/entry_import.py",
-    "engine/entry_compare.py", "engine/entry_discover.py",
-    "engine/entry_build.py", "engine/entry_plc.py",
-    "engine/codesys_utils.py", "engine/codesys_managers.py",
-    "engine/codesys_compare_engine.py", "engine/codesys_online.py",
-)
-
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# engine/settings.py is left out on purpose: every dialog it opens sits behind
+# show_sync_folder_dialog, which the stand-in UI refuses outright
+# (test_the_sync_folder_dialog_is_refused_rather_than_opened), so silent mode
+# never reaches them.
+NOT_DRIVEN = ("settings.py",)
+
+
+def driven_files():
+    """Every engine module a command can reach, asked of the directory.
+
+    This was a written-out list of ten filenames, and SPEC 6.1 carried a note
+    telling whoever moved a file to remember to update it. A new entry_*.py
+    that nobody added to the list would open a dialog the stand-in UI has no
+    answer for — an "unexpected dialog" in a headless run — while this test
+    stayed green, because it was not looking at the new file. Asking the
+    directory cannot forget.
+    """
+    folder = os.path.join(REPO_ROOT, "engine")
+    return ["engine/" + name for name in sorted(os.listdir(folder))
+            if name.endswith(".py") and name != "__init__.py"
+            and name not in NOT_DRIVEN]
 
 
 def titles_asked_for(function):
@@ -411,7 +420,7 @@ def titles_asked_for(function):
     """
     pattern = re.compile(function + r'\s*[(,]\s*"([^"]+)"')
     found = set()
-    for name in DRIVEN_FILES:
+    for name in driven_files():
         path = os.path.join(REPO_ROOT, *name.split("/"))
         with io.open(path, encoding="utf-8") as handle:
             found.update(pattern.findall(handle.read()))

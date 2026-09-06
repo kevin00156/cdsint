@@ -14,12 +14,12 @@ import sys
 
 import pytest
 
+from engine import codesys_managers
+
 
 @pytest.fixture(scope="module")
-def env(load_engine):
-    load_engine("codesys_constants")
-    load_engine("codesys_utils")
-    managers = load_engine("codesys_managers")
+def env():
+    managers = codesys_managers
     return managers, sys.modules["engine.codesys_constants"].TYPE_GUIDS
 
 

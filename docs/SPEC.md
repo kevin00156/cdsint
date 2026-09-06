@@ -306,7 +306,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 - **每次操作只存檔備份一次**。
 - **等待人按鈕的時間不算進耗時**。
 - **新寫的程式碼不准空白 `except:`**。搬過來的那些不要求一次清完，但每次碰到的函式順手改。`tests/test_bare_excepts.py` 是棘輪，新寫的地方釘在零，搬過來的每個檔各記一個數字，只准往下。
-- **對話框只透過 `codesys_ui.ask_yes_no`、`system.ui.choose`**，因為替身 UI 只攔這兩個。新的對話框要先登記在替身 UI 的答案表裡，`test_every_yes_no_dialog_has_an_answer` 會擋沒登記的。那條測試掃的是一張寫死的檔名清單，10.1 搬檔案時要跟著改。
+- **對話框只透過 `codesys_ui.ask_yes_no`、`system.ui.choose`**，因為替身 UI 只攔這兩個。新的對話框要先登記在替身 UI 的答案表裡，`test_every_yes_no_dialog_has_an_answer` 會擋沒登記的。那條測試問 `engine/` 目錄現在有哪些檔，只維護一張排除清單，所以加一支新的引擎模組不會漏掉。
 - **成功失敗的訊號**走回傳值（D11）。每一條 `return` 都要回一個 `result()`，訊息等級不再影響判決。
 
 ### 6.2 看門人

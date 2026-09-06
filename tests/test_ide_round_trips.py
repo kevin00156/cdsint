@@ -12,12 +12,13 @@ import sys
 
 import pytest
 
+from engine import codesys_managers, codesys_utils, entry_build
+
 
 @pytest.fixture(scope="module")
-def env(load_engine):
-    load_engine("codesys_constants")
-    utils = load_engine("codesys_utils")
-    managers = load_engine("codesys_managers")
+def env():
+    utils = codesys_utils
+    managers = codesys_managers
     return utils, managers, sys.modules["engine.codesys_constants"].TYPE_GUIDS
 
 
@@ -266,26 +267,25 @@ class TestFindingApplications:
 
         return Project(), objs
 
-    def _applications(self, load_engine, project):
-        build = load_engine("entry_build")
+    def _applications(self, project):
+        build = entry_build
         return build.applications(project)
 
-    def test_finds_every_application(self, env, load_engine):
+    def test_finds_every_application(self, env):
         project, _ = self._project(env[2], ["App1", "App2"])
-        found = self._applications(load_engine, project)
+        found = self._applications(project)
         assert [a.get_name() for a in found] == ["App1", "App2"]
 
-    def test_a_project_with_none_finds_none(self, env, load_engine):
+    def test_a_project_with_none_finds_none(self, env):
         project, _ = self._project(env[2], [])
-        assert self._applications(load_engine, project) == []
+        assert self._applications(project) == []
 
-    def test_reads_type_once_per_object(self, env, load_engine):
+    def test_reads_type_once_per_object(self, env):
         project, objs = self._project(env[2], ["App1"])
-        self._applications(load_engine, project)
+        self._applications(project)
         assert all(o.reads.get("type") == 1 for o in objs)
 
-    def test_an_object_without_a_type_is_not_an_application(self, env,
-                                                            load_engine):
+    def test_an_object_without_a_type_is_not_an_application(self, env):
         class NoType(object):
             def get_name(self):
                 return "Odd"
@@ -294,17 +294,16 @@ class TestFindingApplications:
             def get_children(self, recursive=False):
                 return [NoType()]
 
-        assert self._applications(load_engine, Project()) == []
+        assert self._applications(Project()) == []
 
-    def test_matches_the_application_guid_case_insensitively(self, env,
-                                                             load_engine):
+    def test_matches_the_application_guid_case_insensitively(self, env):
         upper = CountingObj("App", env[2]["application"].upper())
 
         class Project(object):
             def get_children(self, recursive=False):
                 return [upper]
 
-        assert self._applications(load_engine, Project()) == [upper]
+        assert self._applications(Project()) == [upper]
 
 
 

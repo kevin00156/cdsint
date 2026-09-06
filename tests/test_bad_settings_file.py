@@ -18,6 +18,7 @@ import os
 import pytest
 
 from cds.core import settings as schema
+from engine import entry_build, entry_discover
 
 
 class Info(object):
@@ -66,13 +67,10 @@ def project(tmp_path):
 
 
 @pytest.fixture
-def body(load_engine, monkeypatch, project):
+def body(monkeypatch, project):
     """One entry body, with the IDE globals it reads already in place."""
-    for dep in ("codesys_constants", "codesys_utils"):
-        load_engine(dep)
 
-    def load(name):
-        module = load_engine(name)
+    def load(module):
         monkeypatch.setattr(module, "projects", Projects(Primary(project)),
                             raising=False)
         monkeypatch.setattr(module, "system", DeafSystem(), raising=False)
@@ -85,7 +83,8 @@ def unreadable(project):
         handle.write(u'{"sync_folder": "./sync", "debgu": true}')
 
 
-@pytest.mark.parametrize("name", ["entry_build", "entry_discover"])
+@pytest.mark.parametrize("name", [entry_build, entry_discover],
+                         ids=lambda m: m.__name__.split(".")[-1])
 def test_a_misspelt_key_stops_the_command_that_does_not_need_a_folder(
         body, project, name):
     module = body(name)
@@ -100,7 +99,8 @@ def test_a_misspelt_key_stops_the_command_that_does_not_need_a_folder(
     assert "debug" in result["summary"]
 
 
-@pytest.mark.parametrize("name", ["entry_build", "entry_discover"])
+@pytest.mark.parametrize("name", [entry_build, entry_discover],
+                         ids=lambda m: m.__name__.split(".")[-1])
 def test_it_is_said_out_loud_and_not_only_returned(body, project, name):
     # These two ran to a clean finish and printed nothing at all. A caller
     # watching the IDE has to see it too, not just a caller reading a record.
@@ -116,7 +116,7 @@ def test_discover_still_works_with_no_sync_folder_at_all(body, project):
     # The whole reason discover tolerates a missing folder: it is what
     # somebody runs *because* the export did not work, and refusing it for
     # want of a folder would take away the one diagnostic they have left.
-    module = body("entry_discover")
+    module = body(entry_discover)
 
     result = module.main()
 

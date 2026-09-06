@@ -9,16 +9,15 @@ printer shows it the way it shows any other list (SPEC 4.3).
 """
 import pytest
 
+from engine import entry_compare
+
 from cds.core import commands
 from cdsint import report
 
 
 @pytest.fixture
-def compare(load_engine):
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
-                "codesys_compare_engine"):
-        load_engine(dep)
-    return load_engine("entry_compare")
+def compare():
+    return entry_compare
 
 
 def ide_object(name, path):

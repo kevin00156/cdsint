@@ -11,13 +11,13 @@ import os
 
 import pytest
 
+from engine import codesys_compare_engine
+
 
 @pytest.fixture(scope="module")
-def env(load_engine):
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers"):
-        load_engine(dep)
+def env():
     import sys
-    engine = load_engine("codesys_compare_engine")
+    engine = codesys_compare_engine
     return {
         "constants": sys.modules["engine.codesys_constants"],
         "utils": sys.modules["engine.codesys_utils"],

@@ -16,13 +16,13 @@ import os
 
 import pytest
 
+from engine import codesys_compare_engine
+
 
 @pytest.fixture(scope="module")
-def engine(load_engine):
+def engine():
     # Dependencies must be importable first (engine imports from them at load).
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers"):
-        load_engine(dep)
-    return load_engine("codesys_compare_engine")
+    return codesys_compare_engine
 
 
 def _depths(items, order_fn):

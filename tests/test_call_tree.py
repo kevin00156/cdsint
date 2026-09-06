@@ -13,8 +13,18 @@ import tempfile
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "tools"))
+TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
+
+
+@pytest.fixture(autouse=True)
+def tools_on_the_path(monkeypatch):
+    """`from call_tree import ...` inside a test, without a permanent change.
+
+    This used to be a sys.path.insert at import time, which put tools/ at the
+    front of the path for every other test file in the session as a side
+    effect of collecting this one. monkeypatch puts it back.
+    """
+    monkeypatch.syspath_prepend(TOOLS)
 
 # ---------------------------------------------------------------------------
 # Helpers - synthetic ST text builders

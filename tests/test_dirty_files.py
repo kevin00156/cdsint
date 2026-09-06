@@ -11,6 +11,8 @@ import types
 
 import pytest
 
+from engine import entry_export, entry_import
+
 from cds.core import settings
 
 # Every setting at its default: these tests are about the engine's
@@ -98,12 +100,9 @@ class Synced(object):
 
 
 @pytest.fixture
-def a_synced_project(load_engine, monkeypatch, tmp_path):
+def a_synced_project(monkeypatch, tmp_path):
     """A project whose sync cache knows what the disk held at the last sync."""
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
-                "codesys_compare_engine"):
-        load_engine(dep)
-    export = load_engine("entry_export")
+    export = entry_export
 
     sync = tmp_path / "sync"
     sync.mkdir()
@@ -124,7 +123,7 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
     look = lambda: engine_module.find_all_changes(str(sync), projects,
                                                   export_xml=False)
 
-    importer = load_engine("entry_import")
+    importer = entry_import
     monkeypatch.setattr(importer, "projects", projects, raising=False)
     monkeypatch.setattr(importer, "system", DeafSystem(), raising=False)
     said_no = types.ModuleType("engine.codesys_ui")

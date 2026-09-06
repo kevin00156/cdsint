@@ -13,18 +13,17 @@ import io
 
 import pytest
 
-
-@pytest.fixture(scope="module")
-def managers(load_engine):
-    load_engine("codesys_constants")
-    load_engine("codesys_utils")
-    return load_engine("codesys_managers")
+from engine import codesys_compare_engine, codesys_managers, codesys_utils
 
 
 @pytest.fixture(scope="module")
-def utils(load_engine):
-    load_engine("codesys_constants")
-    return load_engine("codesys_utils")
+def managers():
+    return codesys_managers
+
+
+@pytest.fixture(scope="module")
+def utils():
+    return codesys_utils
 
 
 class TextDocument(object):
@@ -172,10 +171,10 @@ class TestAByteOrderMarkIsNotCode:
         assert pou.textual_declaration.text == DECL_EMPTY
 
     def test_a_bom_does_not_make_a_matching_file_look_different(
-            self, load_engine, tmp_path):
+            self, tmp_path):
         """Otherwise compare reports the file forever, and every import
         rewrites the POU with the mark still in it."""
-        compare = load_engine("codesys_compare_engine")
+        compare = codesys_compare_engine
         ide_content = DECL_EMPTY + u"\n\n// === IMPLEMENTATION ==="
         path = self.write(tmp_path, ide_content, "utf-8-sig")
         disk_content = compare.read_file(path)

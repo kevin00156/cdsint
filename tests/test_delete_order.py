@@ -13,12 +13,12 @@ import sys
 
 import pytest
 
+from engine import codesys_compare_engine
+
 
 @pytest.fixture(scope="module")
-def engine(load_engine):
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers"):
-        load_engine(dep)
-    return load_engine("codesys_compare_engine")
+def engine():
+    return codesys_compare_engine
 
 
 class Node(object):

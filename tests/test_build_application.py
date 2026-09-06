@@ -11,6 +11,8 @@ that walk has to give.
 """
 import pytest
 
+from engine import entry_build
+
 
 class App(object):
     def __init__(self, name, type_guid):
@@ -55,10 +57,8 @@ class System(object):
 
 
 @pytest.fixture(scope="module")
-def build(load_engine):
-    load_engine("codesys_constants")
-    load_engine("codesys_utils")
-    return load_engine("entry_build")
+def build():
+    return entry_build
 
 
 @pytest.fixture(scope="module")

@@ -13,16 +13,17 @@ import os
 
 import pytest
 
-
-@pytest.fixture(scope="module")
-def utils(load_engine):
-    load_engine("codesys_constants")
-    return load_engine("codesys_utils")
+from engine import codesys_compare_engine, codesys_managers, codesys_utils
 
 
 @pytest.fixture(scope="module")
-def managers(load_engine, utils):
-    return load_engine("codesys_managers")
+def utils():
+    return codesys_utils
+
+
+@pytest.fixture(scope="module")
+def managers(utils):
+    return codesys_managers
 
 
 @pytest.fixture

@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+from engine import entry_import
+
 from cds.core import settings
 
 # Every setting at its default: these tests are about the engine's
@@ -26,17 +28,14 @@ from tests.test_unhandled_objects import DeafSystem, Project, Projects
 
 
 @pytest.fixture
-def importer(load_engine, monkeypatch, tmp_path):
+def importer(monkeypatch, tmp_path):
     """entry_import lent a fake IDE, with the comparison engine watched.
 
     The spy stands where the first thing that reads the IDE tree stands, so a
     check that fires too late shows up as a call that should not have
     happened.
     """
-    for dep in ("codesys_constants", "codesys_utils", "codesys_managers",
-                "codesys_compare_engine"):
-        load_engine(dep)
-    body = load_engine("entry_import")
+    body = entry_import
     compared = []
 
     def spy(base_dir, projects_obj, export_xml=False):

@@ -9,11 +9,12 @@ import os
 
 import pytest
 
+from engine import codesys_utils
+
 
 @pytest.fixture(scope="module")
-def utils(load_engine):
-    load_engine("codesys_constants")
-    return load_engine("codesys_utils")
+def utils():
+    return codesys_utils
 
 
 _ST = "FUNCTION_BLOCK FB_Test\nVAR\n    x : INT;\nEND_VAR\n\n// === IMPLEMENTATION ===\n\nx := 1;"

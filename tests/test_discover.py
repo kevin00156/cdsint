@@ -11,6 +11,8 @@ import sys
 
 import pytest
 
+from engine import entry_discover
+
 
 class Node(object):
     """One object in the tree, with the four attributes discover reads."""
@@ -74,11 +76,9 @@ class DeafSystem(object):
 
 
 @pytest.fixture
-def run(load_engine, monkeypatch, tmp_path):
+def run(monkeypatch, tmp_path):
     """discover_project over a tree the test hands it."""
-    for dep in ("codesys_constants", "codesys_utils"):
-        load_engine(dep)
-    discover = load_engine("entry_discover")
+    discover = entry_discover
     monkeypatch.setattr(discover, "system", DeafSystem(), raising=False)
 
     def go(objects):
@@ -154,8 +154,8 @@ def test_an_empty_project_is_ok_and_says_so(run):
     assert result["data"]["by_kind"] == {}
 
 
-def test_no_project_open_is_a_result_not_a_crash(load_engine, monkeypatch):
-    discover = load_engine("entry_discover")
+def test_no_project_open_is_a_result_not_a_crash(monkeypatch):
+    discover = entry_discover
     monkeypatch.setattr(discover, "system", DeafSystem(), raising=False)
     monkeypatch.setattr(discover, "projects", None, raising=False)
 
