@@ -8,12 +8,18 @@ reads, and the versions had drifted -- two spellings of "list the children",
 one of which recorded the failure and one of which only logged it; three
 different sentences for "it will not say its name".
 
-What a failure does here is record the object in engine/unhandled.py by name
-(SPEC D13) and hand the caller a value it can carry on with, so one unreadable
-object costs one named entry in the result rather than the whole walk. That is
-also the behaviour change this module made: the login pre-flight in
-codesys_online.py used to log a warning and carry on, which left an import
-believing nothing was logged in when the truth was that nobody could tell.
+The two downward reads -- kind_of and children_of -- record a failure in
+engine/unhandled.py by name (SPEC D13) and hand the caller a value it can
+carry on with, so one unreadable object costs one named entry in the result
+rather than the whole walk. That is the behaviour change this module made: the
+login pre-flight in codesys_online.py used to log a warning and carry on,
+which left an import believing nothing was logged in when the truth was that
+nobody could tell.
+
+The two upward reads -- guid_of and parent_of -- stay silent, and the reason
+is in their docstrings: their callers walk up to the project root, and the
+root ends the walk by raising rather than by answering None. Recording that
+marked a clean export of 229 objects as failed.
 """
 from __future__ import print_function
 
@@ -32,12 +38,18 @@ def guid_of(obj):
     """The object's GUID as text, or None when it has none or will not say.
 
     An empty GUID is None too. Callers use this as a cache key, and "" is a
-    key that every object without a GUID would share.
+    key every object without a GUID would share.
+
+    Silent, unlike the two readers below, and for the same reason parent_of
+    is: the callers walk UP the tree and end at the project root, which
+    answers .guid with an exception rather than with nothing. Recording that
+    put the project itself in the register three times per run and turned a
+    clean export of 229 objects into a failed one -- measured on CODESYS
+    3.5.21.40, not assumed.
     """
     try:
         return safe_str(obj.guid) or None
-    except Exception as exc:
-        unhandled.note(obj, exc)
+    except Exception:
         return None
 
 
@@ -59,13 +71,16 @@ def parent_of(obj):
 
     One read, not two: hasattr() is itself a property read, so the guarded
     form doubled the cost of the single most-repeated lookup in path building.
-    A missing `parent` is the tree root and costs nothing; only a parent
-    property that raises is worth recording.
+
+    Silent on failure, because "no parent" is how every upward walk is
+    supposed to end and this API signals it by raising. There is no way to
+    tell that apart from an object whose plugin is missing, and between
+    reporting the project root as broken on every healthy run and staying
+    quiet, quiet is the honest one.
     """
     try:
         return getattr(obj, "parent", None)
-    except Exception as exc:
-        unhandled.note(obj, exc)
+    except Exception:
         return None
 
 

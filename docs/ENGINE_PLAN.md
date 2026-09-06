@@ -180,12 +180,12 @@
   - [x] 驗收：`python -m pyflakes engine/` 沒有 unused import。
   - [x] 驗收：儀器四項全過（兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0、熱機中位數在一成內）。測試 Windows 與 WSL 各 1072 個全綠。
 
-- [ ] **階段 2：消平行路徑**
-  - [ ] 每一條一個 commit，commit 訊息說收了哪一條。
-  - [ ] 驗收：`grep -rn "honor the same\|exactly like compare\|same as export" engine/` 為零（提醒人肉同步的註解沒有存在的理由了）。
-  - [ ] 驗收：`grep -rn "len(.*) > 2" engine/` 為零；`grep -rn "context\['effective_type'\]\|context.get('effective_type'" engine/` 為零；`grep -rn "def _name\|def _kind\|def _children\|def _parent_o\|def _obj_label" engine/` 為零。
-  - [ ] 驗收：測試涵蓋「export 與 compare 對同一個物件回同一個 `(eff_type, is_xml, rel_path)`」「`sync_files` 跳 `__pycache__`、dot-dir、RESERVED_FILES」「`_hash_content` 對每種 kind 的過濾規則」。
-  - [ ] 驗收：儀器四項全過。棘輪數字不升。
+- [x] **階段 2：消平行路徑**
+  - [x] 每一條一個 commit，commit 訊息說收了哪一條。十條共十個 commit。
+  - [x] 驗收：`grep -rn "honor the same\|exactly like compare\|same as export" engine/` 為零（提醒人肉同步的註解沒有存在的理由了）。
+  - [x] 驗收：`grep -rn "len(.*) > 2" engine/` 為零；`grep -rn "context\['effective_type'\]\|context.get('effective_type'" engine/` 為零；`grep -rn "def _name\|def _kind\|def _children\|def _parent_o\|def _obj_label" engine/` 為零。
+  - [x] 驗收：測試涵蓋「export 與 compare 對同一個物件回同一個 `(eff_type, is_xml, rel_path)`」（`tests/test_classify.py`）「`sync_files` 跳 `__pycache__`、dot-dir、RESERVED_FILES」（`tests/test_sync_dir.py`）「`_hash_content` 對每種 kind 的過濾規則」（`tests/test_sync_cache.py` 的 `TestHashContentPerKind`）。
+  - [x] 驗收：儀器四項全過。棘輪從 70 降到 61（`managers` 29→18、`utils` 26→19、`compare` 6→5、`build` 5、`ui` 2、`entry_compare` 2）。測試 Windows 與 WSL 各 1149 個全綠。
 
 - [ ] **階段 3：拆長函式**
   - [ ] 驗收：`perform_import_items`、`build_project`、`ensure_folder_path` 各在 60 行內；新函式全部在 40 行、3 層內（寫一個 AST 小腳本量，放 `tools/`）。
@@ -250,6 +250,7 @@
 |---|---|---|---|---|
 | 基線 | — | 407／22／空；464／24／9 | 0；0 | 22.9／15.8／25.8；23.3／15.3／30.5 |
 | 1 刪死碼 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.1／16.4／25.0；（階段 5 才量） |
+| 2 消平行路徑 | 0；0 | 407／22／空；464／24／9 | 0；0 | 19.5／16.9／25.3；（階段 5 才量） |
 
 ---
 
@@ -277,6 +278,14 @@
 10. `Ruling: 第 1 條的 PouType 四招留第二招（`__main__.PouType.Program`），第一、三、四招刪 — 工單猜的是留第一招，但第一招讀的是這個模組自己的全域名 `PouType`，而 `entry.lend()` 把 IDE 的全域複製到入口本體上，不是複製到 `codesys_managers` 上，所以那個名字在這裡從來就不存在，不是「還沒量到」而是結構上不可能成立；真 IDE 兩台都實測過，原廠 3.5.21.40（ScriptEngine 4.2.0.0）與 Delta 1.10（4.0.0.0）建一個新的 FUNCTION_BLOCK，兩台都走第二招 — 錯了的代價是所有需要新建 POU 的匯入都會退到 `create_child`，那條路建出來的物件種類不對。`
 11. `Ruling: `create_pou` 解不出 PouType 時的 `create_child` 退路留著 — 它會先 `log_error` 說自己在退，不是靜默跳過（D13），而這台機器上有五個 IDE 安裝、相容性矩陣還列了更多，我只在其中兩台量過 — 刪掉一條會出聲的退路換兩台的量測結果，賭得比留著大 — 錯了的代價是留了一段在這兩台上跑不到的程式碼。`
 12. `Ruling: 階段 1 到 4 的熱機中位數只跑原廠那份副本，兩份都跑留到階段 5 — 一份副本的三組四次要十五分鐘，兩份就是半小時，五層下來兩個半小時，而 hash 清單 diff 才是硬條件，速度那條有一成的容差；原廠那份是 WORKER_RULES 與 SPEC 第 7 節都拿來當基準的那一份 — 錯了的代價是某一層只在 Delta 上變慢的話，要到階段 5 才會看到。`
+
+階段 2 定下來的：
+
+13. `Ruling: 真 IDE 抓到的回歸 — `ide_read.guid_of` 與 `parent_of` 失敗時不記進登記簿，只有 `kind_of` 與 `children_of` 記 — 工單說這個新模組「全部帶 D13 記錄」，照做之後原廠 3.5.21.40 上一趟乾淨的 229 個物件匯出變成 `ok: False`，登記簿裡有三筆專案根物件；原因是路徑組裝要往上走到專案根，而這個 API 用丟例外的方式表示「沒有上一層」，跟「外掛不見了」長得一模一樣，分不出來。往上走的兩個讀取安靜回 None，往下走的兩個照記 — 錯了的代價是一個外掛不見的物件，它的 GUID 讀不到時不會被點名，但它的 kind 或子物件讀不到時會。`
+14. `Ruling: `Resolved` 帶第五個欄位 `cache`（"hit"／"invalidated"／"miss"），比工單寫的四個多一個 — compare 的 Pass 1 會回報「幾個路徑快取命中、幾個失效」，那是分辨「真的慢」跟「快取是冷的」的唯一依據，收成一個函式之後這個數字沒有別的地方拿得到 — 錯了的代價是一個 namedtuple 多一個欄位。`
+15. `Ruling: `engine/classify.py` 在第二層就拆出來，不等到第五層 — 收完平行路徑之後，`codesys_managers.py` 從 1491 行漲到 1497 行，比開工時還長，而 PRINCIPLES 2 說已經超過上限的檔案不准再變長；分類這一組（`resolve_object`、兩道 gate、accessor 收集、manager 查表）互相只呼叫彼此，外面只有 export 與 compare 兩個進入點，正是第五層說的那種「邊界已浮現」 — 錯了的代價是第五層要重新看一次還剩什麼可拆。`
+16. `Ruling: 統一之後的略過規則多了一條「沒有路徑就不寫」，export 這一側是新的 — compare 本來就有 `if should_skip or not rel_path: continue`，export 沒有；而 `effective_type` 改成必要參數之後，manager 不再有「rel_path 是 None 就自己重算」的退路，所以 export 拿到空路徑會把 None 傳進去 — 唯一會回空路徑的是頂層資料夾，而資料夾本來就不寫檔，所以磁碟上看不出差別（兩份副本的 hash 清單 diff 都是 0 行）— 錯了的代價是某個頂層資料夾不再進 `exported_paths`，而那個路徑是空字串，永遠對不上任何檔案。`
+17. `Ruling: `_hash_content` 出錯改成往上丟，`_hash_file` 只接 IOError、OSError、UnicodeDecodeError — 第 18 條第三個具體傷害：回 `""` 之後 `NativeManager.export` 的 `old_hash and old_hash == new_hash` 永遠是 False，那個檔每次 export 都被算成 updated 而沒有人看得出為什麼；`_hash_file` 讀不到檔案仍然回 `""`，因為那時候 `is_new` 已經是 True，這個 hash 根本不會被拿來比 — 錯了的代價是一份真的無法 hash 的 XML 會讓那個物件的匯出丟例外，而例外會被每個迴圈的「處理這一個物件」那一層接住並點名（D13）。`
 
 做的時候看到但不在範圍的：
 

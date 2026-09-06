@@ -67,20 +67,30 @@ class TestReadsThatWork:
         assert ide_read.name_of is unhandled.name_of
 
 
-class TestReadsThatRefuse:
-    """Every one of these hands back a value the caller can carry on with,
-    AND leaves the object's name in the register."""
+class TestTheUpwardReadsStaySilent:
+    """The project root ends every upward walk by raising rather than by
+    answering None, and nothing can tell that apart from a missing plugin.
 
-    def test_guid_of_records_and_returns_none(self):
+    Recording it put the project in the register three times per run and
+    turned a clean export of 229 objects into a failed one -- measured on
+    CODESYS 3.5.21.40 while this ticket was being built.
+    """
+
+    def test_guid_of_answers_none_without_a_word(self):
         assert ide_read.guid_of(Sulking()) is None
-        assert unhandled.names() == ["Sulking"]
+        assert unhandled.names() == []
+
+    def test_parent_of_answers_none_without_a_word(self):
+        assert ide_read.parent_of(Sulking()) is None
+        assert unhandled.names() == []
+
+
+class TestTheDownwardReadsRecord:
+    """These walk into the tree, so a node that will not answer is a node
+    whose contents are missing from the result. That gets a name (D13)."""
 
     def test_kind_of_records_and_returns_none(self):
         assert ide_read.kind_of(Sulking()) is None
-        assert unhandled.names() == ["Sulking"]
-
-    def test_parent_of_records_and_returns_none(self):
-        assert ide_read.parent_of(Sulking()) is None
         assert unhandled.names() == ["Sulking"]
 
     def test_children_of_records_and_returns_empty(self):
