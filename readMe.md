@@ -214,11 +214,17 @@ cannot stand in for each other.
 is using, and a PLC login would take their online session away from them, so a
 PLC command always starts an IDE of its own.
 
-Both commands end in the same comparison: the boot application this project
-compiles to, against the one the controller holds, on the four bytes that
-identify it. `MATCH` is the only answer that exits 0 — `DIFFERENT` means the
-machine is running something else, and `UNKNOWN` means one of the two sides
-could not be read, which is not the same as agreement.
+Both commands end in the same comparison: the CRC the controller reports now,
+against the one it reported right after the last `plc download` from this
+project, kept in `<project>.cdsint-plc.json` beside the project, one entry
+per controller. `MATCH` is the only answer that exits 0 — it means the
+controller still holds what cdsint last put on it from here. `DIFFERENT`
+means something else has been loaded since. `UNKNOWN` means there is no
+record for this controller (never downloaded from this machine, or the
+project was copied without its record) or its CRC could not be read, which
+is not the same as agreement. Whether the *source* on disk still matches the
+project is `compare`'s question, not this one's; a boot application built
+offline changes its CRC on every compile, so it cannot serve as that answer.
 
 Credentials come from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment,
 never from a flag, a file or the report.
