@@ -89,7 +89,7 @@
 
 13. `codesys_compare_engine.perform_import_items`（1236 到 1494 行）259 行、巢狀深度 9，四趟 pass 內嵌 device remap、孤兒刪除、XML 批次、POU 子物件保存還原、ST 建立。move 處理 XML 版（1338 到 1352 行）和 ST 版（1456 到 1470 行）逐字相同，只有 log 訊息差一個字；「在 container 裡用小寫名字找 child」寫了四次（`compare` 971、987、1394、1420 行）。
 
-14. `codesys_managers._hash_content`（1262 到 1355 行）94 行、深度 9，四個從子字串嗅出來的布林旗標接一串 if/elif；timestamp 與 guid 過濾上下兩半各寫一遍；fallback 拿檔名算 hash，註解自己說「preserved here, not endorsed」；1354 到 1355 行的 `except: return ""` 是第 18 條那個具體傷害的來源。
+14. `codesys_managers._hash_content`（1262 到 1355 行）94 行、深度 9，四個從子字串嗅出來的布林旗標接一串 if/elif；timestamp 與 guid 過濾上下兩半各寫一遍；fallback 拿檔名算 hash，註解自己說「preserved here, not endorsed」；1354 到 1355 行的 `except: return ""` 是第 18 條那個具體傷害的來源。1332 行的 `skip_next` 設成 False 之後再也沒有被設成 True，那個 if 分支永遠不會進去。
 
 15. `entry_build.build_project`（144 到 486 行）343 行、深度 7：三段「Attempt」定位邏輯（263 到 405 行）內嵌、表格排版、寫 log 檔、UI 全在一個函式；415 行是註解掉的程式碼；182 行往 log 塞一句假的 phase 訊息（`"Typify code..."`，註解自己標了 Aesthetic phase marker）。
 
@@ -119,7 +119,7 @@
 
 **過期註解（會主動騙人的）**
 
-21. `constants` 47 行「installed next to codesys_constants.pyw」；`utils` 1107 行「handled by Project_export migration now」；`compare` 1026 行「Project_import and Project_compare」；`compare` 模組 docstring 14 行列了 `update_object_metadata()`，656 行說它被移除了；墓碑註解 `# Removed X` 在 `utils` 452、619 行與 `compare` 64、656 行；`utils` 32 到 33 行標題貼兩次；`entry_export` 238 行與 `utils` 1076 行寫「Second pass」但沒有 first pass；`compare` 1024 到 1033 行十行悼念 `finalize_import`；`compare` 1061 行「phase 2 import」；`utils` 1572 行「e179ef9 policy」；`codesys_online` 25 到 26 行引一個死函式當深度守衛的依據。
+21. `constants` 47 行「installed next to codesys_constants.pyw」；`utils` 1107 行「handled by Project_export migration now」；`compare` 1026 行「Project_import and Project_compare」；`compare` 模組 docstring 14 行列了 `update_object_metadata()`，656 行說它被移除了；墓碑註解 `# Removed X` 在 `utils` 452、619 行與 `compare` 64、656 行；`utils` 32 到 33 行標題貼兩次；`entry_export` 238 行與 `utils` 1076 行寫「Second pass」但沒有 first pass；`compare` 56 到 62 行同一個橫幅標題貼兩次；`compare` 1024 到 1033 行十行悼念 `finalize_import`；`compare` 1061 行「phase 2 import」；`utils` 1572 行「e179ef9 policy」；`codesys_online` 25 到 26 行引一個死函式當深度守衛的依據。
 
     重核：`settings` 5 行「run Project_directory.py」與 `export` 189 行「only Project_Build reads」都已經不在了。`engine/` 底下現在只剩兩處提到 `Project_` 前綴的舊腳本名，就是上面列的那兩條。
 
@@ -170,10 +170,10 @@
 
 ## 5. 分階段與驗收
 
-- [ ] **階段 0：重核與基線**
-  - [ ] 第 3 節重核清單做完，行號重填，commit。
-  - [ ] 儀器基線存好，摘要（檔案數、hash 清單的 SHA-256、discover 三個數字、三個中位數秒數）寫進第 6 節。
-  - [ ] 驗收：兩份副本 hash 清單各 229 行；`discover` total 407、22 種、unknown 空。
+- [x] **階段 0：重核與基線**
+  - [x] 第 3 節重核清單做完，行號重填，commit（`69ba4d0`）。
+  - [x] 儀器基線存好，摘要（檔案數、hash 清單的 SHA-256、discover 三個數字、三個中位數秒數）寫進第 6 節。
+  - [x] 驗收：兩份副本 hash 清單各 231 行，也就是 229 個物件加兩個 git 設定檔（第 7 節第 9 條）；softplc 副本 `discover` total 407、22 種、unknown 空；Shm 副本 464、24 種、9 個 unknown（第 7 節第 8 條）。
 
 - [ ] **階段 1：刪死碼**
   - [ ] 驗收：第 3 節 1 到 3 條列的名字 `grep -rn` 全 repo 為零（`docs/history/` 不算）。
@@ -213,6 +213,43 @@
 
 同 `history/SETTINGS_PLAN.md` 第 6 節，加上每一層的儀器結果表：層、hash diff 行數、discover 三個數字、verify exit、三個中位數秒數。
 
+### 儀器怎麼跑
+
+每一層都照同一個順序，不然前後兩次量的不是同一件事（理由在第 7 節第 6 到 9 條）：
+
+1. 從 `%TEMP%\cdsint-work\engine\master\` 複製一份乾淨的 `.project`，清空同步資料夾。
+2. `discover --json`，跑在還沒有任何命令碰過的副本上。
+3. `export --json`，然後把同步資料夾裡每個檔的相對路徑與 SHA-256 列成清單，排除 `sync_cache.json`。
+4. `verify -y --json`，四步都要 ok。
+5. 熱機中位數：export、compare、build 各連跑四次，丟掉第一次，取後三次的中位數。量的是命令自己回報的 `elapsed_s`，IDE 啟動不算在內。條件照 SPEC 第 7 節：export 每次跑之前清空同步資料夾，compare 之前在磁碟上改一個 `.st`，build 兩次之間什麼都不動。
+
+驗收命令一律從 worktree 根目錄下 `python -m cdsint.cli ...`，因為 PATH 上的 `cdsint` 是使用者主 clone 的 editable install。
+
+### 階段 0 基線（2026-09-07，commit `69ba4d0`）
+
+| 量的東西 | 原廠 3.5.21.40（softplc 副本） | Delta 1.10（Shm 副本） |
+|---|---|---|
+| hash 清單行數 | 231（229 個物件加 `.gitignore`、`.gitattributes`） | 231 |
+| hash 清單的 SHA-256 | `0B24716B0DEC547622E238FD826DBA430FBA4F2090BAFDA58BA2E5BA89726552` | `545EA020C87D42DE845338D4E1F0D244BD2C77648E42E491B12C8086A3041E1E` |
+| discover total | 407 | 464 |
+| discover kind 數 | 22 | 24 |
+| discover unknown | 空，exit 0 | 9 個，exit 1（見第 7 節第 8 條） |
+| export | ok，229 個物件，0 個失敗 | ok，229 個物件，0 個失敗 |
+| verify | 四步全過（import 16.9、export 16.8、compare 12.1、build 22.3 秒） | 四步全過（import 15.4、export 16.4、compare 11.8、build 32.1 秒） |
+| 熱機 export 中位數 | 22.941 秒 | 23.281 秒 |
+| 熱機 compare 中位數 | 15.833 秒 | 15.328 秒 |
+| 熱機 build 中位數 | 25.764 秒 | 30.538 秒 |
+
+這一組數字跟 SPEC 第 7 節那張表不能直接相減：那張是 2026-09-05 量的，機器狀態不同（SPEC 自己說冷熱差兩到三倍），而且這裡的 compare 是「改一個 `.st` 之後」而不是「改一個 POU 之後」。這一組的用途只有一個，就是給這張工單的四層當比較基準。
+
+測試：Windows `python -m pytest tests -q` 1072 個全綠，WSL `python3 -m pytest tests -q` 1072 個全綠。
+
+### 每一層的儀器結果
+
+| 層 | hash diff 行數 | discover total／kind／unknown | verify exit | export／compare／build 中位數（秒） |
+|---|---|---|---|---|
+| 基線 | — | 407／22／空；464／24／9 | 0；0 | 22.9／15.8／25.8；23.3／15.3／30.5 |
+
 ---
 
 ## 7. 未決事項與裁決
@@ -227,9 +264,16 @@
 4. 第五層拆哪些檔：做完前四層再決定，寫回這裡。
 5. `codesys_ui.py` 的 `clr.AddReference` 假容錯：預設改成 import 失敗就 raise 一句人話，因為沒有 WinForms 的 IDE 側本來就跑不了。
 
+階段 0 定下來的（儀器怎麼跑，之後每一層都照這個跑）：
+
+6. `Ruling: hash 清單排除 sync_cache.json — 那個檔存的是每個檔案上次同步時的 mtime 與大小，是本機狀態而且 gitignore（SPEC 4.5），每跑一次就會變，留在清單裡等於讓硬條件永遠紅 — 錯了的代價是每一層都看到一行跟重構無關的 diff，久了就沒有人再看那個 diff 了。`
+7. `Ruling: discover 跑在 export 之前，而且跑在一份剛複製、沒有任何命令碰過的 .project 上 — export 結束會存檔，而 IDE 自己存一次檔就會讓 softplc 那份少掉五個 alarm_group 節點（`history/SETTINGS_PLAN.md` 第 15 條量過同一件事），所以存檔後再跑的 discover 回答的是另一個問題 — 錯了的代價是數到 402 節點 21 種 kind，跟 WORKER_RULES 寫的 407/22 對不上，然後花時間追一個不存在的 walker bug。`
+8. `Ruling: Delta 那份副本的 discover 基線是 464 節點、24 種 kind、9 個 unknown、exit 1，硬條件是「跟基線一模一樣」而不是「unknown 空」 — 那 9 個是 Delta 專屬的物件種類（ArchiveObject、PersistentVariables、Hardware Configuration、Network Configuration、Recipe Manager、EtherCAT Topology，加三個十六進位名字的物件），`profiles/default.json` 裡沒有它們，discover 把名字報出來正是它該做的事（D13） — 錯了的代價是把一個開工前就存在的 exit 1 當成這張工單弄壞的。`
+9. `Ruling: 第 5 節階段 0 的「兩份副本 hash 清單各 229 行」讀成「229 個可匯出物件」 — 229 個物件寫成 228 個 .st 加 1 個 .xml，再加 .gitignore 與 .gitattributes，兩份副本都是 231 行；`history/SETTINGS_PLAN.md` 第 13 條已經裁過同一件事 — 錯了的代價是照字面驗收的人會以為基線不對。`
+
 做的時候看到但不在範圍的：
 
-- （worker 填）
+- `history/SETTINGS_PLAN.md` 第 13 條記的是「Shm 是 233 行」，今天量到 231 行，跟 softplc 一樣。兩份副本的內容幾乎相同：231 行裡有 230 行的路徑與 SHA-256 完全一樣，唯一不同的是 `Task configuration.task_config.xml` 的 hash。export 回報 `total: 229`、`failed: 0`、`failed_objects` 空，`verify` 四步全過，所以沒有物件被靜默丟掉。少掉的那兩行是什麼，這張工單沒有查，記在這裡給下一個人。
 
 ---
 
