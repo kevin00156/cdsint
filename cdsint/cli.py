@@ -46,19 +46,9 @@ def make_runner(ns):
     if ns.project:
         return headless.Headless(
             ns.project, ns.install, ns.profile, ns.report,
-            answers=_answers(ns.answer), sync_dir=ns.sync_dir,
+            answers=dict(ns.answer), sync_dir=ns.sync_dir,
             timeout=ns.timeout, force_lock=ns.force_lock)
     return target.Target(ipc.default_root(), ns.target, ns.timeout)
-
-
-def _answers(pairs):
-    found = {}
-    for pair in pairs or []:
-        key, sep, value = pair.partition("=")
-        if not sep:
-            raise Failure("--answer wants KEY=VALUE, not %r" % (pair,))
-        found[key] = value
-    return found
 
 
 def run_installs(ns):
@@ -75,6 +65,7 @@ def run_list(ns):
 def run_verify(ns, runner):
     results, problems = verify.run(runner, ns.yes)
     show_folder(ns, runner, results)
+    report.show_notes(results, ns.json)
     report.show_steps(results, ns.json)
     report.show_verify(problems, runner.describe())
     return verify_code(results, problems)
@@ -100,6 +91,7 @@ def verify_code(results, problems):
 def run_command(ns, runner):
     results = runner.run([(flags.wire_name(ns), flags.command_args(ns))])
     show_folder(ns, runner, results)
+    report.show_notes(results, ns.json)
     report.show(results[0], ns.json)
     return exit_code(results[0])
 

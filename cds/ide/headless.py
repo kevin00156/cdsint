@@ -139,7 +139,7 @@ def run_commands(ide_globals, wanted, sync_dir=None):
         if sync_dir:
             args["sync_dir"] = sync_dir
         cmd = commands.new_command(step["command"], args)
-        results.append(entries.answer(ide_globals, cmd))
+        results.append(entries.answer(ide_globals, cmd, ipc.now()))
         if not results[-1]["ok"]:
             break
     return results

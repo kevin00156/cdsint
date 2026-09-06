@@ -39,10 +39,28 @@ WATCHER = "target"
 EITHER = "both"
 HEADLESS = "project"
 
+
+def key_value(text):
+    """One --answer, as the (key, value) pair the IDE side wants.
+
+    Checked here because here is where argparse checks every other flag, and
+    a malformed one is a command line that will not run rather than a command
+    that ran and failed: argparse answers it with exit 2, like every other
+    refusal in this file (SPEC 4.3). It used to be parsed in cdsint/cli.py
+    after the parser had finished, and a Failure's exit 1 said the opposite.
+    """
+    key, separator, value = text.partition("=")
+    if not separator:
+        raise argparse.ArgumentTypeError(
+            "wants KEY=VALUE, not %r" % (text,))
+    return (key, value)
+
+
 # What shape a flag is. The kind decides both how argparse is told about it
 # and what the IDE side receives; every one of them defaults to None rather
 # than False or 0, so "not said" and "said no" stay different all the way
-# through (cds/core/commands.py new_command).
+# through (cds/core/commands.py new_command). The one exception is --answer,
+# whose default is an empty list because it is repeatable.
 SWITCH = "switch"     # --delete-orphans
 CONFIRM = "confirm"   # -y/--yes: the same flag wherever a step changes things
 NAME = "name"         # --app NAME
@@ -54,8 +72,14 @@ KINDS = {
     CONFIRM: {"action": "store_true", "default": None},
     NAME: {"default": None},
     NUMBER: {"type": int, "default": None, "metavar": "N"},
-    PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE"},
+    PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE",
+            "type": key_value},
 }
+
+# A kind says how a flag is shaped; a flag may still name what its value is
+# called in the help. Only --gateway does, and "IP" is what the readMe and
+# SPEC 4.2 have always called it.
+METAVAR = 3
 
 def _dest(spelling):
     """What argparse calls a flag: its last long spelling, as an identifier."""
@@ -87,7 +111,26 @@ class Command(object):
 
     def dests(self):
         """What argparse will call each of this command's flags."""
-        return [_dest(spelling) for spelling, _kind, _help in self.flags]
+        return [_dest(flag[0]) for flag in self.flags]
+
+    def carries(self):
+        """Every attribute this row's own subparser defines.
+
+        Worked out from the row because the row is what _build_one reads.
+        set_defaults does not fill a gap — it overwrites the default of any
+        action with the same name — so a name in here that the parser also
+        defines would have its declared default silently replaced, which is
+        how --answer's empty list turned into None.
+        """
+        named = set(self.dests())
+        if self.action is not None:
+            named.add("action")
+        if self.form != NO_IDE:
+            named.add("target")
+        if self.form in (EITHER, HEADLESS):
+            named.add("project")
+            named.update(PROJECT_ONLY)
+        return named
 
 
 COMMANDS = {
@@ -127,7 +170,7 @@ COMMANDS = {
                 "confirm the download; connect never needs it"),
                ("--gateway", NAME,
                 "reach the controller through this address instead of "
-                "whatever the project already holds"),
+                "whatever the project already holds", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used")],
@@ -151,20 +194,20 @@ PROJECT_FLAGS = (
     ("--sync-dir", NAME,
      "use this folder for this run instead of the sync_folder in the "
      "project's settings file; nothing is written back"),
-    ("--answer", PAIRS, "answer one of the IDE's own prompts; repeatable"),
+    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE; "
+                        "repeatable"),
 )
 
 PROJECT_ONLY = tuple(_dest(spelling)
                      for spelling, _kind, _help in PROJECT_FLAGS)
 
 # Every attribute a parsed command line can carry, worked out from the rows
-# above rather than listed again. Each subparser is given all of them as
-# defaults after its own arguments are added, and argparse keeps an
-# argument's own default over one set this way -- so a subcommand that has
-# the flag behaves as before, and one that does not still answers to the
-# name. That is what lets cdsint/cli.py read ns.project the same way
-# whichever subcommand ran, instead of asking with getattr whether the
-# attribute is there at all.
+# above rather than listed again. Each subparser is given the ones it does
+# NOT define, as defaults, after its own arguments are added -- and only
+# those, because set_defaults overwrites the default of a matching action
+# rather than filling a gap. That is what lets cdsint/cli.py read ns.project
+# the same way whichever subcommand ran, instead of asking with getattr
+# whether the attribute is there at all.
 EVERY_ATTRIBUTE = tuple(sorted(
     set(["target", "project", "action"]) | set(PROJECT_ONLY)
     | set(dest for row in COMMANDS.values() for dest in row.dests())))
@@ -215,7 +258,8 @@ def _build_one(sub, name, row):
     if row.form != NO_IDE:
         _forms(command, row)
     _add_flags(command, row.flags)
-    command.set_defaults(**dict((name, None) for name in EVERY_ATTRIBUTE))
+    command.set_defaults(**dict((name, None) for name in EVERY_ATTRIBUTE
+                                if name not in row.carries()))
 
 
 def _forms(command, row):
@@ -236,9 +280,12 @@ def _forms(command, row):
 
 
 def _add_flags(command, flags):
-    for spelling, kind, help_text in flags:
-        command.add_argument(*spelling.split("/"), help=help_text,
-                             **KINDS[kind])
+    """Add one row's flags. A fourth element names the value in the help."""
+    for flag in flags:
+        keywords = dict(KINDS[flag[1]], help=flag[2])
+        if len(flag) > METAVAR:
+            keywords["metavar"] = flag[METAVAR]
+        command.add_argument(*flag[0].split("/"), **keywords)
 
 
 def command_args(ns):

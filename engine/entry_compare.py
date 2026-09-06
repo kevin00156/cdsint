@@ -36,8 +36,10 @@ MOVED = "moved"
 def changed_objects(different, new_in_ide, new_on_disk, moved):
     """Every object the two sides disagree about, one row each.
 
-    A move is the one that needs both paths, because that is the whole of
-    what it is; the others are in one place or the other.
+    `path` is a path in every row, including a move's: the disk end, which is
+    where the object is now. A move needs both ends, so it carries the other
+    one under a name of its own rather than gluing the two into `path` and
+    making every caller split a string back apart.
     """
     rows = [{"name": item["name"], "path": item["path"], "state": CHANGED}
             for item in different]
@@ -46,7 +48,7 @@ def changed_objects(different, new_in_ide, new_on_disk, moved):
     rows.extend({"name": item["name"], "path": item["path"],
                  "state": NEW_ON_DISK} for item in new_on_disk)
     rows.extend({"name": item["name"], "state": MOVED,
-                 "path": item["ide_path"] + " -> " + item["disk_path"]}
+                 "path": item["disk_path"], "moved_from": item["ide_path"]}
                 for item in moved)
     return rows
 

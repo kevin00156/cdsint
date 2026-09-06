@@ -9,6 +9,7 @@ not whether a real IDE starts, which is the acceptance run's job.
 import json
 import os
 import subprocess
+import time
 
 import pytest
 
@@ -130,6 +131,25 @@ def test_every_command_runs_and_each_gets_its_own_record(ide, tmp_path,
         {"command": "export", "args": {}}]))
     assert [r["command"] for r in report["results"]] == ["import", "export"]
     assert report["intended_exit"] == ide_side.EXIT_OK
+
+
+def test_a_step_reports_how_long_it_actually_took(ide, tmp_path, monkeypatch):
+    # entries.answer used to take started=None from here, and new_result then
+    # read "now" for both ends: a forty-second import printed as 0.0s and the
+    # --json record's started_at was the moment it finished.
+    def slow(ide_globals, name, args):
+        from cds.ide import silent
+        time.sleep(0.2)
+        return silent.Outcome([], "", result={"ok": True, "summary": name,
+                                              "data": {}})
+    monkeypatch.setattr(entries, "run", slow)
+
+    report = ide_side.run_job(ide, job(tmp_path, commands=[
+        {"command": "export", "args": {}}]))
+
+    # elapsed_s, not the timestamps: those are ISO strings to the second, so
+    # a fifth of a second does not show in them either way.
+    assert report["results"][0]["elapsed_s"] >= 0.2
 
 
 def test_a_failed_step_stops_the_ones_after_it(ide, tmp_path, monkeypatch):
@@ -535,6 +555,26 @@ def test_a_run_that_never_finishes_is_killed_and_blamed_on_a_dialog(machine,
         make(machine, monkeypatch, timeout=0.01).run([("export", {})])
     assert raised.value.code == EXIT_TIMEOUT
     assert "dialog" in str(raised.value)
+
+
+def test_a_killed_run_still_says_what_it_did_to_the_lock_file(machine,
+                                                              monkeypatch,
+                                                              capsys):
+    # There are no results on this path, so the Failure is the only thing the
+    # caller ever sees. Without the notes on it, somebody whose lock file we
+    # cleared reads a timeout and nothing else.
+    launching(monkeypatch, code=None)
+    leaves_a_lock(monkeypatch)
+    started = make(machine, monkeypatch, timeout=0.01)
+
+    with pytest.raises(Failure) as raised:
+        started.run([("export", {})])
+
+    assert raised.value.lines == started.notes
+    assert raised.value.report() == EXIT_TIMEOUT
+    printed = capsys.readouterr().err
+    assert "did not finish" in printed
+    assert "removed the lock file" in printed
 
 
 def test_a_timeout_is_written_into_the_report(machine, monkeypatch):

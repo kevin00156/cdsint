@@ -64,13 +64,18 @@ COMMANDS = sorted(set(SCRIPTS) - set(WATCHER_REFUSES))
 PLC_PREFIX = "plc "
 
 
-def answer(ide_globals, cmd, started=None):
+def answer(ide_globals, cmd, started):
     """Run one command and build the result record both callers write.
 
     Every way a run can end is gathered here: the body came back, the body
     raised, or something asked a question nobody could answer. The watcher
     and the launcher used to hold a copy of this each, which is two places
     for a field to be forgotten and one place for it to be noticed.
+
+    `started` has no default on purpose. It had one, and the launcher took
+    it: every step of a --project run then reported elapsed_s 0.0, because
+    new_result reads "now" for both ends when nobody says when it began. A
+    forty-second import printed as 0.0s and nothing was wrong enough to fail.
 
     NeedsInput is caught even though cds/ide/silent.py already catches it
     around the body: it is a BaseException precisely so that the engine's

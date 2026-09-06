@@ -74,7 +74,10 @@ cdsint compare
 ```
 
 它只讀不寫。人類可讀的輸出有兩層：一行摘要（改了幾個、只在 IDE 有幾個、只在磁碟有幾個），
-以及腳本印出來的逐物件清單。用 `--json` 的話，摘要在 `messages`，逐物件清單在 `stdout_tail`。
+以及逐物件清單。兩層都從 `data` 來：計數在 `different`、`new_in_ide`、`new_on_disk`、`moved`，
+逐物件清單在 `data.changes`，每筆有 `name`、`path` 與 `state`（`changed`、`new_in_ide`、
+`new_on_disk`、`moved` 之一）。搬過位置的那一筆多一個 `moved_from`，`path` 是它現在在磁碟上的
+位置。用 `--json` 讀的是同一份東西。
 
 若它回報 `failed_objects`，下一步是 `cdsint discover`（見第 4 節）。
 
@@ -151,14 +154,20 @@ cdsint export
 }
 ```
 
+`--project` 形式再多四個欄位：`ide`（用了哪套）、`sync_dir`、`report_path`，以及 `notes`。
+
 - `messages` 是 IDE 本來要彈給人看的對話框內容，`level` 是 `info`、`warning` 或 `error`。
-- `stdout_tail` 是細節：compare 的逐物件差異、build 的錯誤清單都在這裡。
+- `stdout_tail` 是腳本一路印出來的最後 200 行。build 的錯誤清單（物件、行號）在這裡；
+  compare 的逐物件差異不在，它在 `data.changes`。一趟成功的命令不會印它。
 - `error` 有值就代表失敗，`ok` 一定是 false。
 - `needs_input` 有值代表「有個問題沒人回答」，裡面的 `arg` 直接告訴你該補哪個旗標。
 - `denied` 有值代表這個專案不准你下這個命令（只有 `plc` 會出現），exit code 是 5。
   這個不是補旗標能解決的，見第 6 節。
-- `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
-  `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
+- `notes` 是啟動器對這一趟說的話，不是對工作說的：清掉了一個鎖檔、不得不 kill 一個 IDE、
+  退出碼跟腳本自己記的對不上。只有 `--project` 形式有。一趟的每一筆紀錄帶同一份清單，
+  所以 `verify` 的四筆讀任何一筆都夠。
+- `data` 是這個命令自己的數字與清單：匯出匯入的計數、compare 的差異數與 `changes`、
+  build 的錯誤與警告數。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
   這個清單不空的時候，下一步是 `cdsint discover`：它走同一棵樹，把沒有任何 kind 認得的
   型別 GUID 連同一個例子物件的名字列出來（`data.unknown`）。把那些 GUID 接到
   `profiles/default.json` 的 `guid_aliases` 裡對應 kind 的清單後面，再跑一次。

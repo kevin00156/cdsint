@@ -76,9 +76,26 @@ function Get-ScriptDirs {
 
     $entry = Join-Path $Body "cdsint\cli.py"
     if (-not (Test-Path $entry)) { throw "$Body is not a cdsint tree: no $entry" }
-    $json = & python $entry installs --json
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        # Checked rather than caught: with $ErrorActionPreference = "Stop" the
+        # call below throws CommandNotFound before $LASTEXITCODE is looked at,
+        # so the sentence about needing Python was never reached.
+        throw "cdsint needs Python 3.11 or later on PATH; 'python' was not found."
+    }
+    # Python picks the pipe's encoding from the ANSI code page unless it is
+    # told, and cdsint prints its JSON with ensure_ascii=False. On a machine
+    # whose user name is not ASCII -- cp950 here -- %LOCALAPPDATA% comes back
+    # mojibake, the junction is made under a path no IDE will ever scan, and
+    # the Scripts menu stays empty with every step reporting success.
+    $wasEncoding = $env:PYTHONIOENCODING
+    try {
+        $env:PYTHONIOENCODING = "utf-8"
+        $json = & python $entry installs --json
+    } finally {
+        $env:PYTHONIOENCODING = $wasEncoding
+    }
     if ($LASTEXITCODE -ne 0) {
-        throw "python $entry installs failed. cdsint needs Python 3.11 or later on PATH."
+        throw "python $entry installs failed; see the message above."
     }
     $installs = $json | ConvertFrom-Json
     return $installs | Group-Object script_dir | ForEach-Object {

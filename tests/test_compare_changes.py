@@ -43,12 +43,15 @@ def test_each_kind_of_difference_says_which_it_is(compare):
                                               "new_on_disk", "moved"]
 
 
-def test_a_move_carries_both_ends(compare):
-    # Which is the whole of what a move is; the others are in one place.
+def test_a_move_carries_both_ends_under_two_names(compare):
+    # Both ends, because that is the whole of what a move is. Under two
+    # names, because `path` is a path in every other row and a caller should
+    # not have to split one back apart to find out where the object is now.
     rows = compare.changed_objects([], [], [], [
         {"name": "Moved", "ide_path": "A/Moved.st",
          "disk_path": "B/Moved.st"}])
-    assert rows[0]["path"] == "A/Moved.st -> B/Moved.st"
+    assert rows[0]["path"] == "B/Moved.st"
+    assert rows[0]["moved_from"] == "A/Moved.st"
 
 
 def test_no_differences_is_an_empty_list_not_a_missing_field(compare):
@@ -72,6 +75,15 @@ def test_the_summary_prints_the_rows(capsys):
         {"name": "Main", "path": "POUs/Main.st", "state": "changed"}]}))
     printed = capsys.readouterr().out
     assert "POUs/Main.st" in printed and "changed" in printed
+
+
+def test_a_move_says_where_it_came_from_on_the_same_line(capsys):
+    report.show(result(True, data={"changes": [
+        {"name": "Moved", "path": "B/Moved.st", "state": "moved",
+         "moved_from": "A/Moved.st"}]}))
+    printed = capsys.readouterr().out
+    assert "B/Moved.st" in printed
+    assert "(was A/Moved.st)" in printed
 
 
 def test_a_run_that_worked_does_not_get_the_tail(capsys):

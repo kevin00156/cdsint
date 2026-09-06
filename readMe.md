@@ -217,7 +217,12 @@ Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
 derived from it — a launch allowance, plus that many seconds per step, plus a
 shutdown allowance — so a four-step `verify` waits well past 120 seconds.
-`--json` prints the raw record.
+`--json` prints the raw record. A `--project` run's record carries four
+fields the other form has no use for: `ide`, `sync_dir`, `report_path`, and
+`notes` — what the launcher had to say about the run rather than about the
+work, such as a lock file it cleared or an exit code it cannot vouch for.
+They are in the record and not only on stderr because the caller reading
+the JSON is exactly the one who needs to hear about a cleared lock.
 Only with `--project`: `--sync-dir D` (optional — this run's sync folder,
 overriding the settings file and never written back), `--profile NAME` when an
 install has several, `--report FILE`, `--force-lock`, and `--answer KEY=VALUE`
@@ -333,7 +338,7 @@ neither, `connect` refuses rather than hanging.
 | 1 | the command failed, or it needs a flag you did not give |
 | 2 | the command line itself is wrong: flags that do not go together, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
-| 4 | the project is open elsewhere, or the IDE would not start |
+| 4 | the project is open elsewhere, `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
 
 ## Settings

@@ -197,7 +197,9 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 
 2 有兩個原因，旗標不搭和找不到唯一一個活著的 IDE，合在一格是因為呼叫端的處置相同：同一行不要重試，先讀訊息。2 和 4 是「這個專案有沒有活著的 IDE」的兩種原因，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
 
-`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`denied`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`。
+`--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`denied`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`、`notes`。
+
+`notes` 是啟動器對「這一趟」而不是對「這件工作」說的話：清掉了一個鎖檔、不得不 kill 一個 IDE、退出碼跟腳本自己記的對不上。它只有 `--project` 形式有，因為只有那半會起 IDE。放進紀錄而不是只印在 stderr，是因為 agent 讀的正是這份 JSON，而「我幫你清了一個鎖檔」這種話它必須聽得到。一趟的每一筆紀錄帶的是同一份清單，所以只讀其中一筆也不會漏掉。
 
 `denied` 平常是 `null`，被設定檔擋下來的時候是 `{"file", "key", "action"}`，exit code 就是從它決定 5 的。它跟 `needs_input` 分開兩個欄位，因為兩者要呼叫端做的事不一樣：`needs_input` 是「補一個旗標再跑一次」，`denied` 是「去設定檔的 `plc` 清單加一個字」。
 

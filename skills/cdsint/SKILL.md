@@ -168,11 +168,17 @@ lock file such a kill leaves behind is cleared by cdsint itself.
 With `--json`: `messages` carries what the IDE would have shown a person,
 `data` carries the counts and the lists behind them (compare's `changes`, one
 row per object with `name`, `path` and `state`; discover's `unknown`),
-`stdout_tail` carries what the script printed on the way, `error` explains a
-failure, `needs_input` names the flag that
+`stdout_tail` carries what the script printed on the way (build's error list
+with line numbers is there; compare's is not, and a run that worked has no
+tail at all), `error` explains a failure, `needs_input` names the flag that
 was missing, `denied` says the project's own policy refused the command (only
-`plc`, and no flag fixes it), and `data` holds this command's own numbers — the counts, and
-`failed_objects` naming anything the command could not handle.
+`plc`, and no flag fixes it), and `failed_objects` in `data` names anything
+the command could not handle.
+
+A `--project` record carries `notes` as well: what the launcher had to say
+about the run rather than about the work — a lock file it cleared, an IDE it
+had to kill, an exit code it cannot vouch for. Every step of a `verify`
+carries the same list, so reading any one of them is enough.
 
 When `failed_objects` is not empty, run `cdsint discover` next. It walks the
 same tree and reports `data.unknown` — every type GUID no kind in

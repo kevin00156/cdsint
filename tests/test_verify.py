@@ -172,8 +172,12 @@ def test_a_project_only_flag_without_project_is_refused(capsys):
 
 
 def test_an_answer_without_an_equals_sign_is_refused(capsys):
-    assert cli.main(["export", "--project", "P", "--install", "I",
-                     "--sync-dir", "S", "--answer", "Upgrade"]) == EXIT_FAILED
+    # Exit 2, not 1: nothing ran. It used to be parsed after argparse had
+    # finished, so a malformed one came back as "the command failed".
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["export", "--project", "P", "--install", "I",
+                  "--sync-dir", "S", "--answer", "Upgrade"])
+    assert raised.value.code == EXIT_TARGET
     assert "KEY=VALUE" in capsys.readouterr().err
 
 
@@ -268,6 +272,24 @@ def test_the_same_run_without_json_says_it_out_loud(monkeypatch, capsys):
     assert "removed a lock file" in capsys.readouterr().err
 
 
+def test_a_note_is_said_once_however_many_steps_carried_it(monkeypatch,
+                                                           capsys):
+    # The launcher hangs the same list on every record it hands back, so a
+    # reader of any one of them hears about the lock. A person reading all
+    # four should not hear it four times.
+    note = "removed a lock file we left"
+    answers = dict((name, dict(done(name), notes=[note]))
+                   for name in ("import", "export", "compare", "build"))
+    answers["compare"] = dict(compared(), notes=[note])
+    runner = FakeRunner(answers)
+    monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
+
+    assert cli.main(["verify", "-y", "--project", "P", "--install",
+                     "I"]) == EXIT_OK
+
+    assert capsys.readouterr().err.count(note) == 1
+
+
 def test_there_is_no_config_command(capsys):
     # The file is the interface (SPEC 4.2). A command that edited it would be
     # a second editor for the same eleven keys, and the validation would have
@@ -347,6 +369,31 @@ def test_every_command_you_can_type_is_a_row_in_the_table():
     choices = [action.choices for action in parser._subparsers._actions
                if action.choices]
     assert set(choices[0]) == set(flags.COMMANDS)
+
+
+def test_a_flag_keeps_its_own_default_after_the_gaps_are_filled():
+    # set_defaults overwrites a matching action's default rather than filling
+    # a gap, so telling every subparser about every attribute used to replace
+    # --answer's empty list with None. Nothing broke, because cli._answers
+    # took None; the next repeatable flag would not be so lucky.
+    parser = flags.build_parser()
+    assert parser.parse_args(["export"]).answer == []
+    # And a subcommand that does not have the flag still answers to the name.
+    assert parser.parse_args(["list"]).answer is None
+
+
+def test_the_row_and_the_parser_agree_about_what_a_command_carries():
+    # Command.carries() is worked out from the row, and it decides which
+    # defaults are safe to set. If it ever named one the parser also defines,
+    # that flag's declared default would be silently replaced -- which is the
+    # bug above, in a form no test would see.
+    parser = flags.build_parser()
+    subcommands = [action.choices for action in parser._subparsers._actions
+                   if action.choices][0]
+    for name, command in subcommands.items():
+        added = set(action.dest for action in command._actions
+                    if action.dest not in ("help", "timeout", "json"))
+        assert added == flags.COMMANDS[name].carries(), name
 
 
 def test_every_command_line_is_the_same_shape():

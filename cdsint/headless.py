@@ -18,6 +18,7 @@ import time
 
 from cds.core import ipc
 from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
+from cds.ide.entries import REPO_ROOT
 from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV
 from cdsint import installs, lock
 from cdsint.exits import Failure
@@ -25,10 +26,10 @@ from cdsint.flags import DEFAULT_TIMEOUT_S
 from cdsint.report import default_report
 from cdsint.report import untrusted_exit as report_untrusted_exit
 
-# The install root: this file is <root>/cdsint/headless.py, and the IDE-side
-# script it starts is in the same tree.
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IDE_SIDE = os.path.join(ROOT, "cds", "ide", "headless.py")
+# The IDE-side script this starts, in the same tree as everything else.
+# REPO_ROOT rather than a second dirname chain off this file: two names for
+# one place is how one of them goes stale (PRINCIPLES.md 7).
+IDE_SIDE = os.path.join(REPO_ROOT, "cds", "ide", "headless.py")
 
 KILL_GRACE_S = 5.0
 
@@ -286,9 +287,14 @@ class Headless(object):
         Which of the two it is depends on whether the work got done — a
         report with an intended_exit is the answer, and a kill that came
         after it is only a slow shutdown (SPEC 6.4).
+
+        A Failure carries the notes with it. There are no results on that
+        path, so nothing else would ever say them, and they are exactly what
+        the reader needs: a run that was killed is also a run whose lock file
+        somebody has to account for.
         """
         if code is None and report.get("intended_exit") is None:
-            raise Failure(report["error"], EXIT_TIMEOUT)
+            raise Failure(report["error"], EXIT_TIMEOUT, self.notes)
         if code is None:
             self._note(report["error"])
         else:
@@ -296,7 +302,7 @@ class Headless(object):
         if not report.get("opened"):
             raise Failure(report.get("error")
                           or "the IDE ran but wrote no report; see "
-                             + self.stdout_path(), EXIT_HEADLESS)
+                             + self.stdout_path(), EXIT_HEADLESS, self.notes)
         for result in report["results"]:
             # SPEC 4.3: the --project form's record says which IDE ran it,
             # which folder it took for the truth, and where the rest of the

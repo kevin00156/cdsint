@@ -86,12 +86,14 @@ def show(result, want_json=False):
     cds/core/commands.py new_result, so all twelve fields are there; the
     defensive version could not tell a field that is legitimately null from
     one a producer forgot, which is how the refusal record went seven fields
-    short for a year without anything noticing. `notes` is the exception and
-    the reason is below.
+    short for a year without anything noticing.
+
+    The run's notes are not printed here. Every record of a run carries the
+    same list, so a `verify` printing four of them would say the same warning
+    four times; show_notes says it once, before any of this.
     """
     if want_json:
         return as_json(result)
-    _show_notes(result)
     said = [message["text"] for message in result["messages"]]
     for message in result["messages"]:
         print("%s: %s" % (message["level"], message["text"]))
@@ -172,16 +174,32 @@ def show_installs(found, want_json=False):
                   % install["run_as_admin"])
 
 
-def _show_notes(result):
-    """What the launcher had to say about the run, as opposed to about the work.
+def show_notes(results, want_json=False):
+    """What the launcher had to say about the run, not about the work.
 
-    A lock it removed, an IDE it had to kill, an exit code it cannot vouch
-    for. The --target form has none of this, so the field is only on the
-    records the --project form hands back, next to `ide` and `report_path` —
-    which is why this is the one .get() in here.
+    A lock it cleared, an IDE it had to kill, an exit code it cannot vouch
+    for. Once per run, whatever the run was: every record carries the same
+    list, so that a caller reading one record out of a verify's four still
+    hears about the lock, and a person reading all four does not hear it four
+    times.
+
+    Only the --project form has any, so the field is only on the records that
+    form hands back, next to `ide` and `report_path` — which is why this is
+    the one .get() in this file. Under --json they are in the records already
+    and stderr stays empty.
     """
-    for note in result.get("notes") or []:
+    if want_json:
+        return
+    for note in notes_of(results):
         print("warning: " + note, file=sys.stderr)
+
+
+def notes_of(results):
+    """The run's notes, from whichever record got far enough to carry them."""
+    for result in results:
+        if result.get("notes"):
+            return result["notes"]
+    return []
 
 
 def _show_data(data):
@@ -203,10 +221,21 @@ def _show_data(data):
 
 
 def _one_line(item):
-    """An unrecognised object is a name and a GUID; a failed one is a name."""
-    if isinstance(item, dict):
-        return "  ".join("%s" % item[name] for name in sorted(item))
-    return item
+    """One row of a data list, as a line.
+
+    An unrecognised object is a name and a GUID, a failed one is a name, a
+    compare row is a name, a path and what happened to it. `moved_from` is
+    the one field shown out of alphabetical order and with a word in front,
+    because a move's row carries two paths and a reader has to be able to
+    tell which end is which.
+    """
+    if not isinstance(item, dict):
+        return item
+    line = "  ".join("%s" % item[name] for name in sorted(item)
+                     if name != "moved_from")
+    if "moved_from" in item:
+        line += "  (was %s)" % item["moved_from"]
+    return line
 
 
 def _show_needs(result):
