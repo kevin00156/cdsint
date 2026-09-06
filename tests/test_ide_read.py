@@ -94,3 +94,36 @@ class TestReadsThatRefuse:
         blank = Node("Blank", "t")
         blank.guid = ""
         assert ide_read.guid_of(blank) is None
+
+
+class TestQuickHashRefusesToGuess:
+    """A property whose accessors cannot be read has no quick hash.
+
+    It used to have one: the read was swallowed and the hash was computed as
+    if GET and SET were empty. The previous run had computed it the same way,
+    so the two matched, the cache said "identical", and the export skipped a
+    property nobody could read (SPEC 6.1, PRINCIPLES 6).
+    """
+
+    def test_none_rather_than_a_hash_of_nothing(self):
+        from engine import codesys_utils
+        from engine.codesys_constants import TYPE_GUIDS
+
+        class Deaf(object):
+            type = TYPE_GUIDS["property"]
+            has_textual_declaration = True
+
+            def get_name(self):
+                return "Speed"
+
+            @property
+            def textual_declaration(self):
+                class Text(object):
+                    text = "PROPERTY Speed : INT"
+                return Text()
+
+            def get_children(self):
+                raise RuntimeError("no plugin for the accessors")
+
+        assert codesys_utils.get_quick_ide_hash(Deaf(), is_xml=False) is None
+        assert unhandled.names() == ["Speed"]

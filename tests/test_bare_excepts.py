@@ -29,7 +29,7 @@ ALLOWED = {
     "engine/codesys_compare_engine.py": 5,
     "engine/codesys_managers.py": 18,
     "engine/codesys_ui.py": 2,
-    "engine/codesys_utils.py": 20,
+    "engine/codesys_utils.py": 19,
     "engine/entry_build.py": 5,
     "engine/entry_compare.py": 2,
 }

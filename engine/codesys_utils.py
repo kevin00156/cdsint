@@ -16,6 +16,7 @@ import time
 import tempfile
 import shutil
 
+from engine import unhandled
 from engine.unhandled import name_of
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
@@ -261,7 +262,16 @@ def get_quick_ide_hash(obj, is_xml):
                         get_impl = format_st_content(c_decl, c_impl)
                     else:
                         set_impl = format_st_content(c_decl, c_impl)
-            except: pass
+            except Exception as exc:
+                # No quick answer, rather than a quick wrong one. Swallowing
+                # this hashed the property as if GET and SET were empty, and
+                # that hash matched the one the previous run had computed the
+                # same way -- so the cache said "identical" about a property
+                # nobody could read, and the export skipped it.
+                unhandled.note(obj, exc)
+                log_warning("No quick hash for %s: its accessors could not be "
+                            "read (%s)" % (name_of(obj), safe_str(exc)))
+                return None
 
             content = format_property_content(decl, get_impl, set_impl)
         else:
