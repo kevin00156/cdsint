@@ -22,6 +22,7 @@ from __future__ import print_function
 import errno
 import io
 import json
+import ntpath
 import os
 import re
 import time
@@ -47,8 +48,13 @@ def default_root():
 
 
 def make_instance_id(project_path, pid):
-    """Build "<project stem>-<pid>", the name that identifies one IDE."""
-    stem = os.path.splitext(os.path.basename(project_path or "unsaved"))[0]
+    """Build "<project stem>-<pid>", the name that identifies one IDE.
+
+    ntpath, not os.path: the project path comes from the IDE, which only runs
+    on Windows, so it is always a Windows path. ntpath splits on both slashes,
+    so it reads that path correctly wherever the CLI happens to run.
+    """
+    stem = ntpath.splitext(ntpath.basename(project_path or "unsaved"))[0]
     return "%s-%s" % (_UNSAFE.sub("_", stem) or "unsaved", pid)
 
 

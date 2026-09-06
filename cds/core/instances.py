@@ -15,6 +15,7 @@ Pure Python (PRINCIPLES.md 4): no CODESYS imports.
 """
 from __future__ import print_function
 
+import ntpath
 import os
 import shutil
 
@@ -54,7 +55,9 @@ def new_registration(instance_id, pid, ide, project_path,
 def set_project(reg, project_path):
     """Record which project the IDE has open; it can change without a restart."""
     reg["project_path"] = project_path
-    reg["project_name"] = os.path.splitext(os.path.basename(project_path or ""))[0]
+    # ntpath: the path came from the IDE, so it is a Windows path even when
+    # whoever reads this registration is not on Windows.
+    reg["project_name"] = ntpath.splitext(ntpath.basename(project_path or ""))[0]
     return reg
 
 

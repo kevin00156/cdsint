@@ -11,7 +11,7 @@ name mismatch, which is not something to do from a timer tick.
 """
 from __future__ import print_function
 
-import os
+import ntpath
 import sys
 
 from cds.core import props
@@ -100,13 +100,15 @@ def sync_dir(projects_obj):
     raw = prop(projects_obj, props.FOLDER)
     if not raw:
         return None
-    if os.path.isabs(raw):
-        return os.path.normpath(raw)
+    # ntpath throughout: both the property and the project path come from the
+    # IDE, which only runs on Windows. ntpath also splits on forward slashes,
+    # so a folder written "out/sync" resolves without a separator swap.
+    if ntpath.isabs(raw):
+        return ntpath.normpath(raw)
     project = path_of(projects_obj)
     if project is None:
         return None
-    return os.path.normpath(os.path.join(os.path.dirname(project),
-                                         raw.replace("/", os.sep)))
+    return ntpath.normpath(ntpath.join(ntpath.dirname(project), raw))
 
 
 def ide_name():
@@ -115,5 +117,6 @@ def ide_name():
     sys.version alone cannot tell them apart — Delta 1.10 and Lenze 3.24 both
     report IronPython 2.7.7 — so lead with the executable's name.
     """
-    executable = os.path.basename(getattr(sys, "executable", "") or "unknown")
+    # ntpath: sys.executable here is the IDE's own path, a Windows path.
+    executable = ntpath.basename(getattr(sys, "executable", "") or "unknown")
     return "%s (%s)" % (executable, sys.version.replace("\n", " "))
