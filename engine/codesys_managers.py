@@ -23,6 +23,7 @@ from engine.codesys_constants import (
     kind_of, sync_direction_of
 )
 from engine import unhandled
+from engine.ide_read import guid_of, parent_of
 
 # Distinguishes "property absent" from "property present and falsy" when
 # reading an IDE object with a single getattr instead of hasattr-then-read.
@@ -121,24 +122,6 @@ def clear_path_caches():
     _object_path_cache.clear()
 
 
-def _cache_key(obj):
-    """Stable identity for an IDE object, or None when it cannot be keyed."""
-    try:
-        return safe_str(obj.guid) or None
-    except:
-        return None
-
-
-def _parent_of(obj):
-    # One read, not two. hasattr() is itself a property read, and this runs for
-    # every node of every chain walk -- the guarded form doubled the cost of
-    # the single most-repeated lookup in path building.
-    try:
-        return getattr(obj, "parent", None)
-    except:
-        return None
-
-
 def _node_type(obj):
     """Type GUID of an IDE node, or None when it cannot be read.
 
@@ -172,14 +155,14 @@ def _container_names(obj, obj_guid=None):
     app_name = None
 
     current = obj
-    key = obj_guid if obj_guid is not None else _cache_key(obj)
+    key = obj_guid if obj_guid is not None else guid_of(obj)
     while current is not None:
         if key is not None and key in _container_prefix_cache:
             device_name, app_name = _container_prefix_cache[key]
             break
         chain.append((key, current))
-        current = _parent_of(current)
-        key = _cache_key(current) if current is not None else None
+        current = parent_of(current)
+        key = guid_of(current) if current is not None else None
 
     for key, node in reversed(chain):
         try:
@@ -218,7 +201,7 @@ def _ancestor_path(node, stop_types):
 
     current = node
     while current is not None:
-        key = _cache_key(current)
+        key = guid_of(current)
         if key is not None and key in _object_path_cache:
             names = _object_path_cache[key]
             break
@@ -232,7 +215,7 @@ def _ancestor_path(node, stop_types):
             names = ()
             break
         chain.append((key, current))
-        current = _parent_of(current)
+        current = parent_of(current)
 
     for key, ancestor in reversed(chain):
         try:
@@ -253,7 +236,7 @@ def get_object_path(obj, stop_at_application=True, parent=None):
     Pass `parent` when the caller already holds it; fetching it is a round trip.
     """
     if parent is None:
-        parent = _parent_of(obj)
+        parent = parent_of(obj)
     if parent is None:
         return []
     stop_types = _path_stop_types(stop_at_application)
@@ -274,7 +257,7 @@ def _uncached_ancestor_path(node, stop_types):
             names.insert(0, clean_filename(current.get_name()))
         except:
             break
-        current = _parent_of(current)
+        current = parent_of(current)
     return names
 
 
@@ -329,8 +312,8 @@ def build_expected_path(obj, effective_type, is_xml):
     # used to fetch them independently -- guid twice, parent twice, plus six
     # more parent reads inside get_parent_pou_name -- so read each once here
     # and hand them down.
-    obj_guid = _cache_key(obj)
-    parent = _parent_of(obj)
+    obj_guid = guid_of(obj)
+    parent = parent_of(obj)
 
     container = get_container_prefix(obj, obj_guid=obj_guid)
     path_parts = get_object_path(obj, parent=parent)
@@ -523,7 +506,7 @@ def classify_object(obj):
     # `hasattr(obj,'parent') and obj.parent` then `obj.parent.type` and then
     # `obj.parent` again for the device check -- four crossings into .NET for
     # one parent, on a function that runs for every skipped object.
-    parent = _parent_of(obj)
+    parent = parent_of(obj)
     try:
         parent_type = safe_str(parent.type) if parent else ""
         parent_kind = kind_of(parent_type)

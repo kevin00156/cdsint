@@ -18,9 +18,9 @@ from __future__ import print_function
 
 import sys
 
-from engine.codesys_constants import kind_of
 from engine.codesys_utils import safe_str, log_warning
 from engine.codesys_managers import get_container_prefix
+from engine.ide_read import children_of, kind_of, name_of
 
 # Applications sit at Device / [PLC Logic] / Application, so three levels
 # reach one; the rest is slack for folders sitting above the device.
@@ -88,8 +88,8 @@ def _find_applications(project):
     for _ in range(MAX_DEPTH):
         next_level = []
         for node in level:
-            for child in _children(node):
-                kind = _kind(child)
+            for child in children_of(node):
+                kind = kind_of(child)
                 if kind == "application":
                     found.append(child)
                 elif kind in CONTAINER_KINDS:
@@ -108,7 +108,7 @@ def _is_logged_in(online_api, app):
         return bool(session.is_logged_in)
     except Exception as e:
         log_warning("Login pre-flight: cannot read the login state of "
-                    + _name(app) + ": " + safe_str(e))
+                    + name_of(app) + ": " + safe_str(e))
         return False
     finally:
         _release(session)
@@ -130,38 +130,12 @@ def _release(session):
                     + safe_str(e))
 
 
-def _children(node):
-    """Direct children of a tree node, empty when the IDE refuses to list them."""
-    try:
-        return node.get_children()
-    except Exception as e:
-        log_warning("Login pre-flight: cannot list the children of "
-                    + _name(node) + ": " + safe_str(e))
-        return []
-
-
-def _kind(obj):
-    """Profile kind name of an object, None when it has no readable type."""
-    try:
-        return kind_of(safe_str(obj.type))
-    except Exception as e:
-        log_warning("Login pre-flight: cannot read the type of "
-                    + _name(obj) + ": " + safe_str(e))
-        return None
-
-
 def _app_label(app):
     """'Device/Application', the way the IDE's device tree shows it."""
-    name = _name(app)
+    name = name_of(app)
     parts = [part for part in get_container_prefix(app) if part]
     if name not in parts:
         parts.append(name)
     return "/".join(parts)
 
 
-def _name(obj):
-    """Display name of an object. Never raises - it feeds the error messages."""
-    try:
-        return safe_str(obj.get_name())
-    except Exception:
-        return "<unnamed object>"

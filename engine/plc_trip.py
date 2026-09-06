@@ -18,6 +18,7 @@ import os
 
 from cds.core import ipc
 from engine import entry, plc_crc, plc_link, unhandled
+from engine import ide_read
 from engine.codesys_online import resolve_online
 from engine.codesys_utils import resolve_projects, safe_str
 
@@ -147,13 +148,13 @@ class Trip(object):
             self.device = self.online.create_online_device(self.device_node)
         except Exception as exc:
             return ("could not open a connection to %s: %s"
-                    % (plc_link.device_name(self.device_node), safe_str(exc)))
+                    % (ide_read.name_of(self.device_node), safe_str(exc)))
         try:
             try:
                 self.device.connect()
             except Exception as exc:
                 return ("%s did not answer: %s"
-                        % (plc_link.device_name(self.device_node),
+                        % (ide_read.name_of(self.device_node),
                            safe_str(exc)))
             return job()
         finally:
@@ -266,7 +267,7 @@ class Trip(object):
             return
         path = plc_crc.record_path(self.project_path())
         entry_written = {"plc_crc": plc,
-                         "device": plc_link.device_name(self.device_node),
+                         "device": ide_read.name_of(self.device_node),
                          "downloaded_at": ipc.iso(ipc.now())}
         if plc_crc.remember(path, self.found["controller"], entry_written):
             self.note("recorded in %s: %s now holds %s"

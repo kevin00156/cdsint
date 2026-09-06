@@ -10,9 +10,8 @@ from __future__ import print_function
 
 import os
 
-from engine import unhandled
-from engine.codesys_constants import kind_of
 from engine.codesys_utils import log_warning, safe_str
+from engine.ide_read import children_of, kind_of, name_of
 
 # The only place either credential is read (D14). Named constants so the
 # password's name appears once in the code and the grep for it stays honest.
@@ -127,8 +126,8 @@ def find_device(project):
     to answer it with, so the honest answer is to name them and stop (D7).
     """
     devices = []
-    for child in _children(project):
-        if _kind_of(child) == "device":
+    for child in children_of(project):
+        if kind_of(child) == "device":
             devices.append(child)
     if not devices:
         return None, ("no device node in this project, so there is no "
@@ -136,7 +135,7 @@ def find_device(project):
     if len(devices) > 1:
         return None, ("this project has %d device nodes (%s) and there is no "
                       "flag that says which one to use, so nothing was done"
-                      % (len(devices), ", ".join(device_name(d)
+                      % (len(devices), ", ".join(name_of(d)
                                                  for d in devices)))
     return devices[0], None
 
@@ -214,25 +213,3 @@ def disconnect(device):
         log_warning("plc: could not disconnect cleanly: " + safe_str(exc))
 
 
-def device_name(obj):
-    try:
-        return safe_str(obj.get_name())
-    except Exception:
-        return "<an object that will not say its name>"
-
-
-def _children(node):
-    try:
-        return node.get_children()
-    except Exception as exc:
-        unhandled.note(node, exc)
-        return []
-
-
-def _kind_of(obj):
-    """The profile kind of an object, or None when it will not say (D13)."""
-    try:
-        return kind_of(safe_str(obj.type))
-    except Exception as exc:
-        unhandled.note(obj, exc)
-        return None

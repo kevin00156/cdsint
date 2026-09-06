@@ -30,7 +30,7 @@ from engine.codesys_utils import (
     merge_native_xmls,
     parse_st_file, find_object_by_path,
     ensure_folder_path, determine_object_type, find_object_by_name,
-    _find_child_transparent,
+    find_child_transparent,
     format_st_content, format_property_content,
     load_sync_cache, save_sync_cache, normalize_path, get_quick_ide_hash,
     parse_sync_pragmas, attrs_from_pragmas, read_ide_attrs,
@@ -43,6 +43,7 @@ from engine.codesys_managers import (
     build_expected_path, update_object_code, clear_path_caches
 )
 from engine import unhandled
+from engine.ide_read import guid_of, parent_of
 
 
 # The managers are stateless; one shared instance spares the engine from
@@ -680,15 +681,15 @@ def _is_pou_or_itf(obj):
 def find_parent_pou(container, parent_name):
     """Find the POU/interface named parent_name in or below container.
 
-    _find_child_transparent() matches on name only and will happily return a
+    find_child_transparent() matches on name only and will happily return a
     same-named FOLDER; members must land on the POU itself, so a folder hit is
     treated as one more level to look through.
     """
-    found = _find_child_transparent(container, parent_name)
+    found = find_child_transparent(container, parent_name)
     if _is_pou_or_itf(found):
         return found
     if found is not None:
-        inner = _find_child_transparent(found, parent_name)
+        inner = find_child_transparent(found, parent_name)
         if _is_pou_or_itf(inner):
             return inner
     return None
@@ -1074,7 +1075,7 @@ def orphans_their_parent_takes(to_sync):
 
     covered = set()
     for guid, obj in doomed.items():
-        parent = _parent_or_none(obj)
+        parent = parent_of(obj)
         while parent is not None:
             try:
                 parent_guid = safe_str(parent.guid)
@@ -1083,22 +1084,8 @@ def orphans_their_parent_takes(to_sync):
             if parent_guid in doomed:
                 covered.add(guid)
                 break
-            parent = _parent_or_none(parent)
+            parent = parent_of(parent)
     return covered
-
-
-def _parent_or_none(obj):
-    try:
-        return getattr(obj, "parent", None)
-    except Exception:
-        return None
-
-
-def _guid_or_none(obj):
-    try:
-        return safe_str(obj.guid)
-    except Exception:
-        return None
 
 
 def build_device_remap(project, to_sync):
@@ -1163,7 +1150,7 @@ def build_device_remap(project, to_sync):
         matched = []
         for dev_name, dev_obj in devices:
             for sec in second_levels.get(lead_l, ()):
-                if _find_child_transparent(dev_obj, sec) is not None:
+                if find_child_transparent(dev_obj, sec) is not None:
                     matched.append(dev_name)
                     break
 
@@ -1298,7 +1285,7 @@ def perform_import_items(primary_project, base_dir, to_sync):
             if item.get("is_orphan"):
                 obj = item.get("obj")
                 if obj:
-                    if _guid_or_none(obj) in taken_by_parent:
+                    if guid_of(obj) in taken_by_parent:
                         # Its POU is on this same list; removing that removes
                         # this. Counted, because it will be gone either way.
                         deleted_count += 1

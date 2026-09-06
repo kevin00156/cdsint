@@ -16,6 +16,7 @@ import time
 import tempfile
 import shutil
 
+from engine.unhandled import name_of
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
 # Cache version - bump when the cache format or hash semantics change to
@@ -737,19 +738,6 @@ def clear_attr_probe_cache():
     _attr_probe_cache.clear()
 
 
-def _obj_label(obj):
-    """Object name for a log line.
-
-    Fetched only when something is about to be logged: read_ide_attrs used to
-    read it for every object it inspected, spending a .NET round trip per
-    object on a string that is normally discarded.
-    """
-    try:
-        return safe_str(obj.get_name())
-    except:
-        return "<unknown>"
-
-
 def _readable_attr_props(obj_type, build_props):
     """(attr_key, api_prop) pairs worth reading for this object type.
 
@@ -811,7 +799,7 @@ def read_ide_attrs(obj, obj_type=None):
         build_props = getattr(obj, "build_properties", None)
     except Exception as e:
         if is_debug():
-            log_info("read_ide_attrs: %s has no build_properties: %s" % (_obj_label(obj), safe_str(e)))
+            log_info("read_ide_attrs: %s has no build_properties: %s" % (name_of(obj), safe_str(e)))
 
     if build_props is None:
         return attrs
@@ -821,7 +809,7 @@ def read_ide_attrs(obj, obj_type=None):
         read_ide_attrs._bp_dumped = True
         try:
             bp_attrs = [a for a in dir(build_props) if not a.startswith("_")]
-            log_info("BUILD_PROPERTIES DISCOVERY for %s (%s): %s" % (_obj_label(obj), obj_type[:8], bp_attrs))
+            log_info("BUILD_PROPERTIES DISCOVERY for %s (%s): %s" % (name_of(obj), obj_type[:8], bp_attrs))
             for a in bp_attrs:
                 try:
                     val = getattr(build_props, a)
@@ -837,10 +825,10 @@ def read_ide_attrs(obj, obj_type=None):
             if getattr(build_props, prop_name):
                 attrs[key] = True
         except Exception as e:
-            log_warning("Cannot read attr '%s' from %s: %s" % (key, _obj_label(obj), safe_str(e)))
+            log_warning("Cannot read attr '%s' from %s: %s" % (key, name_of(obj), safe_str(e)))
 
     if attrs and is_debug():
-        log_info("read_ide_attrs: %s -> %s" % (_obj_label(obj), list(attrs.keys())))
+        log_info("read_ide_attrs: %s -> %s" % (name_of(obj), list(attrs.keys())))
     return attrs
 
 
@@ -971,7 +959,7 @@ def is_container_device(obj):
         return False
 
 
-def _find_child_transparent(parent_obj, name):
+def find_child_transparent(parent_obj, name):
     """
     Find a child object by name, transparently looking through 'Plc Logic' nodes.
     
@@ -1052,7 +1040,7 @@ def ensure_folder_path(path_str, project):
     for i, part in enumerate(parts):
         if not part: continue
 
-        found = _find_child_transparent(current_obj, part)
+        found = find_child_transparent(current_obj, part)
 
         if found:
             if debug:
@@ -1092,7 +1080,7 @@ def ensure_folder_path(path_str, project):
                 # but return a falsy wrapper. Re-scan children to find it.
                 if not found:
                     log_info("    Return value was falsy, re-scanning children...")
-                    found = _find_child_transparent(current_obj, part)
+                    found = find_child_transparent(current_obj, part)
                     if found:
                         log_info("    Re-scan found: " + safe_str(found))
                     else:
@@ -1101,7 +1089,7 @@ def ensure_folder_path(path_str, project):
             except Exception as e:
                 log_error("Failed to create folder '" + part + "': " + safe_str(e))
                 # Even if exception, the folder might have been created
-                found = _find_child_transparent(current_obj, part)
+                found = find_child_transparent(current_obj, part)
                 if found:
                     log_info("    Despite exception, found folder '" + part + "' via re-scan")
                 else:
@@ -1176,7 +1164,7 @@ def find_object_by_path(rel_path, project):
     current_obj = project
     for part in parts:
         if not part: continue
-        found = _find_child_transparent(current_obj, part)
+        found = find_child_transparent(current_obj, part)
         
         if found:
             current_obj = found

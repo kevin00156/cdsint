@@ -194,7 +194,7 @@ _FUNCTIONS = [
     ("format_st_content", "content:format_st_content"),
     ("calculate_hash", "content:calculate_hash"),
     # tree lookups (import side)
-    ("_find_child_transparent", "tree:_find_child_transparent"),
+    ("find_child_transparent", "tree:find_child_transparent"),
     ("find_object_by_path", "tree:find_object_by_path"),
     ("ensure_folder_path", "tree:ensure_folder_path"),
     # compare engine
@@ -391,7 +391,7 @@ def build_report(mode, wall_seconds, object_count, functions, sites,
         ("IDE:read_ide_attrs", "per-object build_properties reads"),
         ("path:get_container_prefix", "parent-chain walks to the project root"),
         ("content:export_object_content", "textual decl/impl extractions"),
-        ("tree:_find_child_transparent", "sibling scans during tree lookup"),
+        ("tree:find_child_transparent", "sibling scans during tree lookup"),
     ]:
         s = _stats.get(label)
         if s and objs:
