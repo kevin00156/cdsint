@@ -21,20 +21,22 @@ import sys
 #
 #   prefix    what to call it, in front of the directory name
 #   roots     the environment variables whose directories hold the installs
-#   under     a path under each root, or "" when the installs sit right there
+#   under     path segments under each root, empty when the installs sit
+#             right there; segments, not a joined string, because a joined
+#             "a\b" is one filename on Linux and the scan finds nothing
 #   pattern   the directory name shape, matched with fnmatch
 #   inner     the subdirectory holding Common\ and Profiles\
 #   exe       the executable inside Common\
 VENDORS = (
     {"prefix": "", "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": "", "pattern": "CODESYS *",
+     "under": (), "pattern": "CODESYS *",
      "inner": "CODESYS", "exe": "CODESYS.exe"},
     {"prefix": "Lenze PLC Designer ",
      "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": r"Lenze\PlcDesigner", "pattern": "*",
+     "under": ("Lenze", "PlcDesigner"), "pattern": "*",
      "inner": "PlcDesigner", "exe": "PlcDesigner.exe"},
     {"prefix": "Delta ", "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": r"Delta Industrial Automation\DIAStudio",
+     "under": ("Delta Industrial Automation", "DIAStudio"),
      "pattern": "DIADesigner-AX*",
      "inner": "CODESYS", "exe": "DIADesigner-AX.exe"},
 )
@@ -159,7 +161,7 @@ def _roots(vendor):
         base = os.environ.get(variable)
         if not base:
             continue
-        root = os.path.join(base, vendor["under"]) if vendor["under"] else base
+        root = os.path.join(base, *vendor["under"])
         if os.path.isdir(root):
             yield root
 
