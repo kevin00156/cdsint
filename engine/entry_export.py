@@ -3,9 +3,7 @@ from __future__ import print_function
 import os
 import time
 
-from engine.codesys_constants import (
-    TYPE_GUIDS, XML_TYPES, kind_allows_export, sync_direction_of
-)
+from engine.codesys_constants import sync_direction_of
 from engine.codesys_utils import (
     safe_str, log_info, log_warning, log_error,
     init_logging, resolve_projects, ensure_git_configs,
@@ -13,9 +11,10 @@ from engine.codesys_utils import (
     normalize_path, finalize_sync_operation, reset_interaction_timer,
     get_interaction_seconds, format_elapsed
 )
-from engine.codesys_managers import (
-    classify_object, build_expected_path, clear_path_caches,
-    create_import_managers, manager_for
+from engine.codesys_managers import clear_path_caches
+from engine.classify import (
+    SKIP_SYNC_DIRECTION, collect_accessors, create_import_managers,
+    manager_for, resolve_object
 )
 from engine.sync_dir import sync_files
 from engine import entry, settings, unhandled
@@ -211,63 +210,19 @@ def export_project(export_dir, values, projects_obj=None):
     for obj in all_objects:
         try:
             obj_guid = safe_str(obj.guid)
-            cached_type = cache_data.get('types', {}).get(obj_guid)
-            cached_rel_path = cached_type[2] if cached_type else None
-            if cached_rel_path:
-                # Fast path: trust the cache ONLY for objects that previously had
-                # a real path (i.e. were exported). Never trust a cached "skip"
-                # (rel_path None) -- the set of supported types can change between
-                # versions, so always re-classify skipped objects. Otherwise a
-                # once-skipped object stays buried forever even after its type
-                # becomes exportable.
-                effective_type, is_xml = cached_type[0], cached_type[1]
-                should_skip = False
-                # Validate the cached path against the live tree, exactly like
-                # compare does. Without this, an object stays pinned to whatever
-                # path an older version computed (e.g. the retired
-                # '<Parent>/<Name>.<kind>.xml' layout) and export keeps writing
-                # there forever while compare/import expect the current layout.
-                fresh_path = build_expected_path(obj, effective_type, is_xml)
-                if fresh_path and fresh_path != cached_rel_path:
-                    # The path disagrees: the object moved/renamed in the IDE, or
-                    # the cached classification predates the current profile.
-                    # Re-classify instead of trusting either stale half.
-                    log_info("Path invalidated for GUID %s: '%s' -> re-classifying"
-                             % (obj_guid, cached_rel_path))
-                    effective_type, is_xml, should_skip = classify_object(obj)
-                    rel_path = build_expected_path(obj, effective_type, is_xml) if not should_skip else None
-                else:
-                    rel_path = cached_rel_path
-            else:
-                effective_type, is_xml, should_skip = classify_object(obj)
-                rel_path = build_expected_path(obj, effective_type, is_xml) if not should_skip else None
-            
-            # Store for next cache save (always)
+            decided = resolve_object(obj, cache_data.get('types', {}), export_xml)
+            effective_type = decided.effective_type
+            is_xml = decided.is_xml
+            rel_path = decided.rel_path
+
+            # Stored for the next run whatever was decided, skips included:
+            # a "no path here" answer is worth as much as a path next time.
             context['new_types'][obj_guid] = (effective_type, is_xml, rel_path)
 
-            if rel_path:
-                norm_path = normalize_path(rel_path)
-            else:
-                norm_path = None
+            norm_path = normalize_path(rel_path) if rel_path else None
             
-            # --- PROPERTY ACCESSOR COLLECTION ---
-            if effective_type == TYPE_GUIDS["property"]:
-                try:
-                    if obj_guid not in context['property_accessors']:
-                        context['property_accessors'][obj_guid] = {'get': None, 'set': None}
-                    
-                    for child in obj.get_children():
-                        child_name = child.get_name().upper()
-                        if child_name == "GET":
-                            context['property_accessors'][obj_guid]['get'] = child
-                        elif child_name == "SET":
-                            context['property_accessors'][obj_guid]['set'] = child
-                except Exception as e:
-                    # Without its accessors the property still gets a file,
-                    # but an empty GET/SET, so say whose (SPEC D13).
-                    log_warning("Could not read the accessors of %s: %s"
-                                % (unhandled.name_of(obj), safe_str(e)))
-            
+            collect_accessors(obj, effective_type, context['property_accessors'])
+
             # --- PERSIST CACHE FOR SKIPPED OBJECTS ---
             if cache_data and norm_path:
                 try:
@@ -278,22 +233,12 @@ def export_project(export_dir, values, projects_obj=None):
                     pass  # A cache file of the wrong shape is no cache.
             # ----------------------------------------
 
-            if should_skip:
-                continue
-
-            # Per-kind sync direction (profiles/default.json)
-            if not kind_allows_export(effective_type):
+            if decided.skip_reason == SKIP_SYNC_DIRECTION:
                 log_info("Skipping export of %s (sync_direction=%s)"
                          % (rel_path, sync_direction_of(effective_type)))
                 continue
-
-            # XML gate: skip non-always-exported XML types when export_xml is off
-            if is_xml and effective_type in XML_TYPES:
-                always_exported = effective_type in [
-                    TYPE_GUIDS["task_config"], TYPE_GUIDS["nvl_sender"], TYPE_GUIDS["nvl_receiver"]
-                ]
-                if not always_exported and not export_xml:
-                    continue
+            if decided.skip_reason:
+                continue
 
             manager = manager_for(managers, effective_type, is_xml)
             wrote = manager.export(obj, effective_type, rel_path, context)

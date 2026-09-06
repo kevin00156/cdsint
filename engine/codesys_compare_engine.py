@@ -22,7 +22,7 @@ import time
 from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, IMPLEMENTATION_TYPES,
     TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
-    kind_allows_export, kind_allows_import
+    kind_allows_import
 )
 from engine.codesys_utils import (
     safe_str, calculate_hash, log_info, log_error, log_warning,
@@ -37,9 +37,11 @@ from engine.codesys_utils import (
     read_sync_text
 )
 from engine.codesys_managers import (
-    NativeManager, create_import_managers, manager_for,
-    classify_object, export_object_content, native_xml_of,
-    build_expected_path, update_object_code, clear_path_caches
+    NativeManager, export_object_content, native_xml_of,
+    update_object_code, clear_path_caches
+)
+from engine.classify import (
+    collect_accessors, create_import_managers, manager_for, resolve_object
 )
 from engine import unhandled
 from engine.sync_dir import sync_files
@@ -247,81 +249,26 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         try:
             obj_guid = safe_str(obj.guid)
         
-            # Check type cache first to avoid classify_object AND path building
-            # Cache stores (eff_type, is_xml, cached_rel_path)
-            cached_info = cached_types.get(obj_guid)
-            cached_rel_path = cached_info[2] if cached_info else None
-            if cached_rel_path:
-                # Fast path: trust the cache ONLY for objects that previously had a
-                # real path (i.e. were exported). Validate it against the live tree
-                # in case the object was moved/renamed in IDE.
-                eff_type, is_xml = cached_info[0], cached_info[1]
-                should_skip = False
-                fresh_path = build_expected_path(obj, eff_type, is_xml)
-                if fresh_path and fresh_path != cached_rel_path:
-                    # Path disagrees with the cache: the object moved/renamed in the
-                    # IDE, or the cached classification predates the current profile.
-                    # Re-classify rather than keeping a stale (eff_type, is_xml) —
-                    # those decide .st vs .xml, so half-trusting them yields a path
-                    # that neither export nor import agrees on.
-                    eff_type, is_xml, should_skip = classify_object(obj)
-                    rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
-                    path_invalidations += 1
-                    log_info("Path invalidated for GUID %s: '%s' -> '%s'" % (obj_guid, cached_rel_path, rel_path))
-                else:
-                    rel_path = cached_rel_path
-                    path_cache_hits += 1
-            else:
-                # Cache miss OR a cached "skip" (rel_path None): always re-classify so
-                # newly-supported types aren't buried forever by a stale skip decision
-                # (which here would also get the disk file deleted as a false orphan).
-                eff_type, is_xml, should_skip = classify_object(obj)
-                rel_path = build_expected_path(obj, eff_type, is_xml) if not should_skip else None
+            decided = resolve_object(obj, cached_types, export_xml)
+            eff_type = decided.effective_type
+            is_xml = decided.is_xml
+            rel_path = decided.rel_path
+            if decided.cache == "hit":
+                path_cache_hits += 1
+            elif decided.cache == "invalidated":
+                path_invalidations += 1
 
             carry_over(rel_path)
 
-            # ── CRITICAL: honor the same export_xml gate that export uses ──
-            # Export does NOT write XML-type objects to disk when export_xml is off
-            # (Library Manager, Visualizations, Alarm config, Trace, ...). Without
-            # the same gate here, Pass 2 sees "no disk file" for them, marks them as
-            # orphans, and import then DELETES them. Skip them entirely so they are
-            # never treated as orphans. task_config / NVL are always exported, so
-            # they are not skipped (matches entry_export.py).
-            if not export_xml and is_xml and eff_type in XML_TYPES:
-                if eff_type not in (TYPE_GUIDS["task_config"],
-                                    TYPE_GUIDS["nvl_sender"],
-                                    TYPE_GUIDS["nvl_receiver"]):
-                    continue
-
-            # Per-kind sync direction (profiles/default.json): kinds that are not
-            # exported must never enter the comparison — a missing disk file would
-            # mark them is_orphan and import would delete them from the IDE.
-            if not kind_allows_export(eff_type):
-                continue
-
-            if should_skip or not rel_path:
+            # Whatever export refuses to write, this pass must refuse to look
+            # for: pass 2 reads "no disk file" as an orphan and import removes
+            # the object. resolve_object is why the two agree.
+            if decided.skip_reason:
                 continue
         
-            # Optimization: Collect property accessors during this same loop
-            if eff_type == TYPE_GUIDS["property"]:
-                try:
-                    if obj_guid not in property_accessors:
-                        property_accessors[obj_guid] = {'get': None, 'set': None}
-                
-                    for child in obj.get_children():
-                        child_name = child.get_name().upper()
-                        if child_name == "GET":
-                            property_accessors[obj_guid]['get'] = child
-                        elif child_name == "SET":
-                            property_accessors[obj_guid]['set'] = child
-                except Exception as e:
-                    # Without its accessors the property is compared as
-                    # if GET and SET were empty, so "different" and
-                    # "identical" are both guesses. Export says whose
-                    # (entry_export.py); silence here was the odd one
-                    # out (SPEC D13).
-                    log_warning("Could not read the accessors of %s: %s"
-                                % (unhandled.name_of(obj), safe_str(e)))
+            # Gathered on this walk, not a second one: the objects are
+            # already in hand and every name is a .NET read (PRINCIPLES 3).
+            collect_accessors(obj, eff_type, property_accessors)
 
             # Update type cache with path
             current_types[obj_guid] = (eff_type, is_xml, rel_path)

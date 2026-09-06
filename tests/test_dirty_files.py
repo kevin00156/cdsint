@@ -221,7 +221,9 @@ def test_an_object_compare_could_not_read_keeps_its_cache_entry(
     def unreadable(obj, *args, **kwargs):
         raise RuntimeError("plugin missing")
 
-    monkeypatch.setattr(a_synced_project.compare_engine, "classify_object",
+    # resolve_object is where compare classifies an object and works out its
+    # path, so this is the read that fails for an object with no plugin.
+    monkeypatch.setattr(a_synced_project.compare_engine, "resolve_object",
                         unreadable)
     a_synced_project.look()
     result = a_synced_project.export()
