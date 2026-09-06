@@ -635,10 +635,63 @@ class ObjectManager(object):
         if not q_hash or cached_obj.get('ide_hash') != q_hash:
             return None
 
+        return self._tracked(obj, rel_path, file_path, context, q_hash,
+                             "identical", stat_info=s)
+
+    def _write_text(self, obj, rel_path, file_path, content, content_hash, context):
+        """Put `content` on disk and say what that did: identical, pending,
+        new or updated.
+
+        POUManager.export and PropertyManager.export ended in twenty-five
+        identical lines; the two differ only in how they build the text. The
+        identical check, the dirty-file guard (SPEC 6.1), the write, the
+        exported_paths entry and the cache update all belong to "write this
+        text", not to "work out what the text is".
+
+        exported_paths is what the orphan sweep reads as "the project still
+        has an object for this file", so adding to it and writing the file
+        are the same act -- doing them in two places is how a file ends up
+        written and then offered for deletion.
+        """
+        target_dir = os.path.dirname(file_path)
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir)
+
+        is_new = not os.path.exists(file_path)
+        if not is_new:
+            try:
+                if calculate_hash(read_sync_text(file_path)) == calculate_hash(content):
+                    return self._tracked(obj, rel_path, file_path, context,
+                                         content_hash, "identical")
+            except (IOError, OSError, UnicodeDecodeError):
+                pass  # Unreadable or not utf-8: treat it as needing a rewrite
+
+            if self._disk_moved_since_sync(rel_path, file_path, context):
+                return self._pending(rel_path, context)
+
+        with codecs.open(file_path, "w", "utf-8") as f:
+            f.write(content)
+        return self._tracked(obj, rel_path, file_path, context, content_hash,
+                             "new" if is_new else "updated")
+
+    def _tracked(self, obj, rel_path, file_path, context, content_hash, verdict,
+                 stat_info=None):
+        """Claim the file for this object, remember its state, and hand back
+        the verdict the caller returns.
+
+        Claiming and remembering always happen together: exported_paths is
+        what the orphan sweep reads as "the project still has an object for
+        this file", and a file the cache knows about but the sweep does not
+        is a file the next export offers to delete.
+
+        stat_info is passed on when the caller already has one -- the cache
+        skip path stats the file to decide, and stat is not free.
+        """
         if 'exported_paths' in context:
             context['exported_paths'].add(rel_path)
-        self._update_cache_entry(obj, rel_path, file_path, context, q_hash, s)
-        return "identical"
+        self._update_cache_entry(obj, rel_path, file_path, context,
+                                 content_hash, stat_info)
+        return verdict
 
     def _disk_moved_since_sync(self, rel_path, file_path, context):
         """Has somebody edited this file since the last sync? (SPEC 6.1)
@@ -709,15 +762,11 @@ class FolderManager(ObjectManager):
         if rel_path is None:
             rel_path = build_expected_path(obj, safe_str(obj.type), False)
         
-        # Track and cache
+        # Folders have no content of their own; the cache entry is there to
+        # remember the path, and "folder" is a hash that never changes.
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
-        if 'exported_paths' in context:
-            context['exported_paths'].add(rel_path)
-        
-        # Folders use a constant hash since we just want to track their path/mtime
-        self._update_cache_entry(obj, rel_path, file_path, context, q_hash="folder")
-
-        return "identical"
+        return self._tracked(obj, rel_path, file_path, context, "folder",
+                             "identical")
 
     def update(self, obj, file_path):
         # Folders don't have textual content to update
@@ -766,7 +815,6 @@ class POUManager(ObjectManager):
         
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
-        target_dir = os.path.dirname(file_path)
 
         # --- CACHE SKIP OPTIMIZATION ---
         skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
@@ -794,36 +842,8 @@ class POUManager(ObjectManager):
             pragmas["kind"] = obj_kind
         content = render_sync_pragmas(pragmas, clean_content)
 
-        if not os.path.exists(target_dir):
-            os.makedirs(target_dir)
-
-        content_hash = build_state_hash(clean_content, attrs)
-        is_new = not os.path.exists(file_path)
-
-        # Check if content is identical to existing file
-        if not is_new:
-            try:
-                existing_content = read_sync_text(file_path)
-                if calculate_hash(existing_content) == calculate_hash(content):
-                    # Track path and return
-                    if 'exported_paths' in context:
-                        context['exported_paths'].add(rel_path)
-                    
-                    self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
-                    return "identical"
-            except (IOError, OSError, UnicodeDecodeError):
-                pass  # Unreadable or not utf-8: treat it as needing a rewrite
-
-            if self._disk_moved_since_sync(rel_path, file_path, context):
-                return self._pending(rel_path, context)
-
-        with codecs.open(file_path, "w", "utf-8") as f:
-            f.write(content)
-
-        if 'exported_paths' in context:
-            context['exported_paths'].add(rel_path)
-        self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
-        return "new" if is_new else "updated"
+        return self._write_text(obj, rel_path, file_path, content,
+                                build_state_hash(clean_content, attrs), context)
 
     def update(self, obj, file_path):
         from engine.codesys_utils import parse_st_file
@@ -970,7 +990,6 @@ class PropertyManager(POUManager):
         
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
-        target_dir = os.path.dirname(file_path)
 
         # --- CACHE SKIP OPTIMIZATION ---
         skip = self._try_cache_skip(obj, rel_path, file_path, context, is_xml=False)
@@ -993,11 +1012,6 @@ class PropertyManager(POUManager):
             set_decl, set_impl_raw = export_object_content(prop_data['set'])
             set_impl = format_st_content(set_decl, set_impl_raw)
             
-        # Export even if implementations are empty
-            
-        if not os.path.exists(target_dir):
-            os.makedirs(target_dir)
-            
         # Combine into Property Format
         combined_content = format_property_content(declaration, get_impl, set_impl)
 
@@ -1006,31 +1020,8 @@ class PropertyManager(POUManager):
         content = render_sync_pragmas(attrs, combined_content)
         content_hash = build_state_hash(combined_content, attrs)
 
-        is_new = not os.path.exists(file_path)
-
-        # Check if content is identical to existing file
-        if not is_new:
-            try:
-                existing_content = read_sync_text(file_path)
-                if calculate_hash(existing_content) == calculate_hash(content):
-                    if 'exported_paths' in context:
-                        context['exported_paths'].add(rel_path)
-
-                    self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
-                    return "identical"
-            except (IOError, OSError, UnicodeDecodeError):
-                pass  # Unreadable or not utf-8: treat it as needing a rewrite
-
-            if self._disk_moved_since_sync(rel_path, file_path, context):
-                return self._pending(rel_path, context)
-
-        with codecs.open(file_path, "w", "utf-8") as f:
-            f.write(content)
-
-        if 'exported_paths' in context:
-            context['exported_paths'].add(rel_path)
-        self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
-        return "new" if is_new else "updated"
+        return self._write_text(obj, rel_path, file_path, content,
+                                content_hash, context)
 
     def update(self, obj, file_path):
         try:
@@ -1265,10 +1256,8 @@ class NativeManager(ObjectManager):
                 os.remove(tmp_path)
             except OSError:
                 pass
-            if 'exported_paths' in context:
-                context['exported_paths'].add(rel_path)
-            self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
-            return "identical"
+            return self._tracked(obj, rel_path, file_path, context, new_hash,
+                                 "identical")
         
         # Content changed or new - replace with temp file, unless the change
         # is somebody's, not the IDE's (SPEC 6.1).
@@ -1281,11 +1270,8 @@ class NativeManager(ObjectManager):
             os.remove(file_path)
         os.rename(tmp_path, file_path)
 
-        if 'exported_paths' in context:
-            context['exported_paths'].add(rel_path)
-        self._update_cache_entry(obj, rel_path, file_path, context, new_hash)
-            
-        return "new" if is_new else "updated"
+        return self._tracked(obj, rel_path, file_path, context, new_hash,
+                             "new" if is_new else "updated")
 
     def update(self, obj, file_path):
         obj_name = obj.get_name() if obj else "Unknown"
