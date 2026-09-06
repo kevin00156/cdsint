@@ -64,7 +64,18 @@ def move_if_needed(item, obj, project):
         return False
 
     folder_path = disk_path.rsplit("/", 1)[0]
-    target = ensure_folder_path(folder_path, project)
+    try:
+        target = ensure_folder_path(folder_path, project)
+    except Exception as exc:
+        # A move that cannot happen is recorded and does not stop the update.
+        # The file's content is on disk and readable; only its new home is
+        # not there. Letting this raise put the object's content back one
+        # release behind for a reason that has nothing to do with the content
+        # -- and the old code, which returned None here, said nothing at all.
+        unhandled.note(item["name"], exc)
+        log_error("Cannot move %s to %s: %s"
+                  % (item["name"], folder_path, safe_str(exc)))
+        return False
     if not target or target == parent_of(obj):
         return False
 
@@ -74,7 +85,8 @@ def move_if_needed(item, obj, project):
         obj.move(target)
         return True
     except Exception as exc:
-        log_warning("Failed to move %s: %s" % (item["name"], safe_str(exc)))
+        unhandled.note(item["name"], exc)
+        log_error("Failed to move %s: %s" % (item["name"], safe_str(exc)))
         return False
 
 

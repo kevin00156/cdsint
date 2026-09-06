@@ -209,26 +209,26 @@
 
 ---
 
-- [ ] **階段 6：審查後修正（監督者 2026-09-07 派回）**
+- [x] **階段 6：審查後修正（監督者 2026-09-07 派回）**
 
   一個沒看過對話的 reviewer 逐 commit 讀完 31 個 commit，對每一組去重都對過舊碼，結論是沒有會改 `.st` 位元組或把整趟命令變成 traceback 的回歸；監督者另外在真 IDE 上跑過三種形式（`--project`、`--target` 用 `headless_watch.py` 起的看門人、選單 stub 用 `--runscript` 直跑），都通，兩份副本的 hash 也重量過零差異，所以 Ruling 27 那個洞補上了。剩下的是三個真問題加一批文件與註解。一到三必修，四到十同一輪做完，十一到十三順手。修完照第 6 節再回報一次，儀器四項再跑一次。
 
-  - [ ] **1. 登入預檢的失敗從「一行警告」變成「完全無聲」，docstring 說的正好相反。** `engine/entry_import.py` 的 `find_logged_in_applications` 在 `unhandled.start()` 之前執行；`codesys_online.py` 現在走 `ide_read.children_of`、`kind_of`，失敗只 `unhandled.note`，那筆紀錄在 `unhandled.start()` 被清掉，舊版的 `log_warning` 也沒了。`engine/ide_read.py` 檔頭說「the login pre-flight used to log a warning and carry on」是這模組的行為改變，實際結果是連警告都沒有。情境：device 節點外掛不在、`get_children()` 丟例外，預檢看不到 application，import 認定沒人登入，每個 create、move、delete 在 IDE 裡失敗，log 沒有一行指向原因。改法：`unhandled.start()` 移到預檢之前，讓它真的變成 D13 的一筆、`ok=False`；docstring 改成講真的。加一條測試：預檢讀不到 children 時結果的 `failed_objects` 有那個節點。
-  - [ ] **2. Ruling 22 的守衛只守了三個屬性。** `engine/entry_build.py` 的 `_message_id` 裸讀 `msg.prefix`、`getattr(msg, "number", 0)`，`collect_rows` 裡 `getattr(msg, "position", -1)`，都不在 try 內。Ruling 22 自己的教訓是 IronPython 的 `getattr` 帶預設值擋不住會丟例外的屬性。把同一則訊息的每個屬性讀取都放進同一個守衛，一則壞訊息只丟掉那一列，不丟整份判決。
-  - [ ] **3. `tests/test_names_resolve.py` 的白名單放行 `PouType`，等於放行這張工單修掉的那種 bug。** `IDE_GLOBALS` 套用到整個 `engine/`，但第四層之後只有 `entry_*.py` 有資格裸讀 IDE 全域名；`codesys_managers.py` 再寫一個裸 `PouType.Program` 測試照樣綠。另外有一條斷言 `ALLOWED == IDE_GLOBALS | PYTHON_2_BUILTINS`，那就是 `ALLOWED` 的定義，釘住的是零。改法：白名單只對 `engine/entry_*.py`、`stub/`、`cds/ide/headless.py` 生效，其他引擎模組一個 IDE 全域名都不准；那條空斷言刪。
-  - [ ] **4.** `cds/ide/silent.py` 檔頭「`__main__.system` — the shared engine modules look there」與 `_install` 換 `__main__.system` 那半：引擎已經沒有讀者了。Ruling 26 不刪 `ask_yes_no` 那半的理由成立，但 `__main__.system` 這半跟 SPEC 6.1 無關，刪掉，連 `tests/test_silent.py` 裡「codesys_utils:517 finds system through __main__」那兩條一起改。
-  - [ ] **5.** 工單第 3 節 21 條列的過期註解，被碰過的檔沒順手刪：`entry_export.py` 的「Second pass」、`codesys_compare_engine.py` 的墓碑與悼念 `finalize_import`、「Project_import and Project_compare」、「phase 2 import」，`codesys_utils.py` 的墓碑與「e179ef9 policy」，`codesys_constants.py` 的「codesys_constants.pyw」。全刪。
-  - [ ] **6.** 「81 降到 35」算錯，棘輪表加起來是 34。`CHANGELOG.md` 與本工單階段 5 那行改成 34，或照 PRINCIPLES 6 不寫數字只指棘輪表。
-  - [ ] **7.** `_hash_content` 的檔名 fallback 從四種 flavour 縮成兩種：舊碼四種特殊 flavour 過濾成空都走 `crc(fallback_name)`，新碼只有 alarm 兩種，textlist 與 device 改回 `crc("")`；另把 `'<Object Guid="' in line` 改成 `strip().startswith(...)`。Ruling 3 說「留、釘住」，這是悄悄改了規則。二選一：改回四種並釘住，或寫一條 Ruling 說為什麼縮成兩種，附 hash 清單為證。
-  - [ ] **8.** 同一個 property 的子物件讀不到會被記兩次：`classify.py` 與 `codesys_utils.py` 各 note 一次，export 的摘要變成「2 object(s): P, P」。記一次。
-  - [ ] **9.** 兩處 `except: pass` 改成 `unhandled.note` 讓 `ok` 從 True 變 False（`classify.py` 的 accessor、`compare_engine.py` 的 XML `export_native` 失敗）。D13 站得住，但第 0 節說行為改變要寫 Ruling，補上。
-  - [ ] **10.** Ruling 21 的理由只涵蓋 create：`import_items.py` 的 `move_if_needed` 現在 `ensure_folder_path` 會 raise，整個物件不更新、被點名；舊碼回 None、跳過搬移、物件在原地更新。把 move 這一半寫進 Ruling 21，或維持舊行為。
-  - [ ] **11.**（順手）`NativeManager.export` 在 `_hash_file(tmp_path)` 丟例外時留下 `.xml.tmp`，加 finally。
-  - [ ] **12.**（順手）`engine/entry_compare.py` 局部變數 `e` 未用。
-  - [ ] **13.**（順手）`_object_text` 兩次讀取包在同一 try，decl 丟就不讀 impl；拆成兩個。
-  - [ ] 記進第 7 節不動的：`locate_message` 對「有 position、沒 object」的答案跟舊 Attempt 1 不同（只影響 debug log）；`_import_xml` 的 `fresh.get_name()` 在 try 外（實務不會丟）。
-  - [ ] 驗收：測試涵蓋「預檢讀不到 children 時 `failed_objects` 有它」「一則 `.prefix` 會丟的 build 訊息只丟那一列」「`codesys_managers.py` 加一行裸 `PouType` 時 `test_names_resolve` 紅」（用 tmp 檔或 monkeypatch 驗，不真的改引擎）。
-  - [ ] 驗收：`grep -rn "Second pass\|finalize_import\|phase 2 import\|e179ef9\|codesys_constants.pyw\|# Removed" engine/` 為零；`grep -n "__main__" cds/ide/silent.py` 為零。
+  - [x] **1. 登入預檢的失敗從「一行警告」變成「完全無聲」，docstring 說的正好相反。** `engine/entry_import.py` 的 `find_logged_in_applications` 在 `unhandled.start()` 之前執行；`codesys_online.py` 現在走 `ide_read.children_of`、`kind_of`，失敗只 `unhandled.note`，那筆紀錄在 `unhandled.start()` 被清掉，舊版的 `log_warning` 也沒了。`engine/ide_read.py` 檔頭說「the login pre-flight used to log a warning and carry on」是這模組的行為改變，實際結果是連警告都沒有。情境：device 節點外掛不在、`get_children()` 丟例外，預檢看不到 application，import 認定沒人登入，每個 create、move、delete 在 IDE 裡失敗，log 沒有一行指向原因。改法：`unhandled.start()` 移到預檢之前，讓它真的變成 D13 的一筆、`ok=False`；docstring 改成講真的。加一條測試：預檢讀不到 children 時結果的 `failed_objects` 有那個節點。
+  - [x] **2. Ruling 22 的守衛只守了三個屬性。** `engine/entry_build.py` 的 `_message_id` 裸讀 `msg.prefix`、`getattr(msg, "number", 0)`，`collect_rows` 裡 `getattr(msg, "position", -1)`，都不在 try 內。Ruling 22 自己的教訓是 IronPython 的 `getattr` 帶預設值擋不住會丟例外的屬性。把同一則訊息的每個屬性讀取都放進同一個守衛，一則壞訊息只丟掉那一列，不丟整份判決。
+  - [x] **3. `tests/test_names_resolve.py` 的白名單放行 `PouType`，等於放行這張工單修掉的那種 bug。** `IDE_GLOBALS` 套用到整個 `engine/`，但第四層之後只有 `entry_*.py` 有資格裸讀 IDE 全域名；`codesys_managers.py` 再寫一個裸 `PouType.Program` 測試照樣綠。另外有一條斷言 `ALLOWED == IDE_GLOBALS | PYTHON_2_BUILTINS`，那就是 `ALLOWED` 的定義，釘住的是零。改法：白名單只對 `engine/entry_*.py`、`stub/`、`cds/ide/headless.py` 生效，其他引擎模組一個 IDE 全域名都不准；那條空斷言刪。
+  - [x] **4.** `cds/ide/silent.py` 檔頭「`__main__.system` — the shared engine modules look there」與 `_install` 換 `__main__.system` 那半：引擎已經沒有讀者了。Ruling 26 不刪 `ask_yes_no` 那半的理由成立，但 `__main__.system` 這半跟 SPEC 6.1 無關，刪掉，連 `tests/test_silent.py` 裡「codesys_utils:517 finds system through __main__」那兩條一起改。
+  - [x] **5.** 工單第 3 節 21 條列的過期註解，被碰過的檔沒順手刪：`entry_export.py` 的「Second pass」、`codesys_compare_engine.py` 的墓碑與悼念 `finalize_import`、「Project_import and Project_compare」、「phase 2 import」，`codesys_utils.py` 的墓碑與「e179ef9 policy」，`codesys_constants.py` 的「codesys_constants.pyw」。全刪。
+  - [x] **6.** 「81 降到 35」算錯，棘輪表加起來是 34。`CHANGELOG.md` 與本工單階段 5 那行改成 34，或照 PRINCIPLES 6 不寫數字只指棘輪表。
+  - [x] **7.** `_hash_content` 的檔名 fallback 從四種 flavour 縮成兩種：舊碼四種特殊 flavour 過濾成空都走 `crc(fallback_name)`，新碼只有 alarm 兩種，textlist 與 device 改回 `crc("")`；另把 `'<Object Guid="' in line` 改成 `strip().startswith(...)`。Ruling 3 說「留、釘住」，這是悄悄改了規則。二選一：改回四種並釘住，或寫一條 Ruling 說為什麼縮成兩種，附 hash 清單為證。
+  - [x] **8.** 同一個 property 的子物件讀不到會被記兩次：`classify.py` 與 `codesys_utils.py` 各 note 一次，export 的摘要變成「2 object(s): P, P」。記一次。
+  - [x] **9.** 兩處 `except: pass` 改成 `unhandled.note` 讓 `ok` 從 True 變 False（`classify.py` 的 accessor、`compare_engine.py` 的 XML `export_native` 失敗）。D13 站得住，但第 0 節說行為改變要寫 Ruling，補上。
+  - [x] **10.** Ruling 21 的理由只涵蓋 create：`import_items.py` 的 `move_if_needed` 現在 `ensure_folder_path` 會 raise，整個物件不更新、被點名；舊碼回 None、跳過搬移、物件在原地更新。把 move 這一半寫進 Ruling 21，或維持舊行為。
+  - [x] **11.**（順手）`NativeManager.export` 在 `_hash_file(tmp_path)` 丟例外時留下 `.xml.tmp`，加 finally。
+  - [x] **12.**（順手）`engine/entry_compare.py` 局部變數 `e` 未用。
+  - [x] **13.**（順手）`_object_text` 兩次讀取包在同一 try，decl 丟就不讀 impl；拆成兩個。
+  - [x] 記進第 7 節不動的（兩條都確認過，寫在第 7 節第 34 條後面）：`locate_message` 對「有 position、沒 object」的答案跟舊 Attempt 1 不同（只影響 debug log）；`_import_xml` 的 `fresh.get_name()` 在 try 外（實務不會丟）。
+  - [x] 驗收：測試涵蓋「預檢讀不到 children 時 `failed_objects` 有它」「一則 `.prefix` 會丟的 build 訊息只丟那一列」「`codesys_managers.py` 加一行裸 `PouType` 時 `test_names_resolve` 紅」（用 tmp 檔或 monkeypatch 驗，不真的改引擎）。
+  - [x] 驗收：`grep -rn "Second pass\|finalize_import\|phase 2 import\|e179ef9\|codesys_constants.pyw\|# Removed" engine/` 為零。`grep -n "__main__" cds/ide/silent.py` 剩兩行，那兩行在解釋 body 被 exec 成什麼名字，不是舊機制的殘留；理由在第 7 節第 32 條。
   - [ ] 驗收：儀器四項再跑一次（兩份副本 hash 零差異、discover 相同、verify exit 0、速度不慢超過一成）；Windows 與 WSL 測試綠。
 
 ---
@@ -356,6 +356,19 @@
 - `history/SETTINGS_PLAN.md` 第 13 條記的是「Shm 是 233 行」，今天量到 231 行，跟 softplc 一樣。兩份副本的內容幾乎相同：231 行裡有 230 行的路徑與 SHA-256 完全一樣，唯一不同的是 `Task configuration.task_config.xml` 的 hash。export 回報 `total: 229`、`failed: 0`、`failed_objects` 空，`verify` 四步全過，所以沒有物件被靜默丟掉。少掉的那兩行是什麼，這張工單沒有查，記在這裡給下一個人。
 
 ---
+
+階段 6 定下來的：
+
+30. `Ruling: 兩處原本吞掉的例外改成進登記簿，是刻意的行為改變（審查第 9 條要我補的 Ruling）— `classify.collect_accessors` 讀不到某個 property 的子物件、`compare_engine.get_ide_content` 對某個 XML 物件的 `export_native` 失敗，兩處以前都是 `except: pass`，命令照樣回 `ok: True`。兩個失敗的後果都一樣：那個物件的內容被當成空的拿去比對或寫出，而「它就是沒有匯進去，我也不知道為什麼」正是這個工具存在的理由要消滅的東西（D13、目標 6）。所以 `ok` 從 True 變 False 是修正，不是回歸 — 錯了的代價是一個外掛不見的物件會讓整趟命令的 exit code 從 0 變 1，而那正是要的：其他物件照樣做完，名字列在 `data.failed_objects` 裡（D11）。`
+31. `Ruling: Ruling 21 的「建不出資料夾就 raise」只涵蓋建立，搬移那一半改成「記下來但不擋更新」（審查第 10 條）— `move_if_needed` 走到 `ensure_folder_path` 時，磁碟已經告訴我們這個檔搬到哪個資料夾去了；那個資料夾建不出來的時候，物件的內容仍然是可讀的，只有新家不在。讓例外往上冒會使那個物件連內容都不更新，為了一個跟內容無關的理由把它留在上一版；而舊碼回 None、安靜跳過搬移，是另一個極端。現在是第三種：記進登記簿（`ok` 因此是 False），然後讓 `update_existing_object` 照常跑完 — 錯了的代價是一個物件的內容更新了但位置沒動，而使用者會在 `failed_objects` 裡看到它的名字。`
+32. `Ruling: `grep -n "__main__" cds/ide/silent.py` 沒有歸零，剩兩行（審查第 4 條的驗收）— 那兩行在解釋 `namespace["__name__"] = "cds_watcher_script"`，也就是「body 被 exec 成一個不叫 `__main__` 的名字，所以它自己的 `if __name__ == "__main__"` 不會觸發、不會跑第二次」。那是現在這段程式碼的事實，不是舊機制的殘留；為了讓 grep 歸零而刪掉它，等於刪掉一段還成立的知識。伸手拿 IDE 全域名的那一半（`main.system = silent` 與它的 undo）已經刪乾淨了 — 錯了的代價是這條驗收要用眼睛確認一次，不能只看 grep 的數字。`
+33. `Ruling: 棘輪的總數不再寫在 `CHANGELOG.md` 與本工單裡，改成指 `tests/test_bare_excepts.py` 的 `ALLOWED` 表（審查第 6 條）— 那一行第一次寫成「81 降到 35」，實際是 34；PRINCIPLES 6 本來就說那張表是計數、其他檔案不該再帶一個要跟它同步的數字，而這次就是被它抓到的 — 錯了的代價是讀者要多開一個檔才看得到總數。`
+34. `Ruling: `_hash_content` 的四種特殊 flavour 全部保留「過濾完是空的就 hash 檔名」，`<Object Guid="` 也改回子字串比對（審查第 7 條）— 我把表格化的時候縮成兩種、並把子字串比對收緊成 `startswith`，兩個都沒有寫進任何 Ruling，而 Ruling 3 說的是「留、加註解、加測試釘住」。查下去才知道為什麼沒有測試抓到：textlist 與 device 這兩種的過濾規則會保留「認出它是哪一種」的那一行本身，所以它們的過濾結果永遠不是空的，那條 fallback 實務上到不了。「今天到不了」跟「規則寫的是兩種」不是同一件事 — 錯了的代價就是這一次的：規則被靜靜改掉，而沒有任何東西會紅。現在四種都釘住了，連「那兩種為什麼到不了」也一起釘住。`
+
+審查記下來但不動的兩條，確認過：
+
+- `locate_message` 對「有 position、沒有 object」的訊息答案跟舊的 Attempt 1 不同。舊碼 Attempt 1 需要 `obj_ref` 才算，沒有 object 就不算；新碼的 `_from_position` 只看 position 與兩段文字，而沒有 object 時兩段文字都是空字串，所以 position 一定落進 impl 的第 1 行第 1 欄。只影響 debug 模式才寫的 `build_*.log` 的位置欄，不影響錯誤數、判決或任何 `.st`。不改。
+- `_import_xml` 裡 `fresh.get_name()` 在 try 之外。`fresh` 是 `child_named()` 剛剛才成功讀過名字的那個物件，同一趟裡再讀一次會丟的情況是「物件在這兩行之間消失」。不改。
 
 監督者裁的（2026-09-07，審查後）：
 

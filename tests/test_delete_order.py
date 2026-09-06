@@ -113,3 +113,52 @@ def test_an_orphan_with_no_doomed_ancestor_is_still_removed_itself(
 
     assert counts == {"failed": 0, "deleted": 1}
     assert method.removed and not pou.removed
+
+
+class TestAMoveThatCannotHappen:
+    """A file that moved to a folder the IDE will not make.
+
+    The content is on disk and readable; only its new home is not there. So
+    the update goes ahead and the failure gets a name (SPEC D13). Two earlier
+    shapes of this were both worse: returning None said nothing at all, and
+    raising put the object's content a release behind for a reason that has
+    nothing to do with the content.
+    """
+
+    def a_move(self):
+        return {"name": "Main", "path": "New/Main.st", "disk_path": "New/Main.st",
+                "ide_path": "Old/Main.st", "is_moved": True}
+
+    def test_it_is_recorded_and_the_caller_carries_on(self, monkeypatch):
+        from engine import import_items, unhandled
+
+        def refuses(folder_path, project):
+            raise RuntimeError("cannot create '%s'" % folder_path)
+
+        monkeypatch.setattr(import_items, "ensure_folder_path", refuses)
+        unhandled.start()
+        try:
+            moved = import_items.move_if_needed(self.a_move(), object(), None)
+            assert moved is False
+            assert unhandled.names() == ["Main"]
+        finally:
+            unhandled.start()
+
+    def test_a_move_the_ide_refuses_is_recorded_too(self, monkeypatch):
+        from engine import import_items, unhandled
+
+        class Immovable(object):
+            parent = None
+
+            def move(self, target):
+                raise RuntimeError("the IDE will not move it")
+
+        monkeypatch.setattr(import_items, "ensure_folder_path",
+                            lambda folder_path, project: object())
+        unhandled.start()
+        try:
+            assert import_items.move_if_needed(self.a_move(), Immovable(),
+                                               None) is False
+            assert unhandled.names() == ["Main"]
+        finally:
+            unhandled.start()
