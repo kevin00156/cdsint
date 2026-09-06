@@ -210,7 +210,8 @@ def export_project(export_dir, values, projects_obj=None):
     for obj in all_objects:
         try:
             obj_guid = safe_str(obj.guid)
-            decided = resolve_object(obj, cache_data.get('types', {}), export_xml)
+            decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
+                                     export_xml)
             effective_type = decided.effective_type
             is_xml = decided.is_xml
             rel_path = decided.rel_path
@@ -221,7 +222,8 @@ def export_project(export_dir, values, projects_obj=None):
 
             norm_path = normalize_path(rel_path) if rel_path else None
             
-            collect_accessors(obj, effective_type, context['property_accessors'])
+            collect_accessors(obj, obj_guid, effective_type,
+                              context['property_accessors'])
 
             # --- PERSIST CACHE FOR SKIPPED OBJECTS ---
             if cache_data and norm_path:

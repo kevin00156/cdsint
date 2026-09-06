@@ -23,7 +23,6 @@ from engine.codesys_managers import (
     build_expected_path, classify_object,
 )
 from engine.codesys_utils import log_info, log_warning, safe_str
-from engine.ide_read import guid_of
 
 
 # What resolve_object decided about one object.
@@ -54,7 +53,7 @@ ALWAYS_EXPORTED_XML = (
 )
 
 
-def collect_accessors(obj, effective_type, accessors):
+def collect_accessors(obj, obj_guid, effective_type, accessors):
     """Record this property's GET and SET children in `accessors`, keyed by GUID.
 
     A property's file is one text holding the declaration and both accessors,
@@ -70,7 +69,7 @@ def collect_accessors(obj, effective_type, accessors):
     """
     if effective_type != TYPE_GUIDS["property"]:
         return
-    guid = guid_of(obj)
+    guid = obj_guid
     if guid is None:
         return
     if guid not in accessors:
@@ -94,7 +93,7 @@ def collect_accessors(obj, effective_type, accessors):
             accessors[guid]['set'] = child
 
 
-def resolve_object(obj, cached_types, export_xml):
+def resolve_object(obj, obj_guid, cached_types, export_xml):
     """Classify one object and say where its file goes. One answer, both ways.
 
     Export and compare have to agree about every object. When they do not,
@@ -105,9 +104,13 @@ def resolve_object(obj, cached_types, export_xml):
 
     cached_types is the type cache from sync_cache.json, already reshaped by
     codesys_utils.cached_classification.
+
+    obj_guid is passed in rather than read here. Every caller already has it,
+    and reading it again crosses into .NET for an answer they are holding
+    (PRINCIPLES 3) -- measured on the softplc sample, that second read cost
+    two seconds across 407 objects.
     """
-    guid = guid_of(obj)
-    cached = cached_types.get(guid) if guid else None
+    cached = cached_types.get(obj_guid) if obj_guid else None
     cached_rel_path = cached[2] if cached else None
 
     if cached_rel_path:
@@ -117,7 +120,7 @@ def resolve_object(obj, cached_types, export_xml):
         # forever -- and on the compare side its file would be deleted as a
         # false orphan.
         effective_type, is_xml = cached[0], cached[1]
-        fresh_path = build_expected_path(obj, effective_type, is_xml)
+        fresh_path = build_expected_path(obj, effective_type, is_xml, obj_guid)
         if not fresh_path or fresh_path == cached_rel_path:
             return _gated(effective_type, is_xml, cached_rel_path,
                           export_xml, "hit")
@@ -127,7 +130,7 @@ def resolve_object(obj, cached_types, export_xml):
         # .st against .xml, and a stale pair yields a path that neither
         # export nor import agrees on.
         log_info("Path invalidated for GUID %s: '%s' -> re-classifying"
-                 % (guid, cached_rel_path))
+                 % (obj_guid, cached_rel_path))
         cache = "invalidated"
     else:
         cache = "miss"
@@ -136,7 +139,7 @@ def resolve_object(obj, cached_types, export_xml):
     if unsupported:
         return Resolved(effective_type, is_xml, None, SKIP_UNSUPPORTED, cache)
     return _gated(effective_type, is_xml,
-                  build_expected_path(obj, effective_type, is_xml),
+                  build_expected_path(obj, effective_type, is_xml, obj_guid),
                   export_xml, cache)
 
 

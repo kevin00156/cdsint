@@ -247,7 +247,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         try:
             obj_guid = safe_str(obj.guid)
         
-            decided = resolve_object(obj, cached_types, export_xml)
+            decided = resolve_object(obj, obj_guid, cached_types, export_xml)
             eff_type = decided.effective_type
             is_xml = decided.is_xml
             rel_path = decided.rel_path
@@ -266,7 +266,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         
             # Gathered on this walk, not a second one: the objects are
             # already in hand and every name is a .NET read (PRINCIPLES 3).
-            collect_accessors(obj, eff_type, property_accessors)
+            collect_accessors(obj, obj_guid, eff_type, property_accessors)
 
             # Update type cache with path
             current_types[obj_guid] = (eff_type, is_xml, rel_path)

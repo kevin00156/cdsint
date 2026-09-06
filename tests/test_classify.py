@@ -32,25 +32,25 @@ class TestBothSidesGetTheSameAnswer:
 
     def test_the_same_object_resolves_the_same_way_twice(self):
         obj = a_pou()
-        first = classify.resolve_object(obj, {}, export_xml=False)
-        second = classify.resolve_object(obj, {}, export_xml=False)
+        first = classify.resolve_object(obj, "guid-Main", {}, export_xml=False)
+        second = classify.resolve_object(obj, "guid-Main", {}, export_xml=False)
         assert first[:4] == second[:4]
 
     def test_a_cached_path_and_a_fresh_classification_agree(self):
         """The cache is a shortcut, not a second opinion. If they disagreed,
         an export and a compare of the same tree would use different paths."""
         obj = a_pou()
-        fresh = classify.resolve_object(obj, {}, export_xml=False)
+        fresh = classify.resolve_object(obj, "guid-Main", {}, export_xml=False)
         cache = {"guid-Main": (fresh.effective_type, fresh.is_xml,
                                fresh.rel_path)}
-        cached = classify.resolve_object(obj, cache, export_xml=False)
+        cached = classify.resolve_object(obj, "guid-Main", cache, export_xml=False)
         assert cached.cache == "hit"
         assert cached[:4] == fresh[:4]
 
     def test_a_moved_object_is_reclassified_rather_than_half_trusted(self):
         obj = a_pou()
         stale = {"guid-Main": (TYPE_GUIDS["pou"], False, "Somewhere/Else.st")}
-        decided = classify.resolve_object(obj, stale, export_xml=False)
+        decided = classify.resolve_object(obj, "guid-Main", stale, export_xml=False)
         assert decided.cache == "invalidated"
         assert decided.rel_path != "Somewhere/Else.st"
 
@@ -60,37 +60,38 @@ class TestBothSidesGetTheSameAnswer:
         compare side its file would be deleted as a false orphan."""
         obj = a_pou()
         skipped = {"guid-Main": (TYPE_GUIDS["pou"], False, None)}
-        decided = classify.resolve_object(obj, skipped, export_xml=False)
+        decided = classify.resolve_object(obj, "guid-Main", skipped, export_xml=False)
         assert decided.cache == "miss"
         assert decided.rel_path
 
 
 class TestTheGates:
     def test_a_supported_object_gets_a_path_and_no_skip_reason(self):
-        decided = classify.resolve_object(a_pou(), {}, export_xml=False)
+        decided = classify.resolve_object(a_pou(), "guid-Main", {}, export_xml=False)
         assert decided.skip_reason is None
         assert decided.rel_path.endswith(".st")
 
     def test_an_xml_kind_is_gated_when_export_xml_is_off(self):
         obj = Node("Library Manager", TYPE_GUIDS["library_manager"])
-        decided = classify.resolve_object(obj, {}, export_xml=False)
+        decided = classify.resolve_object(obj, "guid-Main", {}, export_xml=False)
         assert decided.skip_reason == classify.SKIP_XML_GATE
 
     def test_the_same_object_passes_when_export_xml_is_on(self):
         obj = Node("Library Manager", TYPE_GUIDS["library_manager"])
-        decided = classify.resolve_object(obj, {}, export_xml=True)
+        decided = classify.resolve_object(obj, "guid-Lib", {}, export_xml=True)
         assert decided.skip_reason is None
 
     def test_a_task_config_is_written_either_way(self):
         """Project structure, not one of the optional extras the flag is for."""
         obj = Node("Task configuration", TYPE_GUIDS["task_config"])
         for export_xml in (True, False):
-            decided = classify.resolve_object(obj, {}, export_xml=export_xml)
+            decided = classify.resolve_object(obj, "guid-Task", {},
+                                              export_xml=export_xml)
             assert decided.skip_reason is None
 
     def test_an_unsupported_kind_has_no_path_at_all(self):
-        decided = classify.resolve_object(Node("Odd", "not-a-known-guid"), {},
-                                          export_xml=True)
+        decided = classify.resolve_object(Node("Odd", "not-a-known-guid"),
+                                          "guid-Odd", {}, export_xml=True)
         assert decided.skip_reason == classify.SKIP_UNSUPPORTED
         assert decided.rel_path is None
 
@@ -101,12 +102,14 @@ class TestAccessorCollection:
         put = Node("Set", TYPE_GUIDS["property_accessor"])
         prop = Node("Speed", TYPE_GUIDS["property"], children=[get, put])
         found = {}
-        classify.collect_accessors(prop, TYPE_GUIDS["property"], found)
+        classify.collect_accessors(prop, "guid-Speed", TYPE_GUIDS["property"],
+                                   found)
         assert found["guid-Speed"] == {"get": get, "set": put}
 
     def test_anything_that_is_not_a_property_contributes_nothing(self):
         found = {}
-        classify.collect_accessors(a_pou(), TYPE_GUIDS["pou"], found)
+        classify.collect_accessors(a_pou(), "guid-Main", TYPE_GUIDS["pou"],
+                                   found)
         assert found == {}
 
     def test_a_property_that_will_not_list_its_children_is_named(self):
@@ -118,6 +121,6 @@ class TestAccessorCollection:
 
         found = {}
         classify.collect_accessors(Sulking("Speed", TYPE_GUIDS["property"]),
-                                   TYPE_GUIDS["property"], found)
+                                   "guid-Speed", TYPE_GUIDS["property"], found)
         assert found["guid-Speed"] == {"get": None, "set": None}
         assert unhandled.names() == ["Speed"]

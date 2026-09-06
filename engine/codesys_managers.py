@@ -322,8 +322,13 @@ def get_parent_pou_name(obj, parent=None):
         pass
     return None
 
-def build_expected_path(obj, effective_type, is_xml):
-    """Build the expected rel_path for an IDE object."""
+def build_expected_path(obj, effective_type, is_xml, obj_guid=None):
+    """Build the expected rel_path for an IDE object.
+
+    Pass obj_guid when the caller already has it. Every caller on the
+    per-object path does, and reading .guid again is a .NET round trip for an
+    answer somebody upstairs is holding (PRINCIPLES 3).
+    """
     from engine.codesys_constants import TYPE_NAMES, TYPE_GUIDS, kind_of
 
     # obj.guid and obj.parent are each a .NET round trip, and this function is
@@ -331,7 +336,8 @@ def build_expected_path(obj, effective_type, is_xml):
     # used to fetch them independently -- guid twice, parent twice, plus six
     # more parent reads inside get_parent_pou_name -- so read each once here
     # and hand them down.
-    obj_guid = guid_of(obj)
+    if obj_guid is None:
+        obj_guid = guid_of(obj)
     parent = parent_of(obj)
 
     container = get_container_prefix(obj, obj_guid=obj_guid)
