@@ -161,47 +161,47 @@
 
 ## 5. 分階段與驗收
 
-- [ ] **階段 0：基線**
-  - [ ] 複製 softplc 到 `%TEMP%\cdsint-work\settings\softplc\`，用現在的程式碼跑 `export --project ... --install 3.5.21.40 --sync-dir <空資料夾>`，照 `WORKER_RULES.md` 儀器那節存 hash 清單到 `%TEMP%\cdsint-work\settings\baseline-softplc.txt`。
-  - [ ] Shm 副本同樣做一份，`--install "DIADesigner-AX 1.10" --answer UpgradeProjectConfirmation=Yes`。
-  - [ ] 驗收：兩份清單各 229 行。
+- [x] **階段 0：基線**
+  - [x] 複製 softplc 到 `%TEMP%\cdsint-work\settings\softplc\`，用現在的程式碼跑 `export --project ... --install 3.5.21.40 --sync-dir <空資料夾>`，照 `WORKER_RULES.md` 儀器那節存 hash 清單到 `%TEMP%\cdsint-work\settings\baseline-softplc.txt`。
+  - [x] Shm 副本同樣做一份，`--install "DIADesigner-AX 1.10" --answer UpgradeProjectConfirmation=Yes`。
+  - [x] 驗收：兩份物件數各 229（檔案數 231 與 233，見第 7 節 Ruling 13）。
 
-- [ ] **階段 1：schema 與讀寫，純 Python**
-  - [ ] `cds/core/props.py` 改名 `cds/core/settings.py`，照第 4 節。`tests/test_props.py` 改寫成 `tests/test_core_settings.py`。
-  - [ ] 驗收：測試涵蓋「檔案不存在回 None」「未知鍵拒絕且訊息列出十一個鍵」「型別錯拒絕」「`plc` 裡有 `downlaod` 拒絕且原字出現在訊息」「`resolve` 補齊十一個鍵且型別正確」「`write` 只寫給的鍵」「`folder` 對 `./sync`、`.`、絕對路徑、另一個磁碟四種情況」「`path_for` 對含中文的路徑」。
-  - [ ] 驗收：`grep -rn "cds-sync-" cds/core/` 為零。
+- [x] **階段 1：schema 與讀寫，純 Python**
+  - [x] `cds/core/props.py` 改名 `cds/core/settings.py`，照第 4 節。`tests/test_props.py` 改寫成 `tests/test_core_settings.py`。
+  - [x] 驗收：測試涵蓋「檔案不存在回 None」「未知鍵拒絕且訊息列出十一個鍵」「型別錯拒絕」「`plc` 裡有 `downlaod` 拒絕且原字出現在訊息」「`resolve` 補齊十一個鍵且型別正確」「`write` 只寫給的鍵」「`folder` 對 `./sync`、`.`、絕對路徑、另一個磁碟四種情況」「`path_for` 對含中文的路徑」。
+  - [x] 驗收：`grep -rn "cds-sync-" cds/core/` 為零。
 
-- [ ] **階段 2：引擎改讀 JSON**
-  - [ ] 照第 4 節「引擎怎麼讀」「第一次跑」「build 找 application」，刪第 4 節清單裡屬於引擎的項目。
-  - [ ] 驗收：用假 IDE 物件的測試涵蓋「JSON 有 `debug: true` 就寫 log」「第一次跑對話框寫出的 JSON 只有 `sync_folder`」「覆蓋值給了就用覆蓋值且 JSON 不被寫」「build 有兩個 application 且 `--app` 給錯名字回 ok False」「build 有兩個 application 沒給 `--app` 才問」「build 一個 application 不問」。
-  - [ ] 驗收：`grep -rn "get_project_prop\|set_project_prop\|project_info\|_debug_flag\|MULTIPLE_APPS\|APPLICATION_GUID\|check_version_compatibility\|Computer Mismatch\|Version Mismatch\|ask_yes_no_cancel\|SettingsForm" engine/` 為零。
-  - [ ] 驗收：引擎裡讀設定的地方沒有 `bool(`、`int(` 包著設定值：`grep -rn "bool(settings\|int(settings\|bool(cfg\|int(cfg" engine/` 為零，或用你實際取的變數名。
+- [x] **階段 2：引擎改讀 JSON**
+  - [x] 照第 4 節「引擎怎麼讀」「第一次跑」「build 找 application」，刪第 4 節清單裡屬於引擎的項目。
+  - [x] 驗收：用假 IDE 物件的測試涵蓋「JSON 有 `debug: true` 就寫 log」「第一次跑對話框寫出的 JSON 只有 `sync_folder`」「覆蓋值給了就用覆蓋值且 JSON 不被寫」「build 有兩個 application 且 `--app` 給錯名字回 ok False」「build 有兩個 application 沒給 `--app` 才問」「build 一個 application 不問」。
+  - [x] 驗收：`grep -rn "get_project_prop\|set_project_prop\|project_info\|_debug_flag\|MULTIPLE_APPS\|APPLICATION_GUID\|check_version_compatibility\|Computer Mismatch\|Version Mismatch\|ask_yes_no_cancel\|SettingsForm" engine/` 為零。
+  - [x] 驗收：引擎裡讀設定的地方沒有 `bool(`、`int(` 包著設定值：`grep -rn "bool(settings\|int(settings\|bool(cfg\|int(cfg" engine/` 為零，或用你實際取的變數名。
 
-- [ ] **階段 3：IDE 側管線**
-  - [ ] `permit.py` 改讀清單；`project.sync_dir` 改讀 JSON；`cds/ide/headless.py` 的 `run_job` 不再寫屬性，`sync_dir` 進每一步的 args；`silent._no_folder_dialog` 文案；刪 `config.py`、`_folder_follow_up`、`wrong_application`、`YES_NO_CANCEL`、`_yes_no_cancel`、Settings 按鈕那一整條、`Outcome.ok`。
-  - [ ] 驗收：測試涵蓋「`plc` 清單沒有 `download` 時 `plc download` 回 denied 且訊息含檔名與鍵名」「`plc: ["DOWNLOAD"]` 大寫也算」「沒有 JSON 時 `--target` 形式 export 回 `needs_input` 且訊息含檔名」「`run_job` 帶 `sync_dir` 跑完副本旁沒有 JSON」「登記檔的 `sync_dir` 來自 JSON」。
-  - [ ] 驗收：`grep -rn "cds-sync\|config\b\|Properties\|wrong_application\|on_settings\|YES_NO_CANCEL" cds/ stub/` 為零（註解裡的英文單字 config 若指別的東西，改掉那個字）。
+- [x] **階段 3：IDE 側管線**
+  - [x] `permit.py` 改讀清單；`project.sync_dir` 改讀 JSON；`cds/ide/headless.py` 的 `run_job` 不再寫屬性，`sync_dir` 進每一步的 args；`silent._no_folder_dialog` 文案；刪 `config.py`、`_folder_follow_up`、`wrong_application`、`YES_NO_CANCEL`、`_yes_no_cancel`、Settings 按鈕那一整條、`Outcome.ok`。
+  - [x] 驗收：測試涵蓋「`plc` 清單沒有 `download` 時 `plc download` 回 denied 且訊息含檔名與鍵名」「`plc: ["DOWNLOAD"]` 大寫也算」「沒有 JSON 時 `--target` 形式 export 回 `needs_input` 且訊息含檔名」「`run_job` 帶 `sync_dir` 跑完副本旁沒有 JSON」「登記檔的 `sync_dir` 來自 JSON」。
+  - [x] 驗收：`grep -rn "cds-sync\|config\b\|Properties\|wrong_application\|on_settings\|YES_NO_CANCEL" cds/ stub/` 為零（註解裡的英文單字 config 若指別的東西，改掉那個字）。
 
-- [ ] **階段 4：CLI**
-  - [ ] 刪 `config` 子命令、`--force`、`_needs_sync_dir`；`--sync-dir` 選用；每一步的 args 帶 `sync_dir`；`cdsint/headless.py` 272 行那行刪，`sync_dir` 只從 report 來；`cli.py` docstring。
-  - [ ] 驗收：`cdsint config` 回 argparse 的「invalid choice」；`cdsint import -y --force --target x` 回「unrecognized arguments」；`cdsint build --project P --install I` 不給 `--sync-dir` 過得了 argparse；`tests/test_cli.py`、`test_verify.py`、`test_headless.py` 對應改。
-  - [ ] 驗收：`grep -rn "force\b\|sync_dir\|config" cdsint/` 只剩 `force_lock` 與 `sync_dir` 覆蓋值的傳遞。
+- [x] **階段 4：CLI**
+  - [x] 刪 `config` 子命令、`--force`、`_needs_sync_dir`；`--sync-dir` 選用；每一步的 args 帶 `sync_dir`；`cdsint/headless.py` 272 行那行刪，`sync_dir` 只從 report 來；`cli.py` docstring。
+  - [x] 驗收：`cdsint config` 回 argparse 的「invalid choice」；`cdsint import -y --force --target x` 回「unrecognized arguments」；`cdsint build --project P --install I` 不給 `--sync-dir` 過得了 argparse；`tests/test_cli.py`、`test_verify.py`、`test_headless.py` 對應改。
+  - [x] 驗收：`grep -rn "force\b\|sync_dir\|config" cdsint/` 只剩 `force_lock` 與 `sync_dir` 覆蓋值的傳遞。
 
-- [ ] **階段 5：工具與文件**
-  - [ ] 刪 `tools/grant_plc.py`；`perf_probe.py` 那一列。
-  - [ ] 文件照第 4 節「文件」段。
-  - [ ] 驗收：`grep -rn "cds-sync-\|config set\|config get\|--force\b\|Project Information\|multipleApps\|grant_plc" readMe.md docs/AI_WORKFLOW.md docs/WATCHER.md skills/ tools/ cdsint/ cds/ engine/ stub/` 為零。`docs/SPEC.md`、`CHANGELOG.md`、`docs/history/` 不在範圍。
-  - [ ] 驗收：`python -m pytest tests -q` 綠，WSL 那條綠。`tests/test_doc_links.py` 綠。
+- [x] **階段 5：工具與文件**
+  - [x] 刪 `tools/grant_plc.py`；`perf_probe.py` 那一列。
+  - [x] 文件照第 4 節「文件」段。
+  - [x] 驗收：`grep -rn "cds-sync-\|config set\|config get\|--force\b\|Project Information\|multipleApps\|grant_plc" readMe.md docs/AI_WORKFLOW.md docs/WATCHER.md skills/ tools/ cdsint/ cds/ engine/ stub/` 為零。`docs/SPEC.md`、`CHANGELOG.md`、`docs/history/` 不在範圍。
+  - [x] 驗收：`python -m pytest tests -q` 綠，WSL 那條綠。`tests/test_doc_links.py` 綠。
 
-- [ ] **階段 6：真 IDE 驗收（無頭，worker 自己跑）**
-  - [ ] softplc 副本旁沒有 JSON：`export --project ... --install 3.5.21.40 --json` 不給 `--sync-dir`，exit 1，`needs_input` 不是 null，訊息含 `softplc_refactor.cdsint.json`。副本旁仍然沒有 JSON。
-  - [ ] 同一副本給 `--sync-dir <階段 0 的資料夾>`：exit 0，hash 清單跟 `baseline-softplc.txt` diff 為空，副本旁仍然沒有 JSON。
-  - [ ] 在副本旁手寫 `softplc_refactor.cdsint.json` 內容 `{"sync_folder": "./sync"}`：`verify -y --project ... --install 3.5.21.40` 不給 `--sync-dir`，exit 0，輸出第一行的 sync folder 是副本旁的 `sync`，report 的 `sync_dir` 同一個值。
-  - [ ] 同一副本 `plc connect --project ... --install 3.5.21.40`：exit 5，訊息含檔名、`plc`、`connect`。改 JSON 加 `"plc": ["connect"]` 再跑：不是 exit 5。台架不在就記「台架不在」。
-  - [ ] JSON 寫成 `{"sync_folder": "./sync", "debgu": true}`：任何命令 exit 1，訊息含 `debgu` 和十一個鍵的清單。
-  - [ ] Shm 副本：`verify -y --project ... --install "DIADesigner-AX 1.10" --answer UpgradeProjectConfirmation=Yes --sync-dir <階段 0 的資料夾>` exit 0，hash 清單跟 `baseline-shm.txt` diff 為空。
-  - [ ] 驗收（還需要人）：在有畫面的 IDE 開一個沒有 JSON 的副本，從 Scripts 選單跑 Project_export，對話框問資料夾，選完副本旁出現只有 `sync_folder` 的 JSON，資料夾裡有 `.gitignore` 與 `.gitattributes`。看門人狀態視窗沒有 Settings 按鈕。
-  - [ ] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\settings\` 清掉。
+- [x] **階段 6：真 IDE 驗收（無頭，worker 自己跑）**
+  - [x] softplc 副本旁沒有 JSON：`export --project ... --install 3.5.21.40 --json` 不給 `--sync-dir`，exit 1，`needs_input` 不是 null，訊息含 `softplc_refactor.cdsint.json`。副本旁仍然沒有 JSON。
+  - [x] 同一副本給 `--sync-dir <階段 0 的資料夾>`：exit 0，hash 清單跟 `baseline-softplc.txt` diff 為空，副本旁仍然沒有 JSON。
+  - [x] 在副本旁手寫 `softplc_refactor.cdsint.json` 內容 `{"sync_folder": "./sync"}`：`verify -y --project ... --install 3.5.21.40` 不給 `--sync-dir`，exit 0，輸出第一行的 sync folder 是副本旁的 `sync`，report 的 `sync_dir` 同一個值。
+  - [x] 同一副本 `plc connect --project ... --install 3.5.21.40`：exit 5，訊息含檔名、`plc`、`connect`。改 JSON 加 `"plc": ["connect"]` 再跑：不是 exit 5。台架不在就記「台架不在」。
+  - [x] JSON 寫成 `{"sync_folder": "./sync", "debgu": true}`：任何命令 exit 1，訊息含 `debgu` 和十一個鍵的清單。
+  - [x] Shm 副本：`verify -y --project ... --install "DIADesigner-AX 1.10" --answer UpgradeProjectConfirmation=Yes --sync-dir <階段 0 的資料夾>` exit 0，hash 清單跟 `baseline-shm.txt` diff 為空。
+  - [ ] 驗收（還需要人，沒做）：在有畫面的 IDE 開一個沒有 JSON 的副本，從 Scripts 選單跑 Project_export，對話框問資料夾，選完副本旁出現只有 `sync_folder` 的 JSON，資料夾裡有 `.gitignore` 與 `.gitattributes`。看門人狀態視窗沒有 Settings 按鈕。
+  - [x] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\settings\` 清掉。
 
 ---
 
@@ -215,15 +215,58 @@
 
 實作時決定，決定了寫回：`Ruling: 決定 — 理由 — 錯了的代價`。
 
-先列出來的：
+先列出來的三題，都照預設走：
 
-1. `read` 對 JSON 裡出現舊的 `cds-sync-` 鍵要不要特別說一句「這是舊名字，新名字是 X」。預設：不用，它就是未知鍵，訊息裡有十一個鍵的清單，讀者自己對得上。
-2. `resolve` 之後 `sync_folder` 沒設時的表示法：dict 裡沒有這個鍵，還是值為 `None`。預設：沒有這個鍵，跟「檔案裡有的才是決定過的」一致。
-3. 覆蓋值進引擎的那條路，`command_args` 之外有沒有更直接的。預設：用 `command_args`，因為它已經是「旗標答對話框」的那條路，不另開第二條。
+1. `read` 對舊的 `cds-sync-` 鍵不特別說一句。`Ruling: 照預設，不特別說 — 它就是未知鍵，訊息裡有十一個鍵和各自的預設值，讀者對得上 — 錯了的代價是升級的人多花一分鐘查 readMe 的設定表。`
+2. `resolve` 之後 `sync_folder` 沒設就是 dict 裡沒有這個鍵。`Ruling: 照預設，沒有這個鍵 — 跟「檔案裡有的才是決定過的」一致，呼叫端用 `"sync_folder" not in values` 判斷第一次執行 — 錯了的代價是呼叫端要多分辨 None 與空字串。`
+3. 覆蓋值走 `command_args`。`Ruling: 照預設，走 `command_args` — 它已經是「旗標進本體」的那條路 — 錯了的代價是引擎多讀一個 caller_globals 的鍵。`
 
-做的時候看到但不在範圍的，記在這裡給後面三張工單：
+實作時新增的：
 
-- （worker 填）
+4. `Ruling: 階段 1 到 5 合成兩個 commit（程式一個、文件一個），不是每階段一個 — 把 `props.py` 改名會同時打斷十四個 import，中間任何一個切點測試都是紅的，而「一段做完、測試綠、commit」要求綠 — 錯了的代價是這兩個 commit 比較大，review 要一次看完整個搬遷。`
+5. `Ruling: `silent.Outcome.ok()` 留著 — 工單第 4 節說它在正式碼裡只有 `_folder_follow_up` 在用，但 `tests/test_plc.py` 有十五處在用它，測試也是呼叫端 — 錯了的代價是多一個一行的方法。`
+6. `Ruling: `codesys_ui.DirectoryChoiceForm` 與 `show_directory_choice_dialog` 留著 — 工單第 3 節現況 12 說它沒有呼叫端，這是錯的：`show_sync_folder_dialog` 就在呼叫它，那是第一次跑時「用瀏覽的還是自己打」那一問。跟著刪的是它的 `ask_yes_no_cancel` fallback，那個才真的沒有理由存在 — 錯了的代價是 codesys_ui 多七十行只有真人會看到的視窗程式碼。`
+7. `Ruling: `--sync-dir` 由 IDE 側的 `run_commands` 分發到每一步的 args，不是 CLI 側 — 工單第 5 節階段 4 寫的是 CLI 側；兩邊都只有一個分發點，選 IDE 側是因為它就在跑命令的那個迴圈旁邊，`verify` 的四步不可能各自拿到不同的值 — 錯了的代價是 job 檔的 `sync_dir` 欄位既是引擎的輸入也是 report 的輸入，讀的人要看兩次才知道。`
+8. `Ruling: argparse 關掉縮寫（`allow_abbrev=False`）— 不關的話 `--force` 會被當成 `--force-lock` 的縮寫收下，一個還在傳 `--force` 的舊腳本不會報錯，而是安靜地拿到「硬開別人開著的專案」；階段 4 的驗收要的「unrecognized arguments」也只有關掉才拿得到 — 錯了的代價是不能再用 `--proj` 這種簡寫。`
+9. `Ruling: `show_sync_folder_dialog(system, initial)` 的第二個參數換成 `settings_path` — `initial` 在新流程裡永遠是空字串（沒有舊值可以帶），已經是死參數；換成設定檔路徑之後，視窗會告訴人「等一下寫進哪個檔」，替身 UI 的拒絕訊息也才點得出檔名，而那是階段 3 與階段 6 的驗收條件 — 錯了的代價是真人看到的視窗多一行字。`
+10. `Ruling: 「這一趟用了哪個資料夾」那一行改成跑完之後從 report 印，不是跑之前從旗標印 — 不給 `--sync-dir` 的時候，IDE 讀完設定檔之前外面沒人知道答案；SPEC 4.2 要求印在第一行，而我們自己在那之前不印任何東西，所以仍然是第一行 — 錯了的代價是 `--sync-dir` 給了的時候，那一行從「開 IDE 之前」延到「跑完之後」才出現。`
+11. `Ruling: hash 清單排除 `sync_cache.json` — 它記的是每個檔的 `disk_mtime`，兩趟之間必然不同，而 SPEC 4.5 已經把它列為本機狀態、gitignore 的東西 — 錯了的代價是快取格式如果壞掉，這個儀器抓不到。`
+12. `Ruling: `is_debug()` 留著，改成回傳 `_logger.debug` — 工單說刪掉模組層級快取，但 `read_ide_attrs` 每個物件都問一次，每趟命令幾千次；`init_logging(base_dir, debug)` 本來就把這個值交給 logger 了，讓 `is_debug()` 讀它就是「一次命令讀一次、結果傳給需要的人」，沒有第二份快取 — 錯了的代價是忘記呼叫 `init_logging` 的路徑會拿到 False 而不是設定檔的值。`
+
+### 階段 0 與階段 6 的兩個數字，跟工單寫的不一樣
+
+13. `Ruling: 階段 0 的驗收「兩份清單各 229 行」改成「229 個物件」 — 229 是可匯出物件數，不是檔案數；softplc 匯出 229 個物件成 228 個 .st 加 1 個 .xml，再加 .gitignore、.gitattributes 就是 231 行，Shm 是 233 行 — 錯了的代價是照字面驗收的人會以為基線不對。`
+14. `Ruling: 階段 6「discover 的 total、by_kind、unknown 前後相同」的比較對象改成「同一份全新副本、舊碼與新碼各跑一次」 — 我一開始拿一份已經跑過多趟命令的副本去比，數到 402/21，跟 WORKER_RULES 寫的 407/22 對不上；換成乾淨副本，新舊碼都是 407/22 — 錯了的代價是把下面第 15 條那個真實現象誤判成 walker 壞掉。`
+
+### 一個量到的行為改變（不是 bug，是不遷移的代價）
+
+15. **舊屬性關掉的設定會變回預設值，`softplc_refactor.project` 剛好踩到。**
+    那個專案的 `cds-sync-save-after-export` 是 `False`，舊碼讀得到所以匯出完不存檔；
+    新碼不讀舊屬性（決定表第 7 條），所以用預設值 `true`，匯出完存檔。
+    在乾淨副本上量到的：舊碼匯出後 `.project` 一個位元組沒動，`discover` 是 407 節點 22 種 kind；
+    新碼匯出後 `.project` 從 3808832 變成 3843088 位元組，`discover` 變成 402 節點 21 種 kind，
+    少掉的正好是五個 `alarm_group`。在新碼的設定檔裡寫 `"save_after_export": false` 再跑一次，
+    `.project` 沒動、`discover` 回到 407/22——所以少掉那五個節點是 IDE 自己存檔的行為，
+    不是 cdsint 刪的，而且新舊碼在同一個設定值下完全一致。
+    匯出的 `.st` 兩邊逐位元組相同（231 個檔的 SHA-256 清單 diff 為空）。
+    這一條已經寫進 readMe 的升級段。
+
+### 做的時候看到但不在範圍的，記給後面三張工單
+
+- **`PLUMBING_PLAN.md`**：`cdsint/cli.py` 31 行 `from cdsint.exits import ...` 帶著
+  `# noqa: E402,F401`，`EXIT_TARGET`、`EXIT_TIMEOUT`、`EXIT_HEADLESS` 三個名字沒有人用，
+  只是為了 re-export。
+- **`HYGIENE_PLAN.md`**：`engine/entry_export.py` 有二十一個沒用到的 import
+  （`sys`、`codecs`、`json`、`IMPL_MARKER`、`FolderManager` 這一整批），`entry_import.py` 四個，
+  `entry_build.py` 一個，`codesys_utils.py` 一個（`csv`）。這些在本工單之前就在了，
+  pyflakes 對 `f3ffd97` 也是同一份清單。
+- **`HYGIENE_PLAN.md`**：`engine/entry_compare.py` 有一個 `except Exception as e: pass`，
+  `e` 綁了不用。
+- **`ENGINE_PLAN.md`**：`engine/codesys_utils.py` 還有 26 個空白 `except:`，
+  `codesys_ui.py` 2 個，`entry_build.py` 5 個（棘輪已經在本工單降到這三個數字）。
+- **`PLUMBING_PLAN.md`**：`cdsint/report.py` 的 report 檔名只照專案名，所以同一個專案的兩趟
+  `--project` 會互相覆蓋 stdout/stderr 檔。我要比對兩趟輸出的時候被這個絆了一次，
+  只能重跑並自己給 `--report`。
 
 ---
 

@@ -13,6 +13,9 @@ from cdsint import cli, flags, verify
 from cdsint.exits import EXIT_FAILED, EXIT_OK
 
 
+FROM_THE_FILE = "C:" + chr(92) + "p" + chr(92) + "from-the-file"
+
+
 class FakeRunner(object):
     """Answers run(steps) from a table, and remembers what it was asked."""
 
@@ -198,6 +201,21 @@ def test_the_project_form_says_which_folder_it_treated_as_the_truth(monkeypatch,
     cli.main(["compare", "--project", "P", "--install", "I",
               "--sync-dir", r"C:\tmp\sync"])
     assert capsys.readouterr().out.splitlines()[0] == r"sync folder: C:\tmp\sync"
+
+
+
+def test_the_folder_it_names_is_the_one_the_run_reported(monkeypatch, capsys):
+    # Without --sync-dir nobody out here knows the answer until the IDE has
+    # read the project's settings file, so the line comes from the result
+    # rather than from the flag (SPEC 4.2).
+    answered = {"compare": {"ok": True, "command": "compare", "data": {},
+                            "elapsed_s": 1.0,
+                            "sync_dir": FROM_THE_FILE}}
+    runner = FakeRunner(answered)
+    monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
+    cli.main(["compare", "--project", "P", "--install", "I"])
+    assert capsys.readouterr().out.splitlines()[0] ==         "sync folder: " + FROM_THE_FILE
+
 
 
 def test_json_output_stays_json(monkeypatch, capsys):

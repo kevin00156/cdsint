@@ -174,8 +174,21 @@ Four things moved, and none of them migrate themselves:
 **Where the settings live.** They used to be project properties inside the
 `.project` file. They are a text file beside it now (see **Settings**). The
 old properties are no longer read; they stay in the `.project` untouched and
-nothing removes them. A project already set up is asked for its sync folder
-once more, on its next export, and that answer goes into the new file.
+nothing removes them, and nothing is migrated out of them.
+
+That last part has a consequence worth reading twice: **a setting somebody
+turned off in the old properties comes back on.** Every key falls back to the
+default in the Settings table until the new file says otherwise. On a project
+that had `cds-sync-save-after-export` set to `False`, for instance, an export
+now saves the project when it used to leave the file alone — measured on
+softplc_refactor.project, 2026-09-06, where that save also changed what
+`discover` counts in the project tree (407 nodes before, 402 after: five alarm
+groups). Nothing cdsint writes causes that; it is what the IDE's own save does
+to that project. Look at the old properties once, in the IDE, and write the
+ones you had chosen into the new file.
+
+A project already set up is also asked for its sync folder once more, on its
+next export, and that answer goes into the new file.
 
 ## The commands
 

@@ -83,6 +83,7 @@ def run_list(ns):
 
 def run_verify(ns, runner):
     results, problems = verify.run(runner, getattr(ns, "yes", None))
+    report.show_sync_dir(folder_used(ns, runner, results), ns.json)
     report.show_steps(results, ns.json)
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
@@ -94,8 +95,22 @@ def run_verify(ns, runner):
 
 def run_command(ns, runner):
     results = runner.run([(flags.wire_name(ns), flags.command_args(ns))])
+    report.show_sync_dir(folder_used(ns, runner, results), ns.json)
     report.show(results[0], ns.json)
     return exit_code(results[0])
+
+
+def folder_used(ns, runner, results):
+    """The folder this run actually treated as the truth, or None (SPEC 4.2).
+
+    From the result, because the IDE side is the only place that knows what
+    the project's settings file said; from the runner when no step got far
+    enough to report one, which is all a refused run has to offer.
+    """
+    for result in results:
+        if result.get("sync_dir"):
+            return result["sync_dir"]
+    return runner.sync_dir()
 
 
 def exit_code(result):
@@ -122,9 +137,6 @@ def main(argv=None):
         if ns.command == "list":
             return run_list(ns)
         runner = make_runner(ns)
-        if getattr(ns, "project", None):
-            # First line of the run, before anything has used it.
-            report.show_sync_dir(runner.sync_dir(), ns.json)
         if ns.command == "verify":
             return run_verify(ns, runner)
         return run_command(ns, runner)

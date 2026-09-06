@@ -61,7 +61,12 @@ def warn_untrusted_exit(record):
 
 
 def show_sync_dir(path, want_json=False):
-    """Say which folder the run treats as the truth, before it uses it.
+    """Say which folder the run treated as the truth (SPEC 4.2).
+
+    Printed after the run rather than before it, because until the IDE has
+    read the project's settings file nobody out here knows the answer:
+    --sync-dir is an override that may not have been given. Nothing else of
+    ours reaches stdout first, so this is still the first line.
 
     A --json caller reads it from the record and the report file instead: a
     line of prose in front of the JSON would break the parse it was meant to
