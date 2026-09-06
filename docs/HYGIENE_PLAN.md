@@ -93,12 +93,12 @@
   - [x] 第 3 節重核清單做完，commit。
   - [x] 驗收：Windows 1043 passed、WSL 1043 passed，記在第 3 節重核清單末尾。
 
-- [ ] **階段 1：文件（第 4 節 1 到 4、9）**
-  - [ ] 驗收：`grep -n "現況" docs/SPEC.md` 為零；`grep -n "階段 [0-9]" docs/SPEC.md` 為零；`docs/history/SPEC_10_CONSTRUCTION.md` 存在。
-  - [ ] 驗收：`grep -c "^### Unreleased" CHANGELOG.md` 是 1；`grep -n "cds_ide\|cds-text-sync\\\\instances\|Project_perf_probe\|Tests: [0-9]" CHANGELOG.md` 只剩歷史段落（第一個非 Unreleased 標題之後）。
-  - [ ] 驗收：`grep -rn "fifteen-line\|ten-line\|各十行" readMe.md docs/SPEC.md CHANGELOG.md` 為零；`grep -n "list.*--target\|\`list\`.*有" readMe.md docs/SPEC.md` 對上 `flags.py`。
-  - [ ] 驗收：`grep -n "first commit\|about a hundred" PRINCIPLES.md` 為零。
-  - [ ] 驗收：`tests/test_doc_links.py` 綠。
+- [x] **階段 1：文件（第 4 節 1 到 4、9）**
+  - [x] 驗收：`grep -n "現況" docs/SPEC.md` 為零；`grep -n "階段 [0-9]" docs/SPEC.md` 為零；`docs/history/SPEC_10_CONSTRUCTION.md` 存在。
+  - [x] 驗收：`grep -c "^### Unreleased" CHANGELOG.md` 是 1。`grep -n "cds_ide\|cds-text-sync\\\\instances\|Project_perf_probe\|Tests: [0-9]" CHANGELOG.md` 在 Unreleased 段落裡還有兩筆，都是「舊名字改成新名字」的句子，見第 7 節 Ruling 4。
+  - [x] 驗收：`grep -rn "fifteen-line\|ten-line\|各十行" readMe.md docs/SPEC.md CHANGELOG.md` 為零；`list` 在 readMe 與 SPEC 的命令表都改成兩種形式都不收，對上 `flags.py` 的 `NO_IDE`。
+  - [x] 驗收：`grep -n "first commit\|about a hundred" PRINCIPLES.md` 為零。
+  - [x] 驗收：`tests/test_doc_links.py` 綠（14 passed）；整份測試 1043 passed。
 
 - [ ] **階段 2：profile 與工具（第 4 節 4 的 profile 部分、8）**
   - [ ] 驗收：`grep -n "Project_discover" profiles/default.json` 為零；新測試「`alias_notes` 的鍵都是 `guid_aliases` 裡的 GUID」綠。
@@ -136,6 +136,11 @@
    理由：`guid_aliases` 的 47 種裡，有十種既不在 `EXPORTABLE_KINDS` 也沒有在 `sync_direction` 標 `disabled`：`application`、`folder`、`image`、`plc_logic`、`project_info`、`recipe`、`recipe_manager`、`target_visu`、`task_call`、`web_visu`。它們認得出來是為了讓 `discover` 不要把它們報成 unknown GUID，但它們本來就沒有可匯出的內容 — `folder`、`application`、`plc_logic`、`project_info` 是容器，`web_visu` 與 `target_visu` 是 `visu_manager` 遞迴匯出的子節點（`EXPORTABLE_KINDS` 的註解自己寫了）。而且那條規則連互斥都不成立：`device` 與 `device_module` 同時在 `EXPORTABLE_KINDS` 裡也標了 `disabled`。
    錯了的代價：照原規則寫測試，開工第一天就紅十筆，而唯一的修法是把十個不該匯出的 kind 塞進 `EXPORTABLE_KINDS`，那會改行為，而這張工單明文不改行為。留給 C：真要有一條測試守這三者的關係，得先定義出第三類（「認得但沒有內容」）是什麼，那是設計工作不是衛生工作。
 3. `tests/fakes.py` 收進去之後若某個測試靠替身的某個怪行為，寧可在那個測試裡子類別化，不要把怪行為加進共用替身。
+
+4. **Ruling：CHANGELOG 的 Unreleased 段落裡留下兩處舊檔名，所以階段 1 那條 grep 驗收有兩筆命中，不是零。**
+   決定：留著不改。兩處分別是「`Project_perf_probe.py` is `tools/perf_probe.py`」與「replacing `python cli/cds_ide.py`」。
+   理由：那條驗收要擋的是「用搬家前的名字描述今天的東西」，而這兩句的整個作用就是講「以前叫什麼、現在叫什麼」。把舊名字拿掉，改名這件事就無從查起，升級的人會找不到自己手上那支檔案去哪了。刪掉的是資訊，不是過期的東西。
+   錯了的代價：以後有人照那條 grep 驗收，會看到兩筆命中而以為沒做完。所以寫在這裡。
 
 做的時候看到但不在範圍的，記在這裡給 C：
 

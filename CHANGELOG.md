@@ -137,7 +137,7 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   them.** The menu is a recursive scan of ScriptDir for `.py`, so every module
   had to live at the top level, be named `.pyw` to stay out of the list, and be
   loaded through `imp.load_source`. The bodies now live in `engine/`, outside
-  ScriptDir, and only ten-line stubs sit where the IDE scans. Ordinary imports
+  ScriptDir, and only three small stubs sit where the IDE scans. Ordinary imports
   replace the loader, which also removed the last `imp` call — a module CPython
   3.12 no longer ships.
 - **The command is `cdsint`**, installed from `pyproject.toml`, replacing
@@ -202,6 +202,19 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   stick was swallowed into a `False` and the commands ran against the
   folder the project file carried, and Ctrl-C left the `--noUI` process
   running with no window, holding the project's lock.
+- **A killed IDE's lock file is only cleared when it is ours to clear.**
+  `--force-lock` means "go ahead anyway", not "that lock is mine", so a run
+  started with it and then killed on timeout used to remove a lock file that
+  another IDE really did have the project open behind — and the next run
+  opened the same project alongside it. The launcher now records whether a
+  lock was there before it started: if it was, the lock is left alone and the
+  reason says so in `notes`, and the next `--project` run needs
+  `--force-lock` once more. Same when the killed process does not actually
+  die.
+- **CI runs on Windows and Linux, not one of them.** Windows is where the IDE
+  lives; Linux is the only place a Windows path handled with `os.path` can
+  fail, which is why every run before this was red. Both jobs green is now
+  what an acceptance means.
 - **An object the IDE will not describe no longer gets a duplicate.**
   Its `.st` looks like a file nobody owns, so import created a second
   object for it or moved an unrelated orphan onto it; export has refused
@@ -256,7 +269,7 @@ Behaviour that was in `main` but never released:
 - **New diagnostics.** `tools/cache_doctor.py` replays both cache-hit
   predicates against a sync directory offline, so "is the cache working at
   all?" no longer needs CODESYS open — it is what found the `disk_mtime`
-  split. `tools/Project_perf_probe.py` wraps the real engine functions in place
+  split. `tools/perf_probe.py` wraps the real engine functions in place
   and runs a real export, compare or import, ranking them by exclusive time.
 - **A byte-order mark at the head of a `.st` file was imported as code.** The
   sync folder is read as plain UTF-8, so a BOM — which Windows editors add
@@ -271,16 +284,31 @@ Behaviour that was in `main` but never released:
   through it. Nothing here writes a BOM, so this only ever drops somebody
   else's.
 
----
+- **A running IDE can be driven from a terminal at all.** This is the feature
+  the rest of the list is built on. **Project_watch** (Tools > Scripting) arms
+  a timer and returns immediately, leaving a listener in the IDE, and `cdsint`
+  then runs export, import, compare and build in it from any shell without the
+  project being closed. Run **Project_watch** a second time, or `cdsint stop`,
+  to shut the listener down.
 
-### Unreleased
+  **The script must end, or the IDE is unusable.** `system.delay()` pumps
+  repaints and posted messages but not mouse and keyboard, so a script that
+  loops leaves the window looking alive and refusing every click — measured
+  with real clicks on CODESYS 3.5.21.40 and confirmed by hand on
+  DIADesigner-AX 1.10. The listener therefore lives on a WinForms timer hung
+  on the IDE's own message loop, which still ticks on the UI thread, so
+  nothing about the object-model calls changes. Between commands the IDE is
+  genuinely free; while a command runs it is busy, exactly as it is when you
+  run the script from the menu yourself.
 
-**Drive a running IDE from a terminal.** `Project_watch.py` (Tools > Scripting) arms a timer and returns immediately, leaving a listener in the IDE; `cli/cds_ide.py` then runs export, import, compare and build in it from any shell, without the project being closed. Run `Project_watch.py` a second time, or `cds_ide.py stop`, to shut the listener down.
-
-- **The script must end, or the IDE is unusable.** `system.delay()` pumps repaints and posted messages but not mouse and keyboard, so a script that loops leaves the window looking alive and refusing every click — measured with real clicks on CODESYS 3.5.21.40 and confirmed by hand on DIADesigner-AX 1.10. The listener therefore lives on a WinForms timer hung on the IDE's own message loop, which still ticks on the UI thread, so nothing about the object-model calls changes. Between commands the IDE is genuinely free; while a command runs it is busy, as it is when you run the script from the menu yourself.
-- **The dialogs are answered by flags, never guessed.** `--yes` confirms an import, `--force` overrides a version or computer mismatch, `--delete-orphans` answers the orphan prompt, `--app` picks the application to build. A question with no flag behind it comes back as `needs_input` with the flag named, exit code 1, and nothing changed in the IDE. `compare` reports counts and the per-object differences instead of opening its picker.
-- **One directory per IDE** under `%LOCALAPPDATA%\cds-text-sync\instances`, so several IDEs can be driven at once; `list` shows them and `--target` picks one by instance id or project name. Exit codes: 0 done, 1 failed or needs a flag, 2 no single live IDE matched, 3 timed out.
-- New: `cds/core/{ipc,instances,commands}.py` (the file protocol, pure Python, unit-tested), `cds/ide/{watcher,session,silent,project}.py` (the IDE half), `cli/cds_ide.py`, `docs/WATCHER_CLI_PLAN.md`, `docs/RESEARCH_HTTP_IDE_CONTROL.md`. `Project_import.py` now reports its two give-up paths through `system.ui` instead of `print`, so a cancelled import cannot look like a successful one. Tests: 301.
+  **The dialogs are answered by flags, never guessed.** A question with no
+  flag behind it comes back as `needs_input` naming the flag, exit 1, and
+  nothing changed in the IDE. `compare` reports counts and the per-object
+  differences instead of opening a picker. One directory per IDE holds the
+  file protocol, so several IDEs can be driven at once: `list` shows them and
+  `--target` picks one by instance id or project name. `Project_import.py`
+  reports its two give-up paths through `system.ui` rather than `print`, so a
+  cancelled import cannot look like a successful one.
 
 ---
 

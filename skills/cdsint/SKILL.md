@@ -163,7 +163,11 @@ the `plc` list in the project's settings file does not allow this command.
 
 A `--project` run that was killed after its report was written is not exit 3:
 the report is the answer, and the exit code is the thing that went missing. The
-lock file such a kill leaves behind is cleared by cdsint itself.
+lock file such a kill leaves behind is cleared by cdsint only when there was no
+lock file before the run started — `--force-lock` says "go ahead anyway", not
+"that lock is mine", so a lock that was already there may belong to an IDE that
+really does have the project open. In that case the lock stays, `notes` says
+why, and the next run needs `--force-lock` again.
 
 With `--json`: `messages` carries what the IDE would have shown a person,
 `data` carries the counts and the lists behind them (compare's `changes`, one

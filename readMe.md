@@ -203,7 +203,8 @@ Every command that touches a project takes one of two forms, and never both:
 | Command | `--target` | `--project` | What it does |
 |---|---|---|---|
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
-| `list`, `ping`, `status`, `stop` | yes | — | the listeners' lifecycle |
+| `list` | — | — | which IDEs are listening; it asks about this machine, not about one IDE |
+| `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back in, disk wins |
 | `compare` | yes | yes | list what differs, change nothing |
@@ -482,7 +483,7 @@ cds/core/   the file protocol the IDE and the CLI talk over. Pure Python,
             runs on both sides, fully unit-tested.
 cds/ide/    the listener, the stand-in UI, the status window, the IDE side of
             the headless launcher.
-stub/       the fifteen-line files the IDE's menu scans.
+stub/       the three small files the IDE's menu scans.
 cdsint/     the `cdsint` command. CPython 3.11+.
 tools/      offline diagnostics: call tree, cache doctor, perf probe.
 profiles/   object-type GUIDs and per-kind sync policy, as JSON.

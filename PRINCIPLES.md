@@ -12,8 +12,9 @@ All of `engine/`, and the diagnostics that came with it into `tools/`, were
 moved here rather than written here: they carry knowledge that real projects
 beat into them, and rewriting them to satisfy a rule would throw that away
 (SPEC D1). `git log --follow` on a file settles which tier it is in — the
-moved ones all arrive in this repo's first commit. Everything written since,
-including a new file added under `engine/`, is in the strict tier.
+moved ones all arrive in `5c96d4e`, the commit that brought the code across.
+Everything written since, including a new file added under `engine/`, is in
+the strict tier.
 
 A rule the code does not follow is worse than no rule, so where a tier is
 looser, it says so out loud rather than being quietly ignored.
@@ -64,8 +65,8 @@ project with a few hundred objects that cost dominates everything else.
 
 The engine still walks the tree object by object rather than pulling it out
 in one `export_native` call. Whether to change that is open (SPEC 11.1) and
-waits on the phase 4 measurements; until then this rule is about not paying
-twice for what you already fetched.
+is a question for the benchmarks in SPEC 7; until then this rule is about not
+paying twice for what you already fetched.
 
 ## 4. Three layers, and the boundaries are the ones in SPEC D12.
 
@@ -108,10 +109,12 @@ data in.
   crash with a traceback is a gift.
 
 `tests/test_bare_excepts.py` is where this one is enforced. Code written
-here is held at zero. The code that was moved here arrived with about a
-hundred of them; they come out a function at a time, whenever somebody is in
-there for another reason, and the table in that test is the ratchet — it
-records what is left, file by file, and only ever goes down.
+here is held at zero. The code that was moved here arrived with a pile of
+them; they come out a function at a time, whenever somebody is in there for
+another reason, and the `ALLOWED` table in that test is the ratchet — it
+records what is left, file by file, and only ever goes down. That table is
+the count; no other file carries a number that has to be kept in step with
+it.
 
 ## 7. No dead code. No parallel paths.
 
