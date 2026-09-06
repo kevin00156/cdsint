@@ -3,9 +3,9 @@
 
 `plc download` is the one command in cdsint that changes a machine, so it is
 the one command with a permission layer in front of it (SPEC D8, 6.5): the
-project property cds-sync-plc says whether this project allows the action at
-all, and -y says the caller means this call. Neither can stand in for the
-other, and both have to hold before anything logs in — a check that runs
+`plc` list in the project's settings file says whether this project allows
+the action at all, and -y says the caller means this call. Neither can stand
+in for the other, and both have to hold before anything logs in — a check that runs
 inside the body it guards has already let the body start.
 
 What comes back is a CRC comparison, and that is the whole point of the pair
@@ -378,15 +378,23 @@ def test_case_is_a_persons_typing_not_a_decision():
     assert permit.granted(ide(allowed=["DOWNLOAD"])["projects"]) == ["download"]
 
 
-def test_a_settings_file_that_cannot_be_read_allows_nothing():
-    # The command itself reads the same file a moment later and reports the
-    # typo in full (SPEC 4.4); what must not happen here is the gate opening
-    # because the file could not be parsed.
-    projects = ide(allowed=None)["projects"]
+def test_a_settings_file_that_cannot_be_read_is_a_failure_not_a_refusal():
+    # exit 5 tells the caller to add a word to the `plc` list, and that is
+    # the wrong instruction for a file with a typo in it -- following it
+    # changes nothing, because the body never runs and nothing else ever
+    # reads that file. So the refusal has to be the parse error itself, with
+    # no `denied`, which is exit 1 (SPEC 4.3).
+    ide_globals = ide(allowed=None)
     with io.open(settings.path_for(PROJECT_PATH), "w",
                  encoding="utf-8") as handle:
         handle.write(u'{"plc": ["downlaod"]}')
-    assert permit.granted(projects) == []
+
+    outcome = press(ide_globals, "connect", {})
+
+    assert outcome.denied is None
+    assert not outcome.ok()
+    assert "downlaod" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
 
 
 def test_the_refusal_says_which_file_and_what_to_write():

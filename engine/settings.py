@@ -9,8 +9,15 @@ them again (SPEC D10).
 
 Read once per command and passed to whoever needs it. There is no cache,
 because reading a small JSON file is not the expensive boundary — crossing
-into .NET is (PRINCIPLES.md 3), and this crosses it only for the project's
-own path.
+into .NET is (PRINCIPLES.md 3), and this crosses it once, for the project's
+own path, which is then handed down rather than fetched again.
+
+Three answers come back, and they are three because commands treat them
+differently: the file is unusable, nobody has chosen a sync folder yet, or
+here is the folder. `compare`, `export` and `import` cannot work without the
+folder; `build` and `discover` can, and lose only their log. Folding the
+first two answers together is what let a misspelt key run a build all the way
+to a clean finish.
 
 The one dialog left is the first-run question in `choose_sync_folder`: a
 project nobody has set up has no folder to write to and no default worth
@@ -33,16 +40,24 @@ from engine.codesys_utils import (
 # behave differently for no reason the caller could see.
 SYNC_DIR_ARG = "sync_dir"
 
+NO_PROJECT = "No project is open, so there are no settings to read."
+
 
 def prepare(caller_globals):
-    """This run's settings and the folder they point at: (values, folder, error).
+    """This run's settings and its sync folder: (values, folder, error).
 
-    The folder is absolute and exists — created here if it did not. `error`
-    is a sentence for a person; when it is set the other two are None and the
-    command must not go on, because every one of them writes to or reads from
-    that folder.
+    `error` set means the settings file itself cannot be used, and no command
+    may go on. `folder` None with no error means nobody has chosen one yet —
+    a refusal for some commands and a missing log for others, so the caller
+    decides that, not this function.
     """
-    return _with_folder(load(caller_globals), caller_globals)
+    project_path = _project_path(caller_globals)
+    if project_path is None:
+        return None, None, NO_PROJECT
+    values, error = _read(project_path, caller_globals)
+    if error:
+        return None, None, error
+    return _with_folder(values, project_path)
 
 
 def prepare_asking(caller_globals):
@@ -53,21 +68,15 @@ def prepare_asking(caller_globals):
     (SPEC 6.7). The read-only commands must not: a dialog is not something to
     open from a `compare`.
     """
-    values, error = load(caller_globals)
+    project_path = _project_path(caller_globals)
+    if project_path is None:
+        return None, None, NO_PROJECT
+    values, error = _read(project_path, caller_globals)
     if not error and "sync_folder" not in values:
-        values, error = choose_sync_folder(caller_globals)
-    return _with_folder((values, error), caller_globals)
-
-
-def _with_folder(loaded, caller_globals):
-    """Add the resolved folder to what load() or the dialog handed back."""
-    values, error = loaded
+        values, error = choose_sync_folder(caller_globals, project_path)
     if error:
         return None, None, error
-    resolved, error = _folder(values, caller_globals)
-    if error:
-        return None, None, error
-    return values, resolved, None
+    return _with_folder(values, project_path)
 
 
 def load(caller_globals=None):
@@ -78,43 +87,34 @@ def load(caller_globals=None):
     A file that exists and is wrong is an error, and the sentence lists every
     setting cdsint knows (SPEC 4.4).
     """
-    path = settings_path(caller_globals)
-    if path is None:
-        return None, "No project is open, so there are no settings to read."
-    try:
-        written = schema.read(path)
-    except schema.Invalid as bad:
-        return None, safe_str(bad)
-    values = schema.resolve(written)
-    override = entry.flags(caller_globals or {}).get(SYNC_DIR_ARG)
-    if override:
-        values["sync_folder"] = override
-    return values, None
-
-
-def settings_path(caller_globals=None):
-    """Where this project's settings file is, or None when nothing is open."""
     project_path = _project_path(caller_globals)
-    if not project_path:
-        return None
-    return schema.path_for(project_path)
+    if project_path is None:
+        return None, NO_PROJECT
+    return _read(project_path, caller_globals)
 
 
-def choose_sync_folder(caller_globals=None):
+def folder_missing(caller_globals):
+    """The sentence for a command that cannot work without a sync folder.
+
+    Separate from `prepare` because whether a missing folder is fatal is the
+    caller's question: it stops a compare and it does not stop a build.
+    """
+    return _no_folder(_project_path(caller_globals))
+
+
+def choose_sync_folder(caller_globals, project_path):
     """Ask where the sync folder is and write it down: (values, error).
 
     Only `sync_folder` is written. Every other setting stays out of the file
     until somebody decides it, so a reader can tell what was chosen from what
     merely defaulted, and changing a default in the code needs no pass over
     anybody's files (SPEC 4.4).
+
+    The project's path is passed in rather than looked up: the only caller
+    reached this by reading that project's settings file, so asking the IDE
+    for it a second time could only produce the same answer.
     """
     system = _ide(caller_globals)
-    project_path = _project_path(caller_globals)
-    if not project_path:
-        failed = "No project open! Open a project to set its sync folder."
-        system.ui.error(failed)
-        return None, failed
-
     path = schema.path_for(project_path)
     chosen = _ask(system, path)
     if not chosen:
@@ -128,18 +128,13 @@ def choose_sync_folder(caller_globals=None):
         failed = "Could not write %s: %s" % (path, safe_str(exc))
         system.ui.error(failed)
         return None, failed
-    values = schema.resolve({"sync_folder": written})
-    resolved, error = _folder(values, caller_globals)
-    if error:
-        system.ui.error(error)
-        return None, error
 
-    print("Sync folder set to: " + written + " -> " + resolved)
+    print("Sync folder set to: " + written)
     system.ui.info("Sync folder saved to " + path + "\n\n" + written
                    + "\n\nThe other settings and their defaults are in the "
                      "settings table in readMe.md; add a key to that file "
                      "when you want to change one.")
-    return values, None
+    return schema.resolve({"sync_folder": written}), None
 
 
 def _ask(system, settings_path):
@@ -154,13 +149,41 @@ def _ask(system, settings_path):
     return show_sync_folder_dialog(system, settings_path)
 
 
-def _folder(values, caller_globals):
-    """Where sync_folder points, made real: (absolute path, error)."""
-    project_path = _project_path(caller_globals)
-    project_dir = os.path.dirname(project_path) if project_path else None
-    resolved = schema.folder(values.get("sync_folder"), project_dir)
+def _read(project_path, caller_globals):
+    """Parse this project's settings file, with this run's flag over the top."""
+    try:
+        written = schema.read(schema.path_for(project_path))
+    except schema.Invalid as bad:
+        return None, safe_str(bad)
+    values = schema.resolve(written)
+    override = entry.flags(caller_globals or {}).get(SYNC_DIR_ARG)
+    if override:
+        values["sync_folder"] = override
+    return values, None
+
+
+def _with_folder(values, project_path):
+    """Resolve the folder and make it usable: (values, folder, error)."""
+    resolved, error = _folder(values, project_path)
+    if error:
+        return None, None, error
+    return values, resolved, None
+
+
+def _folder(values, project_path):
+    """Where sync_folder points, made real: (absolute path or None, error).
+
+    None with no error is "nobody has chosen one". An error is a folder that
+    was chosen and cannot be used, which is a different thing and stops every
+    command.
+    """
+    written = values.get("sync_folder")
+    if not written:
+        return None, None
+    resolved = schema.folder(written, os.path.dirname(project_path))
     if not resolved:
-        return None, _no_folder(project_path)
+        return None, ("Cannot work out where %s points, because the project "
+                      "has no path to resolve it against." % (written,))
     try:
         _prepare_folder(resolved)
     except (IOError, OSError) as exc:
@@ -171,7 +194,8 @@ def _folder(values, caller_globals):
 
 def _no_folder(project_path):
     """The sentence a project with no sync folder gets. It names the file."""
-    where = schema.path_for(project_path) if project_path else "its settings file"
+    where = (schema.path_for(project_path) if project_path
+             else "its settings file")
     return ("This project has no sync folder yet. Write %s next to the "
             "project with {\"sync_folder\": \"./sync\"}, pass --sync-dir to "
             "use one just for this run, or run export once from the Scripts "
@@ -193,9 +217,13 @@ def _as_written(chosen, project_dir):
     still points at its own sync folder. Only a folder at or under the
     project's own directory has a relative form worth writing; anything else,
     or another drive, stays absolute.
+
+    What counts as relative is cds.core.settings.is_relative, the same
+    predicate the resolver uses, so the shape written here cannot drift from
+    the shape that gets read back.
     """
     chosen = chosen.strip().replace("/", os.sep)
-    if chosen.startswith("." + os.sep) or chosen == ".":
+    if schema.is_relative(chosen):
         return chosen  # already relative; the user typed it that way
     if not project_dir or not os.path.isabs(chosen):
         return chosen
@@ -209,6 +237,7 @@ def _as_written(chosen, project_dir):
 
 
 def _project_path(caller_globals):
+    """The open project's path, or None. The only .NET read in this module."""
     projects_obj = resolve_projects(None, caller_globals)
     primary = getattr(projects_obj, "primary", None) if projects_obj else None
     path = getattr(primary, "path", None)

@@ -48,12 +48,10 @@ class Logger:
         if self.is_final:
             return
 
-        # No project of its own to consult: init_logging() is handed the
-        # folder the settings resolved to, and every entry body calls it
-        # before anything worth logging happens. This used to read the sync
-        # folder property itself, through a `projects` name that does not
-        # exist in this module -- the NameError went into the bare except
-        # below and the log quietly stayed in TEMP.
+        # Nothing is looked up here: init_logging() is handed the folder the
+        # settings resolved to, and every entry body calls it before anything
+        # worth logging happens. TEMP is where a log written before that call
+        # goes, and it stays overwritable so the real path still wins.
         if not self.log_file:
             try:
                 # Use temp directory to avoid cluttering ScriptDir

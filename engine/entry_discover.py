@@ -36,11 +36,15 @@ def discover_project(projects_obj=None):
         system.ui.error(msg)
         return entry.result(False, msg)
 
-    values, base_dir, _error = settings.prepare(globals())
     # No sync folder yet is not a reason to refuse: discover is what somebody
     # runs *because* the export did not work. Without one the log has nowhere
-    # to go, and the tree on stdout is the whole answer.
-    init_logging(base_dir, values["debug"] if values else False)
+    # to go, and the tree on stdout is the whole answer. A settings file that
+    # cannot be read is a different thing and does refuse (SPEC 4.4).
+    values, base_dir, error = settings.prepare(globals())
+    if error:
+        system.ui.error(error)
+        return entry.result(False, error)
+    init_logging(base_dir, values["debug"])
 
     unhandled.start()
     survey = _survey(projects_obj.primary)

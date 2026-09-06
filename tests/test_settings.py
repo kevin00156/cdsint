@@ -144,11 +144,29 @@ def test_prepare_gives_the_new_folder_its_git_rules(ide, project):
     assert os.path.isfile(os.path.join(folder, ".gitattributes"))
 
 
-def test_no_folder_anywhere_names_the_file_to_write(ide, project):
+def test_no_folder_yet_is_not_an_error(ide):
+    # It stops a compare and it does not stop a build, so prepare() reports
+    # it as an absent folder and each command decides. Reporting it as an
+    # error is what let a misspelt key run a build to a clean finish.
+    values, folder, error = settings.prepare(ide)
+    assert error is None
+    assert folder is None
+    assert values["debug"] is False
+
+
+def test_a_file_that_cannot_be_read_is_an_error(ide, project):
+    with io.open(settings_file(project), "w", encoding="utf-8") as handle:
+        handle.write(u'{"sync_folder": "./sync", "debgu": true}')
     values, folder, error = settings.prepare(ide)
     assert values is None and folder is None
-    assert settings_file(project) in error
-    assert "sync_folder" in error
+    assert "debgu" in error
+
+
+def test_the_sentence_for_a_command_that_needs_a_folder_names_the_file(ide,
+                                                                       project):
+    said = settings.folder_missing(ide)
+    assert settings_file(project) in said
+    assert "sync_folder" in said
 
 
 def test_prepare_does_not_ask_anybody_anything(ide, monkeypatch):
@@ -159,8 +177,8 @@ def test_prepare_does_not_ask_anybody_anything(ide, monkeypatch):
         raise AssertionError("prepare() must not open the first-run dialog")
 
     monkeypatch.setattr(settings, "choose_sync_folder", refuse)
-    _values, _folder, error = settings.prepare(ide)
-    assert error is not None
+    _values, folder, error = settings.prepare(ide)
+    assert error is None and folder is None
 
 
 # -- the first-run dialog --------------------------------------------------

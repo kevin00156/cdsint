@@ -177,11 +177,7 @@ def one_bad_object(load_engine, monkeypatch, tmp_path):
               ("entry_export", "entry_compare", "entry_import")]
 
     sync = str(tmp_path)
-    # cds-sync-version matches, so import does not stop at the version dialog
-    # on its way to the object; that dialog is codesys_ui, which needs clr.
-    version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
-    project = Project({"cds-sync-folder": sync, "cds-sync-version": version},
-                      [Missing()], str(tmp_path / "Fake.project"))
+    project = Project({}, [Missing()], str(tmp_path / "Fake.project"))
     projects = Projects(project)
     for body in bodies:
         monkeypatch.setattr(body, "projects", projects, raising=False)

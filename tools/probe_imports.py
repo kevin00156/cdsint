@@ -56,7 +56,6 @@ MODULES = [
     "cds.ide.watcher",
     "cds.ide.silent",
     "cds.ide.entries",
-    "cds.ide.config",
     "cds.ide.permit",
     "cds.ide.headless",
     "cds.ide.project",

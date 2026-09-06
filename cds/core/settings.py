@@ -134,25 +134,38 @@ def write(path, values):
         handle.write(text + u"\n")
 
 
+def is_relative(sync_folder):
+    """Does this value resolve against the project's own directory?
+
+    One predicate, because two would drift: the first-run dialog decides with
+    it whether to write a relative path, and `folder` below decides with it
+    whether to resolve one. "./..." and "." travel with a project; everything
+    else -- another drive, a folder outside the project -- has no relative
+    form worth keeping and is used as written (SPEC 6.7).
+    """
+    here = _separators(sync_folder)
+    return here == "." or here.startswith("." + os.sep)
+
+
 def folder(sync_folder, project_dir):
     """Where `sync_folder` points, absolute. None when there is nothing to point.
 
-    "./..." and "." resolve against the directory holding the .project;
-    everything else is used as written. A relative path is the only form that
-    travels with a project, which is why the first-run dialog writes one
-    whenever the folder is at or under the project's own directory (SPEC
-    6.7); anything else -- another drive, a folder outside the project -- has
-    no relative form worth keeping.
+    None also when a relative path has no project directory to resolve
+    against, which is a project the IDE could not give a path for.
     """
     raw = (sync_folder or "").strip()
     if not raw:
         return None
-    here = raw.replace("/", os.sep).replace("\\", os.sep)
-    if here != "." and not here.startswith("." + os.sep):
+    if not is_relative(raw):
         return os.path.normpath(raw)
     if not project_dir:
         return None
-    return os.path.normpath(os.path.join(project_dir, here))
+    return os.path.normpath(os.path.join(project_dir, _separators(raw)))
+
+
+def _separators(value):
+    """The path with this platform's separator, whichever one was typed."""
+    return (value or "").strip().replace("/", os.sep).replace("\\", os.sep)
 
 
 def table():

@@ -367,9 +367,9 @@ def test_one_launch_serves_every_step(machine, monkeypatch):
 
 def test_the_sync_folder_is_resolved_before_anyone_is_told_about_it(machine,
                                                                     monkeypatch):
-    # The IDE side sets cds-sync-folder to this string, and the IDE's working
-    # directory is not the shell's, so a relative path would land somewhere
-    # neither of them meant.
+    # The IDE side hands this string to every command as its sync folder, and
+    # the IDE's working directory is not the shell's, so a relative path would
+    # land somewhere neither of them meant.
     started = make(machine, monkeypatch, sync_dir="exported")
     assert os.path.isabs(started.sync_dir())
     assert started.sync_dir().endswith("exported")

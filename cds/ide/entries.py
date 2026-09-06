@@ -19,6 +19,8 @@ from __future__ import print_function
 import os
 import sys
 
+from cds.core import settings
+from cds.core.text import as_text
 from cds.ide import messages, permit, silent
 
 # The install root, the directory that holds engine/ and cds/:
@@ -98,16 +100,25 @@ def _not_allowed(ide_globals, command):
     being guarded: an engine module that has already been loaded and handed
     the IDE's globals has started, and "it stopped early" is not the same
     promise as "it never ran" (SPEC 6.5).
+
+    A settings file that cannot be read comes back as a failure, not a
+    refusal: `denied` is what earns exit 5, and exit 5 tells the caller to go
+    and add a word to the `plc` list. That is the wrong instruction for a
+    file with a typo in it, and following it changes nothing — the body never
+    runs, so this is the only chance anyone gets to see the real problem.
     """
     if not command.startswith(PLC_PREFIX):
         return None
     action = command[len(PLC_PREFIX):]
-    reason = permit.refusal(ide_globals.get("projects"), action)
+    projects_obj = ide_globals.get("projects")
+    try:
+        reason = permit.refusal(projects_obj, action)
+    except settings.Invalid as bad:
+        return silent.Outcome([], "", error=as_text(bad))
     if reason is None:
         return None
     return silent.Outcome([], "", error=reason,
-                          denied=permit.record(ide_globals.get("projects"),
-                                               action))
+                          denied=permit.record(projects_obj, action))
 
 
 def tail(ide_globals, command, outcome):

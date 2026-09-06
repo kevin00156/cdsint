@@ -21,7 +21,9 @@ exception cannot escape the case that earns it.
 
 Environment:
     CDSINT_WATCH_PROJECT   the .project to open (required)
-    CDSINT_WATCH_SYNC      the sync folder (default: sync\\ beside the project)
+    CDSINT_WATCH_SYNC      the sync folder (default: sync\\ beside the project).
+                           It is written into the project's settings file,
+                           overwriting whatever that file held.
     CDSINT_WATCH_ANSWERS   IDE prompts to pre-answer, "KEY=VALUE,KEY=VALUE".
                            A project saved by an older IDE needs
                            UpgradeProjectConfirmation=Yes, which rewrites its
@@ -36,6 +38,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from cds.core import settings  # noqa: E402
 from cds.ide import headless, session  # noqa: E402
 
 POLL_MS = 200
@@ -93,6 +96,11 @@ def main(ide_globals):
         os.path.dirname(path), "sync")
     if not os.path.isdir(sync_dir):
         os.makedirs(sync_dir)
+    # Written before the project is opened, because that is where the engine
+    # reads it from: a settings file beside the .project, not a property
+    # inside it (SPEC D10). It replaces whatever the project's own file said,
+    # which is the point of pointing this at a throwaway copy.
+    settings.write(settings.path_for(path), {"sync_folder": sync_dir})
     headless.answer_prompts(ide_globals,
                             answers(os.environ.get("CDSINT_WATCH_ANSWERS")))
     opened = headless.open_project(ide_globals, path)
@@ -101,7 +109,6 @@ def main(ide_globals):
               "the usual reason, and the keys are above" % path)
         return
     print("headless_watch: opened " + str(opened.path))
-    headless.point_sync_folder(ide_globals["projects"], sync_dir)
     print("headless_watch: sync dir " + sync_dir)
     if arm(ide_globals) is not None:
         park(ide_globals)

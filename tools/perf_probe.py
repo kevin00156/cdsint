@@ -211,7 +211,6 @@ _FUNCTIONS = [
     ("find_parent_pou", "import:find_parent_pou"),
     ("determine_object_type", "import:determine_object_type"),
     ("find_logged_in_applications", "import:find_logged_in_applications"),
-    ("check_version_compatibility", "import:check_version_compatibility"),
     # disk + cache
     ("parse_st_file", "disk:parse_st_file"),
     ("load_sync_cache", "cache:load_sync_cache"),
@@ -381,7 +380,6 @@ def build_report(mode, wall_seconds, object_count, functions, sites,
 
     objs = object_count or 0
     for label, note in [
-        ("IDE:is_debug", "get_project_info() round trips just to read a debug flag"),
         ("IDE:read_ide_attrs", "per-object build_properties reads"),
         ("path:get_container_prefix", "parent-chain walks to the project root"),
         ("content:export_object_content", "textual decl/impl extractions"),
@@ -434,6 +432,8 @@ def main():
 
     settings = __import__("engine.settings", {}, {}, ["settings"])
     values, base_dir, error = settings.prepare(globals())
+    if error is None and base_dir is None:
+        error = settings.folder_missing(globals())
     if error:
         print("Error: " + utils.safe_str(error))
         return

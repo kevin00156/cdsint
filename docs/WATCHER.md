@@ -182,7 +182,7 @@ Delta 1.10 那一格後來由使用者手動補上：他在自己的真專案上
 |---|---|
 | 本體自己命名空間裡的 `system` | 本體讀的就是這個 |
 | `__main__.system` | `codesys_utils.resolve_system` 找不到模組自己的 `system` 時會走到 `__main__` |
-| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no`、`ask_yes_no_cancel`、`show_sync_folder_dialog` | 這幾個自己開 WinForms 視窗，完全不經過 `system.ui` |
+| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no` 與 `show_sync_folder_dialog` | 這兩個自己開 WinForms 視窗，完全不經過 `system.ui` |
 
 四件實作上踩過的坑：
 

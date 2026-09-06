@@ -93,6 +93,17 @@ def test_ping_comes_back(watch, monkeypatch, capsys):
     assert "pong" in capsys.readouterr().out
 
 
+def test_the_target_form_does_not_name_a_sync_folder(watch, monkeypatch,
+                                                     capsys):
+    # SPEC 4.2 puts that line in the --project section, where the caller may
+    # not know which folder the run will read. Here the folder belongs to an
+    # IDE somebody set up and has open, and a line that suddenly appeared in
+    # front of `ping` would break anything reading the first one.
+    answering(watch, monkeypatch)
+    cli.main(["ping"])
+    assert not capsys.readouterr().out.startswith("sync folder:")
+
+
 def test_status_prints_what_the_ide_has_open(watch, monkeypatch, capsys):
     answering(watch, monkeypatch)
     assert cli.main(["status"]) == cli.EXIT_OK

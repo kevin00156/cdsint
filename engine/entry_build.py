@@ -141,7 +141,7 @@ def choose_application(project, system, wanted):
     return found[index], None
 
 
-def build_project(base_dir, values, projects_obj=None):
+def build_project(base_dir, projects_obj=None):
     """Build the active application in CODESYS and generate build.log"""
     from System import Guid
 
@@ -486,11 +486,16 @@ def build_project(base_dir, values, projects_obj=None):
         return entry.result(False, failure)
 
 def main():
-    # A build does not need the sync folder to work, so a project with no
-    # settings file still builds; what it loses is the debug log.
-    values, base_dir, _error = settings.prepare(globals())
-    init_logging(base_dir, values["debug"] if values else False)
-    return build_project(base_dir, values or {})
+    # A build does not need the sync folder, so a project that has not chosen
+    # one still builds and loses only its debug log. A settings file that
+    # cannot be read is the other thing entirely, and it stops the command
+    # here (SPEC 4.4).
+    values, base_dir, error = settings.prepare(globals())
+    if error:
+        system.ui.error(error)
+        return entry.result(False, error)
+    init_logging(base_dir, values["debug"])
+    return build_project(base_dir)
 
 if __name__ == "__main__":
     main()

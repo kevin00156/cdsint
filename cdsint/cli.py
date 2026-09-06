@@ -83,7 +83,7 @@ def run_list(ns):
 
 def run_verify(ns, runner):
     results, problems = verify.run(runner, getattr(ns, "yes", None))
-    report.show_sync_dir(folder_used(ns, runner, results), ns.json)
+    show_folder(ns, runner, results)
     report.show_steps(results, ns.json)
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
@@ -95,22 +95,29 @@ def run_verify(ns, runner):
 
 def run_command(ns, runner):
     results = runner.run([(flags.wire_name(ns), flags.command_args(ns))])
-    report.show_sync_dir(folder_used(ns, runner, results), ns.json)
+    show_folder(ns, runner, results)
     report.show(results[0], ns.json)
     return exit_code(results[0])
 
 
-def folder_used(ns, runner, results):
-    """The folder this run actually treated as the truth, or None (SPEC 4.2).
+def show_folder(ns, runner, results):
+    """Name the folder a --project run treated as the truth (SPEC 4.2).
 
-    From the result, because the IDE side is the only place that knows what
-    the project's settings file said; from the runner when no step got far
-    enough to report one, which is all a refused run has to offer.
+    Only that form. The --target form talks to an IDE somebody set up and has
+    open; SPEC 4.2 puts this line in the --project section, and a line that
+    suddenly appeared in front of `ping` would break anything reading the
+    first one.
+
+    The value comes from the result, because the IDE side is the only place
+    that knows what the project's settings file said; from the runner when no
+    step got far enough to report one, which is all a refused run has.
     """
+    if not getattr(ns, "project", None):
+        return
     for result in results:
         if result.get("sync_dir"):
-            return result["sync_dir"]
-    return runner.sync_dir()
+            return report.show_sync_dir(result["sync_dir"], ns.json)
+    return report.show_sync_dir(runner.sync_dir(), ns.json)
 
 
 def exit_code(result):

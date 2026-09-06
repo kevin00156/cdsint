@@ -226,11 +226,5 @@ def check(parser, ns):
     Exit 2 rather than a Failure's exit 1: it says the flags do not go
     together, which is what argparse's own errors mean, and exit 1 is
     reserved for a command that ran and did not work.
-
-    --sync-dir used to be refused here when it was missing, because a copy of
-    a project carried the original's sync folder inside the .project. The
-    settings now live in a file beside it, so a copy of the .project alone
-    carries nothing and there is nothing to protect the caller from (SPEC
-    4.2).
     """
     _only_the_project_form(parser, ns)

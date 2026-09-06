@@ -18,6 +18,8 @@ and the real gate is `-y` (SPEC 6.5).
 """
 from __future__ import print_function
 
+import json
+
 from cds.core import settings
 from cds.ide import project
 
@@ -47,9 +49,9 @@ def refusal(projects_obj, action):
         return None
     wanted = [a for a in ACTIONS if a in allowed or a == action]
     return ("this project does not allow plc %s. Its %s list is %s in %s. "
-            "Add %s to that list: \"%s\": %s."
-            % (action, KEY, allowed or "empty", _path(projects_obj), action,
-               KEY, "[" + ", ".join('"%s"' % a for a in wanted) + "]"))
+            "Add %s to that list: %s: %s."
+            % (action, KEY, json.dumps(allowed), _path(projects_obj), action,
+               json.dumps(KEY), json.dumps(wanted)))
 
 
 def record(projects_obj, action):
@@ -73,16 +75,16 @@ def _path(projects_obj):
 def _written(projects_obj):
     """The `plc` list, or an empty one when nothing has been written.
 
-    A settings file that cannot be parsed allows nothing. It is not this
-    file's job to explain why — the command itself reads the same file a
-    moment later and reports the refusal in full (SPEC 4.4) — but a gate that
-    opened because a file was unreadable would be no gate at all.
+    A settings file that cannot be parsed raises rather than reading as an
+    empty list, and cds/ide/entries.py turns that into a plain failure. The
+    swallowed version was worse than no gate: the command never loads, so
+    nothing else ever reads that file, and the refusal said "the list is
+    empty" about a file whose real problem was a typo three lines up. Adding
+    the word it told you to add changed nothing, and there was no second
+    message to go on.
     """
     project_path = project.path_of(projects_obj)
     if project_path is None:
         return []
-    try:
-        written = settings.read(settings.path_for(project_path))
-    except (settings.Invalid, IOError, OSError):
-        return []
+    written = settings.read(settings.path_for(project_path))
     return (written or {}).get(KEY) or []

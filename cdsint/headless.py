@@ -74,9 +74,11 @@ class Headless(object):
     def sync_dir(self):
         """Only what the caller said. Reading the settings file needs the IDE.
 
-        Printed as the run's first line, before the IDE has started, so None
-        here means "whatever the project's settings file says" rather than
-        "nowhere" -- the report carries the folder the engine actually read.
+        None means "whatever the project's settings file says", not "nowhere".
+        The line that names the folder is printed after the run, from the
+        report, because that is the only account of what the engine actually
+        read (cdsint/report.py show_sync_dir); this is the fallback for a run
+        that never got far enough to report one.
         """
         return self._sync_dir
 

@@ -179,7 +179,7 @@ nothing removes them, and nothing is migrated out of them.
 That last part has a consequence worth reading twice: **a setting somebody
 turned off in the old properties comes back on.** Every key falls back to the
 default in the Settings table until the new file says otherwise. On a project
-that had `cds-sync-save-after-export` set to `False`, for instance, an export
+whose old save-after-export property was set to `False`, for instance, an export
 now saves the project when it used to leave the file alone — measured on
 softplc_refactor.project, 2026-09-06, where that save also changed what
 `discover` counts in the project tree (407 nodes before, 402 after: five alarm

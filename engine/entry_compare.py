@@ -116,6 +116,10 @@ def compare_project(base_dir, values, projects_obj=None):
 
 def main():
     values, base_dir, error = settings.prepare(globals())
+    if error is None and base_dir is None:
+        # compare is IDE against disk, so with no folder there is no disk
+        # half and nothing to compare against.
+        error = settings.folder_missing(globals())
     if error:
         system.ui.warning(error)
         return entry.result(False, error)
