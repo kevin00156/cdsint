@@ -17,7 +17,7 @@ from engine.codesys_utils import (
     resolve_projects, is_container_device, get_quick_ide_hash, normalize_path,
     read_ide_attrs, write_ide_attrs, render_sync_pragmas, build_state_hash,
     parse_sync_pragmas, attrs_from_pragmas, needs_kind_pragma, file_signature,
-    ide_flag
+    ide_flag, read_sync_text
 )
 from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, EXPORTABLE_TYPES, IMPLEMENTATION_TYPES,
@@ -927,8 +927,7 @@ class POUManager(ObjectManager):
         # Check if content is identical to existing file
         if not is_new:
             try:
-                with codecs.open(file_path, "r", "utf-8") as f:
-                    existing_content = f.read()
+                existing_content = read_sync_text(file_path)
                 if calculate_hash(existing_content) == calculate_hash(content):
                     # Track path and return
                     if 'exported_paths' in context:
@@ -1151,8 +1150,7 @@ class PropertyManager(POUManager):
         # Check if content is identical to existing file
         if not is_new:
             try:
-                with codecs.open(file_path, "r", "utf-8") as f:
-                    existing_content = f.read()
+                existing_content = read_sync_text(file_path)
                 if calculate_hash(existing_content) == calculate_hash(content):
                     if 'exported_paths' in context:
                         context['exported_paths'].add(rel_path)
@@ -1175,8 +1173,7 @@ class PropertyManager(POUManager):
 
     def update(self, obj, file_path, obj_info=None):
         try:
-            with codecs.open(file_path, "r", "utf-8") as f:
-                raw_content = f.read()
+            raw_content = read_sync_text(file_path)
         except: return False
 
         pragmas, clean_content = parse_sync_pragmas(
@@ -1214,8 +1211,7 @@ class PropertyManager(POUManager):
 
     def create(self, container, name, file_path, type_guid):
         try:
-            with codecs.open(file_path, "r", "utf-8") as f:
-                raw_content = f.read()
+            raw_content = read_sync_text(file_path)
         except: return None
 
         pragmas, clean_content = parse_sync_pragmas(
@@ -1258,8 +1254,7 @@ class NativeManager(ObjectManager):
     def _hash_file(self, file_path):
         """Calculate CRC32 hash of a file's content, ignoring dynamic bits like timestamps."""
         try:
-            with codecs.open(file_path, "r", "utf-8") as f:
-                content_full = f.read()
+            content_full = read_sync_text(file_path)
         except:
             return ""
         return self._hash_content(content_full, os.path.basename(file_path))

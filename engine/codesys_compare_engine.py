@@ -36,7 +36,8 @@ from engine.codesys_utils import (
     format_st_content, format_property_content,
     load_sync_cache, save_sync_cache, normalize_path, get_quick_ide_hash,
     parse_sync_pragmas, attrs_from_pragmas, read_ide_attrs,
-    normalize_sync_attrs, build_state_hash, render_sync_pragmas, file_signature
+    normalize_sync_attrs, build_state_hash, render_sync_pragmas, file_signature,
+    read_sync_text
 )
 from engine.codesys_managers import (
     NativeManager, FolderManager, PropertyManager, ConfigManager, POUManager,
@@ -176,12 +177,11 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
         return False
 
 def read_file(file_path):
-    """Read file content as UTF-8."""
+    """Disk content for the comparison, or "" when there is none to be had."""
     if not os.path.exists(file_path):
         return ""
     try:
-        with codecs.open(file_path, "r", "utf-8") as f:
-            return f.read()
+        return read_sync_text(file_path)
     except:
         return ""
 

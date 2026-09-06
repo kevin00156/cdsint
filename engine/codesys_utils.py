@@ -1162,6 +1162,25 @@ def write_ide_attrs(obj, attrs):
             log_warning("Cannot write attr '%s' on %s: %s" % (key, obj_name, safe_str(e)))
 
 
+def read_sync_text(file_path):
+    """Read one file out of the sync folder as text. The only reader.
+
+    utf-8-sig, not utf-8: a leading BOM is a byte-order mark, not the first
+    character of the POU. Windows editors add one (PowerShell's Out-File,
+    Notepad, Visual Studio), and read as plain utf-8 it becomes a U+FEFF at
+    the head of the declaration that import then writes into the IDE. Measured
+    on the bench 2026-09-06 (CODESYS 3.5.21.40): the untouched PLC_PRG.st with
+    a BOM in front of it imported "successfully" and took the build from 0
+    errors to 6. Nothing here ever writes a BOM, so this only ever drops one
+    somebody else's editor put there.
+
+    Raises whatever the read raises; each caller already has an answer for a
+    file it cannot read, and they are not the same answer.
+    """
+    with codecs.open(file_path, "r", "utf-8-sig") as handle:
+        return handle.read()
+
+
 def parse_st_file(file_path):
     """Parse an ST file: strip sync pragmas, then extract declaration and
     implementation sections.
@@ -1171,8 +1190,7 @@ def parse_st_file(file_path):
     attrs_from_pragmas() to get the boolean build attributes.
     """
     try:
-        with codecs.open(file_path, "r", "utf-8") as f:
-            content = f.read()
+        content = read_sync_text(file_path)
     except Exception as e:
         print("Error reading file " + file_path + ": " + safe_str(e))
         return None, None, {}

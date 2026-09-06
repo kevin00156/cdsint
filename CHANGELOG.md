@@ -140,6 +140,18 @@ Behaviour that was in `main` but never released:
   all?" no longer needs CODESYS open — it is what found the `disk_mtime`
   split. `tools/Project_perf_probe.py` wraps the real engine functions in place
   and runs a real export, compare or import, ranking them by exclusive time.
+- **A byte-order mark at the head of a `.st` file was imported as code.** The
+  sync folder is read as plain UTF-8, so a BOM — which Windows editors add
+  without being asked, PowerShell's `Out-File` and Notepad among them — arrived
+  as a U+FEFF in front of `PROGRAM`, and import wrote it into the POU. On the
+  bench the untouched `PLC_PRG.st` with a BOM in front of it imported with
+  `updated: 1` and `ok`, and took the build from 0 errors to 6. The comparison
+  had the matching half of the problem: such a file never equalled what the IDE
+  held, so every compare reported it and every import rewrote the POU with the
+  mark still there. `read_sync_text` now reads the sync folder — one reader,
+  `utf-8-sig` — and the six places that opened those files themselves go
+  through it. Nothing here writes a BOM, so this only ever drops somebody
+  else's.
 
 ---
 
