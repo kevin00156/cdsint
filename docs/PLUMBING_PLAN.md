@@ -156,27 +156,27 @@
 
 ---
 
-- [ ] **階段 6：審查後修正（監督者 2026-09-07 派回）**
+- [x] **階段 6：審查後修正（監督者 2026-09-07 派回）**
 
   一個沒看過對話的 reviewer 對 `main..ticket/plumbing` 審過，前三條是真回歸，監督者逐條讀碼確認。一到六必修，七到十一同一輪修掉。全部修完照第 6 節再回報一次。監督者順便裁了兩件事，寫在第 7 節末尾，照那個做。
 
-  - [ ] **1. 逾時或沒報告那條路把 runner 的 notes 全丟了。** `cdsint/headless.py` 的 `_verdict` 兩處 `raise Failure(...)` 都沒帶 `self.notes`，`cli.main` 只印 `Failure` 的訊息與 `lines`。一趟被 kill、鎖檔被清掉的 `--project`，使用者只看到逾時那句，不知道鎖檔被動過或下一趟該加什麼旗標；`main` 上這些當場印在 stderr。`tests/test_headless.py` 把斷言從 `capsys.err` 改成 `started.notes` 正好蓋掉了這個回歸。改法：`raise Failure(report["error"], EXIT_TIMEOUT, self.notes)`，`lines` 本來就是給這個用的；測試改回驗使用者看得到的東西。
-  - [ ] **2. `--project` 每一步的 `elapsed_s` 一律 0.0。** `cds/ide/headless.py` 呼叫 `entries.answer(ide_globals, cmd)` 沒給 `started`，`answer` 的 `started=None` 預設讓 `new_result` 兩端都取「現在」。`verify --project` 會印 `--- import (0.0s) ---` 給一個跑了四十秒的 import，`--json` 的 `elapsed_s`、`started_at` 全錯。改法：`answer` 自己取時鐘，拿掉 `started` 參數的預設值；`None` 預設就是這個陷阱。加一條測試釘住「一個睡 0.2 秒的本體回來的 `elapsed_s` 大於零」。
-  - [ ] **3. `irm/setup.ps1` 對中文路徑會產生亂碼 ScriptDir。** 它把 `OutputEncoding` 設成 UTF-8，但 Python 對管線用的是 ANSI code page（這台 cp950），而 `report.py` 印 JSON 用 `ensure_ascii=False`。使用者名稱是中文時 `%LOCALAPPDATA%` 底下的 ScriptDir 回來是亂碼，安裝器在亂碼路徑下建 junction，IDE 選單什麼都不會出現。這台環境變數剛好有沒有設 `PYTHONIOENCODING` 是運氣，不是保證。改法：`Get-ScriptDirs` 呼叫 Python 之前設 `$env:PYTHONIOENCODING = "utf-8"`；驗法照 reviewer 的：把 `$env:LOCALAPPDATA` 暫時指到一個含中文的假路徑跑 `-List`，路徑要原樣印回來。順帶把「PATH 上沒有 python」那條路的錯誤訊息做對：`$ErrorActionPreference = "Stop"` 下 `& python` 丟的是 CommandNotFound，不會走到現在那句「需要 Python 3.11」。
-  - [ ] **4. 同一則 note 在 `verify --project` 印四次。** `_collect` 把 `list(self.notes)` 掛到每一筆結果，`report.show_steps` 對每筆呼叫 `show`，`show` 每次都 `_show_notes`。改法：notes 掛在 report 頂層一份，`show_steps` 印一次；單命令的 `show` 也只印一次。
-  - [ ] **5. `notes` 是第四個對外形狀改變，文件零提及。** 監督者裁決接受它（第 7 節末尾），但要寫進去：SPEC 4.3 的 `--project` 形式再加的欄位列表加 `notes`（一句說它是什麼、為什麼在 `--json` 裡也要看得到）；readMe、`docs/AI_WORKFLOW.md` 第 2 節讀結果那段、`skills/cdsint/SKILL.md` 讀結果那段各一句。
-  - [ ] **6. `cdsint/flags.py` 的註解跟 argparse 的行為相反。** `EVERY_ATTRIBUTE` 上面那段說「argparse keeps an argument's own default over one set this way」，實際 `set_defaults` 會覆寫每個同名 action 的 default，`--answer` 的 `default=[]` 就是這樣變成 None 的。今天沒炸只因為 `KINDS` 全是 None 預設而 `cli._answers` 吞 None。改法：註解改成講真的行為，並讓表裡的旗標預設值真的生效（有預設值的旗標不被 `set_defaults` 清掉，或 `set_defaults` 只補缺的名字）；加一條測試釘住「一個帶預設值的列旗標在別的子命令 parse 之後仍是它的預設值」。
-  - [ ] **7. `docs/AI_WORKFLOW.md` 對 compare 的說法沒跟上。** 第 1 節說人類可讀輸出第二層是「腳本印出來的逐物件清單」、`--json` 的逐物件清單在 `stdout_tail`，範例沒有 `changes`；現在成功的 compare 摘要印 `data.changes`，`stdout_tail` 只在失敗時印。對齊。readMe exit 4 那格補「`--install` 對不到」，跟 SKILL.md 一致。
-  - [ ] **8. `--answer` 格式錯仍是 exit 1，而且在 `flags.check` 外面。** `cli._answers` 對 `--answer nope` 丟 `Failure`。這是「什麼都沒跑、命令列本身不對」，該走 `parser.error` 回 2，而 `PAIRS` 種類就是放 `type=` 驗證器的地方。
-  - [ ] **9. `plc --help` 的 `--gateway` metavar 從 `IP` 變成 `GATEWAY`。** readMe 的表仍寫 `--gateway IP`。`NAME` 種類加 metavar 欄或給 `--gateway` 一個 `IP`。
-  - [ ] **10. `REPO_ROOT` 仍有第二次計算。** `cdsint/headless.py` 的 `ROOT` 跟 `cds/ide/entries.py` 的 `REPO_ROOT` 是同一個地方兩個名字，改 import。
-  - [ ] **11. compare 的 `moved` 那筆 `path` 裝的不是路徑。** Ruling 48 為了列印寬度把 `path` 寫成 `"A -> B"`，一個叫 path 的欄位裝的不是路徑，呼叫端得 `split(" -> ")`。改成 `path` 是磁碟端的路徑、多一個 `moved_from`，印表機自己多一個分支。`state` 的四個值維持 Ruling 47。
-  - [ ] 驗收：假 runner 四步各帶一則 note 時 stderr 那則只出現一次；逾時的 `Failure` 印出 notes。
-  - [ ] 驗收：真 IDE `verify -y --project <softplc 副本> --install 3.5.21.40 --sync-dir S` 的四筆 `elapsed_s` 都大於 0，每則 note 只印一次。
-  - [ ] 驗收：`$env:LOCALAPPDATA` 指到含中文的假路徑跑 `.\irm\setup.ps1 -List`，那個路徑原樣印回來。
-  - [ ] 驗收：`export --project a --install b --answer nope` exit 2 且訊息說格式；`plc --help` 顯示 `--gateway IP`。
-  - [ ] 驗收：`grep -n "notes" docs/SPEC.md readMe.md docs/AI_WORKFLOW.md skills/cdsint/SKILL.md` 各至少一處。
-  - [ ] 驗收：Windows 與 WSL 測試綠；softplc 副本 export 的 hash 清單跟 `main` 的 diff 仍為零（監督者會重量）。
+  - [x] **1. 逾時或沒報告那條路把 runner 的 notes 全丟了。** `cdsint/headless.py` 的 `_verdict` 兩處 `raise Failure(...)` 都沒帶 `self.notes`，`cli.main` 只印 `Failure` 的訊息與 `lines`。一趟被 kill、鎖檔被清掉的 `--project`，使用者只看到逾時那句，不知道鎖檔被動過或下一趟該加什麼旗標；`main` 上這些當場印在 stderr。`tests/test_headless.py` 把斷言從 `capsys.err` 改成 `started.notes` 正好蓋掉了這個回歸。改法：`raise Failure(report["error"], EXIT_TIMEOUT, self.notes)`，`lines` 本來就是給這個用的；測試改回驗使用者看得到的東西。
+  - [x] **2. `--project` 每一步的 `elapsed_s` 一律 0.0。** `cds/ide/headless.py` 呼叫 `entries.answer(ide_globals, cmd)` 沒給 `started`，`answer` 的 `started=None` 預設讓 `new_result` 兩端都取「現在」。`verify --project` 會印 `--- import (0.0s) ---` 給一個跑了四十秒的 import，`--json` 的 `elapsed_s`、`started_at` 全錯。改法：`answer` 自己取時鐘，拿掉 `started` 參數的預設值；`None` 預設就是這個陷阱。加一條測試釘住「一個睡 0.2 秒的本體回來的 `elapsed_s` 大於零」。
+  - [x] **3. `irm/setup.ps1` 對中文路徑會產生亂碼 ScriptDir。** 它把 `OutputEncoding` 設成 UTF-8，但 Python 對管線用的是 ANSI code page（這台 cp950），而 `report.py` 印 JSON 用 `ensure_ascii=False`。使用者名稱是中文時 `%LOCALAPPDATA%` 底下的 ScriptDir 回來是亂碼，安裝器在亂碼路徑下建 junction，IDE 選單什麼都不會出現。這台環境變數剛好有沒有設 `PYTHONIOENCODING` 是運氣，不是保證。改法：`Get-ScriptDirs` 呼叫 Python 之前設 `$env:PYTHONIOENCODING = "utf-8"`；驗法照 reviewer 的：把 `$env:LOCALAPPDATA` 暫時指到一個含中文的假路徑跑 `-List`，路徑要原樣印回來。順帶把「PATH 上沒有 python」那條路的錯誤訊息做對：`$ErrorActionPreference = "Stop"` 下 `& python` 丟的是 CommandNotFound，不會走到現在那句「需要 Python 3.11」。
+  - [x] **4. 同一則 note 在 `verify --project` 印四次。** `_collect` 把 `list(self.notes)` 掛到每一筆結果，`report.show_steps` 對每筆呼叫 `show`，`show` 每次都 `_show_notes`。改法：notes 掛在 report 頂層一份，`show_steps` 印一次；單命令的 `show` 也只印一次。
+  - [x] **5. `notes` 是第四個對外形狀改變，文件零提及。** 監督者裁決接受它（第 7 節末尾），但要寫進去：SPEC 4.3 的 `--project` 形式再加的欄位列表加 `notes`（一句說它是什麼、為什麼在 `--json` 裡也要看得到）；readMe、`docs/AI_WORKFLOW.md` 第 2 節讀結果那段、`skills/cdsint/SKILL.md` 讀結果那段各一句。
+  - [x] **6. `cdsint/flags.py` 的註解跟 argparse 的行為相反。** `EVERY_ATTRIBUTE` 上面那段說「argparse keeps an argument's own default over one set this way」，實際 `set_defaults` 會覆寫每個同名 action 的 default，`--answer` 的 `default=[]` 就是這樣變成 None 的。今天沒炸只因為 `KINDS` 全是 None 預設而 `cli._answers` 吞 None。改法：註解改成講真的行為，並讓表裡的旗標預設值真的生效（有預設值的旗標不被 `set_defaults` 清掉，或 `set_defaults` 只補缺的名字）；加一條測試釘住「一個帶預設值的列旗標在別的子命令 parse 之後仍是它的預設值」。
+  - [x] **7. `docs/AI_WORKFLOW.md` 對 compare 的說法沒跟上。** 第 1 節說人類可讀輸出第二層是「腳本印出來的逐物件清單」、`--json` 的逐物件清單在 `stdout_tail`，範例沒有 `changes`；現在成功的 compare 摘要印 `data.changes`，`stdout_tail` 只在失敗時印。對齊。readMe exit 4 那格補「`--install` 對不到」，跟 SKILL.md 一致。
+  - [x] **8. `--answer` 格式錯仍是 exit 1，而且在 `flags.check` 外面。** `cli._answers` 對 `--answer nope` 丟 `Failure`。這是「什麼都沒跑、命令列本身不對」，該走 `parser.error` 回 2，而 `PAIRS` 種類就是放 `type=` 驗證器的地方。
+  - [x] **9. `plc --help` 的 `--gateway` metavar 從 `IP` 變成 `GATEWAY`。** readMe 的表仍寫 `--gateway IP`。`NAME` 種類加 metavar 欄或給 `--gateway` 一個 `IP`。
+  - [x] **10. `REPO_ROOT` 仍有第二次計算。** `cdsint/headless.py` 的 `ROOT` 跟 `cds/ide/entries.py` 的 `REPO_ROOT` 是同一個地方兩個名字，改 import。
+  - [x] **11. compare 的 `moved` 那筆 `path` 裝的不是路徑。** Ruling 48 為了列印寬度把 `path` 寫成 `"A -> B"`，一個叫 path 的欄位裝的不是路徑，呼叫端得 `split(" -> ")`。改成 `path` 是磁碟端的路徑、多一個 `moved_from`，印表機自己多一個分支。`state` 的四個值維持 Ruling 47。
+  - [x] 驗收：`tests/test_verify.py` 的 `test_a_note_is_said_once_however_many_steps_carried_it` 讓四步各帶同一則 note，stderr 只數到一次；`tests/test_headless.py` 的 `test_a_killed_run_still_says_what_it_did_to_the_lock_file` 讓逾時的 `Failure` 帶著 notes，`report()` 之後 stderr 同時有「did not finish」和「removed the lock file」。
+  - [x] 驗收：真 IDE `verify -y --project <softplc 副本> --install 3.5.21.40 --sync-dir S --force-lock` exit 0，四筆是 `import (19.0s)`、`export (16.7s)`、`compare (12.2s)`、`build (21.0s)`（修之前四筆都是 `0.0s`）；刻意留一個鎖檔讓它有話說，那則 note 在四步之間只印一次。
+  - [x] 驗收：`$env:LOCALAPPDATA` 指到 `%TEMP%\cdsint-work\plumbing\假使用者\AppData\Local` 跑 `.\irm\setup.ps1 -List`，路徑原樣印回來。同一趟量了對照：不設 `PYTHONIOENCODING` 時同一個路徑回來是 `���ϥΪ�`。
+  - [x] 驗收：`export --project a --install b --answer nope` 回 `cdsint export: error: argument --answer: wants KEY=VALUE, not 'nope'`，exit 2；`plc --help` 顯示 `--gateway IP`。
+  - [x] 驗收：`notes` 在 `docs/SPEC.md` 3 處、`readMe.md` 1 處、`docs/AI_WORKFLOW.md` 2 處、`skills/cdsint/SKILL.md` 1 處。
+  - [x] 驗收：Windows 1043 passed、WSL 1043 passed；softplc 副本用 `main`（`c67dcb7`）與本分支各匯出一次，各 231 個檔，SHA-256 清單 diff 為零。
 
   reviewer 另外記的、不在這一輪的：`cli.main` 旁邊還有 `ABOUT_THIS_MACHINE` 第二張表和 `if ns.command == "verify"` 字面值；`report.show` 的 `said` 只收一半；`tests/test_plc.py` 一條反向措辭釘；`flags.py` 311 行、`headless.py` 364 行。記進第 7 節末尾給 HYGIENE 和 ENGINE。
 
@@ -251,6 +251,16 @@
 55. `Ruling: 「hash 清單跟開工前的 diff 為空」用「同一版本的專案副本，舊碼與新碼各匯出一次」來驗，不是先存一份開工前的清單 — 階段 0 沒有留那份清單，而重建它的正確做法本來就是 SETTINGS_PLAN Ruling 14 說的「同一份全新副本、舊碼與新碼各跑一次」：拿一份已經跑過多趟命令的副本去比會量到 IDE 自己存檔的效果，不是程式碼的差別。舊碼用 `git archive c67dcb7` 解到 `%TEMP%` 底下跑，不動 worktree 也不加 git worktree 登記 — 錯了的代價是這個比對證明的是「新舊碼對同一輸入產出相同」，而不是「輸出跟某個歷史時刻相同」；後者本來就不是這條驗收要問的事。`
 56. `Ruling: `skills/cdsint/SKILL.md` 的 `--json` 那段改成先講 `data` 再講 `stdout_tail` — compare 的逐物件清單搬進 `data.changes` 之後，原本那句「`stdout_tail` carries the detail (compare's per-object list...)」就不對了；一份說錯的文件比沒有文件糟 — 錯了的代價是讀者以為 build 的錯誤清單也搬了，它沒有，那條還在 `stdout_tail`（`cds/ide/entries.py` 的 `tail`）。`
 
+### 階段 6 新增的 Ruling
+
+57. `Ruling: `entries.answer` 的 `started` 改成必填，而不是讓 `answer` 自己取時鐘 — 審查說的兩種改法只能擇一：`answer` 自己取，看門人的 `_run_script(cmd, started)` 那個參數就變成死參數，而這張工單一路在刪死參數；必填則兩個呼叫端都得說話，而且看門人的 `started_at` 維持原本的意思（命令被撿起來的那一刻，不是本體開始跑的那一刻） — 錯了的代價是加第三個呼叫端的人要自己記得取時鐘，而少給會是 TypeError，不是靜靜的 0.0。`
+58. `Ruling: notes 仍然掛在每一筆結果紀錄上，只是印的人改成 `report.show_notes(results)` 印一次 — 審查第 4 條說「掛在 report 頂層一份」，但 `Headless.run()` 回給 CLI 的是 `report["results"]` 這個 list，不是整份 report；要讓 CLI 拿到頂層的 notes 就得改回傳形狀，而 `--target` 那半沒有 notes 也沒有頂層，兩種形式的 `run(steps)` 會不再同形（SPEC D2）。掛在每一筆的好處是監督者裁決要的那件事：讀 `verify` 四筆裡的任何一筆都聽得到 — 錯了的代價是 `--json` 的四筆各帶一份同樣的清單。`
+59. `Ruling: `Command.carries()` 從那一列推出「這個子命令自己定義了哪些屬性」，`set_defaults` 只補其餘的 — argparse 的 `set_defaults` 是覆寫同名 action 的 default，不是補洞，所以原本那段註解說反了，`--answer` 的 `default=[]` 就是這樣變成 None 的。`carries()` 可能跟 `_forms` 漂開，所以 `tests/test_verify.py` 加一條拿 argparse 自己的 `_actions` 對照 — 生產碼不碰私有屬性，測試碰 — 錯了的代價是加一個新形式的人要同時改 `_forms` 和 `carries()`，而那條測試會當場紅。`
+60. `Ruling: `--answer` 的格式檢查放進 `KINDS[PAIRS]` 的 `type=`，`ns.answer` 因此變成 `(key, value)` 的 list — 審查第 8 條指的就是這裡；`cli._answers` 整個刪掉，`make_runner` 改成 `dict(ns.answer)` — 錯了的代價是 `ns.answer` 的形狀從字串清單變成 pair 清單，只有 `cli.make_runner` 一個讀者。`
+61. `Ruling: 旗標的 metavar 用旗標元組的第四個元素表示，只有 `--gateway` 用到 — 另外兩種寫法都更糟：多開一個只有一個成員的種類（`NAME` 之外再來一個 `ADDRESS`），或是另開一張以旗標名為鍵的 metavar 表，而後者正是這張工單在收掉的那種第二張表 — 錯了的代價是旗標元組長度不固定，`_add_flags` 要看 `len(flag) > METAVAR`。`
+62. `Ruling: `setup.ps1` 用 `Get-Command python` 先檢查，而不是把 `& python` 包進 try/catch — `$ErrorActionPreference = "Stop"` 之下找不到 exe 丟的是 CommandNotFound，會在 `$LASTEXITCODE` 被讀到之前就跳走，所以原本那句「需要 Python 3.11 以上」永遠印不出來；先檢查讓那句話回到它該在的位置，`$LASTEXITCODE` 那條留給「python 在、但這個命令失敗」 — 錯了的代價是多一次 `Get-Command`。`
+63. `Ruling: `$env:PYTHONIOENCODING` 設完就還原 — `irm ... | iex` 是在使用者自己的 shell 裡跑的，留下一個環境變數是對別人的 session 動手腳 — 錯了的代價是多三行 try/finally。`
+
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 
 - **`HYGIENE_PLAN.md`**：`cdsint/flags.py` 311 行、`cdsint/headless.py` 364 行，都過 300 的軟上限
@@ -270,6 +280,14 @@
 - **`ENGINE_PLAN.md`**：`cds/ide/headless.py` 的報告有 `timed_out` 與 `exit_code_actual` 兩個欄位
   說同一件事（`timed_out = code is None`），`stdout_reached` 算了、寫了、沒有讀者。三個都寫在
   SPEC 6.4 裡，所以本工單沒刪；要刪得先改 SPEC。
+- **`HYGIENE_PLAN.md`**：report 檔案裡的每一筆結果沒有 `ide`、`sync_dir`、`report_path`、`notes`
+  這四個欄位，`--json` 印出來的那份有。`_collect` 先寫檔再由 `_verdict` 補這四個欄位，而先寫檔
+  是對的（逾時那條路會 raise，檔案仍然得存在）。notes 要等 `_verdict` 才算完整，所以順序不好換。
+  這是階段 6 之前就有的，`notes` 只是讓它更明顯。
+- **`HYGIENE_PLAN.md`**（reviewer 記的，不在階段 6 這一輪）：`cli.main` 旁邊還有
+  `ABOUT_THIS_MACHINE` 這第二張表和 `if ns.command == "verify"` 這個字面值；`report.show` 的
+  `said` 只收掉一半（見 Ruling 49）；`tests/test_plc.py` 有一條用反向措辭釘的斷言；
+  `cdsint/flags.py` 現在 358 行、`cdsint/headless.py` 370 行，兩個都過 300 的軟上限。
 - **`ENGINE_PLAN.md`**：`cds/ide/project.py` 的 `sync_dir` 把「沒設定過」和「設定檔壞了」答成同一個
   None（Ruling 22）。兩個呼叫端目前都需要這樣，但看門人登記檔的 `sync_dir` 欄位現在已經沒有讀者
   （第 3 節第 18 條），整個欄位也許該連同 WATCHER.md 2 的說明一起重想。
