@@ -17,30 +17,45 @@ editing instead, run it from a file:
 
 ## What it does
 
-**Finds the IDEs.** Each vendor scans a different directory for scripts, and
-picking the wrong one is the usual reason nothing appears in the menu
-(SPEC 5.3):
+**Asks cdsint which IDEs are here.** Each vendor scans a different directory
+for scripts, picking the wrong one is the usual reason nothing appears in the
+menu (SPEC 5.3), and none of it is guessable from the install path. That
+table lives in `cdsint/installs.py`, which has tests and a `--json` output,
+and the script runs `python <body>\cdsint\cli.py installs --json` to read
+it. It used to carry a second copy of the same table; see **What needs an
+elevated shell** below for what that cost.
 
-| IDE | ScriptDir |
-|---|---|
-| CODESYS 3.5 SP17–SP21 (all versions share one) | `%LOCALAPPDATA%\CODESYS\ScriptDir` |
-| Lenze PLC Designer 4.x | `%LOCALAPPDATA%\PLCDesigner\ScriptDir` |
-| Lenze PLC Designer 3.x | `C:\ProgramData\PLCDesigner\ScriptDir` |
-| Delta DIADesigner-AX 1.8, 1.10 | `<install dir>\CODESYS\ScriptDir` |
+To see the answer without installing anything:
+
+```powershell
+.\irm\setup.ps1 -List
+```
 
 An install counts only when its executable is there. These vendors put
 shared targets, a gateway and an unversioned directory beside the real
 installs, and going by directory name alone reports each of those as an IDE
 with a ScriptDir of its own.
 
-The last two rows are under `C:\ProgramData` and `C:\Program Files`, so they
-need an elevated shell. Without one the script says which it skipped and
-carries on with the rest; run it again as administrator to add them.
+**What needs an elevated shell.** One thing: a ScriptDir under
+`Program Files`, which is Delta's, because Delta keeps it inside the install.
+Nothing else does. The machine-wide one is under `ProgramData`, whose default
+rules let any user create things — measured on a real machine on 2026-09-06
+by making the junction from an ordinary shell, which worked. The two copies
+of this table disagreed about exactly that for months, and the one without
+tests was the one saying you needed administrator.
+
+Without an elevated shell the script says which ScriptDir it skipped and
+carries on with the rest; run it again as administrator to add it.
 
 **Installs the body.** Downloads the requested version (`-Version`, default
 `main`) into `%LOCALAPPDATA%\cdsint`, replacing whatever is there rather than
 merging — a stub deleted upstream must not survive an upgrade and keep
 showing in the menu. With `-Clone` it skips this and uses the clone.
+
+This happens before the listing, because the body is what answers it. The one
+exception is `-List` run from a checkout: listing changes nothing, so it must
+not download a release either, and the checkout the script file sits in can
+answer just as well.
 
 **Points ScriptDir at the stubs.** `ScriptDir\cdsint` becomes an NTFS
 junction onto the body's `stub\` directory, and `stub\body.path` is written
@@ -62,5 +77,8 @@ cannot leave a stale stub in one IDE's ScriptDir and a fresh one in another's.
 
 ## Requirements
 
-Windows 10 or 11, PowerShell 5.1 or later, and an internet connection unless
-you pass `-Clone`.
+Windows 10 or 11, PowerShell 5.1 or later, Python 3.11 or later on PATH, and
+an internet connection unless you pass `-Clone`.
+
+Python is not a new condition: cdsint's CLI is a Python program, and the
+machine that installs it is the machine that runs it.

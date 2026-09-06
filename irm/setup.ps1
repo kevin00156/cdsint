@@ -54,75 +54,38 @@ $StubNames = @("Project_export.py", "Project_import.py", "Project_watch.py")
 $MenuFolder = "cdsint"
 
 
-function Find-Installs {
+function Get-ScriptDirs {
     <#
-        Directories under $Root holding an IDE, proved by its executable.
+        Ask a cdsint tree which ScriptDirs this machine has.
 
-        The directory name is not proof: these vendors put shared targets,
-        gateways and an unversioned stub directory beside the real installs,
-        and each of those would otherwise be reported as an IDE with a
-        ScriptDir of its own.
+        Which directory an IDE scans is not guessable from its install path
+        (SPEC 5.3), and this script used to answer that itself, from a copy
+        of the table in cdsint/installs.py. The two disagreed for months
+        about whether writing into the machine-wide one needs an elevated
+        shell -- it does not -- and only one of them had tests. So there is
+        one owner now, and this asks it.
+
+        Run by file path rather than as the `cdsint` command: at this point
+        in an install nothing has been pip-installed yet.
+
+        Two IDEs of the same generation share one directory, so the answers
+        are grouped: installing into it twice would report two successes for
+        one junction.
     #>
-    param([string] $Root, [string] $Filter, [string] $Exe)
+    param([string] $Body)
 
-    $installs = Get-ChildItem -Path $Root -Directory -Filter $Filter -ErrorAction SilentlyContinue
-    return $installs | Where-Object { Test-Path (Join-Path $_.FullName $Exe) }
-}
-
-
-function Find-ScriptDirs {
-    <#
-        Every ScriptDir on this machine that an installed IDE actually scans.
-        The mapping is SPEC 5.3; it is not guessable from the install path,
-        which is why it is written out per vendor.
-    #>
-    $found = @()
-
-    $codesys = Find-Installs "$env:ProgramFiles" "CODESYS *" "CODESYS\Common\CODESYS.exe"
-    if ($codesys) {
-        # SP17 to SP21 share one ScriptDir, however many are installed.
-        $found += [pscustomobject]@{
-            Ide        = "CODESYS 3.5 (" + (($codesys | ForEach-Object { $_.Name }) -join ", ") + ")"
-            Path       = Join-Path $env:LOCALAPPDATA "CODESYS\ScriptDir"
-            NeedsAdmin = $false
-        }
+    $entry = Join-Path $Body "cdsint\cli.py"
+    if (-not (Test-Path $entry)) { throw "$Body is not a cdsint tree: no $entry" }
+    $json = & python $entry installs --json
+    if ($LASTEXITCODE -ne 0) {
+        throw "python $entry installs failed. cdsint needs Python 3.11 or later on PATH."
     }
-
-    foreach ($root in @("$env:ProgramFiles\Lenze\PlcDesigner", "${env:ProgramFiles(x86)}\Lenze\PlcDesigner")) {
-        foreach ($install in (Find-Installs $root "*" "PlcDesigner\Common\PlcDesigner.exe")) {
-            # 4.x moved its ScriptDir into the user profile; 3.x is machine-wide.
-            if ($install.Name -match "^4\.") {
-                $path = Join-Path $env:LOCALAPPDATA "PLCDesigner\ScriptDir"
-            } else {
-                $path = "$env:ProgramData\PLCDesigner\ScriptDir"
-            }
-            $found += [pscustomobject]@{
-                Ide        = "Lenze PLC Designer " + $install.Name
-                Path       = $path
-                NeedsAdmin = ($path -like "$env:ProgramData*")
-            }
-        }
-    }
-
-    $deltaRoot = "$env:ProgramFiles\Delta Industrial Automation\DIAStudio"
-    foreach ($install in (Find-Installs $deltaRoot "DIADesigner-AX*" "CODESYS\Common\DIADesigner-AX.exe")) {
-        # Delta keeps its ScriptDir inside the install, under Program Files,
-        # so writing there needs an elevated shell.
-        $found += [pscustomobject]@{
-            Ide        = "Delta " + $install.Name
-            Path       = Join-Path $install.FullName "CODESYS\ScriptDir"
-            NeedsAdmin = $true
-        }
-    }
-
-    # Two Lenze versions of the same generation share a ScriptDir; installing
-    # into it twice would report two successes for one directory.
-    return $found | Group-Object Path | ForEach-Object {
-        $first = $_.Group[0]
+    $installs = $json | ConvertFrom-Json
+    return $installs | Group-Object script_dir | ForEach-Object {
         [pscustomobject]@{
-            Ide        = ($_.Group | ForEach-Object { $_.Ide }) -join " + "
-            Path       = $first.Path
-            NeedsAdmin = $first.NeedsAdmin
+            Ide        = ($_.Group | ForEach-Object { $_.name }) -join " + "
+            Path       = $_.Name
+            NeedsAdmin = $_.Group[0].script_dir_needs_admin
         }
     }
 }
@@ -176,8 +139,8 @@ function Get-Body {
 
 function Install-Stubs {
     <#
-        Point ScriptDir\cdsint at the body's stub\ directory and tell the
-        stubs where the body is.
+        Point the cdsint folder inside ScriptDir at the body's stub
+        directory, and tell the stubs where the body is.
 
         A junction, not a copy, and the same junction whether the body was
         downloaded or is a clone you are editing. One mechanism means an
@@ -212,12 +175,29 @@ function Install-Stubs {
 
 Write-Host "--- cdsint setup ---" -ForegroundColor Cyan
 
+# The body comes first now, because it is what answers "which IDEs are on
+# this machine". -List has to reach one without downloading a release, and a
+# checkout this script is being run from is the case where it can.
+if ($Clone) {
+    $body = (Resolve-Path $Clone).Path
+    if (-not (Test-Path (Join-Path $body "stub"))) {
+        Write-Host "[!] $body does not look like a cdsint clone: no stub folder." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[*] Using the clone at $body" -ForegroundColor Cyan
+} elseif ($List -and $PSScriptRoot -and (Test-Path (Join-Path (Join-Path $PSScriptRoot "..") "stub"))) {
+    $body = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    Write-Host "[*] Listing from the checkout this script is in: $body" -ForegroundColor Cyan
+} else {
+    $body = Get-Body -Version $Version
+}
+
 if ($ScriptDir) {
     $targets = @([pscustomobject]@{ Ide = "(given on the command line)"
                                     Path = $ScriptDir
                                     NeedsAdmin = $false })
 } else {
-    $targets = @(Find-ScriptDirs)
+    $targets = @(Get-ScriptDirs -Body $body)
 }
 
 if ($targets.Count -eq 0) {
@@ -233,17 +213,6 @@ foreach ($target in $targets) {
     Write-Host ("  {0,-40} {1}{2}" -f $target.Ide, $target.Path, $note)
 }
 if ($List) { exit 0 }
-
-if ($Clone) {
-    $body = (Resolve-Path $Clone).Path
-    if (-not (Test-Path (Join-Path $body "stub"))) {
-        Write-Host "[!] $body does not look like a cdsint clone: no stub\ directory." -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "`n[*] Installing against the clone at $body" -ForegroundColor Cyan
-} else {
-    $body = Get-Body -Version $Version
-}
 
 $elevated = Test-Elevated
 $failed = 0

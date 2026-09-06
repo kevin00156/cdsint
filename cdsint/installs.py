@@ -7,42 +7,27 @@ it needs an elevated shell. None of the three is guessable from the install
 path, and getting the profile name wrong means the IDE exits without a word
 (SPEC 6.4).
 
+The fourth thing nobody can guess is which directory that IDE scans for menu
+scripts (SPEC 5.3). It is answered here too, and here only: irm/setup.ps1
+used to carry its own copy of the same table, and the two disagreed for
+months about whether writing into ProgramData needs an elevated shell. The
+installer asks `cdsint installs --json` now.
+
 CPython only: the CLI side never runs inside the IDE.
 """
 from __future__ import print_function
 
+import fnmatch
 import os
 import sys
 
 from cds.core.exits import EXIT_HEADLESS
 from cdsint.exits import Failure
 
-# What each vendor's tree looks like. Only the executable proves an install:
-# these vendors put shared targets, gateways and an unversioned stub
-# directory beside the real ones, and a scan by directory name reports every
-# one of those as an IDE of its own (irm/setup.ps1 hit the same thing).
-#
-#   prefix    what to call it, in front of the directory name
-#   roots     the environment variables whose directories hold the installs
-#   under     path segments under each root, empty when the installs sit
-#             right there; segments, not a joined string, because a joined
-#             "a\b" is one filename on Linux and the scan finds nothing
-#   pattern   the directory name shape, matched with fnmatch
-#   inner     the subdirectory holding Common\ and Profiles\
-#   exe       the executable inside Common\
-VENDORS = (
-    {"prefix": "", "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": (), "pattern": "CODESYS *",
-     "inner": "CODESYS", "exe": "CODESYS.exe"},
-    {"prefix": "Lenze PLC Designer ",
-     "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": ("Lenze", "PlcDesigner"), "pattern": "*",
-     "inner": "PlcDesigner", "exe": "PlcDesigner.exe"},
-    {"prefix": "Delta ", "roots": ("ProgramFiles", "ProgramFiles(x86)"),
-     "under": ("Delta Industrial Automation", "DIAStudio"),
-     "pattern": "DIADesigner-AX*",
-     "inner": "CODESYS", "exe": "DIADesigner-AX.exe"},
-)
+# The environment variables whose directories hold installed programs. Both,
+# for every vendor: a 32-bit installer on a 64-bit machine lands in the second
+# one, and this machine has Lenze 3.24 there and Lenze 4.0 in the first.
+ROOTS = ("ProgramFiles", "ProgramFiles(x86)")
 
 PROFILE_SUFFIX = ".profile.xml"
 
@@ -52,6 +37,67 @@ PROFILE_SUFFIX = ".profile.xml"
 LAYER_KEYS = (
     ("HKLM", r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"),
     ("HKCU", r"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"),
+)
+
+
+def _profile_dir():
+    """%LOCALAPPDATA%, read now rather than at import: tests move it."""
+    return os.environ.get("LOCALAPPDATA", "")
+
+
+def _codesys_script_dir(_directory):
+    """SP17 to SP21 all scan the same one, however many are installed."""
+    return os.path.join(_profile_dir(), "CODESYS", "ScriptDir")
+
+
+def _lenze_script_dir(directory):
+    """4.x moved it into the user profile; 3.x is still machine-wide.
+
+    Machine-wide is not the same as elevated. ProgramData's default rules let
+    any user create things, and the Lenze installer leaves this directory
+    Full Control for Everyone -- measured on this machine on 2026-09-06 by
+    making a junction in it from an ordinary shell, which worked.
+    """
+    if os.path.basename(directory).startswith("4."):
+        return os.path.join(_profile_dir(), "PLCDesigner", "ScriptDir")
+    return os.path.join(os.environ.get("ProgramData", ""), "PLCDesigner",
+                        "ScriptDir")
+
+
+def _delta_script_dir(directory):
+    """Delta keeps it inside the install, so under Program Files."""
+    return os.path.join(directory, "CODESYS", "ScriptDir")
+
+
+# What each vendor's tree looks like. Only the executable proves an install:
+# these vendors put shared targets, gateways and an unversioned stub
+# directory beside the real ones, and a scan by directory name reports every
+# one of those as an IDE of its own.
+#
+#   prefix      what to call it, in front of the directory name
+#   under       path segments under each root, empty when the installs sit
+#               right there; segments, not a joined string, because a joined
+#               "a\b" is one filename on Linux and the scan finds nothing
+#   pattern     the directory name shape, matched with fnmatch
+#   inner       the subdirectory holding Common\ and Profiles\
+#   exe         the executable inside Common\
+#   script_dir  the menu directory this IDE scans, given the install
+#               directory. A function rather than a template because Lenze's
+#               answer depends on the version, and that fork belongs in this
+#               row rather than in an if/elif that re-derives every vendor.
+VENDORS = (
+    {"prefix": "", "under": (), "pattern": "CODESYS *",
+     "inner": "CODESYS", "exe": "CODESYS.exe",
+     "script_dir": _codesys_script_dir},
+    {"prefix": "Lenze PLC Designer ",
+     "under": ("Lenze", "PlcDesigner"), "pattern": "*",
+     "inner": "PlcDesigner", "exe": "PlcDesigner.exe",
+     "script_dir": _lenze_script_dir},
+    {"prefix": "Delta ",
+     "under": ("Delta Industrial Automation", "DIAStudio"),
+     "pattern": "DIADesigner-AX*",
+     "inner": "CODESYS", "exe": "DIADesigner-AX.exe",
+     "script_dir": _delta_script_dir},
 )
 
 
@@ -75,15 +121,35 @@ def find():
     tree it built.
     """
     layers = run_as_admin_layers()
-    found = []
+    found = [_describe(directory, vendor, layers)
+             for vendor, directory in _candidates()]
+    return sorted([install for install in found if install is not None],
+                  key=lambda install: install["name"])
+
+
+def _candidates():
+    """(vendor, directory) for every directory that might hold an install.
+
+    Might, not does: the directory name is not proof, and _describe is where
+    the executable settles it.
+    """
     for vendor in VENDORS:
-        for root in _roots(vendor):
-            for directory in _directories(root, vendor["pattern"]):
-                install = _describe(directory, vendor, layers)
-                if install is not None:
-                    found.append(install)
-    found.sort(key=lambda i: i["name"])
-    return found
+        for variable in ROOTS:
+            base = os.environ.get(variable)
+            if base:
+                root = os.path.join(base, *vendor["under"])
+                for name in _names_in(root):
+                    if fnmatch.fnmatch(name, vendor["pattern"]):
+                        yield vendor, os.path.join(root, name)
+
+
+def _names_in(root):
+    """The directory names directly under root, sorted. Nothing if it is not there."""
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        return []
+    return [name for name in names if os.path.isdir(os.path.join(root, name))]
 
 
 def resolve(installs, wanted):
@@ -148,42 +214,25 @@ def run_as_admin_layers():
         return {}          # not Windows: nothing to read, nothing to warn about
     found = {}
     for hive_name, path in LAYER_KEYS:
-        hive = getattr(winreg, "HKEY_LOCAL_MACHINE" if hive_name == "HKLM"
-                       else "HKEY_CURRENT_USER")
-        try:
-            key = winreg.OpenKey(hive, path)
-        except OSError:
-            continue
-        try:
-            for index in range(winreg.QueryInfoKey(key)[1]):
-                name, value, _kind = winreg.EnumValue(key, index)
-                if "RUNASADMIN" in str(value).upper():
-                    found[name.lower()] = hive_name + "\\" + path
-        finally:
-            key.Close()
+        for name, value in _values_under(winreg, hive_name, path):
+            if "RUNASADMIN" in str(value).upper():
+                found[name.lower()] = hive_name + "\\" + path
     return found
 
 
-def _roots(vendor):
-    for variable in vendor["roots"]:
-        base = os.environ.get(variable)
-        if not base:
-            continue
-        root = os.path.join(base, *vendor["under"])
-        if os.path.isdir(root):
-            yield root
-
-
-def _directories(root, pattern):
-    import fnmatch
+def _values_under(winreg, hive_name, path):
+    """(name, value) for one registry key, or nothing when it is not there."""
+    hive = (winreg.HKEY_LOCAL_MACHINE if hive_name == "HKLM"
+            else winreg.HKEY_CURRENT_USER)
     try:
-        names = sorted(os.listdir(root))
+        key = winreg.OpenKey(hive, path)
     except OSError:
-        return
-    for name in names:
-        path = os.path.join(root, name)
-        if os.path.isdir(path) and fnmatch.fnmatch(name, pattern):
-            yield path
+        return []
+    try:
+        return [winreg.EnumValue(key, index)[:2]
+                for index in range(winreg.QueryInfoKey(key)[1])]
+    finally:
+        key.Close()
 
 
 def _describe(directory, vendor, layers):
@@ -192,7 +241,7 @@ def _describe(directory, vendor, layers):
     exe = os.path.join(common, vendor["exe"])
     if not os.path.isfile(exe):
         return None
-    script_dir = _script_dir(directory, vendor)
+    script_dir = vendor["script_dir"](directory)
     return {
         "name": vendor["prefix"] + os.path.basename(directory),
         "exe": exe,
@@ -213,33 +262,15 @@ def _profiles(directory):
             if n.endswith(PROFILE_SUFFIX)]
 
 
-def _script_dir(directory, vendor):
-    """The directory this IDE scans for menu scripts (SPEC 5.3).
-
-    Not derivable from the install path, which is the whole reason the table
-    is written out: three vendors, four answers, and the usual reason nothing
-    appears in the Scripts menu is having picked the wrong one.
-    """
-    local = os.environ.get("LOCALAPPDATA", "")
-    if vendor["exe"] == "CODESYS.exe":
-        return os.path.join(local, "CODESYS", "ScriptDir")
-    if vendor["exe"] == "DIADesigner-AX.exe":
-        # Delta keeps it inside the install, so under Program Files.
-        return os.path.join(directory, "CODESYS", "ScriptDir")
-    if os.path.basename(directory).startswith("4."):
-        return os.path.join(local, "PLCDesigner", "ScriptDir")
-    return os.path.join(os.environ.get("ProgramData", ""), "PLCDesigner",
-                        "ScriptDir")
-
-
 def _under_program_files(path):
     """Writing here needs an elevated shell.
 
-    Program Files is the one location no ordinary account may write to.
-    ProgramData looks similar and is not: its default rules let any user
-    create things, and the Lenze installer leaves its ScriptDir writable by
-    everyone. Marking it would send people to an elevated shell they do not
-    need.
+    Program Files is the one location no ordinary account may write to, so
+    only Delta's ScriptDir earns this. ProgramData looks similar and is not:
+    its default rules let any user create things, and the Lenze installer
+    leaves its ScriptDir Full Control for Everyone (measured on this machine,
+    2026-09-06). Marking it would send people to an elevated shell they do
+    not need, which is what irm/setup.ps1's own copy of this table did.
     """
     lowered = os.path.normcase(path)
     for variable in ("ProgramFiles", "ProgramFiles(x86)"):

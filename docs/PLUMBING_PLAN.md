@@ -136,10 +136,10 @@
   - [x] 驗收：`grep -n "getattr(ns" cdsint/` 為零；`grep -n "BOTH_FORMS\|WATCHER_ONLY\|PROJECT_ONLY_COMMAND\|_add_flag" cdsint/` 為零；`--target` 的 `add_argument` 只出現一次。
   - [x] 驗收：三條測試在 `tests/test_verify.py`：`test_a_step_the_project_refuses_is_exit_5`、`test_the_refusal_without_yes_is_a_whole_result_record`、`test_every_row_in_the_table_is_a_command_you_can_type`（加反向的 `test_every_command_you_can_type_is_a_row_in_the_table` 與 `test_every_command_line_is_the_same_shape`）。
 
-- [ ] **階段 3：安裝探測一個主人（第 4 節 6）**
-  - [ ] 驗收：`cdsint installs --json` 每筆有 `script_dir` 與 `needs_admin`；`irm/setup.ps1` 裡 `grep -c "Program Files\|ProgramData\|ScriptDir\\\\"` 為零（路徑知識只在 Python）。
-  - [ ] 驗收：對 `%TEMP%\cdsint-work\plumbing\fake-scriptdir\` 跑 `.\irm\setup.ps1 -List`，列出的跟 `cdsint installs` 一致；`-Clone .` 對假 ScriptDir 裝得起來（不碰真的 junction，見 `WORKER_RULES.md`）。
-  - [ ] 驗收：`irm/setup.md` 說的管理員規則跟 `installs.py` 一致，實測結果寫進第 7 節。
+- [x] **階段 3：安裝探測一個主人（第 4 節 6）**
+  - [x] 驗收：`python -m cdsint.cli installs --json` 每筆有 `script_dir` 與 `script_dir_needs_admin`（名字照舊，見 Ruling 40）；`irm/setup.ps1` 裡 `grep -c "Program Files\|ProgramData\|ScriptDir\\\\"` 為零，而且有一條測試釘住它（`test_the_installer_carries_no_scriptdir_knowledge_of_its_own`）。
+  - [x] 驗收：`.\irm\setup.ps1 -List` 列出五個 ScriptDir，跟 `installs --json` 逐項相同（CODESYS 三套合成一列、Delta 兩套各一列、Lenze 兩套各一列）；`-ScriptDir %TEMP%\cdsint-work\plumbing\fake-scriptdir -Clone .` 裝得起來，junction 指向 worktree 的 `stub\`，三個 stub 加 `body.path` 都在。事後確認兩個真 junction 仍指向 `repo\cdsint\stub`，一個位元組沒動。
+  - [x] 驗收：`irm/setup.md` 改寫成「問 cdsint」，管理員那段只剩 Delta 一項，實測結果見第 7 節 Ruling 41。
 
 - [ ] **階段 4：印東西與 `report.py`（第 4 節 8、9、12）**
   - [ ] 驗收：`grep -rn "print(" cdsint/ | grep -v report.py | grep -v exits.py` 為零。
@@ -198,6 +198,15 @@
 37. `Ruling: `cdsint/cli.py` 的 `sys.path.insert` 留著，SKILL.md 不動 — 第 4 節第 10 條說兩者二選一，但它的前提（SKILL.md 的 `python -m cdsint.cli` 靠這一行）是錯的：`-m` 自己會把工作目錄放上 `sys.path`。真正需要這一行的是階段 3 的 `irm/setup.ps1`，它要對一份還沒 pip 裝過的 clone 用路徑直接跑 `cdsint\cli.py installs --json` — 錯了的代價是這個檔多一行，而註解得說清楚是誰在用它。`
 38. `Ruling: `cdsint/report.py` 的 `show` 改成直接索引結果紀錄，測試裡手拼的假紀錄全部改用 `commands.new_result` 建 — 這是第 4 節第 7 條「`report.show` 不再 `.get()`」的另一半：印的人不再防禦，拼的人就必須拼完整。動到 `tests/test_verify.py`、`test_plc.py`、`test_cli.py` 各幾處 — 錯了的代價是測試要多寫一個 helper 才能造一筆結果。`
 39. `Ruling: verify 的退出碼由新的 `cli.verify_code(results, problems)` 決定「哪一筆算數」，再交給 `cli.exit_code` 決定「那一筆值多少」 — 第 4 節第 4 條要 `exit_code` 當唯一一扇門，但「每一步都 ok 卻仍然有問題」（compare 在來回之後找到差異）沒有任何一筆失敗的紀錄可以交給它，那種情況直接是 1 — 錯了的代價是多一個函式，而「一扇門」變成「一扇門加一個指路的」。`
+
+### 階段 3 新增的 Ruling
+
+40. `Ruling: JSON 的欄位名維持 `script_dir_needs_admin`，不縮成驗收字面寫的 `needs_admin` — 同一筆紀錄裡已經有一個 `run_as_admin`（那個 exe 被登錄檔標成一定要提權），兩件不同的事；叫 `needs_admin` 讀者分不出是哪一個 — 錯了的代價是驗收那句要用寬鬆的讀法（grep `needs_admin` 仍然命中）。`
+41. `Ruling: ProgramData 的 ScriptDir 不需要管理員，以 Python 的答案為準，PowerShell 那份是錯的 — 2026-09-06 在這台實測：非提權的 PowerShell 對 `C:\ProgramData\PLCDesigner\ScriptDir` 底下建一個 junction（`cdsint-probe-delete-me`，指向 `%TEMP%\cdsint-work\plumbing\probe-target`）成功，隨即刪掉；`icacls` 顯示該目錄是 `Everyone:(I)(OI)(CI)(F)`。原本的 `cdsint` junction 全程沒有被碰 — 錯了的代價是 Lenze 3.x 的使用者被叫去開系統管理員 PowerShell 做一件不需要提權的事。`
+42. `Ruling: `setup.ps1` 改成先決定 body 再問它有哪些 ScriptDir，`-List` 例外 — 表搬進 Python 之後，「這台有哪些 IDE」的答案只有 body 給得出來，所以順序得反過來；但 `-List` 的承諾是「什麼都不改」，讓它去下載一份 release 就違背了那句話，所以 `-List` 在「這個腳本檔本身就在一份 checkout 裡」的時候用那份 checkout 回答 — 錯了的代價是有人只下載 `setup.ps1` 單一檔案再跑 `-List`，那一趟仍然會下載 body。`
+43. `Ruling: 每一家的 ScriptDir 用一個 callable 放進 `VENDORS` 那一列，不是字串模板 — Lenze 要看目錄名是不是 `4.` 開頭才知道答案，模板表達不了；callable 讓那個分岔待在 Lenze 自己那一列，而不是在表外用 `vendor["exe"]` 的 if/elif 把三家的知識重編一次 — 錯了的代價是表裡有三個函式名，讀者要往上看十行才看得到內容。`
+44. `Ruling: `roots` 從每一列的欄位升成模組常數 `ROOTS` — 三列填的是同一組值，而它本來就不是「這一家的性質」而是「Windows 把程式裝在哪」 — 錯了的代價是將來若真有一家只裝在其中一個 root，得把欄位加回去。`
+45. `Ruling: `setup.ps1` 用 `python <body>\cdsint\cli.py installs --json` 而不是 `cdsint installs --json` — 安裝當下還沒有人跑過 `pip install -e`，PATH 上不會有 `cdsint`；這也是 `cdsint/cli.py` 那行 `sys.path.insert` 現在唯一的理由（Ruling 37） — 錯了的代價是 PATH 上沒有 `python` 的機器裝不起來，訊息會直說要 Python 3.11 以上。`
 
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 
