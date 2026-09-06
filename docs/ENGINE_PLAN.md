@@ -199,13 +199,13 @@
   - [x] 驗收：`tests/test_silent.py` 全綠。替身這條路每一趟 `--project` 命令都會走到，兩份副本的 export、import、compare、build 各跑過好幾輪都 exit 0。`--target` 形式沒有另外起看門人實測，見第 7 節第 27 條。
   - [x] 驗收：儀器四項全過。兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0；控制過的 compare 中位數 17.05 秒，比基線的 16.59 秒慢 2.7%。
 
-- [ ] **階段 5：邊界已浮現的拆分與收尾**
-  - [ ] 只拆第 4 節第五層說的那種；每拆一個檔一個 commit。
-  - [ ] 驗收：`wc -l engine/codesys_utils.py` 比開工前少，且沒有新檔超過 400 行。
-  - [ ] 驗收：棘輪表的每個數字不高於開工前，第 3 節 18 條的三個具體傷害各有一條測試。
-  - [ ] 驗收：儀器四項全過；熱機三個中位數跟基線比，慢不超過一成，數字寫進第 6 節與 SPEC 第 7 節。
-  - [ ] CHANGELOG Unreleased 加一段。
-  - [ ] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\engine\` 清掉（基線清單留一份在 `docs/history/` 若監督者要）。
+- [x] **階段 5：邊界已浮現的拆分與收尾**
+  - [x] 拆了 `engine/backup.py` 與 `engine/sync_cache.py`，各一個 commit。第 4 節第五層列的候選裡，`st_text.py` 與 `log.py` 沒拆，理由在第 7 節第 28 條。
+  - [x] 驗收：`engine/codesys_utils.py` 從 1637 行降到 1113 行。這張工單新增的七個檔都在 400 行以內：`import_items.py` 322、`classify.py` 205、`backup.py` 192、`build_log.py` 175、`sync_cache.py` 163、`ide_read.py` 115、`sync_dir.py` 76。
+  - [x] 驗收：棘輪每個數字都比開工前低（`compare` 6→3、`managers` 29→18、`utils` 33→11、`build` 6→0、`ui` 5→0、`entry_compare` 2→2），總數 81 降到 35。第 3 節 18 條的三個具體傷害各有測試：PouType 那個 NameError 由 `tests/test_names_resolve.py` 這一整類守著，`get_quick_ide_hash` 由 `tests/test_ide_read.py` 的 `TestQuickHashRefusesToGuess`，`_hash_content` 由 `tests/test_sync_cache.py` 的 `test_content_that_cannot_be_hashed_raises`。
+  - [x] 驗收：儀器四項全過。兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0；熱機中位數見第 6 節那張表，compare 的判定見第 7 節第 19 條。數字寫進 SPEC 第 7 節。
+  - [x] CHANGELOG Unreleased 加一段。
+  - [x] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\engine\` 清掉。
 
 ---
 
@@ -253,6 +253,7 @@
 | 2 消平行路徑 | 0；0 | 407／22／空；464／24／9 | 0；0 | 19.5／16.9／25.3；（階段 5 才量） |
 | 3 拆長函式 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.0／17.6／23.8；（階段 5 才量） |
 | 4 顯式傳遞 | 0；0 | 407／22／空；464／24／9 | 0；0 | compare 17.0（控制過的量法，基線 16.6） |
+| 5 拆檔與收尾 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.1／17.3／25.2；21.7／15.2／30.5 |
 
 ---
 
@@ -262,11 +263,11 @@
 
 先列出來的：
 
-1. `PouType` 四招留哪一招：真 IDE 裡實測。
+1. `PouType` 四招留哪一招：實測結果是第二招，見第 10 條。
 2. `sync_files` 的略過規則以哪一份為準：預設以 `scan_new_disk_files` 的為準（最完整），`cleanup_orphaned_files` 從此也跳 `__pycache__` 與 RESERVED_FILES；這是行為改變但方向是更安全。
 3. `_hash_content` 的檔名 fallback 要不要留：預設留，加一條註解說明是哪種 kind 會走到，並加測試釘住。
-4. 第五層拆哪些檔：做完前四層再決定，寫回這裡。
-5. `codesys_ui.py` 的 `clr.AddReference` 假容錯：預設改成 import 失敗就 raise 一句人話，因為沒有 WinForms 的 IDE 側本來就跑不了。
+4. 第五層拆哪些檔：`backup.py` 與 `sync_cache.py`，`st_text.py` 與 `log.py` 留著。理由在第 28 條。
+5. `codesys_ui.py` 的 `clr.AddReference` 假容錯：照預設改成 raise，見第 25 條。
 
 階段 0 定下來的（儀器怎麼跑，之後每一層都照這個跑）：
 
@@ -292,7 +293,7 @@
 階段 3 定下來的：
 
 18. `Ruling: 速度的量法改成「同一台機器、同一個起點、新舊碼背對背各量一次」，第 6 節那張表裡各層的中位數只當趨勢看 — 階段 3 量到 compare 比基線慢 12.1%，紅了；追下去才發現量法本身沒有控制起點：每一組 compare 都跑在上一組留下的副本與同步資料夾上。用同一支腳本量階段 1 結束時的程式碼（那一層只刪東西），也「慢了 7.8%」，那不可能是程式碼造成的 — 錯了的代價就是我已經付過的那一次：照著錯的數字去找原因，改了兩處 .NET 讀取，結果數字只動了 0.07 秒。`
-19. `Ruling: 控制過的量法下，compare 比基線慢 6.3%（16.59 對 17.63 秒，同一台機器背對背，export 27.9 對 27.5 秒沒有差別），在一成以內，接受 — 慢的來源沒有指名的單一元凶：每個物件多經過 `resolve_object`、`_gated`、`collect_accessors` 與 `ide_read` 這幾層函式呼叫，而 IronPython 2.7 的函式呼叫本來就比行內的 if 貴。這是把同一條規則從兩份收成一份的價錢 — 錯了的代價是 407 個物件的專案每次 compare 多一秒。`
+19. `Ruling: compare 的速度判定是「落在量測誤差裡，沒有量到可以指認的變慢」，不是一個百分比 — 控制過的成對量測做了兩次，方向相反：階段 3 時舊碼 16.59 秒、新碼 17.63 秒（新碼慢 6.3%），階段 5 時新碼 17.74 秒、舊碼 17.96 秒（新碼快 1.2%）；兩次隔一個半小時，同一份舊碼從 16.59 漂到 17.96 秒，機器本身就有 8% 的變動，跟要量的東西同一個數量級 — 錯了的代價是把一個 6% 的雜訊當成真的變慢去追（我已經追過一次，改了兩處重複的 .NET 讀取，數字只動 0.07 秒），或者反過來，把一個真的變慢當成雜訊放過。要更確定需要同一小時內多對交錯量測，這張工單沒有做。`
 20. `Ruling: `perform_import_items` 的四趟 pass 搬到新檔 `engine/import_items.py`，`build_project` 的訊息定位搬到新檔 `engine/build_log.py` — 兩個都是「拆長函式之後這個檔反而變長」的同一個問題：`codesys_compare_engine.py` 拆完會從 1373 漲到 1412 行，`entry_build.py` 已經 500 行；而拆出來的兩塊各自是一句話講得完的工作（「照順序把改動套用到 IDE」、「一則 build 訊息指到哪一行」），後者還因此變成純文字進出、CI 測得到 — 錯了的代價是 `engine/` 多兩個檔。`
 21. `Ruling: `ensure_folder_path` 建不出資料夾改成 raise，不再回 None — 四次嘗試裡有兩次是同一個 CODESYS 怪癖的補救（`create_folder` 可能真的建好了卻回一個 falsy 的殼），收成「建一次、重掃一次、還是沒有就 raise」；三個呼叫端都在每個物件的 try/except 裡面，例外會被接住並點名（D13），而回 None 以前會再往上走一層，變成物件被建在錯的地方 — 錯了的代價是資料夾真的建不出來時，那個物件的匯入失敗而不是安靜地跑到別的地方去。`
 22. `Ruling: 真 IDE 抓到的第二個回歸 — 讀 build 訊息的 `.object` 要自己包一層 try — 我把 `hasattr(msg, "object") and msg.object` 換成 `getattr(msg, "object", None)`，看起來等價，但 IronPython 2.7 的 `hasattr` 會吞掉例外回 False；Delta 1.10 對某些訊息的 `.object` 會丟「The object GUID '...' is not valid」，於是整份 build 變成一個 traceback，`verify` 停在第四步 — 錯了的代價就是它造成的那一次：一則讀不到的訊息把另外一百多則的判決一起丟掉。`
@@ -317,6 +318,14 @@
 
     這一項留白的影響有限：`--target` 跟 `--project` 差的只有傳輸（看門人的檔案協定），而這張工單一個位元組都沒有改 `cds/` 或 `cdsint/`；協定那一端由 `tests/test_watcher.py` 與 `tests/test_ipc.py` 守著，兩個都綠。引擎本體則是兩台真 IDE 上跑過好幾輪 export、import、compare、build，而 `--project` 走的正是同一個替身 UI。
 
+
+階段 5 定下來的（第 4 條「第五層拆哪些檔」的答案）：
+
+28. `Ruling: 拆 `engine/backup.py` 與 `engine/sync_cache.py`，`st_text.py` 與 `log.py` 不拆 — 第 4 節第五層的判準是「已經有自己的一組函式、互相只呼叫彼此、外面只有兩三個進入點」。備份那一組完全符合：整組在 `codesys_utils.py` 外面只被提到一次（`tools/perf_probe.py` 的一個名字），連它的兩個進入點 `finalize_sync_operation` 與 `create_safety_backup` 都是為它存在的。sync cache 那一組也符合：`file_signature` 是匯出與比對唯一必須講好的東西，而它們曾經各算各的（一邊 `int(st.st_mtime)`、一邊 `os.path.getmtime()` 的浮點數），結果雙方寫的每一筆都被對方拒絕，真專案上快取命中率是零。
+
+    `st_text.py` 不拆的理由是它沒有「外面只有兩三個進入點」：格式化、解析、pragma 這一組被 `managers`、`compare_engine`、`import_items` 從十幾個地方叫，拆出去只是把一長串 import 從一個檔搬到另一個檔。`log.py` 不拆的理由相反——它的進入點少，但幾乎每個模組都 import 它，拆一次要改十幾行 import，而換到的只是把 80 行搬走。兩個都留著，等下一個真的需要動它們的人來決定 — 錯了的代價是 `codesys_utils.py` 還有 1113 行，仍然超過上限，下一次要往裡面加東西的人得先拆。`
+
+29. `Ruling: 新增 `tests/test_names_resolve.py`，用 pyflakes 問「哪些名字解不出來」，IDE 注入的全域名逐一列出來 — 這張工單有兩個 NameError 跑到真 IDE 上才被發現（`sync_cache.build_folder_hashes` 少 import `calculate_hash`、`save_pou_children` 少一個 `project` 參數），兩個都在假物件測試碰不到的分支裡，而 pyflakes 從頭到尾都在報它們；我看不到是因為 `engine/` 的 pyflakes 輸出被 `system`、`Severity`、`PouType` 這些真的沒定義也真的沒問題的名字淹沒，而寬到能蓋住它們的過濾器也寬到能蓋住一個打錯的字。過濾器搬進測試檔，白名單寫成兩個具名的集合 — 錯了的代價是 WSL 那邊沒裝 pyflakes 時這 72 條會 skip，所以 `requirements-dev.txt` 加了 `pyflakes>=3.0`。`
 
 做的時候看到但不在範圍的：
 
