@@ -187,11 +187,11 @@
   - [x] 驗收：測試涵蓋「export 與 compare 對同一個物件回同一個 `(eff_type, is_xml, rel_path)`」（`tests/test_classify.py`）「`sync_files` 跳 `__pycache__`、dot-dir、RESERVED_FILES」（`tests/test_sync_dir.py`）「`_hash_content` 對每種 kind 的過濾規則」（`tests/test_sync_cache.py` 的 `TestHashContentPerKind`）。
   - [x] 驗收：儀器四項全過。棘輪從 70 降到 51（`managers` 29→18、`utils` 26→19、`compare` 6→5、`build` 5、`ui` 2、`entry_compare` 2）。測試 Windows 與 WSL 各 1149 個全綠。
 
-- [ ] **階段 3：拆長函式**
-  - [ ] 驗收：`perform_import_items`、`build_project`、`ensure_folder_path` 各在 60 行內；新函式全部在 40 行、3 層內（寫一個 AST 小腳本量，放 `tools/`）。
-  - [ ] 驗收：`grep -n "^\s*#.*\(def \|if \|for \|return \)" engine/entry_build.py` 沒有註解掉的程式碼。
-  - [ ] 驗收：`locate_message` 有 CI 測試。
-  - [ ] 驗收：儀器四項全過。
+- [x] **階段 3：拆長函式**
+  - [x] 驗收：`perform_import_items` 剩 30 行、`ensure_folder_path` 剩 11 行，兩個都不再出現在長函式清單裡；`build_project` 剩 60 行、2 層。新函式全部在 40 行、3 層內。
+  - [x] 驗收：`grep -n "^\s*#.*\(def \|if \|for \|return \)" engine/entry_build.py` 沒有註解掉的程式碼；182 行那句假的 phase 訊息也刪了。
+  - [x] 驗收：`locate_message` 有 CI 測試（`tests/test_build_log.py`，26 個）。
+  - [x] 驗收：儀器四項全過。hash diff 兩份副本各 0 行、discover 前後相同、verify exit 0；速度用控制過的量法比，compare 慢 6.3%（第 7 節第 18、19 條）。測試 Windows 與 WSL 各 1191 個全綠。
 
 - [ ] **階段 4：顯式傳遞**
   - [ ] 驗收：`grep -rn "import __main__\|sys.modules" engine/` 為零；`grep -rn "def resolve_projects\|def resolve_system\|def resolve_online\|_resolve_primary_project" engine/` 為零。
@@ -240,7 +240,7 @@
 | 熱機 compare 中位數 | 15.833 秒 | 15.328 秒 |
 | 熱機 build 中位數 | 25.764 秒 | 30.538 秒 |
 
-這一組數字跟 SPEC 第 7 節那張表不能直接相減：那張是 2026-09-05 量的，機器狀態不同（SPEC 自己說冷熱差兩到三倍），而且這裡的 compare 是「改一個 `.st` 之後」而不是「改一個 POU 之後」。這一組的用途只有一個，就是給這張工單的四層當比較基準。
+這一組數字跟 SPEC 第 7 節那張表不能直接相減：那張是 2026-09-05 量的，機器狀態不同（SPEC 自己說冷熱差兩到三倍），而且這裡的 compare 是「改一個 `.st` 之後」而不是「改一個 POU 之後」。這一組的用途只有一個，就是給這張工單的四層當比較基準。而且底下那張表裡各層的中位數只能當趨勢看：那些是在沒有控制起點的情況下量的，同一支腳本量階段 1 結束時的程式碼（那一層只刪東西）也會「慢 7.8%」。真正用來判斷有沒有超過一成的，是同一台機器、同一個起點、新舊碼背對背各量一次的那一組（第 7 節第 18 條）。
 
 測試：Windows `python -m pytest tests -q` 1072 個全綠，WSL `python3 -m pytest tests -q` 1072 個全綠。
 
@@ -251,6 +251,7 @@
 | 基線 | — | 407／22／空；464／24／9 | 0；0 | 22.9／15.8／25.8；23.3／15.3／30.5 |
 | 1 刪死碼 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.1／16.4／25.0；（階段 5 才量） |
 | 2 消平行路徑 | 0；0 | 407／22／空；464／24／9 | 0；0 | 19.5／16.9／25.3；（階段 5 才量） |
+| 3 拆長函式 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.0／17.6／23.8；（階段 5 才量） |
 
 ---
 
@@ -286,6 +287,14 @@
 15. `Ruling: `engine/classify.py` 在第二層就拆出來，不等到第五層 — 收完平行路徑之後，`codesys_managers.py` 從 1491 行漲到 1497 行，比開工時還長，而 PRINCIPLES 2 說已經超過上限的檔案不准再變長；分類這一組（`resolve_object`、兩道 gate、accessor 收集、manager 查表）互相只呼叫彼此，外面只有 export 與 compare 兩個進入點，正是第五層說的那種「邊界已浮現」 — 錯了的代價是第五層要重新看一次還剩什麼可拆。`
 16. `Ruling: 統一之後的略過規則多了一條「沒有路徑就不寫」，export 這一側是新的 — compare 本來就有 `if should_skip or not rel_path: continue`，export 沒有；而 `effective_type` 改成必要參數之後，manager 不再有「rel_path 是 None 就自己重算」的退路，所以 export 拿到空路徑會把 None 傳進去 — 唯一會回空路徑的是頂層資料夾，而資料夾本來就不寫檔，所以磁碟上看不出差別（兩份副本的 hash 清單 diff 都是 0 行）— 錯了的代價是某個頂層資料夾不再進 `exported_paths`，而那個路徑是空字串，永遠對不上任何檔案。`
 17. `Ruling: `_hash_content` 出錯改成往上丟，`_hash_file` 只接 IOError、OSError、UnicodeDecodeError — 第 18 條第三個具體傷害：回 `""` 之後 `NativeManager.export` 的 `old_hash and old_hash == new_hash` 永遠是 False，那個檔每次 export 都被算成 updated 而沒有人看得出為什麼；`_hash_file` 讀不到檔案仍然回 `""`，因為那時候 `is_new` 已經是 True，這個 hash 根本不會被拿來比 — 錯了的代價是一份真的無法 hash 的 XML 會讓那個物件的匯出丟例外，而例外會被每個迴圈的「處理這一個物件」那一層接住並點名（D13）。`
+
+階段 3 定下來的：
+
+18. `Ruling: 速度的量法改成「同一台機器、同一個起點、新舊碼背對背各量一次」，第 6 節那張表裡各層的中位數只當趨勢看 — 階段 3 量到 compare 比基線慢 12.1%，紅了；追下去才發現量法本身沒有控制起點：每一組 compare 都跑在上一組留下的副本與同步資料夾上。用同一支腳本量階段 1 結束時的程式碼（那一層只刪東西），也「慢了 7.8%」，那不可能是程式碼造成的 — 錯了的代價就是我已經付過的那一次：照著錯的數字去找原因，改了兩處 .NET 讀取，結果數字只動了 0.07 秒。`
+19. `Ruling: 控制過的量法下，compare 比基線慢 6.3%（16.59 對 17.63 秒，同一台機器背對背，export 27.9 對 27.5 秒沒有差別），在一成以內，接受 — 慢的來源沒有指名的單一元凶：每個物件多經過 `resolve_object`、`_gated`、`collect_accessors` 與 `ide_read` 這幾層函式呼叫，而 IronPython 2.7 的函式呼叫本來就比行內的 if 貴。這是把同一條規則從兩份收成一份的價錢 — 錯了的代價是 407 個物件的專案每次 compare 多一秒。`
+20. `Ruling: `perform_import_items` 的四趟 pass 搬到新檔 `engine/import_items.py`，`build_project` 的訊息定位搬到新檔 `engine/build_log.py` — 兩個都是「拆長函式之後這個檔反而變長」的同一個問題：`codesys_compare_engine.py` 拆完會從 1373 漲到 1412 行，`entry_build.py` 已經 500 行；而拆出來的兩塊各自是一句話講得完的工作（「照順序把改動套用到 IDE」、「一則 build 訊息指到哪一行」），後者還因此變成純文字進出、CI 測得到 — 錯了的代價是 `engine/` 多兩個檔。`
+21. `Ruling: `ensure_folder_path` 建不出資料夾改成 raise，不再回 None — 四次嘗試裡有兩次是同一個 CODESYS 怪癖的補救（`create_folder` 可能真的建好了卻回一個 falsy 的殼），收成「建一次、重掃一次、還是沒有就 raise」；三個呼叫端都在每個物件的 try/except 裡面，例外會被接住並點名（D13），而回 None 以前會再往上走一層，變成物件被建在錯的地方 — 錯了的代價是資料夾真的建不出來時，那個物件的匯入失敗而不是安靜地跑到別的地方去。`
+22. `Ruling: 真 IDE 抓到的第二個回歸 — 讀 build 訊息的 `.object` 要自己包一層 try — 我把 `hasattr(msg, "object") and msg.object` 換成 `getattr(msg, "object", None)`，看起來等價，但 IronPython 2.7 的 `hasattr` 會吞掉例外回 False；Delta 1.10 對某些訊息的 `.object` 會丟「The object GUID '...' is not valid」，於是整份 build 變成一個 traceback，`verify` 停在第四步 — 錯了的代價就是它造成的那一次：一則讀不到的訊息把另外一百多則的判決一起丟掉。`
 
 做的時候看到但不在範圍的：
 
