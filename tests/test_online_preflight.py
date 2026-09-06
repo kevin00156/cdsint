@@ -106,10 +106,10 @@ def _device(name, guids, app_name="Application", under_plc_logic=False,
     return WalkCountingNode(name, guids["device"], [app])
 
 
-def _find(module, project, online, caller_globals=None):
-    if caller_globals is None:
-        caller_globals = {"online": online}
-    return module.find_logged_in_applications(project, caller_globals)
+def _find(module, project, online):
+    """The online API is handed in now, not hunted for: the caller has the
+    namespace the IDE injected it into (engine/entry.py's borrowed())."""
+    return module.find_logged_in_applications(project, online)
 
 
 # ── detection ──
@@ -179,7 +179,7 @@ def test_device_inside_a_folder_is_found(env):
 def test_no_online_global_reports_nothing(env):
     module, guids, _ = env
     project = _project([_device("PLC", guids)])
-    assert module.find_logged_in_applications(project, {}) == []
+    assert module.find_logged_in_applications(project, None) == []
 
 
 def test_unanswerable_online_api_reports_nothing(env):

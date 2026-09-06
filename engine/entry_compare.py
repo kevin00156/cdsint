@@ -18,7 +18,7 @@ import codecs
 import time
 
 from engine.codesys_utils import (
-    init_logging, log_info, resolve_projects, is_debug
+    init_logging, log_info,  is_debug
 )
 from engine.codesys_compare_engine import find_all_changes
 from engine import entry, settings, unhandled
@@ -56,7 +56,7 @@ def changed_objects(different, new_in_ide, new_on_disk, moved):
 def compare_project(base_dir, values, projects_obj=None):
     """Compare CODESYS project objects with disk files"""
     
-    projects_obj = resolve_projects(projects_obj, globals())
+    projects_obj = projects_obj or entry.borrowed(globals(), "projects")
     
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."

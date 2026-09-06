@@ -31,7 +31,7 @@ import os
 from cds.core import settings as schema
 from engine import entry
 from engine.codesys_utils import (
-    safe_str, resolve_projects, resolve_system, ensure_git_configs
+    safe_str, ensure_git_configs
 )
 
 # The command argument that overrides sync_folder for this run (SPEC 4.2).
@@ -238,7 +238,7 @@ def _as_written(chosen, project_dir):
 
 def _project_path(caller_globals):
     """The open project's path, or None. The only .NET read in this module."""
-    projects_obj = resolve_projects(None, caller_globals)
+    projects_obj = entry.borrowed(caller_globals, "projects")
     primary = getattr(projects_obj, "primary", None) if projects_obj else None
     path = getattr(primary, "path", None)
     return None if path is None else safe_str(path)
@@ -246,7 +246,7 @@ def _project_path(caller_globals):
 
 def _ide(caller_globals):
     """The IDE's `system`, or a loud failure: the dialog needs a screen."""
-    system = resolve_system(caller_globals)
+    system = entry.borrowed(caller_globals, "system")
     if system is None:
         raise RuntimeError(
             "the CODESYS `system` object is not reachable, so there is no "

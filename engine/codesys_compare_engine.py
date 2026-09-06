@@ -62,7 +62,7 @@ _NATIVE_MGR = NativeManager()
 # Removed local build_expected_path, now imported from codesys_managers
 
 
-def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl=False):
+def get_ide_content(obj, is_xml, property_accessors, project, can_have_impl=False):
     """Extract content and attributes from IDE object for comparison.
 
     Returns:
@@ -88,7 +88,7 @@ def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl
                 from engine.codesys_utils import is_container_device
                 recursive = not is_container_device(obj)
 
-            content = native_xml_of(projects_obj.primary, obj, recursive)
+            content = native_xml_of(project, obj, recursive)
             if content is not None:
                 return content, {}
         except Exception as exc:
@@ -105,21 +105,21 @@ def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl
 
     if obj_type == TYPE_GUIDS["property"] and obj_guid in property_accessors:
         prop_data = property_accessors[obj_guid]
-        declaration, _ = export_object_content(obj)
+        declaration, _ = export_object_content(obj, project)
 
         get_impl = None
         if prop_data['get']:
-            get_decl, get_impl_raw = export_object_content(prop_data['get'])
+            get_decl, get_impl_raw = export_object_content(prop_data['get'], project)
             get_impl = format_st_content(get_decl, get_impl_raw, False)
 
         set_impl = None
         if prop_data['set']:
-            set_decl, set_impl_raw = export_object_content(prop_data['set'])
+            set_decl, set_impl_raw = export_object_content(prop_data['set'], project)
             set_impl = format_st_content(set_decl, set_impl_raw, False)
 
         return format_property_content(declaration, get_impl, set_impl), ide_attrs
 
-    declaration, implementation = export_object_content(obj)
+    declaration, implementation = export_object_content(obj, project)
     return format_st_content(declaration, implementation, can_have_impl), ide_attrs
 
 def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
@@ -197,7 +197,10 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     # Paths are memoized per ancestor; start from a clean slate in case an
     # earlier operation in this session moved objects around.
     clear_path_caches()
-    all_ide_objects = projects_obj.primary.get_children(recursive=True)
+    # One read of the open project, handed down. The classifier, the content
+    # reader and the managers all need it.
+    project = projects_obj.primary
+    all_ide_objects = project.get_children(recursive=True)
     
     # Load cache
     cache_data = load_sync_cache(base_dir)
@@ -247,7 +250,8 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         try:
             obj_guid = safe_str(obj.guid)
         
-            decided = resolve_object(obj, obj_guid, cached_types, export_xml)
+            decided = resolve_object(obj, obj_guid, cached_types, export_xml,
+                                     project)
             eff_type = decided.effective_type
             is_xml = decided.is_xml
             rel_path = decided.rel_path
@@ -341,7 +345,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
                 
             # ── Slow path: Full Comparison ──
             can_have_impl = eff_type in IMPLEMENTATION_TYPES
-            ide_content, ide_attrs = get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl)
+            ide_content, ide_attrs = get_ide_content(obj, is_xml, property_accessors, project, can_have_impl)
             disk_content = read_file(file_path)
 
             # For ST files, parse pragmas from disk content for attribute comparison
@@ -754,7 +758,7 @@ def save_pou_children(pou_obj):
             try:
                 child_type = safe_str(child.type)
                 if child_type in child_types:
-                    decl, impl = export_object_content(child)
+                    decl, impl = export_object_content(child, project)
                     children_info.append({
                         'name': child.get_name(),
                         'type_guid': child_type,

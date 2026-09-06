@@ -205,7 +205,7 @@ class TestManagerDispatch:
     """
 
     def managers(self):
-        return classify.create_import_managers()
+        return classify.create_import_managers(None)
 
     def test_a_kind_with_its_own_manager_gets_it_either_way(self):
         from engine.codesys_constants import TYPE_GUIDS

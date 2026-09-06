@@ -16,7 +16,6 @@ evidence against.
 """
 from __future__ import print_function
 
-import sys
 
 from engine.codesys_utils import safe_str, log_warning
 from engine.codesys_managers import get_container_prefix
@@ -30,13 +29,16 @@ MAX_DEPTH = 5
 CONTAINER_KINDS = ("device", "plc_logic", "folder")
 
 
-def find_logged_in_applications(project, caller_globals=None):
+def find_logged_in_applications(project, online_api):
     """The 'Device/Application' labels of every application with a live login.
 
     Empty when nothing is logged in, and equally when the online API is absent
     or unable to answer (no gateway, script run outside the IDE, ...).
+
+    online_api is passed in: the caller has the namespace the IDE injected it
+    into (engine/entry.py's borrowed()), and a resolver that went hunting
+    through the loaded modules for it could find one from a previous run.
     """
-    online_api = resolve_online(caller_globals)
     if online_api is None:
         log_warning("Login pre-flight skipped: the CODESYS 'online' API is not "
                     "reachable from this script run")
@@ -54,25 +56,6 @@ def logged_in_block_message(app_labels):
         "an application is online, so the import would fail object by object.\n\n"
         "Log out (Online > Logout, Ctrl+F8) and run the import again."
     )
-
-
-def resolve_online(caller_globals=None):
-    """The CODESYS 'online' scripting global, or None outside the IDE.
-
-    Mirrors resolve_system in codesys_utils: the global is injected into the
-    running script's namespace, so the caller's globals() is the reliable
-    source; __main__ and sys.modules cover scripts invoked another way.
-    """
-    if caller_globals and caller_globals.get("online") is not None:
-        return caller_globals["online"]
-    try:
-        import __main__
-        found = getattr(__main__, "online", None)
-        if found is not None:
-            return found
-    except ImportError:
-        pass
-    return sys.modules.get("online")
 
 
 # --- Internals ---

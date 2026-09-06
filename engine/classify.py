@@ -93,7 +93,7 @@ def collect_accessors(obj, obj_guid, effective_type, accessors):
             accessors[guid]['set'] = child
 
 
-def resolve_object(obj, obj_guid, cached_types, export_xml):
+def resolve_object(obj, obj_guid, cached_types, export_xml, project):
     """Classify one object and say where its file goes. One answer, both ways.
 
     Export and compare have to agree about every object. When they do not,
@@ -135,7 +135,7 @@ def resolve_object(obj, obj_guid, cached_types, export_xml):
     else:
         cache = "miss"
 
-    effective_type, is_xml, unsupported = classify_object(obj)
+    effective_type, is_xml, unsupported = classify_object(obj, project)
     if unsupported:
         return Resolved(effective_type, is_xml, None, SKIP_UNSUPPORTED, cache)
     return _gated(effective_type, is_xml,
@@ -161,22 +161,28 @@ def _gated(effective_type, is_xml, rel_path, export_xml, cache):
     return Resolved(effective_type, is_xml, rel_path, None, cache)
 
 
-def create_import_managers():
+def create_import_managers(project, pou_type=None):
     """One manager per kind that needs its own, plus the two fallbacks.
 
     Export and import share this dict: they are the same objects, and a kind
     that needs special handling on the way out needs it on the way back.
+
+    The project is handed to every one of them here, once. Six methods used
+    to go looking for it themselves through a resolver that searched every
+    loaded module; a command has exactly one project open and already knows
+    which. pou_type goes the same way, and only the two managers that create
+    a POU need it.
     """
     return {
-        TYPE_GUIDS["folder"]: FolderManager(),
-        TYPE_GUIDS["property"]: PropertyManager(),
-        TYPE_GUIDS["task_config"]: ConfigManager(),
-        TYPE_GUIDS["alarm_config"]: ConfigManager(),
-        TYPE_GUIDS["visu_manager"]: ConfigManager(),
-        TYPE_GUIDS["device"]: ConfigManager(),
-        TYPE_GUIDS["softmotion_pool"]: ConfigManager(),
-        "default": POUManager(),
-        "native": NativeManager()
+        TYPE_GUIDS["folder"]: FolderManager(project),
+        TYPE_GUIDS["property"]: PropertyManager(project, pou_type),
+        TYPE_GUIDS["task_config"]: ConfigManager(project),
+        TYPE_GUIDS["alarm_config"]: ConfigManager(project),
+        TYPE_GUIDS["visu_manager"]: ConfigManager(project),
+        TYPE_GUIDS["device"]: ConfigManager(project),
+        TYPE_GUIDS["softmotion_pool"]: ConfigManager(project),
+        "default": POUManager(project, pou_type),
+        "native": NativeManager(project)
     }
 
 

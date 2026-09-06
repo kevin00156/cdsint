@@ -13,7 +13,7 @@ import time
 
 from engine.codesys_utils import (
     safe_str, init_logging, log_info, log_warning,
-    resolve_projects, finalize_sync_operation, create_safety_backup,
+     finalize_sync_operation, create_safety_backup,
     reset_interaction_timer, get_interaction_seconds, format_elapsed,
     timed_prompt
 )
@@ -35,7 +35,7 @@ def import_project(base_dir, values, projects_obj=None):
     Compares disk with IDE and imports all differences automatically.
     Disk is the source of truth — any IDE↔Disk mismatch results in disk winning.
     """
-    projects_obj = resolve_projects(projects_obj, globals())
+    projects_obj = projects_obj or entry.borrowed(globals(), "projects")
     
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
@@ -62,7 +62,8 @@ def import_project(base_dir, values, projects_obj=None):
 
     # A live PLC login makes every create/move/delete fail inside the IDE, so
     # check before spending a full compare on an import that cannot land.
-    online_apps = find_logged_in_applications(projects_obj.primary, globals())
+    online_apps = find_logged_in_applications(projects_obj.primary,
+                                             entry.borrowed(globals(), "online"))
     if online_apps:
         block = logged_in_block_message(online_apps)
         print(block)
@@ -191,7 +192,8 @@ def import_project(base_dir, values, projects_obj=None):
     
     # ── Phase 2: Import all changes ──
     updated, created, failed, deleted, moved = perform_import_items(
-        projects_obj.primary, base_dir, to_import
+        projects_obj.primary, base_dir, to_import,
+        entry.borrowed(globals(), "PouType")
     )
     
     # Save and back up BEFORE stopping the clock and announcing completion,

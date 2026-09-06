@@ -285,7 +285,7 @@ def _reconcile_device_names(project, to_sync):
     apply_device_remap(to_sync, remap)
 
 
-def perform_import_items(primary_project, base_dir, to_sync):
+def perform_import_items(primary_project, base_dir, to_sync, pou_type=None):
     """Import the selected items from disk into the IDE, in four passes.
 
     The order is the whole design, and it is why this reads as a list rather
@@ -303,7 +303,7 @@ def perform_import_items(primary_project, base_dir, to_sync):
     Returns (updated, created, failed, deleted, moved).
     """
     tally = _Tally()
-    import_managers = create_import_managers()
+    import_managers = create_import_managers(primary_project, pou_type)
     name_map = {}
     folder_cache = {}
 

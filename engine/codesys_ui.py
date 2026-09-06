@@ -5,20 +5,22 @@ codesys_ui.py - Modern UI components for CODESYS scripts
 from __future__ import print_function
 
 import clr
-try:
-    clr.AddReference("System.Windows.Forms")
-    clr.AddReference("System.Drawing")
-    from System.Windows.Forms import (
-        Form, Label, Button, FormBorderStyle,
-        DialogResult, FormStartPosition, NotifyIcon, ToolTipIcon, TextBox,
-        FlatStyle, Timer
-    )
-    from System.Drawing import (
-        Size, Point, Font, FontStyle, SystemIcons, Color, ContentAlignment
-    )
-except:
-    # Fallback if forms not available (e.g. Linux/Headless)
-    pass
+
+# No try/except round this. Every class below subclasses Form, so an import
+# that "tolerated" a missing WinForms went on to raise NameError at the first
+# class statement anyway -- one line further down and with a message that
+# said nothing about the real problem. This module is the IDE's dialogs; an
+# IDE side without WinForms cannot run at all, and the sentence should say so.
+clr.AddReference("System.Windows.Forms")
+clr.AddReference("System.Drawing")
+from System.Windows.Forms import (
+    Form, Label, Button, FormBorderStyle,
+    DialogResult, FormStartPosition, NotifyIcon, ToolTipIcon, TextBox,
+    FlatStyle, Timer
+)
+from System.Drawing import (
+    Size, Point, Font, FontStyle, SystemIcons, Color, ContentAlignment
+)
 
 
 # Each live toast, until its timer fires. Nothing else refers to a tray icon
@@ -76,26 +78,20 @@ def show_toast(title, message, timeout=3000):
     timer.Start()
 
 def ask_yes_no(title, message):
+    """A Yes/No dialog. True for Yes, False for No.
+
+    One dialog, not two. There used to be a second path behind this one that
+    reached into __main__ for `system`, `PromptChoice` and `PromptResult` and
+    asked the CODESYS radio-button prompt instead -- a fallback for a WinForms
+    that is not there, in a module every class of which subclasses Form. It
+    could not have run, and it was the last thing in the engine that went
+    looking for the IDE's globals rather than being handed them.
     """
-    Shows a standard Windows Yes/No dialog. 
-    Returns True for Yes, False for No or Cancel.
-    Avoids the CODESYS radio-button based choose dialog.
-    """
-    try:
-        from System.Windows.Forms import MessageBox, MessageBoxButtons, MessageBoxIcon, DialogResult
-        result = MessageBox.Show(message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-        return result == DialogResult.Yes
-    except Exception as e:
-        print("ask_yes_no error: " + str(e))
-        # Fallback to pure CODESYS prompt if WinForms fails
-        try:
-            import __main__
-            if hasattr(__main__, "system"):
-                res = __main__.system.ui.prompt(message, __main__.PromptChoice.YesNo, __main__.PromptResult.No)
-                return res == __main__.PromptResult.Yes
-        except:
-            pass
-        return False
+    from System.Windows.Forms import (MessageBox, MessageBoxButtons,
+                                      MessageBoxIcon, DialogResult)
+    result = MessageBox.Show(message, title, MessageBoxButtons.YesNo,
+                             MessageBoxIcon.Question)
+    return result == DialogResult.Yes
 
 class DirectoryChoiceForm(Form):
     """Modern choice dialog for setting the sync directory"""

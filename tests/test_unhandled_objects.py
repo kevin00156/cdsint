@@ -102,7 +102,7 @@ def managers():
 
 
 def test_classify_object_names_it_instead_of_raising(managers):
-    effective_type, is_xml, should_skip = managers.classify_object(Missing())
+    effective_type, is_xml, should_skip = managers.classify_object(Missing(), None)
     assert should_skip is True
     assert unhandled.names() == ["Sffe4717cHPS_1"]
 
@@ -117,7 +117,7 @@ def test_classify_object_still_works_on_an_object_it_can_read(managers):
         def get_name(self):
             return "MC_Main"
 
-    effective_type, is_xml, should_skip = managers.classify_object(Pou())
+    effective_type, is_xml, should_skip = managers.classify_object(Pou(), None)
     assert should_skip is False
     assert not unhandled.any_so_far()
 

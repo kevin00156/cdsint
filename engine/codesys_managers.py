@@ -14,7 +14,7 @@ import zlib
 from engine.codesys_utils import (
     safe_str, clean_filename, calculate_hash, log_info, log_error, log_warning,
     format_st_content, format_property_content, parse_property_content,
-    resolve_projects, is_container_device, get_quick_ide_hash, normalize_path,
+    is_container_device, get_quick_ide_hash, normalize_path,
     read_ide_attrs, write_ide_attrs, render_sync_pragmas, build_state_hash,
     parse_sync_pragmas, attrs_from_pragmas, needs_kind_pragma, file_signature,
     ide_flag, read_sync_text
@@ -66,7 +66,7 @@ def native_xml_of(project, obj, recursive=False):
             os.remove(tmp_path)
 
 
-def is_nvl(obj):
+def is_nvl(obj, project):
     """
     Detect if a GVL object is actually a Network Variable List (NVL).
     
@@ -77,10 +77,9 @@ def is_nvl(obj):
     Returns True if the object is an NVL, False otherwise.
     """
     try:
-        projects_obj = resolve_projects()
-        if not projects_obj or not projects_obj.primary:
+        if project is None:
             return False
-        xml_content = native_xml_of(projects_obj.primary, obj)
+        xml_content = native_xml_of(project, obj)
         if xml_content is None:
             return False
         # NVL XML contains ListIdentifier and/or NetworkType elements
@@ -381,15 +380,14 @@ def build_expected_path(obj, effective_type, is_xml, obj_guid=None):
         return "/".join(full_path_parts) + "/" + file_name
     return file_name
 
-def export_interface_declaration(obj):
+def export_interface_declaration(obj, project):
     """Extract interface declaration via native XML export fallback."""
     import re
     try:
-        projects_obj = resolve_projects()
-        if not projects_obj or not projects_obj.primary:
+        if project is None:
             return None
-            
-        xml_content = native_xml_of(projects_obj.primary, obj)
+
+        xml_content = native_xml_of(project, obj)
         if xml_content is None:
             return None
 
@@ -400,7 +398,7 @@ def export_interface_declaration(obj):
         log_warning("Could not extract interface declaration for " + name_of(obj) + ": " + safe_str(e))
     return None
 
-def export_object_content(obj):
+def export_object_content(obj, project):
     """Extract declaration and implementation text from object."""
     declaration = None
     implementation = None
@@ -412,7 +410,7 @@ def export_object_content(obj):
     except: pass
 
     if declaration is None and safe_str(obj.type) == TYPE_GUIDS["itf"]:
-        declaration = export_interface_declaration(obj)
+        declaration = export_interface_declaration(obj, project)
 
     try:
         if ide_flag(obj, "has_textual_implementation"):
@@ -472,7 +470,7 @@ def parse_accessor_content(combined_content):
         return decl, code
     return combined_content.strip(), None
 
-def classify_object(obj):
+def classify_object(obj, project):
     """
     Determine the effective export type for a CODESYS object.
 
@@ -557,7 +555,7 @@ def classify_object(obj):
     # NVL detection: GVL that is actually a Network Variable List
     if kind == "gvl":
         try:
-            if is_nvl(obj):
+            if is_nvl(obj, project):
                 effective_type = TYPE_GUIDS["nvl_sender"]
                 is_xml = True
         except:
@@ -585,6 +583,26 @@ def classify_object(obj):
 
 class ObjectManager(object):
     """Base class for managing CODESYS objects"""
+    def __init__(self, project=None, pou_type=None):
+        """The primary project and the PouType enum, handed over once.
+
+        Six methods used to go looking for it themselves, through a resolver
+        that tried the caller's globals, then __main__, then every module in
+        every loaded module. What they needed was the project the command had
+        open, and a command has exactly one.
+
+        None is allowed because one caller wants nothing but the hashing:
+        codesys_compare_engine keeps a bare NativeManager to hash two strings
+        it already holds.
+
+        pou_type is the IDE's PouType enum, needed only where a new POU is
+        created. Measured on ScriptEngine 4.2.0.0 (CODESYS 3.5.21.40) and
+        4.0.0.0 (DIADesigner-AX 1.10): it is in the script's own namespace,
+        which is where the entry body reads it from.
+        """
+        self.project = project
+        self.pou_type = pou_type
+
     def _update_cache_entry(self, obj, rel_path, file_path, context, q_hash=None, stat_info=None):
         """Update the shared context cache with latest object metadata."""
         if 'new_cache' not in context or not os.path.exists(file_path):
@@ -789,12 +807,11 @@ class FolderManager(ObjectManager):
         # But we also have absolute path in file_path (which is relative in metadata)
         from engine.codesys_utils import ensure_folder_path
         try:
-            # In CODESYS, 'projects' is an environment global, no need to import it
-            # file_path in this context is the rel_path from metadata e.g. "src/Folder/Sub"
-            projects_obj = resolve_projects()
-            if projects_obj and projects_obj.primary:
-                return ensure_folder_path(file_path, projects_obj.primary)
-            return None
+            # file_path here is the rel_path from the sync folder, e.g.
+            # "Device/Application/Folder/Sub".
+            if self.project is None:
+                return None
+            return ensure_folder_path(file_path, self.project)
         except:
             return None
 
@@ -829,7 +846,7 @@ class POUManager(ObjectManager):
             return skip
         # -------------------------------
 
-        declaration, implementation = export_object_content(obj)
+        declaration, implementation = export_object_content(obj, self.project)
         # Check if this object type can have implementation even if empty
         obj_type_guid = safe_str(obj.type)
         can_have_impl = obj_type_guid in IMPLEMENTATION_TYPES
@@ -885,25 +902,16 @@ class POUManager(ObjectManager):
                 # Always create as Program first — update_object_code will replace
                 # the declaration with the correct FUNCTION / FUNCTION_BLOCK header.
                 #
-                # PouType is a CODESYS global, not an import: the IDE injects it
-                # into the running script's namespace, and that namespace is
-                # __main__ both from the Scripts menu and under the headless
-                # launcher. It is NOT a global of this module -- entry.lend()
-                # copies the IDE's globals onto the entry body, not onto here --
-                # so reading a bare `PouType` was never going to resolve.
-                # Measured on ScriptEngine 4.2.0.0 (CODESYS 3.5.21.40) and
-                # 4.0.0.0 (DIADesigner-AX 1.10): __main__ is where it is.
-                p_type = None
-                try:
-                    import __main__
-                    p_type = __main__.PouType.Program
-                except AttributeError:
-                    pass
-
-                if p_type is not None:
-                    obj = container.create_pou(name, p_type)
+                # PouType is a CODESYS global the IDE injects into the running
+                # script's namespace, and the entry body hands it here rather
+                # than this module going to look for it. It is not an import,
+                # and it is not a global of this module either -- reading a
+                # bare `PouType` here never resolved.
+                if self.pou_type is not None:
+                    obj = container.create_pou(name, self.pou_type.Program)
                 else:
-                    log_error("Cannot resolve PouType enum. Falling back to create_child.")
+                    log_error("No PouType was handed to this manager. Falling "
+                              "back to create_child.")
                     obj = container.create_child(name, type_guid) if hasattr(container, "create_child") else None
             elif hasattr(container, "create_child"):
                 obj = container.create_child(name, type_guid)
@@ -1001,18 +1009,18 @@ class PropertyManager(POUManager):
         # -------------------------------
 
         # Export Declaration
-        declaration, _ = export_object_content(obj)
+        declaration, _ = export_object_content(obj, self.project)
         
         # Get GET accessor
         get_impl = None
         if prop_data['get']:
-            get_decl, get_impl_raw = export_object_content(prop_data['get'])
+            get_decl, get_impl_raw = export_object_content(prop_data['get'], self.project)
             get_impl = format_st_content(get_decl, get_impl_raw)
             
         # Get SET accessor
         set_impl = None
         if prop_data['set']:
-            set_decl, set_impl_raw = export_object_content(prop_data['set'])
+            set_decl, set_impl_raw = export_object_content(prop_data['set'], self.project)
             set_impl = format_st_content(set_decl, set_impl_raw)
             
         # Combine into Property Format
@@ -1257,14 +1265,13 @@ class NativeManager(ObjectManager):
         
         # Export to a temp file first, then compare
         tmp_path = file_path + ".tmp"
-        projects_obj = resolve_projects()
-        if not (projects_obj and projects_obj.primary):
-            raise RuntimeError("Native export failed: 'projects' object not "
-                               "found or no primary project.")
+        if self.project is None:
+            raise RuntimeError("Native export failed: this manager was built "
+                               "without a project.")
         try:
             if not os.path.exists(target_dir):
                 os.makedirs(target_dir)
-            projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
+            self.project.export_native([obj], tmp_path, recursive=recursive)
         except Exception:
             # The half-written temp file goes, the reason does not: the
             # caller records the object by name (SPEC D13).
@@ -1320,11 +1327,10 @@ class NativeManager(ObjectManager):
             else:
                 # Fallback to project-level import (object ref may be stale)
                 log_info("Updating native object " + obj_name + " via project import.")
-                projects_obj = resolve_projects()
-                if projects_obj and projects_obj.primary:
-                    projects_obj.primary.import_native(file_path)
-                    return True
-                return False
+                if self.project is None:
+                    return False
+                self.project.import_native(file_path)
+                return True
         except Exception as e:
             log_error("Native update failed for " + obj_name + ": " + safe_str(e))
             return False
@@ -1337,9 +1343,8 @@ class NativeManager(ObjectManager):
                 container.import_native(file_path)
             else:
                 # Fallback to project-level import
-                projects_obj = resolve_projects()
-                if projects_obj and projects_obj.primary:
-                    projects_obj.primary.import_native(file_path)
+                if self.project is not None:
+                    self.project.import_native(file_path)
             
             # Find newly created object
             if container:

@@ -46,6 +46,25 @@ def flags(caller_globals):
     return caller_globals.get("command_args") or {}
 
 
+def borrowed(caller_globals, name):
+    """One of the IDE's globals -- `system`, `projects`, `online` -- by name.
+
+    CODESYS puts them into the namespace of the script it runs, and lend()
+    below (or cds/ide/silent.py) puts them into the body's. So the body's own
+    globals() is where they are, and it is the only place worth looking.
+
+    The four resolvers this replaced each tried the caller's globals and
+    then every module already loaded, until something looked close enough --
+    a search for an object the caller was holding all along, and a way to
+    pick up a dead one from a previous run in the bargain.
+
+    None when the name is not there; the caller says what that means, because
+    they do not agree: an export cannot run without `projects`, and the login
+    pre-flight without `online` just means nothing can be logged in.
+    """
+    return (caller_globals or {}).get(name)
+
+
 def run(module, ide_globals, entry="main"):
     """Call module.<entry>() with ide_globals visible in the module."""
     lend(module, ide_globals)

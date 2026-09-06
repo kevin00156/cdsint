@@ -6,7 +6,7 @@ import time
 from engine.codesys_constants import sync_direction_of
 from engine.codesys_utils import (
     safe_str, log_info, log_warning, log_error,
-    init_logging, resolve_projects, ensure_git_configs,
+    init_logging,  ensure_git_configs,
     load_sync_cache, save_sync_cache, build_folder_hashes,
     normalize_path, finalize_sync_operation, reset_interaction_timer,
     get_interaction_seconds, format_elapsed
@@ -129,7 +129,7 @@ def export_project(export_dir, values, projects_obj=None):
     """Export all project objects to folder structure with metadata"""
     
     # Resolving projects object
-    projects_obj = resolve_projects(projects_obj, globals())
+    projects_obj = projects_obj or entry.borrowed(globals(), "projects")
     
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
@@ -138,6 +138,11 @@ def export_project(export_dir, values, projects_obj=None):
         except NameError:
             print("Error:", msg)
         return entry.result(False, msg)
+
+    # One read of the open project, handed to everything below it: the
+    # managers, the classifier and the content readers all need it, and each
+    # of them used to go looking for it on its own.
+    project = projects_obj.primary
 
     # Create export directory
     if not os.path.exists(export_dir):
@@ -188,7 +193,7 @@ def export_project(export_dir, values, projects_obj=None):
     property_accessors = {}
     
     # Initialize managers
-    managers = create_import_managers()
+    managers = create_import_managers(project)
     
     # Load sync cache for fast-export skipping
     cache_data = load_sync_cache(export_dir)
@@ -211,7 +216,7 @@ def export_project(export_dir, values, projects_obj=None):
         try:
             obj_guid = safe_str(obj.guid)
             decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
-                                     export_xml)
+                                     export_xml, project)
             effective_type = decided.effective_type
             is_xml = decided.is_xml
             rel_path = decided.rel_path

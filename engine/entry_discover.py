@@ -23,14 +23,14 @@ from __future__ import print_function
 
 from engine.codesys_constants import kind_of
 from engine.codesys_utils import (
-    safe_str, init_logging, log_info, log_warning, resolve_projects
+    safe_str, init_logging, log_info, log_warning
 )
 from engine import entry, settings, unhandled
 
 
 def discover_project(projects_obj=None):
     """Survey the object tree and report what it is made of."""
-    projects_obj = resolve_projects(projects_obj, globals())
+    projects_obj = projects_obj or entry.borrowed(globals(), "projects")
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)

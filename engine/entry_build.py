@@ -13,7 +13,7 @@ import time
 from engine import build_log
 from engine.codesys_constants import kind_of
 from engine.codesys_utils import (
-    log_warning, safe_str, init_logging, is_debug, resolve_projects
+    log_warning, safe_str, init_logging, is_debug
 )
 from engine import entry, settings
 
@@ -276,7 +276,7 @@ def build_project(base_dir, projects_obj=None):
     # The category CODESYS files build messages under.
     build_category = Guid("97F48D64-A2A3-4856-B640-75C046E37EA9")
 
-    projects_obj = resolve_projects(projects_obj, globals())
+    projects_obj = projects_obj or entry.borrowed(globals(), "projects")
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)

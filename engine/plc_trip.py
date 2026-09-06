@@ -19,8 +19,7 @@ import os
 from cds.core import ipc
 from engine import entry, plc_crc, plc_link, unhandled
 from engine import ide_read
-from engine.codesys_online import resolve_online
-from engine.codesys_utils import resolve_projects, safe_str
+from engine.codesys_utils import safe_str
 
 
 class Trip(object):
@@ -62,10 +61,10 @@ class Trip(object):
 
     def reach_the_device(self):
         """Resolve everything a controller conversation needs. None if ready."""
-        self.projects = resolve_projects(None, self.globals)
+        self.projects = entry.borrowed(self.globals, "projects")
         if self.projects is None or not getattr(self.projects, "primary", None):
             return "no project is open, so there is no device to talk to"
-        self.online = resolve_online(self.globals)
+        self.online = entry.borrowed(self.globals, "online")
         if self.online is None:
             return ("the CODESYS 'online' API is not reachable from this "
                     "script run, so nothing can connect to a controller")
