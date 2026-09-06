@@ -12,7 +12,7 @@ Provides:
   - batch_import_native_xmls_with_children() : batch-import native XML objects with child restore
 
 Saving and backing up the project is deliberately NOT done here; callers
-finish with codesys_utils.finalize_sync_operation().
+finish with engine/backup.py's finalize_sync_operation().
 """
 from __future__ import print_function
 

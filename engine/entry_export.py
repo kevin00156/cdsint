@@ -8,7 +8,7 @@ from engine.codesys_utils import (
     safe_str, log_info, log_warning, log_error,
     init_logging,  ensure_git_configs,
     load_sync_cache, save_sync_cache, build_folder_hashes,
-    normalize_path, finalize_sync_operation, reset_interaction_timer,
+    normalize_path, reset_interaction_timer,
     get_interaction_seconds, format_elapsed
 )
 from engine.codesys_managers import clear_path_caches
@@ -16,6 +16,7 @@ from engine.classify import (
     SKIP_SYNC_DIRECTION, collect_accessors, create_import_managers,
     manager_for, resolve_object
 )
+from engine.backup import finalize_sync_operation
 from engine.sync_dir import sync_files
 from engine import entry, settings, unhandled
 
