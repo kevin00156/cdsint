@@ -17,6 +17,7 @@ from engine.codesys_managers import (
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers
+from engine.sync_dir import sync_files
 from engine import entry, settings, unhandled
 
 from cds.core import dialogs
@@ -36,32 +37,12 @@ def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
     passed in rather than read here: one read of the settings per command,
     and the caller already did it.
     """
-    orphaned_items = []
-    
-    # We'll collect everything first to show a preview
-    for root, dirs, files in os.walk(export_dir):
-        # Skip hidden dirs (.git, .project etc.)
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        
-        # Calculate relative path from export_dir
-        rel_root = os.path.relpath(root, export_dir)
-        if rel_root == ".":
-            rel_root = ""
-            
-        # Check files
-        for f in files:
-            # Skip reserved files and folders
-            # Skip files starting with dot
-            if f.startswith("."):
-                continue
-
-            # Only consider our export types to be safe
-            if not (f.endswith(".st") or f.endswith(".xml")):
-                continue
-                
-            rel_path = os.path.join(rel_root, f).replace("\\", "/")
-            if rel_path not in current_objects:
-                orphaned_items.append(rel_path)
+    # Everything first, so the preview can show the whole list. The walk and
+    # its skip rules are sync_dir's, the same ones the new-file scan uses:
+    # this sweep offers files for deletion, so it must not see a file the
+    # scan refuses to look at (and therefore never claims).
+    orphaned_items = [rel_path for rel_path, _abs in sync_files(export_dir)
+                      if rel_path not in current_objects]
 
     if not orphaned_items:
         return 0

@@ -22,7 +22,7 @@ import tempfile
 import time
 from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, IMPLEMENTATION_TYPES,
-    RESERVED_FILES, TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
+    TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
     kind_allows_export, kind_allows_import
 )
 from engine.codesys_utils import (
@@ -43,6 +43,7 @@ from engine.codesys_managers import (
     build_expected_path, update_object_code, clear_path_caches
 )
 from engine import unhandled
+from engine.sync_dir import sync_files
 from engine.ide_read import guid_of, parent_of
 
 
@@ -558,22 +559,6 @@ def detect_moved_files(new_in_ide, new_on_disk):
     return moved, remaining_ide, remaining_disk
 
 
-def has_st_files(base_dir):
-    """Is there anything under base_dir an import could read as the truth?
-
-    The same walk scan_new_disk_files does, and for the same reason: a .st
-    that the disk scan will not look at cannot be a source of truth either.
-    Dot-folders are where backups and git keep their copies, and importing
-    those back would be a different bug from the one this answers.
-    """
-    for root, dirs, files in os.walk(base_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
-        for f in files:
-            if f.endswith(".st") and not f.startswith("."):
-                return True
-    return False
-
-
 def scan_new_disk_files(base_dir, ide_paths):
     """
     Walk the export directory and find .st / .xml files that are
@@ -585,38 +570,19 @@ def scan_new_disk_files(base_dir, ide_paths):
     new_files = []
     known_paths = set(ide_paths.keys())
 
-    for root, dirs, files in os.walk(base_dir):
-        # Skip hidden dirs and special dirs
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
-
-        rel_root = os.path.relpath(root, base_dir)
-        if rel_root == ".":
-            rel_root = ""
-
-        for f in files:
-            if not (f.endswith(".st") or f.endswith(".xml")):
-                continue
-            if f in RESERVED_FILES or f.startswith("."):
-                continue
-
-            if rel_root:
-                rel_path = rel_root.replace("\\", "/") + "/" + f
-            else:
-                rel_path = f
-
-            if rel_path not in known_paths:
-                abs_path = os.path.join(root, f)
-                name = os.path.splitext(f)[0]
-                if f.endswith(".xml") and "." in name:
-                    name_part, doc_type = name.rsplit(".", 1)
-                    if doc_type in KNOWN_TYPE_SUFFIXES:
-                        name = name_part
-
-                new_files.append({
-                    "name": name,
-                    "path": rel_path,
-                    "file_path": abs_path
-                })
+    for rel_path, abs_path in sync_files(base_dir):
+        if rel_path in known_paths:
+            continue
+        name = os.path.splitext(os.path.basename(rel_path))[0]
+        if rel_path.endswith(".xml") and "." in name:
+            name_part, doc_type = name.rsplit(".", 1)
+            if doc_type in KNOWN_TYPE_SUFFIXES:
+                name = name_part
+        new_files.append({
+            "name": name,
+            "path": rel_path,
+            "file_path": abs_path
+        })
 
     return new_files
 

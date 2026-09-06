@@ -19,8 +19,9 @@ from engine.codesys_utils import (
 )
 from engine.codesys_compare_engine import (
     find_all_changes, perform_import_items, build_device_remap,
-    summarize_device_remap, has_st_files
+    summarize_device_remap
 )
+from engine.sync_dir import has_st_files
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
 from engine import entry, settings, unhandled
 
