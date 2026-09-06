@@ -193,3 +193,49 @@ class TestMessagesThatWillNotBeRead:
             [Mute(), self.Plain()], "App")
         assert (errors, warnings) == (1, 0)
         assert len(rows) == 1
+
+
+class TestEveryAttributeIsGuarded:
+    """Not just `.object`. Delta 1.10 answers "The object GUID '...' is not
+    valid" for whichever attribute you ask about, and the first version of
+    this guard covered three of them and left `.prefix`, `.number` and
+    `.position` reading straight through.
+    """
+
+    class Plain(object):
+        text = "error  something else"
+        severity = "Error"
+        prefix = "C"
+        number = 2
+        position = -1
+        object = None
+
+    def one_that_refuses(self, attribute):
+        """A message like Plain, but this one attribute raises."""
+        def raiser(self):
+            raise RuntimeError("The object GUID '...' is not valid.")
+        return type("Refuses" + attribute.title(), (self.Plain,),
+                    {attribute: property(raiser)})()
+
+    @pytest.mark.parametrize("attribute",
+                             ("prefix", "number", "position", "object"))
+    def test_one_unreadable_attribute_costs_its_column_not_the_verdict(
+            self, attribute):
+        from engine import entry_build
+        rows, errors, warnings = entry_build.collect_rows(
+            [self.one_that_refuses(attribute), self.Plain()], "App")
+        assert (errors, warnings) == (2, 0)
+        assert len(rows) == 2
+
+    def test_a_message_that_refuses_everything_still_leaves_the_others(self):
+        from engine import entry_build
+
+        class Mute(object):
+            @property
+            def text(self):
+                raise RuntimeError("gone")
+
+        rows, errors, warnings = entry_build.collect_rows(
+            [Mute(), self.Plain()], "App")
+        assert (errors, warnings) == (1, 0)
+        assert len(rows) == 1

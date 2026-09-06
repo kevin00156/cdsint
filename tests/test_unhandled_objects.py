@@ -273,3 +273,48 @@ def test_a_file_that_could_not_be_written_is_named_and_the_export_is_not_ok(
     assert result["ok"] is False
     assert result["data"]["failed_objects"] == ["MC_Main"]
     assert "MC_Main" in result["summary"]
+
+
+def test_a_preflight_that_cannot_read_the_device_tree_names_it(monkeypatch,
+                                                               tmp_path):
+    """The login pre-flight runs before the import walks anything, and what it
+    could not read has to survive into the result.
+
+    A device whose plugin is missing raises from get_children(). The
+    pre-flight then sees no application, reports nothing logged in, and the
+    import goes ahead -- to fail object by object inside the IDE, with
+    nothing in the log pointing at why. For one release of this work the
+    register was started AFTER the pre-flight, which wiped the very names
+    that answer the question (SPEC D13).
+    """
+    from engine import codesys_online, entry_import
+    from engine.codesys_constants import TYPE_GUIDS
+
+    class DeafDevice(object):
+        def get_name(self):
+            return "PLC"
+
+        type = TYPE_GUIDS["device"]
+
+        def get_children(self, recursive=False):
+            raise RuntimeError("the device plugin is not installed")
+
+    sync = str(tmp_path)
+    project = Project({}, [DeafDevice()], str(tmp_path / "Fake.project"))
+    projects = Projects(project)
+    monkeypatch.setattr(entry_import, "projects", projects, raising=False)
+    monkeypatch.setattr(entry_import, "system", DeafSystem(), raising=False)
+    monkeypatch.setattr(entry_import, "has_st_files", lambda base_dir: True)
+
+    # An online API that answers, so nothing short-circuits before the walk.
+    class NothingLoggedIn(object):
+        def create_online_application(self, app):
+            raise RuntimeError("no session")
+
+    monkeypatch.setattr(entry_import, "find_logged_in_applications",
+                        lambda project, api: codesys_online
+                        .find_logged_in_applications(project, NothingLoggedIn()))
+
+    result = entry_import.import_project(sync, DEFAULTS, projects)
+    assert result["ok"] is False
+    assert "PLC" in result["data"]["failed_objects"]

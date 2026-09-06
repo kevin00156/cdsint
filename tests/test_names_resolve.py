@@ -20,19 +20,29 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The names CODESYS puts into a running script's namespace. The engine reads
-# them as plain globals because that is what they are; engine/entry.py's
-# borrowed() is how they reach anything that is not an entry body.
+# The names CODESYS puts into a running script's namespace.
 IDE_GLOBALS = frozenset((
     "system", "projects", "online", "PouType", "Severity",
     "OnlineChangeOption",
 ))
 
+# ...and the only files allowed to read one as a bare global: the ones the IDE
+# itself executes, whose namespace those names are actually in.
+#
+# Everything else is handed them (engine/entry.py's borrowed()). Letting the
+# whole of engine/ off would let back exactly the bug this list was written
+# after: codesys_managers.py read a bare `PouType` for years, and it could
+# never have resolved, because entry.lend() copies the IDE's globals onto the
+# entry body and not onto the modules it calls.
+def _may_read_ide_globals(rel_path):
+    return (rel_path.startswith("engine/entry_")
+            or rel_path.startswith("stub/")
+            or rel_path.startswith("tools/")
+            or rel_path == "cds/ide/headless.py")
+
 # Python 2 built-ins that are gone in 3. The IDE side runs on IronPython 2.7
 # as well (SPEC D4), so these are load-bearing there and absent here.
 PYTHON_2_BUILTINS = frozenset(("unicode", "basestring", "long", "unichr"))
-
-ALLOWED = IDE_GLOBALS | PYTHON_2_BUILTINS
 
 SCANNED = ("engine", "cds", "cdsint", "stub", "tools")
 
@@ -48,8 +58,12 @@ def sources():
                     yield os.path.relpath(full, REPO_ROOT).replace("\\", "/")
 
 
-def undefined_names(rel_path):
-    """What pyflakes says does not resolve in this file."""
+def undefined_in(source, rel_path):
+    """What does not resolve in this source, read as if it were `rel_path`.
+
+    Source rather than a path, so the two tests below can ask about a line
+    nobody has to write into the engine and take out again.
+    """
     api = pytest.importorskip("pyflakes.api")
     reporter = pytest.importorskip("pyflakes.reporter")
 
@@ -64,11 +78,19 @@ def undefined_names(rel_path):
                 self.found.append(text)
 
     collected = Collect()
+    api.check(source, rel_path, collected)
+
+    allowed = set(PYTHON_2_BUILTINS)
+    if _may_read_ide_globals(rel_path):
+        allowed |= IDE_GLOBALS
+    return [line for line in collected.found
+            if not any("'%s'" % name in line for name in allowed)]
+
+
+def undefined_names(rel_path):
     with io.open(os.path.join(REPO_ROOT, *rel_path.split("/")),
                  encoding="utf-8") as handle:
-        api.check(handle.read(), rel_path, collected)
-    return [line for line in collected.found
-            if not any("'%s'" % name in line for name in ALLOWED)]
+        return undefined_in(handle.read(), rel_path)
 
 
 @pytest.mark.parametrize("rel_path", sorted(sources()))
@@ -79,11 +101,29 @@ def test_every_name_resolves(rel_path):
         "  %s" % (rel_path, "\n  ".join(left)))
 
 
-def test_the_allowed_list_is_not_a_way_to_hide_a_typo():
-    """A guard on the guard: every name on the list has to be one a real IDE
-    provides or a Python 2 built-in, not whatever made today's test pass."""
-    assert ALLOWED == IDE_GLOBALS | PYTHON_2_BUILTINS
-    assert not (IDE_GLOBALS & PYTHON_2_BUILTINS)
+READS_AN_IDE_GLOBAL = "def make():\n    return %s\n"
+
+
+@pytest.mark.parametrize("name", sorted(IDE_GLOBALS))
+def test_an_engine_module_may_not_read_an_ide_global(name):
+    """The allowance is for the files the IDE executes, and nowhere else.
+
+    engine/codesys_managers.py read a bare `PouType` for years and it could
+    never have resolved: entry.lend() copies the IDE's globals onto the entry
+    body, not onto the modules it calls. A whitelist that covered all of
+    engine/ would let that back in without a word.
+    """
+    left = undefined_in(READS_AN_IDE_GLOBAL % name,
+                        "engine/codesys_pretend.py")
+    assert left, ("a bare `%s` in an engine module went unreported" % name)
+
+
+@pytest.mark.parametrize("name", sorted(IDE_GLOBALS))
+def test_an_entry_body_may(name):
+    """They are genuinely in an entry body's namespace: CODESYS puts them
+    there, and that is the one place reading them bare is the truth."""
+    assert undefined_in(READS_AN_IDE_GLOBAL % name,
+                        "engine/entry_pretend.py") == []
 
 
 def test_ast_parses_every_file():

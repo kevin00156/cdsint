@@ -60,6 +60,14 @@ def import_project(base_dir, values, projects_obj=None):
         system.ui.error(refused)
         return entry.result(False, refused)
 
+    # Before the pre-flight, not after: the pre-flight walks the device tree
+    # and records every node that will not answer (SPEC D13), and starting the
+    # register afterwards threw those entries away. A device whose plugin is
+    # missing then looked exactly like a device with nothing logged into it,
+    # and the import went ahead to fail object by object with nothing in the
+    # log pointing at why.
+    unhandled.start()
+
     # A live PLC login makes every create/move/delete fail inside the IDE, so
     # check before spending a full compare on an import that cannot land.
     online_apps = find_logged_in_applications(projects_obj.primary,
@@ -69,9 +77,8 @@ def import_project(base_dir, values, projects_obj=None):
         print(block)
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
-        return entry.result(False, block)
+        return entry.result(False, block, failed_objects=unhandled.names())
 
-    unhandled.start()
     print("=== Starting Project Import ===")
     print("Importing from: " + base_dir)
     start_time = time.time()

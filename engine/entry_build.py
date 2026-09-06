@@ -163,30 +163,40 @@ def _object_text(obj_ref):
     return decl, impl
 
 
+def _attr(msg, name, default):
+    """One attribute of a build message, or the default when it will not say.
+
+    getattr with a default does NOT do this. Under IronPython 2.7 a property
+    that raises propagates straight out of getattr, while hasattr() swallowed
+    it and answered False -- which is exactly why the two looked
+    interchangeable and were not. Delta 1.10 answers "The object GUID '...' is
+    not valid" for messages about an object the build no longer has, and it
+    answers it for whichever attribute you ask about, not only `.object`.
+
+    So every optional attribute of a message goes through here. One that will
+    not be read costs its own column, not the whole build's verdict.
+    """
+    try:
+        return getattr(msg, name, default)
+    except Exception as exc:
+        log_warning("A build message will not say its %s: %s"
+                    % (name, safe_str(exc)))
+        return default
+
+
 def _message_id(msg):
     """The 'C0018' the IDE would show, or just the prefix when it has no number."""
-    prefix = safe_str(msg.prefix) if msg.prefix else ""
-    number = getattr(msg, "number", 0)
+    prefix = _attr(msg, "prefix", None)
+    prefix = safe_str(prefix) if prefix else ""
+    number = _attr(msg, "number", 0)
     if number and number > 0:
         return "%s%04d" % (prefix, number)
     return prefix
 
 
 def _message_object(msg, app_name):
-    """(object column text, the object itself). "N/A" when there is none.
-
-    Reading `.object` at all can raise: Delta 1.10 answers "The object GUID
-    '...' is not valid" for messages about an object the build no longer has.
-    The guard has to be around the read itself, not just around the name --
-    IronPython's hasattr() swallowed that exception and returned False, so a
-    getattr with a default looks equivalent and is not.
-    """
-    try:
-        obj_ref = getattr(msg, "object", None)
-    except Exception as exc:
-        log_warning("A build message will not say which object it is about: "
-                    + safe_str(exc))
-        return "N/A", None
+    """(object column text, the object itself). "N/A" when there is none."""
+    obj_ref = _attr(msg, "object", None)
     if not obj_ref:
         return "N/A", None
     try:
@@ -209,11 +219,13 @@ def collect_rows(messages, app_name):
     warnings = 0
     for msg in messages:
         try:
+            # These two are what makes a message a finding at all, so a
+            # message that will not answer them is skipped rather than
+            # counted. Everything else goes through _attr and costs at most
+            # its own column (SPEC D13).
             text = safe_str(msg.text)
             severity = str(msg.severity)
         except Exception as exc:
-            # One message that will not be read must not throw away the
-            # verdict on all the others (SPEC D13).
             log_warning("Skipping a build message that will not be read: "
                         + safe_str(exc))
             continue
@@ -227,7 +239,7 @@ def collect_rows(messages, app_name):
         obj_text, obj_ref = _message_object(msg, app_name)
         decl, impl = _object_text(obj_ref)
         line, col, section = build_log.locate_message(
-            text, getattr(msg, "position", -1), decl, impl)
+            text, _attr(msg, "position", -1), decl, impl)
         rows.append(build_log.row("{}: {}".format(_message_id(msg), text),
                                   obj_text, build_log.position_text(line, col,
                                                                     section)))

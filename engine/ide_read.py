@@ -16,6 +16,12 @@ login pre-flight in codesys_online.py used to log a warning and carry on,
 which left an import believing nothing was logged in when the truth was that
 nobody could tell.
 
+A caller who wants that entry has to have started the register first.
+engine/entry_import.py called unhandled.start() AFTER the pre-flight for one
+release of this work, which wiped every name the pre-flight had recorded and
+made the failure quieter than the warning it replaced -- silence, where before
+there had at least been a line in the log.
+
 The two upward reads -- guid_of and parent_of -- stay silent, and the reason
 is in their docstrings: their callers walk up to the project root, and the
 root ends the walk by raising rather than by answering None. Recording that
