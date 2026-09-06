@@ -72,7 +72,7 @@
 - [x] **B. `discover` 進 CLI**
   - [x] `engine/entry_discover.py` 照第 4 節；`cds/ide/entries.py` 加一列；`cdsint/flags.py` 加子命令，兩種形式；`tools/Project_discover.py` 刪。
   - [x] 驗收：測試涵蓋「有未知 GUID 時 `ok` False 且名字與 GUID 在 `data.unknown`」「全部認得時 `ok` True」。
-  - [x] 驗收（監督者會重現）：`cdsint discover --project <softplc 副本> --install 3.5.21.40 --sync-dir S --json` 回 `total` 229、`unknown` 空、exit 0。——**跑過，74.9 秒 exit 0**，`ok` true、`unknown` 空、`failed_objects` 空、22 種 kind。`total` 是 **407 不是 229**：229 是 export 寫出的檔案數（同一份副本、空同步資料夾跑 `compare --project` 回 `new_in_ide=229`），407 是樹上全部節點。理由與為什麼不改成 229，見第 7 節那條 Ruling。
+  - [x] 驗收（監督者會重現）：`cdsint discover --project <softplc 副本> --install 3.5.21.40 --sync-dir S --json` 回 `total` 229、`unknown` 空、exit 0。——**跑過，74.9 秒 exit 0**，`ok` true、`unknown` 空、`failed_objects` 空、22 種 kind。`total` 是 **407 不是 229**：229 是 export 寫出的檔案數（同一份副本、空同步資料夾跑 `compare --project` 回 `new_in_ide=229`），407 是樹上全部節點。理由與為什麼不改成 229，見第 7 節那條 Ruling。——監督者 2026-09-06 17:45 重現：exit 0、`ok` true、`total` 407、`unknown` 空、22 種 kind，75 秒。工單寫 229 是監督者寫錯，229 是匯出的檔案數，407 是整棵樹含匯出刻意跳過的 property accessor、task、device、device_module，worker 的理由（discover 必須數那些）成立。
   - [x] readMe 與 `docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md`：`failed_objects` 出現時下一步是 `cdsint discover`，未知 GUID 加進 `profiles/default.json` 的 `guid_aliases` 再跑。
 
 - [x] **C. perf_probe 改名**
@@ -97,6 +97,8 @@
 - [x] **G. 收尾**
   - [x] `python -m pytest tests -q` 綠，WSL 那條也綠；commit；照第 6 節回報，停下來等監督者 push 並看 GitHub 兩條 job。——Windows `python -m pytest tests -q` 與根目錄 `python -m pytest` 各 948 passed；WSL Ubuntu-22.04（Python 3.10、pytest 6.2.5）948 passed。GitHub 兩條 job 要 push 才看得到。
 
+  - 監督者驗證（2026-09-06 17:45）：Windows 948 passed、WSL 948 passed，監督者自己跑的；compare 視窗殘留只剩一個 `.pyc`；`tools/` 沒有 `Project_*`；`pip show cdsint` 的 Version 等於 `SCRIPT_VERSION`；readMe 錨點全在；沒有殘留的 IDE 行程。
+
 ---
 
 ## 6. 回報格式
@@ -118,6 +120,8 @@
 - Ruling: `config set` 寫進去的值一字不改，不套 `_as_written` — 對話框會把瀏覽出來的絕對路徑改寫成 `./sync`，因為那個路徑不是人打的；`config set KEY=VALUE` 是人打的，而一個會偷改你給的值的 CLI 會讓 `config get` 回傳跟你設的不一樣的東西 — 錯了的代價是同一個資料夾從兩條路設進去，屬性值一個是絕對路徑一個是 `./sync`，兩者 `load_base_dir` 都解得開，差別只在專案搬家時相對的那個還能用。
 
 監督者已裁的：
+
+- Ruling（驗收後）: worker 的五條 Ruling 全部接受，包括 `discover` 的 `total` 數整棵樹（407 不是 229）、`config set` 的值一字不改、收尾走 `entries.py` 按引擎本體而不在 `cds/ide` 自己寫一份 — 每條有理由與代價，第一條還修正了監督者寫錯的驗收句 — 錯了的代價是無。
 
 - Ruling: 不做「別的專案的資料夾」守門 — 使用者的 AX8 加 WSL 流程就是同一份文字餵兩個專案，引擎的裝置重對應為此而存在 — 錯了的代價是指錯資料夾時只有 `-y` 前的計畫預覽與空資料夾拒絕在擋，那兩個對這種錯已經夠。
 - Ruling: `Project_` 前綴只給選單入口 — 使用者說 perf_probe 不該長得像使用者會按的東西，這句話推廣成規則就是這條 — 錯了的代價是無。
