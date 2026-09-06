@@ -233,3 +233,81 @@ class TestManagerDispatch:
 
     def test_a_plain_st_file_is_not_xml_backed(self):
         assert not codesys_compare_engine._is_xml_backed("A/B.st", "guid")
+
+
+class TestHashContentPerKind:
+    """What each flavour of native XML keeps, and what it throws away.
+
+    Four booleans sniffed out of the text used to feed a nine-deep if/elif
+    chain that mixed "which flavour is this" with "keep this line". These
+    tests are about the first question and the second one separately, because
+    that is what the chain made impossible to check.
+    """
+
+    def mgr(self, managers):
+        return managers.NativeManager()
+
+    def test_a_plain_document_drops_the_stamps_and_keeps_the_rest(self, managers):
+        mgr = self.mgr(managers)
+        body = '<Object>\n  <Body>content</Body>\n</Object>\n'
+        stamped = ('<Object>\n'
+                   '  <Single Name="Timestamp" Type="date">2026-08-13</Single>\n'
+                   '  <Single Name="Guid" Type="System.Guid">abc</Single>\n'
+                   '  <Body>content</Body>\n</Object>\n')
+        assert mgr._hash_content(stamped) == mgr._hash_content(body)
+
+    def test_a_plain_document_drops_churning_visualization_guids(self, managers):
+        mgr = self.mgr(managers)
+        body = '<Object>\n  <Body>content</Body>\n</Object>\n'
+        with_visu = ('<Object>\n  <Object Guid="1" Type="visu"/>\n'
+                     '  <Body>content</Body>\n</Object>\n')
+        assert mgr._hash_content(with_visu) == mgr._hash_content(body)
+
+    def test_a_device_drops_its_session_ids(self, managers):
+        mgr = self.mgr(managers)
+        plain = '<Device>\n  <Name>PLC</Name>\n</Device>\n'
+        noisy = ('<Device>\n  <VQID>7</VQID>\n  <InstanceId>3</InstanceId>\n'
+                 '  <Timestamp>2026-08-13</Timestamp>\n  <Name>PLC</Name>\n</Device>\n')
+        assert mgr._hash_content(noisy) == mgr._hash_content(plain)
+
+    def test_a_device_still_notices_a_real_change(self, managers):
+        mgr = self.mgr(managers)
+        one = '<Device>\n  <Name>PLC</Name>\n</Device>\n'
+        two = '<Device>\n  <Name>OtherPLC</Name>\n</Device>\n'
+        assert mgr._hash_content(one) != mgr._hash_content(two)
+
+    def test_an_alarm_group_keeps_only_the_lines_that_identify_it(self, managers):
+        mgr = self.mgr(managers)
+        kept = '  <Single Name="Name" Type="string">AlarmGroup1</Single>\n'
+        assert mgr._hash_content(kept + '  <Noise>a</Noise>\n') == \
+            mgr._hash_content(kept + '  <Noise>b</Noise>\n')
+
+    def test_a_textlist_is_not_read_as_an_alarm_group(self, managers):
+        """'AlarmGroup' appears in a GlobalTextList too, and a text list keeps
+        almost everything while an alarm group keeps almost nothing."""
+        mgr = self.mgr(managers)
+        head = '  <Single Name="Name" Type="string">GlobalTextList</Single>\n'
+        assert mgr._hash_content(head + '  <Text>a</Text>\n') != \
+            mgr._hash_content(head + '  <Text>b</Text>\n')
+
+    def test_an_alarm_group_with_nothing_left_hashes_its_name(self, managers):
+        """The filters can leave nothing at all. The hash then says where the
+        content came from, not what it is -- preserved, not endorsed."""
+        mgr = self.mgr(managers)
+        volatile = '<AlarmGroup>\n  <Timestamp>2026-08-13</Timestamp>\n'
+        assert mgr._hash_content(volatile, "one.xml") != \
+            mgr._hash_content(volatile, "two.xml")
+
+    def test_a_plain_document_with_nothing_left_does_not_hash_its_name(self, managers):
+        """Only the alarm flavours fall back; an empty plain document is
+        empty, and two empty ones are the same."""
+        mgr = self.mgr(managers)
+        assert mgr._hash_content("", "one.xml") == mgr._hash_content("", "two.xml")
+
+    def test_content_that_cannot_be_hashed_raises(self, managers):
+        """It used to return "", and NativeManager.export tests
+        `old_hash and old_hash == new_hash` -- which "" makes false forever,
+        so the object was reported "updated" on every export."""
+        mgr = self.mgr(managers)
+        with pytest.raises(Exception):
+            mgr._hash_content(None)

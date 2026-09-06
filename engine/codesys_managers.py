@@ -6,6 +6,7 @@ Extracts object-specific logic for export and import operations.
 """
 from __future__ import print_function
 
+import collections
 import os
 import codecs
 import tempfile
@@ -1097,13 +1098,108 @@ class PropertyManager(POUManager):
             log_error("Failed to create property " + name + ": " + safe_str(e))
         return None
 
+def _crc(text):
+    return str(zlib.crc32(text.encode("utf-8")) & 0xFFFFFFFF)
+
+
+def _rewritten_every_export(line):
+    """The two things CODESYS stamps afresh into any native XML it writes."""
+    if 'Name="Timestamp"' in line:
+        return True
+    return 'Name="Guid"' in line and 'Type="System.Guid"' in line
+
+
+def _keep_plain(line):
+    """Any native XML that is not one of the flavours below."""
+    if _rewritten_every_export(line):
+        return False
+    # Visualization object GUIDs churn the same way the attribute ones do.
+    stripped = line.strip()
+    return not (stripped.startswith('<Object Guid="')
+                and ('visu' in line.lower() or 'frame' in line.lower()))
+
+
+def _keep_all_but_volatile(line):
+    if _rewritten_every_export(line):
+        return False
+    return '<Timestamp>' not in line
+
+
+def _keep_device(line):
+    """A device: keep the structure, drop the ids that change per session."""
+    if not _keep_all_but_volatile(line):
+        return False
+    lowered = line.lower()
+    return 'vqid' not in lowered and 'instanceid' not in lowered
+
+
+def _keep_alarm_group(line):
+    """An alarm group: only the lines that say which group this is."""
+    if not _keep_all_but_volatile(line):
+        return False
+    if '<Single Name="Name" Type="string">' in line and 'AlarmGroup' in line:
+        return True
+    if ('CODESYS_HMI' in line and 'HMI_Application' in line
+            and 'Alarm Configuration' in line):
+        return True
+    return (line.strip().startswith('<Object Guid="')
+            and ('Type="type_21f"' in line or 'Type="textlist"' in line))
+
+
+def _keep_alarm_config(line):
+    """An alarm configuration: only the lines that identify it."""
+    if not _keep_all_but_volatile(line):
+        return False
+    return ('<Single Name="Name" Type="string">' in line
+            or 'CODESYS_HMI' in line)
+
+
+_Flavour = collections.namedtuple("_Flavour",
+                                  "detect keep name_is_the_fallback")
+
+# Ordered, and the order is the one the if/elif chain had: the first detector
+# that matches decides. A document that reads as both a device and an alarm
+# group is a device, as it always was.
+#
+# Four booleans sniffed out of the text used to be computed up front and then
+# consulted by a chain that mixed "which flavour is this" with "keep this
+# line", nine levels deep. What each flavour keeps is the knowledge here; the
+# chain was only ever the way it was written down.
+_XML_FLAVOURS = (
+    _Flavour(lambda t: '<Single Name="Name" Type="string">GlobalTextList' in t,
+             _keep_all_but_volatile, False),
+    _Flavour(lambda t: '225bfe47-7336-4dbc-9419-4105a7c831fa' in t or '<Device' in t,
+             _keep_device, False),
+    _Flavour(lambda t: 'AlarmGroup' in t and 'GlobalTextList' not in t,
+             _keep_alarm_group, True),
+    _Flavour(lambda t: 'Alarm Configuration' in t,
+             _keep_alarm_config, True),
+)
+
+_PLAIN = _Flavour(lambda t: True, _keep_plain, False)
+
+
+def _xml_flavour(text):
+    for flavour in _XML_FLAVOURS:
+        if flavour.detect(text):
+            return flavour
+    return _PLAIN
+
+
 class NativeManager(ObjectManager):
     """Handle objects exported as native CODESYS XML"""
     def _hash_file(self, file_path):
-        """Calculate CRC32 hash of a file's content, ignoring dynamic bits like timestamps."""
+        """This file's hash, or "" when there is no readable file there.
+
+        "" means "nothing on disk to compare against", which is what the
+        export path does with it: is_new is already true in that case, so the
+        hash is never consulted. It does NOT mean "hashing failed" -- that
+        raises, because a failure that returns a falsy value the caller
+        ignores is the same bug as a silent skip (PRINCIPLES 6).
+        """
         try:
             content_full = read_sync_text(file_path)
-        except:
+        except (IOError, OSError, UnicodeDecodeError):
             return ""
         return self._hash_content(content_full, os.path.basename(file_path))
 
@@ -1118,89 +1214,26 @@ class NativeManager(ObjectManager):
         three reads per differing object, on files up to a third of a
         megabyte.
 
-        fallback_name is only consulted when the filters leave nothing stable
-        to hash; see the note at that branch.
-        """
-        try:
-            lines = content_full.splitlines(True)  # Keep line endings
+        fallback_name is only consulted for a flavour whose filter left
+        nothing at all; see NOTHING_SURVIVES_FILTERING below.
 
-            # Detect if this is an AlarmGroup-related file that can have type conversions
-            is_alarm_group = 'AlarmGroup' in content_full and 'GlobalTextList' not in content_full
-            is_textlist = '<Single Name="Name" Type="string">GlobalTextList' in content_full
-            is_alarm_config = 'Alarm Configuration' in content_full
-            is_device = '225bfe47-7336-4dbc-9419-4105a7c831fa' in content_full or '<Device' in content_full
-            
-            # Special handling for AlarmGroup and GlobalTextList: filter out dynamic content
-            if is_alarm_group or is_textlist or is_alarm_config or is_device:
-                # Extract only stable metadata that shouldn't change
-                stable_content = []
-                for line in lines:
-                    # Filter out timestamps and dynamic GUIDs for all these types
-                    if 'Name="Timestamp"' in line: continue
-                    if 'Name="Guid"' in line and 'Type="System.Guid"' in line: continue
-                    if '<Timestamp>' in line: continue # Device specific timestamp
-                    
-                    # For GlobalTextList, keep most content except dynamic parts
-                    if is_textlist:
-                        stable_content.append(line)
-                    # For devices, we want to keep most content but be wary of dynamic IDs
-                    elif is_device:
-                        # Skip lines that look like dynamic IDs or timestamps
-                        if 'vqid' in line.lower() or 'instanceid' in line.lower(): continue
-                        stable_content.append(line)
-                    # For AlarmGroup, keep only basic identifying information  
-                    elif is_alarm_group:
-                        if '<Single Name="Name" Type="string">' in line and 'AlarmGroup' in line:
-                            stable_content.append(line)
-                        elif 'CODESYS_HMI' in line and 'HMI_Application' in line and 'Alarm Configuration' in line:
-                            stable_content.append(line)
-                        # Also keep the object type identifier for more precise comparison
-                        elif '<Object Guid="' in line and ('Type="type_21f"' in line or 'Type="textlist"' in line):
-                            stable_content.append(line)
-                    elif is_alarm_config:
-                        # For alarm config, keep identifying info
-                        if '<Single Name="Name" Type="string">' in line:
-                            stable_content.append(line)
-                        elif 'CODESYS_HMI' in line:
-                            stable_content.append(line)
-                
-                if stable_content:
-                    content = "".join(stable_content).encode("utf-8")
-                    return str(zlib.crc32(content) & 0xFFFFFFFF)
-                else:
-                    # Fallback: nothing survived the filters, so hash the name.
-                    # NOTE: this makes the hash depend on where the content came
-                    # from rather than what it is. contents_are_equal() passes
-                    # two deliberately different names to keep the historic
-                    # outcome (such an object always compares as different);
-                    # that is preserved here, not endorsed.
-                    return str(zlib.crc32(fallback_name.encode("utf-8")) & 0xFFFFFFFF)
-            
-            # Filter out lines that often contain changing timestamps or metadata
-            filtered = []
-            skip_next = False
-            for line in lines:
-                if skip_next:
-                    skip_next = False
-                    continue
-                
-                # Strip internal CODESYS timestamp
-                if 'Name="Timestamp"' in line: continue
-                
-                # Strip dynamic GUIDs that can change between exports
-                # These are internal CODESYS identifiers that don't affect functionality
-                if 'Name="Guid"' in line and 'Type="System.Guid"' in line: continue
-                
-                # For visualization files, also strip object GUIDs that can change
-                if line.strip().startswith('<Object Guid="') and ('visu' in line.lower() or 'frame' in line.lower()):
-                    continue
-                    
-                filtered.append(line)
-                
-            content = "".join(filtered).encode("utf-8")
-            return str(zlib.crc32(content) & 0xFFFFFFFF)
-        except:
-            return ""
+        Raises rather than returning "" for an unhashable input. "" used to be
+        the answer, and NativeManager.export tests `old_hash and old_hash ==
+        new_hash`, which "" makes false forever -- so the object was reported
+        "updated" on every single export and nobody could see why.
+        """
+        flavour = _xml_flavour(content_full)
+        kept = [line for line in content_full.splitlines(True)
+                if flavour.keep(line)]
+        if not kept and flavour.name_is_the_fallback:
+            # NOTHING_SURVIVES_FILTERING: an alarm group or alarm config whose
+            # every line was volatile. Hashing the name means the hash says
+            # where the content came from rather than what it is, and
+            # contents_are_equal passes two deliberately different names so
+            # that such an object always compares as different. Preserved
+            # here, not endorsed.
+            return _crc(fallback_name)
+        return _crc("".join(kept))
 
     def export(self, obj, effective_type, rel_path, context, recursive=False):
         # Determine target directory and file path
