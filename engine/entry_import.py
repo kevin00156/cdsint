@@ -18,9 +18,9 @@ from engine.codesys_utils import (
     timed_prompt
 )
 from engine.codesys_compare_engine import (
-    find_all_changes, perform_import_items, build_device_remap,
-    summarize_device_remap
+    find_all_changes, build_device_remap, summarize_device_remap
 )
+from engine.import_items import perform_import_items
 from engine.sync_dir import has_st_files
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
 from engine import entry, settings, unhandled

@@ -15,12 +15,14 @@ import pytest
 
 from tests.fakes import Node as BaseNode
 
-from engine import codesys_compare_engine
+from engine import import_items
 
 
 @pytest.fixture(scope="module")
 def engine():
-    return codesys_compare_engine
+    # The four passes live here now; codesys_compare_engine keeps the
+    # per-object operations they call.
+    return import_items
 
 
 class RemovableNode(BaseNode):

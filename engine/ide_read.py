@@ -96,3 +96,20 @@ def children_of(obj):
     except Exception as exc:
         unhandled.note(obj, exc)
         return []
+
+
+def child_named(container, name):
+    """The container's direct child with this name, or None. Case-insensitive.
+
+    CODESYS does not care about the case of an object name and neither does
+    the disk path, so a lookup that did would find nothing for half the
+    project. This was written out four times inside one function.
+    """
+    wanted = name.lower()
+    for child in children_of(container):
+        try:
+            if child.get_name().lower() == wanted:
+                return child
+        except Exception as exc:
+            unhandled.note(child, exc)
+    return None
