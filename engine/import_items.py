@@ -174,7 +174,7 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
     return native_batches, st_files
 
 
-def _save_pou_children(native_batches):
+def _save_pou_children(native_batches, project):
     """Pass 2: remember what hangs off each POU that is about to be replaced.
 
     A native XML import replaces the POU object, and its methods, actions and
@@ -189,7 +189,7 @@ def _save_pou_children(native_batches):
             existing = child_named(container, name)
             if not existing:
                 continue
-            children = save_pou_children(existing)
+            children = save_pou_children(existing, project)
             if children:
                 saved[name.lower()] = children
     return saved
@@ -314,7 +314,7 @@ def perform_import_items(primary_project, base_dir, to_sync, pou_type=None):
 
     native_batches, st_files = _sort_items(
         to_sync, base_dir, primary_project, taken_by_parent, tally)
-    pou_children = _save_pou_children(native_batches)
+    pou_children = _save_pou_children(native_batches, primary_project)
     _import_xml(native_batches, import_managers, primary_project,
                 pou_children, name_map, tally)
     _import_st(st_files, base_dir, import_managers, primary_project,

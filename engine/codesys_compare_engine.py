@@ -734,7 +734,7 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
     return res
 
 
-def save_pou_children(pou_obj):
+def save_pou_children(pou_obj, project):
     """
     Save child objects (methods, actions, properties) of a POU before XML import.
     

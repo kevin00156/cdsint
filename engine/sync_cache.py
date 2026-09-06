@@ -19,7 +19,8 @@ import json
 import os
 import time
 
-from engine.codesys_utils import CACHE_VERSION, log_info, log_warning, safe_str
+from engine.codesys_utils import (CACHE_VERSION, calculate_hash, log_info,
+                                  log_warning, safe_str)
 
 
 def file_signature(file_path, stat_info=None):

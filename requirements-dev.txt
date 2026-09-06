@@ -1,1 +1,5 @@
 pytest>=7.0
+# tests/test_names_resolve.py asks pyflakes which names do not resolve.
+# Without it those tests skip, and a NameError in a branch the fake
+# objects never reach goes unnoticed until a real IDE hits it.
+pyflakes>=3.0
