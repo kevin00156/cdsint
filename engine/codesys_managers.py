@@ -10,7 +10,6 @@ import os
 import codecs
 import tempfile
 import zlib
-import time
 from engine.codesys_utils import (
     safe_str, clean_filename, calculate_hash, log_info, log_error, log_warning,
     format_st_content, format_property_content, parse_property_content,
@@ -21,7 +20,7 @@ from engine.codesys_utils import (
 )
 from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, EXPORTABLE_TYPES, IMPLEMENTATION_TYPES,
-    XML_TYPES as XML_TYPES_CONST, kind_of, sync_direction_of
+    kind_of, sync_direction_of
 )
 from engine import unhandled
 
@@ -30,52 +29,6 @@ from engine import unhandled
 _MISSING = object()
 
 # --- Helper Functions ---
-
-def get_task_for_write(obj, project):
-    """
-    Extract the 'TaskForWrite' (assigned task) GUID from a Task Local GVL
-    by exporting it to native XML and parsing the TaskForWrite field.
-    Returns (task_guid, task_name) or (None, None) if not found.
-    """
-    import tempfile, re
-    try:
-        tmp_path = os.path.join(tempfile.gettempdir(), "tlgvl_%s.xml" % safe_str(obj.guid)[:8])
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-        project.export_native([obj], tmp_path, recursive=False)
-
-        if not os.path.exists(tmp_path):
-            return None, None
-
-        import codecs as _codecs
-        with _codecs.open(tmp_path, "r", "utf-8") as xf:
-            xml_content = xf.read()
-        os.remove(tmp_path)
-
-        # Parse <Single Name="TaskForWrite" Type="System.Guid">GUID</Single>
-        match = re.search(r'<Single Name="TaskForWrite" Type="System\.Guid">([^<]+)</Single>', xml_content)
-        if not match:
-            return None, None
-
-        task_guid = match.group(1).strip()
-
-        # Look up the task name by GUID in the project
-        task_name = task_guid  # fallback to GUID if name not found
-        try:
-            all_objs = project.get_children(recursive=True)
-            for candidate in all_objs:
-                if safe_str(candidate.guid) == task_guid:
-                    task_name = safe_str(candidate.get_name())
-                    break
-        except:
-            pass
-
-        return task_guid, task_name
-
-    except Exception as e:
-        log_warning("Could not extract TaskForWrite for " + safe_str(obj.get_name()) + ": " + safe_str(e))
-        return None, None
 
 def is_nvl(obj):
     """
@@ -87,7 +40,6 @@ def is_nvl(obj):
     
     Returns True if the object is an NVL, False otherwise.
     """
-    import tempfile, re
     try:
         projects_obj = resolve_projects()
         if not projects_obj or not projects_obj.primary:
@@ -521,70 +473,6 @@ def parse_accessor_content(combined_content):
         return decl, code
     return combined_content.strip(), None
 
-def collect_property_accessors(all_objects):
-    """Collect property Get/Set accessors grouped by parent property GUID.
-    
-    Uses two passes:
-    1. Scan all objects for property_accessor type
-    2. Check each property's children directly (fallback)
-    
-    Returns:
-        dict: {property_guid: {'get': obj|None, 'set': obj|None, 'parent_obj': obj}}
-    """
-    property_accessors = {}
-    
-    # Pass 1: Find accessors by type
-    for obj in all_objects:
-        try:
-            if not hasattr(obj, 'type') or not hasattr(obj, 'get_name'):
-                continue
-            obj_type = safe_str(obj.type)
-            if obj_type == TYPE_GUIDS["property_accessor"]:
-                if hasattr(obj, "parent") and obj.parent:
-                    parent_type = safe_str(obj.parent.type)
-                    if parent_type == TYPE_GUIDS["property"]:
-                        parent_guid = safe_str(obj.parent.guid)
-                        if parent_guid not in property_accessors:
-                            property_accessors[parent_guid] = {
-                                'get': None, 'set': None, 'parent_obj': obj.parent
-                            }
-                        name = obj.get_name().lower()
-                        if name == "get":
-                            property_accessors[parent_guid]['get'] = obj
-                        elif name == "set":
-                            property_accessors[parent_guid]['set'] = obj
-        except:
-            continue
-    
-    # Pass 2: Check property children directly
-    for obj in all_objects:
-        try:
-            if not hasattr(obj, 'type'):
-                continue
-            obj_type = safe_str(obj.type)
-            if obj_type == TYPE_GUIDS["property"]:
-                obj_guid = safe_str(obj.guid)
-                try:
-                    if obj_guid not in property_accessors:
-                        property_accessors[obj_guid] = {
-                            'get': None, 'set': None, 'parent_obj': obj
-                        }
-                    children = obj.get_children()
-                    for child in children:
-                        child_type = safe_str(child.type)
-                        if child_type == TYPE_GUIDS["property_accessor"]:
-                            child_name = child.get_name().lower()
-                            if child_name == "get":
-                                property_accessors[obj_guid]['get'] = child
-                            elif child_name == "set":
-                                property_accessors[obj_guid]['set'] = child
-                except:
-                    pass
-        except:
-            continue
-    
-    return property_accessors
-
 def classify_object(obj):
     """
     Determine the effective export type for a CODESYS object.
@@ -815,7 +703,7 @@ class ObjectManager(object):
         """
         pass
     
-    def update(self, obj, file_path, obj_info):
+    def update(self, obj, file_path):
         """Update existing object from file system"""
         pass
     
@@ -837,13 +725,9 @@ class FolderManager(ObjectManager):
         # Folders use a constant hash since we just want to track their path/mtime
         self._update_cache_entry(obj, rel_path, file_path, context, q_hash="folder")
 
-        # Skip creating folders for special XML containers
-        if safe_str(obj.type) in [TYPE_GUIDS["task_config"], TYPE_GUIDS["alarm_config"]]:
-            return "identical"
-            
         return "identical"
 
-    def update(self, obj, file_path, obj_info=None):
+    def update(self, obj, file_path):
         # Folders don't have textual content to update
         return False
 
@@ -949,7 +833,7 @@ class POUManager(ObjectManager):
         self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
         return "new" if is_new else "updated"
 
-    def update(self, obj, file_path, obj_info=None):
+    def update(self, obj, file_path):
         from engine.codesys_utils import parse_st_file
         declaration, implementation, pragmas = parse_st_file(file_path)
         if declaration is None and implementation is None:
@@ -981,36 +865,21 @@ class POUManager(ObjectManager):
             elif hasattr(container, "create_pou"):
                 # Always create as Program first — update_object_code will replace
                 # the declaration with the correct FUNCTION / FUNCTION_BLOCK header.
-                # PouType is a CODESYS global (like 'projects', 'system'), NOT an import.
+                #
+                # PouType is a CODESYS global, not an import: the IDE injects it
+                # into the running script's namespace, and that namespace is
+                # __main__ both from the Scripts menu and under the headless
+                # launcher. It is NOT a global of this module -- entry.lend()
+                # copies the IDE's globals onto the entry body, not onto here --
+                # so reading a bare `PouType` was never going to resolve.
+                # Measured on ScriptEngine 4.2.0.0 (CODESYS 3.5.21.40) and
+                # 4.0.0.0 (DIADesigner-AX 1.10): __main__ is where it is.
                 p_type = None
-                # Strategy 1: Direct global (how it works in CODESYS environment)
                 try:
-                    p_type = PouType.Program
-                except NameError:
+                    import __main__
+                    p_type = __main__.PouType.Program
+                except AttributeError:
                     pass
-                # Strategy 2: __main__ module
-                if p_type is None:
-                    try:
-                        import __main__
-                        p_type = __main__.PouType.Program
-                    except:
-                        pass
-                # Strategy 3: ScriptEngine import
-                if p_type is None:
-                    try:
-                        from ScriptEngine import PouType as _PT
-                        p_type = _PT.Program
-                    except:
-                        pass
-                # Strategy 4: sys.modules scan
-                if p_type is None:
-                    try:
-                        for mod in sys.modules.values():
-                            if hasattr(mod, "PouType"):
-                                p_type = mod.PouType.Program
-                                break
-                    except:
-                        pass
 
                 if p_type is not None:
                     obj = container.create_pou(name, p_type)
@@ -1171,7 +1040,7 @@ class PropertyManager(POUManager):
         self._update_cache_entry(obj, rel_path, file_path, context, content_hash)
         return "new" if is_new else "updated"
 
-    def update(self, obj, file_path, obj_info=None):
+    def update(self, obj, file_path):
         try:
             raw_content = read_sync_text(file_path)
         except: return False
@@ -1426,7 +1295,7 @@ class NativeManager(ObjectManager):
             
         return "new" if is_new else "updated"
 
-    def update(self, obj, file_path, obj_info=None):
+    def update(self, obj, file_path):
         obj_name = obj.get_name() if obj else "Unknown"
         try:
             # Try parent-level import first (more precise)
@@ -1484,8 +1353,3 @@ class ConfigManager(NativeManager):
         
         return super(ConfigManager, self).export(obj, context, recursive=recursive, rel_path=rel_path)
     
-    def create(self, container, name, file_path, type_guid):
-        return super(ConfigManager, self).create(container, name, file_path, type_guid)
-
-    def update(self, obj, file_path, obj_info):
-        return super(ConfigManager, self).update(obj, file_path, obj_info)

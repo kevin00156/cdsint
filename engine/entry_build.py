@@ -8,7 +8,6 @@ from __future__ import print_function
 
 import os
 import time
-import sys
 
 from engine.codesys_constants import kind_of
 from engine.codesys_utils import (

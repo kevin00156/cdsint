@@ -78,7 +78,7 @@ def a_pou_and_its_method(engine, tmp_path):
 
 def run_import(engine, project, to_sync, base_dir):
     updated, created, failed, deleted, moved = engine.perform_import_items(
-        project, base_dir, to_sync, {})
+        project, base_dir, to_sync)
     return {"failed": failed, "deleted": deleted}
 
 

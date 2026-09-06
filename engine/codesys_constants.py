@@ -98,7 +98,6 @@ def _load_profile():
 
 _PROFILE, _PROFILE_RAW = _load_profile()
 
-PROFILE_NAME = _PROFILE.get("name", "unnamed")
 # CRC of the raw profile text - stored in sync_cache.json so a profile edit
 # invalidates cached classifications (they may be stale skips).
 PROFILE_HASH = format(zlib.crc32(_PROFILE_RAW.encode("utf-8")) & 0xFFFFFFFF, "08x")
@@ -303,8 +302,6 @@ IMPL_MARKER = "// === IMPLEMENTATION ==="
 PROPERTY_GET_MARKER = "// === GET ==="
 PROPERTY_SET_MARKER = "// === SET ==="
 
-# Default sync timeout in milliseconds
-DEFAULT_TIMEOUT_MS = 10000
 
 # Characters forbidden in filenames
 FORBIDDEN_CHARS = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*"]

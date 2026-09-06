@@ -1,28 +1,19 @@
 from __future__ import print_function
 
 import os
-import sys
 import time
-import codecs
-import json
 
 from engine.codesys_constants import (
-    IMPL_MARKER, TYPE_GUIDS, EXPORTABLE_TYPES, XML_TYPES, FORBIDDEN_CHARS, RESERVED_FILES,
-    SCRIPT_VERSION, kind_allows_export, sync_direction_of
+    TYPE_GUIDS, XML_TYPES, kind_allows_export, sync_direction_of
 )
 from engine.codesys_utils import (
-    safe_str, clean_filename,
-    calculate_hash, format_st_content,
-    log_info, log_warning, log_error,
-    init_logging, format_property_content,
-    resolve_projects, ensure_git_configs,
-    get_quick_ide_hash, load_sync_cache, save_sync_cache, build_folder_hashes,
+    safe_str, log_info, log_warning, log_error,
+    init_logging, resolve_projects, ensure_git_configs,
+    load_sync_cache, save_sync_cache, build_folder_hashes,
     normalize_path, finalize_sync_operation, reset_interaction_timer,
     get_interaction_seconds, format_elapsed
 )
 from engine.codesys_managers import (
-    FolderManager, POUManager, PropertyManager, NativeManager, ConfigManager,
-    get_object_path, collect_property_accessors, is_nvl, is_graphical_pou,
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers

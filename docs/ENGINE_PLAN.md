@@ -175,10 +175,10 @@
   - [x] 儀器基線存好，摘要（檔案數、hash 清單的 SHA-256、discover 三個數字、三個中位數秒數）寫進第 6 節。
   - [x] 驗收：兩份副本 hash 清單各 231 行，也就是 229 個物件加兩個 git 設定檔（第 7 節第 9 條）；softplc 副本 `discover` total 407、22 種、unknown 空；Shm 副本 464、24 種、9 個 unknown（第 7 節第 8 條）。
 
-- [ ] **階段 1：刪死碼**
-  - [ ] 驗收：第 3 節 1 到 3 條列的名字 `grep -rn` 全 repo 為零（`docs/history/` 不算）。
-  - [ ] 驗收：`python -m pyflakes engine/` 沒有 unused import。
-  - [ ] 驗收：儀器四項全過。測試綠。
+- [x] **階段 1：刪死碼**
+  - [x] 驗收：第 3 節 1 到 3 條列的名字 `grep -rn` 全 repo 為零（`docs/history/` 與本工單不算）。
+  - [x] 驗收：`python -m pyflakes engine/` 沒有 unused import。
+  - [x] 驗收：儀器四項全過（兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0、熱機中位數在一成內）。測試 Windows 與 WSL 各 1072 個全綠。
 
 - [ ] **階段 2：消平行路徑**
   - [ ] 每一條一個 commit，commit 訊息說收了哪一條。
@@ -249,6 +249,7 @@
 | 層 | hash diff 行數 | discover total／kind／unknown | verify exit | export／compare／build 中位數（秒） |
 |---|---|---|---|---|
 | 基線 | — | 407／22／空；464／24／9 | 0；0 | 22.9／15.8／25.8；23.3／15.3／30.5 |
+| 1 刪死碼 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.1／16.4／25.0；（階段 5 才量） |
 
 ---
 
@@ -270,6 +271,12 @@
 7. `Ruling: discover 跑在 export 之前，而且跑在一份剛複製、沒有任何命令碰過的 .project 上 — export 結束會存檔，而 IDE 自己存一次檔就會讓 softplc 那份少掉五個 alarm_group 節點（`history/SETTINGS_PLAN.md` 第 15 條量過同一件事），所以存檔後再跑的 discover 回答的是另一個問題 — 錯了的代價是數到 402 節點 21 種 kind，跟 WORKER_RULES 寫的 407/22 對不上，然後花時間追一個不存在的 walker bug。`
 8. `Ruling: Delta 那份副本的 discover 基線是 464 節點、24 種 kind、9 個 unknown、exit 1，硬條件是「跟基線一模一樣」而不是「unknown 空」 — 那 9 個是 Delta 專屬的物件種類（ArchiveObject、PersistentVariables、Hardware Configuration、Network Configuration、Recipe Manager、EtherCAT Topology，加三個十六進位名字的物件），`profiles/default.json` 裡沒有它們，discover 把名字報出來正是它該做的事（D13） — 錯了的代價是把一個開工前就存在的 exit 1 當成這張工單弄壞的。`
 9. `Ruling: 第 5 節階段 0 的「兩份副本 hash 清單各 229 行」讀成「229 個可匯出物件」 — 229 個物件寫成 228 個 .st 加 1 個 .xml，再加 .gitignore 與 .gitattributes，兩份副本都是 231 行；`history/SETTINGS_PLAN.md` 第 13 條已經裁過同一件事 — 錯了的代價是照字面驗收的人會以為基線不對。`
+
+階段 1 定下來的：
+
+10. `Ruling: 第 1 條的 PouType 四招留第二招（`__main__.PouType.Program`），第一、三、四招刪 — 工單猜的是留第一招，但第一招讀的是這個模組自己的全域名 `PouType`，而 `entry.lend()` 把 IDE 的全域複製到入口本體上，不是複製到 `codesys_managers` 上，所以那個名字在這裡從來就不存在，不是「還沒量到」而是結構上不可能成立；真 IDE 兩台都實測過，原廠 3.5.21.40（ScriptEngine 4.2.0.0）與 Delta 1.10（4.0.0.0）建一個新的 FUNCTION_BLOCK，兩台都走第二招 — 錯了的代價是所有需要新建 POU 的匯入都會退到 `create_child`，那條路建出來的物件種類不對。`
+11. `Ruling: `create_pou` 解不出 PouType 時的 `create_child` 退路留著 — 它會先 `log_error` 說自己在退，不是靜默跳過（D13），而這台機器上有五個 IDE 安裝、相容性矩陣還列了更多，我只在其中兩台量過 — 刪掉一條會出聲的退路換兩台的量測結果，賭得比留著大 — 錯了的代價是留了一段在這兩台上跑不到的程式碼。`
+12. `Ruling: 階段 1 到 4 的熱機中位數只跑原廠那份副本，兩份都跑留到階段 5 — 一份副本的三組四次要十五分鐘，兩份就是半小時，五層下來兩個半小時，而 hash 清單 diff 才是硬條件，速度那條有一成的容差；原廠那份是 WORKER_RULES 與 SPEC 第 7 節都拿來當基準的那一份 — 錯了的代價是某一層只在 Delta 上變慢的話，要到階段 5 才會看到。`
 
 做的時候看到但不在範圍的：
 

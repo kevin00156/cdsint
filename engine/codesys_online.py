@@ -22,8 +22,8 @@ from engine.codesys_constants import kind_of
 from engine.codesys_utils import safe_str, log_warning
 from engine.codesys_managers import get_container_prefix
 
-# Applications sit at Device / [PLC Logic] / Application. Same depth guard as
-# find_application_recursive, with slack for folders above the device.
+# Applications sit at Device / [PLC Logic] / Application, so three levels
+# reach one; the rest is slack for folders sitting above the device.
 MAX_DEPTH = 5
 
 # The only kinds worth walking into, so the scan never sweeps a POU pool.

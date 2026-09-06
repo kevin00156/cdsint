@@ -11,7 +11,6 @@ Provides:
   - update_existing_object() : update an existing IDE object from disk file  
   - create_new_object()      : create a new IDE object from disk file
   - batch_import_native_xmls_with_children() : batch-import native XML objects with child restore
-  - update_object_metadata() : update metadata entry after import
 
 Saving and backing up the project is deliberately NOT done here; callers
 finish with codesys_utils.finalize_sync_operation().
@@ -19,18 +18,17 @@ finish with codesys_utils.finalize_sync_operation().
 from __future__ import print_function
 
 import os
-import codecs
 import tempfile
 import time
 from engine.codesys_constants import (
-    TYPE_GUIDS, EXPORTABLE_TYPES, XML_TYPES, IMPLEMENTATION_TYPES,
+    TYPE_GUIDS, XML_TYPES, IMPLEMENTATION_TYPES,
     RESERVED_FILES, TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
     kind_allows_export, kind_allows_import
 )
 from engine.codesys_utils import (
     safe_str, calculate_hash, clean_filename, log_info, log_error, log_warning,
     merge_native_xmls,
-    parse_st_file, build_object_cache, find_object_by_path,
+    parse_st_file, find_object_by_path,
     ensure_folder_path, determine_object_type, find_object_by_name,
     _find_child_transparent,
     format_st_content, format_property_content,
@@ -41,8 +39,7 @@ from engine.codesys_utils import (
 )
 from engine.codesys_managers import (
     NativeManager, FolderManager, PropertyManager, ConfigManager, POUManager,
-    collect_property_accessors, classify_object, get_container_prefix,
-    get_object_path, get_parent_pou_name, export_object_content,
+    classify_object, export_object_content,
     build_expected_path, update_object_code, clear_path_caches
 )
 from engine import unhandled
@@ -653,15 +650,14 @@ def resolve_manager(import_managers, type_guid, rel_path):
     return mgr
 
 
-# Removed update_object_metadata (metadata files no longer used)
-
-
 def update_existing_object(obj, rel_path, file_path, import_managers):
-    """Update an existing IDE object from a disk file."""
-    # We no longer use obj_info/metadata hashes. Import always forces content update.
-    # managers[type].update already checks for change before applying to IDE.
+    """Update an existing IDE object from a disk file.
+
+    An import always forces the content through; the manager's update() is
+    the one that checks whether the IDE side would actually change.
+    """
     manager = resolve_manager(import_managers, safe_str(obj.type), rel_path)
-    return manager.update(obj, file_path, {})
+    return manager.update(obj, file_path)
 
 
 def _is_pou_or_itf(obj):
@@ -1233,7 +1229,7 @@ def summarize_device_remap(to_sync, remap):
 #  HIGH-LEVEL IMPORT ORCHESTRATOR
 # ═══════════════════════════════════════════════════════════════════
 
-def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
+def perform_import_items(primary_project, base_dir, to_sync):
     """
     Import selected items from disk to IDE.
     
@@ -1244,9 +1240,6 @@ def perform_import_items(primary_project, base_dir, to_sync, globals_ref=None):
         primary_project: The CODESYS primary project object
         base_dir: Export/import directory path
         to_sync: list of item dicts (must have "path", "name", "type_guid"; optionally "obj")
-        globals_ref: unused. Kept so existing callers keep working; it used to
-            resolve the projects object for the save that now lives in the
-            caller's finalize_sync_operation().
     
     Returns:
         (updated_count, created_count, failed_count, deleted_count, moved_count)

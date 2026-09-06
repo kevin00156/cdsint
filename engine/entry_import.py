@@ -9,12 +9,7 @@ Also detects new files on disk (e.g. from git pull) not yet tracked in metadata.
 """
 from __future__ import print_function
 
-import os
-import sys
 import time
-
-import codecs
-import json
 
 from engine.codesys_utils import (
     safe_str, init_logging, log_info, log_warning,
@@ -195,7 +190,7 @@ def import_project(base_dir, values, projects_obj=None):
     
     # ── Phase 2: Import all changes ──
     updated, created, failed, deleted, moved = perform_import_items(
-        projects_obj.primary, base_dir, to_import, globals()
+        projects_obj.primary, base_dir, to_import
     )
     
     # Save and back up BEFORE stopping the clock and announcing completion,

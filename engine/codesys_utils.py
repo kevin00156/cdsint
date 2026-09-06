@@ -10,7 +10,6 @@ import os
 import codecs
 import json
 import zlib
-import csv
 import sys
 import traceback
 import time
@@ -103,14 +102,9 @@ def init_logging(base_dir, debug=False):
         _logger._initialize(base_dir)
     _logger.debug = bool(debug)
 
-def log_error(message, critical=False):
+def log_error(message):
     _logger.log("ERROR", message, include_traceback=True)
-    if critical:
-        try:
-            import system
-            system.ui.error("CRITICAL ERROR: " + message + "\n\nSee sync_debug.log for details.")
-        except:
-            pass
+
 
 # --- Utility Functions ---
 
@@ -954,74 +948,6 @@ def parse_st_file(file_path):
     return declaration, implementation, pragmas
 
 
-def build_object_cache(project=None):
-    """
-    Build lookup caches for project objects.
-    Returns tuple (guid_map, name_map).
-    
-    Args:
-        project: CODESYS project object. If None, will try to use global 'projects.primary'
-    """
-    guid_map = {}
-    name_map = {}
-    
-    # Try to get project from parameter or global
-    if project is None:
-        try:
-            project = projects.primary
-        except NameError:
-            # Not in CODESYS environment
-            return guid_map, name_map
-    
-    if not project:
-        return guid_map, name_map
-    
-    try:
-        all_objects = project.get_children(recursive=True)
-    except:
-        return guid_map, name_map
-    
-    for obj in all_objects:
-        try:
-            # GUID Cache
-            g = safe_str(obj.guid)
-            if g != "N/A":
-                guid_map[g] = obj
-            
-            # Name Cache
-            n = safe_str(obj.get_name())
-            if n not in name_map:
-                name_map[n] = []
-            name_map[n].append(obj)
-        except:
-            continue
-    
-    return guid_map, name_map
-
-
-def find_application_recursive(obj, depth=0):
-    """Recursively search for Application or PLC Logic container"""
-    if depth > 5:  # Limit recursion depth
-        return None
-        
-    try:
-        children = obj.get_children()
-        for child in children:
-            try:
-                child_type = safe_str(child.type)
-                if child_type == TYPE_GUIDS.get("application"):
-                    return child
-                if child_type == TYPE_GUIDS.get("device") or child_type == TYPE_GUIDS.get("plc_logic"):
-                    result = find_application_recursive(child, depth + 1)
-                    if result:
-                        return result
-            except:
-                continue
-    except:
-        pass
-    return None
-
-
 def is_container_device(obj):
     """
     Check if a device is a 'container' (like a PLC root) that contains logic/applications.
@@ -1187,11 +1113,6 @@ def ensure_folder_path(path_str, project):
             return None
             
     return current_obj
-
-
-def find_object_by_guid(guid, guid_map):
-    """Find a CODESYS object by its GUID using cache"""
-    return guid_map.get(guid)
 
 
 def find_object_by_name(name, name_map, parent_name=None):

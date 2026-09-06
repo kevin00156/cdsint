@@ -161,11 +161,6 @@ class DirectoryChoiceForm(Form):
         self.DialogResult = DialogResult.OK
         self.Close()
 
-    def _on_cancel(self, sender, event):
-        self.choice = "cancel"
-        self.DialogResult = DialogResult.Cancel
-        self.Close()
-
 def show_directory_choice_dialog(title, message):
     """Browse or type? Returns "yes" to browse, "no" to type, "cancel" to stop.
 
