@@ -63,7 +63,7 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
- "args": {"yes": true, "force": false}, "created_at": "..."}
+ "args": {"yes": true}, "created_at": "..."}
 ```
 
 ```json
@@ -76,7 +76,7 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 
 - `ok` 是 false 的時候 `error` 一定有文字。
 - 引擎問了問題而命令參數沒帶答案，`ok` 是 false，`needs_input` 放問題原文與該用哪個旗標回答。
-- `denied` 只有專案屬性擋下 `plc` 命令的時候才有值，而看門人根本不跑 `plc`（見底下的命令表），
+- `denied` 只有專案設定檔的 `plc` 清單擋下命令的時候才有值，而看門人根本不跑 `plc`（見底下的命令表），
   所以走這個協定的結果檔裡它永遠是 null。它在這裡是因為兩種形式共用同一個結果紀錄。
 - 寫檔一律先寫 `<名稱>.tmp` 再 rename 成正式名稱，讀的一方永遠看不到半個檔，也永遠忽略 `.tmp`。
 - CLI 讀到結果檔就刪掉。看門人啟動時清掉 `result\` 裡超過一小時的殘留。
@@ -90,7 +90,7 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 | `stop` | 無 | 無 |
 | `export` | `delete_orphans`，預設 false | 「Delete Orphaned Files?」由它回答 |
 | `import` | `yes` 必要 | 「Confirm Import」由 `yes` 回答，沒給回 `needs_input` |
-| `compare` | 無 | 無。逐物件的清單印在 stdout，會進 `stdout_tail`；互動式挑選視窗已經刪了 |
+| `compare` | 無 | 無。逐物件的差異在 `data.changes`，一個物件一列，帶 `name`、`path`、`state`；互動式挑選視窗已經刪了 |
 | `discover` | 無 | 無。物件樹印在 stdout，未知的型別 GUID 在 `data.unknown` |
 | `build` | 多個 application 時要 `app` | `system.ui.choose` 用 `app` 的名字對應選項，沒給回 `needs_input` |
 | `plc connect`、`plc download` | — | 看門人一律拒絕，回一句說明理由的錯誤。理由是它跑在別人正在用的 IDE 裡，登入控制器會搶走那個人的線上狀態（SPEC D8）。這兩個命令只有 `--project` 形式有 |

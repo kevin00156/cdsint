@@ -149,10 +149,9 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   script that knew how to log in, write a boot application and start it was one
   copy away from being one. `plc connect` and `plc download` are now that
   command, and they are the only two with a permission layer in front of them:
-  the project property `cds-sync-plc` says whether this project allows the
-  action at all (exit 5 if not, and only a person in the IDE can change it —
-  `config set` refuses to write that one property), and `-y` says the caller
-  means this call. There is no `--target` form, because the watcher lives in an
+  the `plc` list in the project's settings file says whether this project
+  allows the action at all (exit 5 if not), and `-y` says the caller means
+  this call. There is no `--target` form, because the watcher lives in an
   IDE somebody is using and a login would take their online session. Both
   commands end in the same check, which is the reason to have them: the CRC the
   controller holds now, against the one the last download from this project
@@ -220,11 +219,13 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   object for it or moved an unrelated orphan onto it; export has refused
   to delete orphans under the same conditions since D13. The withheld
   filenames are reported in `data.not_created`.
-- **`cds-sync-version` is written before the project is saved**, not
-  after, so it can actually outlive the run that wrote it. Written
-  afterwards it never survived a headless process at all, and every run
-  therefore warned about a version mismatch — a warning that is always
-  wrong is a warning nobody reads.
+- **The version stamp is gone, and so is the warning it produced.** It was
+  written into the project after the save rather than before, so it never
+  survived a headless run at all and every run therefore warned about a
+  version mismatch — a warning that is always wrong is a warning nobody
+  reads. The mismatch dialog went with the settings move above, and D15 says
+  the disk format does not change without a major version, so there is
+  nothing left for a stamp to guard.
 
 Behaviour that was in `main` but never released:
 
@@ -299,10 +300,21 @@ Behaviour that was in `main` but never released:
   `tests/fakes.py`, replacing six copies of some of them that had begun to
   disagree with each other; the three files that had grown past the size
   limit are split; and two rules that stopped at a directory boundary —
-  `print_function`, and the one concurrency model — now reach the two
-  instruments in `tools/` that run inside an IDE. `profiles/default.json`
+  `print_function`, and the one concurrency model — now reach the instruments
+  in `tools/` that run inside an IDE. `profiles/default.json`
   keyed its notes by list position, so inserting a GUID moved a note onto a
   different one without a word.
+
+  Two things a user can feel, both of them the price of the above. **The
+  first sync after this runs slowly once.** `sync_cache.json` is trusted only
+  when it was built against the same type profile, and the check is a CRC of
+  the whole of `profiles/default.json` — so the two explanatory keys added to
+  that file invalidate every cache exactly once, and the next export or
+  compare re-classifies every object before the speed comes back. **And
+  `tools/call_tree.py` now has to be run from a checkout.** Its parser reads
+  the `// === IMPLEMENTATION ===` separator from `engine/codesys_constants.py`
+  instead of holding a second copy of it; copying the three call-tree files
+  somewhere on their own no longer works.
 
 - **A running IDE can be driven from a terminal at all.** This is the feature
   the rest of the list is built on. **Project_watch** (Tools > Scripting) arms

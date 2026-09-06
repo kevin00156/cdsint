@@ -76,7 +76,7 @@
 理由：目標 3。
 
 **D5 IDE 內等待命令用 WinForms 計時器掛在 IDE 訊息迴圈上，腳本立刻返回。IDE 側不准 `time.sleep()`、不准 `system.delay()`、不准開執行緒、不准 `execute_on_primary_thread`。** 這條是絕對的，沒有「背景執行緒不碰 API 就可以」的例外。
-理由：`system.delay()` 不處理滑鼠鍵盤，`execute_on_primary_thread` SP21 拿掉了，CODESYS API 不是執行緒安全的。整個 IDE 側只有一種併發模式，比一條寫得精確的例外值錢。計時器設計在 ScriptEngine 4.0.0.0 與 4.2.0.0 都有真人驗過。規則由 `tests/test_single_threaded_ide_side.py` 守著：它 parse `engine/`、`cds/ide/`、`stub/` 底下每一支 `.py`，看的是呼叫與 import 這兩種語法節點，不是文字，所以講到「thread」的註解不會被誤判。
+理由：`system.delay()` 不處理滑鼠鍵盤，`execute_on_primary_thread` SP21 拿掉了，CODESYS API 不是執行緒安全的。整個 IDE 側只有一種併發模式，比一條寫得精確的例外值錢。計時器設計在 ScriptEngine 4.0.0.0 與 4.2.0.0 都有真人驗過。規則由 `tests/test_single_threaded_ide_side.py` 守著：它 parse `engine/`、`cds/ide/`、`stub/` 底下每一支 `.py`，加上 `tools/` 裡會載進 IDE 的那幾支（判準是那支檔 import 不 import 得到 `engine`、`cds` 或 `tools/_root.py`）。看的是呼叫與 import 這兩種語法節點，不是文字，所以講到「thread」的註解不會被誤判。
 
 這條規則唯一被允許的例外是 `tools/headless_watch.py` 的 `park()`，它用 `system.delay()`，而且只在 `--noUI`：沒有視窗就沒有畫面會凍住，而沒有東西撐著行程的話 IDE 在腳本返回的瞬間就結束，看門人一次 tick 都跑不到。它在跑之前檢查 `system.ui_present`，有 UI 就拒絕停住，所以這個例外離不開它成立的那個情況。它是驗收用的工具，不在 `cds/ide/` 底下。
 
@@ -172,7 +172,7 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 | 1 | 命令失敗，包含缺旗標的 `needs_input` |
 | 2 | 命令列本身不對：旗標不搭，或找不到唯一一個活著的 IDE |
 | 3 | 逾時 |
-| 4 | 無頭模式：專案被別的行程開著，或 IDE 啟動失敗 |
+| 4 | 無頭模式：這個專案沒有一套能用的 IDE — 專案被別的行程開著、`--install` 對不到任何一套（訊息會列出裝了哪些）、或 IDE 啟動失敗 |
 | 5 | 權限拒絕：設定檔的 `plc` 清單沒有這個命令 |
 
 2 有兩個原因，旗標不搭和找不到唯一一個活著的 IDE，合在一格是因為呼叫端的處置相同：同一行不要重試，先讀訊息。2 和 4 是「這個專案有沒有活著的 IDE」的兩種原因，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
@@ -225,7 +225,7 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 
 ```
 IDE 側（IronPython 2.7，只有標準函式庫）
-  engine/   現在的 codesys_*.pyw 加四支入口的本體：分類、匯出、比對、匯入、
+  engine/   同步引擎與四支入口的本體：分類、匯出、比對、匯入、
             備份、快取、編譯、線上預檢、PLC 連線與下載
   cds/ide/  看門人、替身 UI、訊息庫、專案資訊、狀態視窗、無頭啟動器的 IDE 側
   stub      Project_export.py、Project_import.py、Project_watch.py
@@ -300,7 +300,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 
 ### 6.1 引擎
 
-現有的 `codesys_*.pyw` 加上四支入口的本體。這一版對它的要求：
+`engine/` 底下的同步引擎，加上四支入口的本體。對它的要求：
 
 - **髒檔保護**。匯出時若磁碟上的 `.st` 自上次同步後被改過而還沒匯入，不覆蓋，列出來報「待匯入」。判斷在 `ObjectManager._disk_moved_since_sync`，只在兩邊內容確定不一樣之後才問，問的是「這個檔的 mtime 與大小跟上次同步記下的一不一樣」；一樣就是 IDE 那邊動了，照舊覆蓋，不一樣就是磁碟這邊動了，留著不寫，路徑進 `data.pending_import`，而且那一趟 `ok` 是 False。快取裡沒有這個檔的紀錄時不擋，因為那不是「沒被改過」而是「不知道」——快取是本機狀態又 gitignore，剛 clone 的資料夾一筆都沒有。只看的命令不准把這個依據拿走：`find_all_changes` 對「不同」與「這一趟讀不到」的物件保留舊的快取項目，因為那一項描述的是「上次同步的時候磁碟長什麼樣」，而那正是這個判斷要問的事。以前它只寫回自己看到相同的那些，於是任何一次 `compare`、`verify`，或是沒有確認的 `import`（比對跑在確認對話框之前），都會讓下一次匯出直接蓋掉那個編輯。
 - **每次操作只存檔備份一次**。
@@ -324,7 +324,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 
 ### 6.4 無頭啟動器
 
-CLI 側是 `cdsint/headless.py`，IDE 側是 `cds/ide/headless.py`。行為從 `sample_slitter_dev/scripts/codesys-probe.ps1` 與 `tools/codesys_probe.py` 搬過來，PowerShell 那支退役。要保留的行為，每一條都是踩過坑才寫的：
+CLI 側是 `cdsint/headless.py`，IDE 側是 `cds/ide/headless.py`。行為是從分紙機專案的 `codesys-probe.ps1` 與它的 Python 版搬過來的，兩支都已退役，這裡是唯一的一份。要保留的行為，每一條都是踩過坑才寫的：
 
 | 行為 | 為什麼 |
 |---|---|
@@ -335,7 +335,8 @@ CLI 側是 `cdsint/headless.py`，IDE 側是 `cds/ide/headless.py`。行為從 `
 | 專案路徑走環境變數，不走 `--project` 也不走 `--scriptargs` | `--project` 在 `--noUI` 底下不會真的開專案；`--scriptargs` 的引號規則吃不了中文路徑 |
 | 命令列組成單一字串，不用陣列 | PowerShell 5.1 的陣列參數會重新加引號弄壞 `--profile="有空白的名字"` |
 | stdout 與 stderr 重導向到跟 report 同名的檔案 | GUI 子系統的 exe 從 shell 拿不到輸出；檔名跟著 report 走是為了兩個行程並行不搶檔 |
-| 逾時就 kill。report 不完整（沒有 `intended_exit`）才當成「有對話框卡住」；report 完整就以 report 為準，只記「腳本做完了但 IDE 沒在期限內退出」。kill 之後等行程真的不在，自己起的 IDE 留下的鎖檔由 CLI 清掉 | 掛住比報錯難查十倍；而一份完整的 report 就是證據，不該被一個慢的關閉蓋掉 |
+| 逾時就 kill。report 不完整（沒有 `intended_exit`）才當成「有對話框卡住」；report 完整就以 report 為準，只記「腳本做完了但 IDE 沒在期限內退出」。kill 之後等行程真的不在 | 掛住比報錯難查十倍；而一份完整的 report 就是證據，不該被一個慢的關閉蓋掉 |
+| kill 之後只清「這一趟開跑之前不存在」的鎖檔，清了就寫進 `notes`；開跑前就有鎖檔（也就是用了 `--force-lock`）就留著不動，並說明為什麼 | `--force-lock` 的意思是「還是跑」，不是「那個鎖是我的」。把它清掉可能放掉另一個 IDE 真的開著的專案，下一趟就有兩個 IDE 開同一個專案。行程沒被 kill 掉的時候同理，鎖也留著 |
 | 腳本把打算用的退出碼寫進 report，CLI 比對實際收到的 | 退出碼傳不傳得回來要驗，驗不過就改看 report |
 | `system.prompt_handling` 開 `LogMessageKeys`，沒答到的提示會把鍵名印出來；`--answer KEY=VALUE` 填進 `prompt_answers` | Delta 1.10 開 1.8 的專案會問要不要升級，預設答案是「不開了」。這是 D7 明寫的例外 |
 | 開完不 close | close 會問要不要存檔，`--noUI` 底下沒人能答 |

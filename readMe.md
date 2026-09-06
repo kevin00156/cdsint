@@ -271,9 +271,13 @@ answer. Three situations are therefore refused rather than measured:
   "nothing" — it is a folder nobody has exported to, or the wrong folder — so
   `import` refuses it on all three routes (Scripts menu, `--target`,
   `--project`) instead of deleting every object in the project.
-- **A copy that remembers where the original synced.** `--project` therefore
-  requires `--sync-dir`, and the resolved folder is printed first and written
-  into the report as `sync_dir`.
+- **A copy that remembers where the original synced.** A `.project` copied
+  somewhere else no longer carries the original's folder — that went with the
+  settings move — but the settings file beside it might, so `--sync-dir`
+  overrides it for one run without writing anything back. The folder that
+  actually took effect is printed first and written into the report as
+  `sync_dir`, because the flag says what was asked for and only the IDE side
+  knows what was used.
 - **A file you edited and have not imported.** `export` leaves it alone, names
   it in `data.pending_import`, and the run is not ok. Run `import` first, or
   delete the file if you did not want the edit. This one only applies when the
@@ -446,13 +450,17 @@ rather than a change:
 ## `tools/`
 
 Offline instruments for whoever maintains this. None of them is a cdsint
-command and none appears in the Scripts menu (PRINCIPLES 12). Every `.py` in
-that directory is listed here; `tests/test_tools_are_documented.py` fails if
-one is added and this list is not.
+command and none appears in the Scripts menu (PRINCIPLES 12). Every instrument
+in that directory has an entry here; `tests/test_tools_are_documented.py`
+fails if one is added and this list is not. A file whose name starts with an
+underscore is not an instrument but something the instruments stand on, and
+gets a closing note rather than an entry — there is one, `_root.py`.
 
-Three of them run **inside** an IDE, through **Tools > Scripting > Execute
-Script File** or `--runscript`. The rest are ordinary CPython you run from a
-shell.
+Some of them run **inside** an IDE, through **Tools > Scripting > Execute
+Script File** or `--runscript`; the rest are ordinary CPython you run from a
+shell. Each entry below says which, because that is the thing that decides
+what you can do with it — no count here, since the count is what goes stale
+the next time somebody adds one.
 
 **`tools/call_tree.py`** builds a cross-file call graph from an exported sync
 folder. Plain CPython, no IDE:
@@ -465,8 +473,15 @@ It follows calls between project functions and function-block methods across
 files, including instances declared in GVLs, tags IEC system calls from
 `tools/sys_funcs.json`, and marks whatever it could not resolve.
 **`tools/call_tree_parse.py`** and **`tools/call_tree_resolve.py`** are its two
-halves — reading `.st` text, and resolving names to definitions. Import them
-if you want the pieces; run `call_tree.py`.
+halves — reading `.st` text, and resolving names to definitions. Run
+`call_tree.py`; import the halves only if you want the pieces.
+
+Run it from a checkout, not from a copy of the files somewhere else. The
+parser reads the `// === IMPLEMENTATION ===` separator from
+`engine/codesys_constants.py` rather than carrying its own copy, because two
+definitions of the disk format is one too many (SPEC D15) — so it needs
+`engine/` and `profiles/` beside it. Three files copied into a scratch
+directory stop at `No module named '_root'`.
 
 **`tools/cache_doctor.py`** answers "would the cache actually skip anything on
 the next run?" without opening the IDE, and names the reasons it would not:
@@ -509,9 +524,9 @@ menu, counting whether a drop-down appeared.
 python tools/probe_click_menu.py --pid 1234 --seconds 60 --every 5
 ```
 
-**`tools/_root.py`** is not an instrument. It puts the install root on
-`sys.path` so the others can import `engine/` and `cds/`; the underscore is
-what keeps it out of this list.
+And the one that is not an instrument: **`tools/_root.py`** puts the install
+root on `sys.path` so the others can import `engine/` and `cds/`. Nothing to
+run; it is imported.
 
 ## Layout
 
