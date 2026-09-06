@@ -232,8 +232,8 @@ img/        readMe 用的圖
   - **帳密與登入（2026-09-06 08:30，監督者）。** 使用者給了台架的裝置帳密，監督者把它們寫在 `%LOCALAPPDATA%\cdsint\bench.env`（兩行 `KEY=VALUE`，只有使用者帳號與管理員讀得到，不在任何 repo 裡）。**用法：在要跑 PLC 命令的 shell 裡把那個檔載進環境變數，命令列、report、工單、commit、任何輸出都不准出現密碼；每趟跑完 grep report 與 stdout、stderr 確認密碼出現 0 次。** 監督者用它對 A 跑 `plc connect`：登入成功（notes 有 `logging in as kevin`）、閘道對、讀到控制器的 `Application.crc`；`plc download -y`：完整下載、`application state run`、控制器的 CRC 從 B558CA54 變成 2BDEC2A1、110 秒 exit 1；再 `connect` 一次控制器仍是 2BDEC2A1。B 台架 `connect` 同樣登入成功。**下載機制是好的，判決機制是壞的**：三趟本機 build 的 CRC 各不同（A3EF26FE、0F65D91E、729B7D04），所以永遠 `DIFFERENT`。監督者把工作目錄裡的兩個 `.crc` 印成位元組：前 20 位元組版面一樣（`b1 1a 90 00` 檔頭、4 位元組 CRC、`Application\0`），本機那份多 8 位元組尾巴 `b2 1a 84 00 01 00 00 00`；所以 `CRC_FIELD=(4,8)` 的解析沒錯，錯的是「離線建的 boot application 的 CRC」這個東西本身每次編譯都變。
   - [x] **階段 3 台架收尾二（CRC 判決）**：在台架上查清楚「控制器跑的是不是這份專案」該比什麼，然後改 `engine/plc_crc.py`、`plc_trip.py`。先量事實：（1）同一個 IDE 行程裡連建兩次 boot application，CRC 一不一樣；（2）兩個新行程各建一次，一不一樣（監督者的三趟說不一樣）；（3）`.app` 檔頭有沒有時間戳；（4）softplc 專案的 Project Information 有沒有「編譯時自動加版號」之類的設定；（5）用 `system.dump_scripting_api` 把 API 倒出來找 `OnlineApplication` 上跟識別有關的成員。然後裁，順便把「no source archive on the controller: Value cannot be null. Parameter name: path」改成人話。——**五件事實都量了，五個答案沒有一個支持原本的比法，所以判決整個換掉，改成「控制器現在的 CRC 對上這個專案上次下載留在這台上的值」。** 量到的事實與裁決的理由在第 7 節「階段 3 台架收尾二」那一段；SPEC 6.6 已改寫。驗收句裡「改一個 POU 再 `connect` 回 `DIFFERENT`」那一條**做不到而且不該做**，換成了「別人下載到同一台之後 `connect` 回 `DIFFERENT`」，理由同樣在第 7 節。
   - [x] 驗收：A 上 `download -y` 之後緊接著 `connect` 回 `MATCH`、exit 0；B 同樣一輪；別的副本下載到 A 之後，原本那份 `connect` 回 `DIFFERENT`、exit 1；密碼在所有輸出出現 0 次；測試綠。——**全過。** A：`download -y` exit 0 `MATCH`（130.7 秒，控制器 DC848126），`connect` exit 0 `MATCH`（70.8 秒）。同一台再下載一次 exit 0 `MATCH`（122.3 秒），控制器變成 CF9DD644——值真的每次都變，所以「值沒變就是沒落地」這條新檢查在真機上站得住。B：`download -y` exit 0 `MATCH`（120.0 秒，CB09D46F），`connect` exit 0 `MATCH`（67.9 秒）；B 下載完再回頭 `connect` A 仍是 `MATCH`（65.2 秒），紀錄檔兩台各一筆沒有互相蓋掉。`DIFFERENT`：另一份副本下載到 A（116.4 秒，控制器變 1D1E5AD5），原本那份 `connect` A 回 `DIFFERENT` exit 1（64.2 秒），同時 `connect` B 仍是 `MATCH` exit 0（62.7 秒）。改一個 POU 之後 `connect` A 是 `MATCH`（68.5 秒），那是裁決預期的行為，不是漏抓。密碼：掃過 947 個檔（兩個暫存樹與整個 repo）出現 0 次。`python -m pytest tests -q` 與根目錄各 914 passed。
-  - [ ] 驗收（監督者會重現）：A 的 `download -y` 接 `connect`，`MATCH`、exit 0。
-  - [ ] 驗收（還需要人）：使用者在自己的 shell 設好 `CDS_DEV_USER`、`CDS_DEV_PASS`，對 A 跑 `cdsint plc connect --project <softplc 副本> --install 3.5.21.40 --sync-dir S --gateway 127.0.0.1 --port 11740`，列出裝置與檔案；再跑 `plc download -y`，exit 0 且 report 的 CRC 是 `MATCH`。原因：帳密只有人有。
+  - [x] 驗收（監督者會重現）：A 的 `download -y` 接 `connect`，`MATCH`、exit 0。——監督者 2026-09-06 10:30 重現：先重啟兩個 runtime，新副本用 `grant_plc.py` 設屬性，帳密從 `bench.env` 載進 shell；`download -y` 113 秒 exit 0、`MATCH`、控制器 3DFFEBFB、紀錄寫在副本旁的 `softplc_refactor.cdsint-plc.json`；`connect` 65 秒 exit 0、`MATCH`、同一個值。密碼在 report 與 stdout 出現 0 次，沒有殘留行程。
+  - [x] 驗收（原本標「還需要人」）：使用者在自己的 shell 設好 `CDS_DEV_USER`、`CDS_DEV_PASS`，對 A 跑 `plc connect` 與 `plc download -y`，exit 0 且 `MATCH`。——使用者 2026-09-06 改成口頭把帳密交給監督者，監督者存進 `%LOCALAPPDATA%\cdsint\bench.env`，worker 與監督者各自用它跑過上面那些。這條算做完；真正的 AX8 硬體不在本工單範圍。**`bench.env` 什麼時候刪由使用者決定。**
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
 
 - [x] **階段 4：引擎品質**（SPEC 10.2 階段 4）——worker 2026-09-05 22:26 做完，監督者的驗證見本階段末尾；審查的三條必修與十二條建議 2026-09-05 23:12 全部做完，見「階段 4 收尾（審查後）」。
@@ -261,6 +261,13 @@ img/        readMe 用的圖
   - [x] 驗收：`python -m pytest tests -q` 綠；兩支重現腳本各自跑完印出「檔案還在／有 raise」；`grep -L "print_function" engine/*.py cds/ide/*.py cds/core/*.py stub/*.py` 為空。
   - [x] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。——監督者 2026-09-05 23:20 在原廠 3.5.21.40、softplc 副本上跑：export 229 → 改 `FB_LowPass.st` 一行 → compare 回 `different=1` → export：那個檔的雜湊值前後相同、`pending_import` 列出它、其餘 228 identical、`ok` false。
   - 監督者驗證（2026-09-05 23:25，審查修正之後）：`python -m pytest tests -q` 與根目錄各 897 passed，監督者自己跑的。兩支重現腳本監督者自己跑：`repro_compare_drops_guard.py` 印 `disk still holds my edit: True`，`repro_stale_report.py` 印 `run 2 raised Failure (correct)`。`grep -L print_function` 在 IDE 側全部檔案為空；`tests/test_layering.py` 74 條綠。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 空，來源 repo 的 `git status` 跟派工前一字不差。**階段 0 到 4 全部做完。**
+
+- [ ] **階段 4 追加：匯入一行實作後 IDE 裡多出一行 `1;`**（2026-09-06 worker 在台架上撞到，監督者裁定當引擎 bug 修）
+  - 事實（worker 的重現材料在 `%TEMP%\cdsint-work\import-bug\`，含 README、匯入前後的 `.st` 與三份 report）：原廠 3.5.21.40，softplc 副本，export 之後 `Application/PLC_PRG.st` 的實作段是空的；在磁碟上把宣告加一個 `benchProbeCounter : DINT;`、實作段寫成一行 `benchProbeCounter := benchProbeCounter + 1;`，`import -y` 回 updated 1、ok；接著 build 從 0 errors 變 1 error；再 export 到別的資料夾，IDE 裡的實作段變成兩行，第二行是憑空多出來的 `1;`。把原文寫回去再 import 一次（同樣回 ok），build 仍然 1 error。同一份原始專案的全新副本一切正常，所以壞的是被匯入過的那份。
+  - [ ] 找根因：懷疑在把 `.st` 的實作段寫進 IDE 物件時，某個「原本是空的實作段」的路徑把文字切錯（例如用長度或行數當偏移，空段的偏移是 0，或是 `textual_implementation` 的設定方式對空段與非空段不同）。用假 IDE 物件把「空實作段寫入一行」與「一行寫入一行」兩種情況寫成測試，先讓它紅。
+  - [ ] 修好之後在同一台架重現 README 的步驟：import 之後 build 0 errors、再 export 出來的實作段跟磁碟上寫的一字不差；把原文寫回去 import 之後 build 也是 0 errors。
+  - [ ] 順便查：為什麼「把原文寫回去再 import」沒有把 IDE 修回來（import 判定 updated 1 但 IDE 內容還是錯的）——這是第二個洞，import 的比對可能拿磁碟跟快取比而不是跟 IDE 比，改了之後要有測試。
+  - [ ] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。
 
 ---
 
@@ -721,6 +728,9 @@ worker 沒有動任何 import／export 的程式碼——這件事不在本工�
 
 監督者已裁的：
 
+- Ruling（CRC 判決驗收後）: worker 的判決設計全部接受 — MATCH 收窄成「控制器上還是 cdsint 從這份專案放上去的那份」，紀錄放專案旁、一台控制器一筆、下載前後各讀一次控制器的 CRC、離線 boot application 與 `local_crc` 拿掉。理由是它自己寫的那句：會漏抓的閘門比沒有閘門更糟；「控制器跑的是不是這棵原始碼樹」要靠 source download 加封存比對，那是另一件事，留在 SPEC 11 未決 — 錯了的代價是專案複製到別台電腦 `connect` 回 UNKNOWN 而不是 MATCH，訊息會說原因。
+- Ruling（CRC 判決驗收後）: 「改一個 POU 再 connect 回 DIFFERENT」那句驗收是監督者寫錯，改成「另一份副本下載到同一台之後回 DIFFERENT」 — 控制器確實沒變，判決說 MATCH 是對的 — 錯了的代價是無。
+- Ruling（CRC 判決驗收後）: 台架上撞到的 import 多一行 `1;` 當引擎 bug 立刻修，列成「階段 4 追加」 — 它讓一次回報成功的匯入把專案弄到編譯不過，而且把原文寫回去也救不回來，這是 D13 與「磁碟是事實來源」兩條同時破掉 — 錯了的代價是多一輪。
 - Ruling（有帳密的台架測試後）: 帳密放在 `%LOCALAPPDATA%\cdsint\bench.env`，worker 用「載進 shell 環境變數」的方式取得，不寫進 prompt — 鐵律說「憑證由使用者自己填在本機檔案」，使用者這次是口頭給的，監督者代填到一個 repo 外、只有本機帳號讀得到的檔案，是同一件事；D14 禁的是命令列、repo 檔案、report，不是本機的秘密檔 — 錯了的代價是那個檔要記得刪，已寫進「還需要人」。
 - Ruling（有帳密的台架測試後）: PLC 命令的「連線、登入、下載、啟動」四件事在真控制器上驗過了，只有「判決」還沒對；判決的修法交給 worker 在台架上量了再定，監督者不憑推理裁比法 — 三個候選（.app 時間戳、專案自動加版號、IDE 自己的 identical 判斷）哪個成立只有量得出來 — 錯了的代價是多一輪台架。
 - Ruling（台架收尾驗收後）: worker 的四條 Ruling 全部接受，特別是指派完 `auth_fallback_modes` 之後讀回來比對這一步 — Python 對普通物件指派不存在的屬性會安靜地新增一個，這個 bug 的形狀就是「開關說自己關了其實沒關」，讀回來是唯一能證明的方法；`download` 的驗收秒數放到 240，那 90 秒是編譯 — 錯了的代價是無。
