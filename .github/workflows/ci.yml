@@ -12,8 +12,16 @@ permissions:
 
 jobs:
   core-tests:
-    name: core unit tests
-    runs-on: ubuntu-latest
+    # Two operating systems for two different jobs. windows-latest is the real
+    # target: the IDE only exists there. ubuntu-latest is the portability
+    # guard -- it is the only thing that catches a Windows path handled with
+    # os.path, because on Windows that mistake cannot fail.
+    name: core unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

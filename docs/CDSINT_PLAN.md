@@ -271,14 +271,14 @@ img/        readMe 用的圖
   - [x] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。——`python -m pytest tests -q` 與根目錄各 926 passed（改之前 915，新增 11 條）。
   - 監督者驗證（2026-09-06 11:30）：926 passed 監督者自己跑的。監督者在原廠 3.5.21.40、新的 softplc 副本上重現：export 之後用 PowerShell `Set-Content -Encoding UTF8`（會寫 BOM，檔頭確認是 EF BB BF）把 `PLC_PRG.st` 改成一個宣告加一行實作；`import -y` updated 1；`build` 0 errors 101 warnings；再 export 到另一個資料夾，實作段一字不差就是那一行，沒有多出來的 `1;`，檔頭沒有 BOM。沒有殘留的 IDE 行程。接受 worker 的結案：引擎寫文字的路徑是乾淨的，錯的是帶 BOM 的輸入；`read_sync_text` 用 `utf-8-sig` 當同步資料夾唯一的讀檔入口。
 
-- [ ] **階段 4 追加二：GitHub CI 從第一次 push 起每一次都紅**（2026-09-06 使用者回報，監督者查的）
+- [x] **階段 4 追加二：GitHub CI 從第一次 push 起每一次都紅**（2026-09-06 使用者回報，監督者查的）
   - 事實：CI 是 `ubuntu-latest` 加 CPython 3.12，跑 `python -m pytest tests -q`。七次 run 全紅，同樣的 16 條，本機 Windows 全綠。整套測試從來沒在 Linux 上跑過，因為所有新測試都是在 Windows 上寫的。失敗分三類：（1）`cdsint/installs.py` 第 34、37 行把安裝目錄的片段寫成 `r"Lenze\PlcDesigner"`、`r"Delta Industrial Automation\DIAStudio"`，Linux 上 `os.path.join` 之後反斜線是檔名的一部分，掃描找不到，`test_installs.py` 六條紅；（2）從 IDE 來的專案路徑（`C:\p\softplc.project` 這種）在 `cds/core/ipc.py:51` 的 `make_instance_id`、`cds/ide/watcher.py` 的登記、`cds/ide/project.py` 的 `sync_dir` 用 `os.path` 拆，Linux 上反斜線不是分隔符，`basename` 回整串，`test_ipc`、`test_watcher` 四條、`test_project` 一條紅；（3）`tests/test_unhandled_objects.py::test_compare_export_names_an_orphan_it_could_not_delete` 靠「唯讀檔刪不掉」，那是 Windows 的行為，Linux 上目錄可寫就刪得掉。本機重現：`wsl -d Ubuntu-22.04 -- bash -lc 'cd /mnt/c/Users/qazsskevin/Documents/repo/cdsint && python3 -m pytest tests -q'`（監督者已在那個 distro 裝了 pytest，Python 3.10）。
-  - [ ] （1）`installs.py` 的路徑片段改成分段的 tuple 交給 `os.path.join`；登錄檔路徑不動，那不是檔案系統。
-  - [ ] （2）從 IDE 來的路徑一律用 `ntpath` 拆，不用 `os.path`：IDE 只在 Windows 上跑，它給的永遠是 Windows 路徑，而 `ntpath` 同時吃斜線與反斜線，所以在兩種作業系統上都對。每一處加一句註解說為什麼是 `ntpath`。CLI 自己產生的路徑（`--sync-dir`、`--report`、暫存目錄）維持 `os.path`。
-  - [ ] （3）那條測試改成 monkeypatch `os.remove` 丟 `OSError`，兩種作業系統都能讓刪除失敗；不准用 `skipif`。
-  - [ ] （4）`.github/workflows/ci.yml` 改成 matrix：`ubuntu-latest` 與 `windows-latest` 各跑一次。產品只在 Windows 上有意義，Linux 那條守的是可攜性，Windows 那條守的是真目標。
-  - [ ] 驗收：WSL 裡 `python3 -m pytest tests -q` 全綠；Windows 本機全綠；push 之後 GitHub 兩條 job 都綠（push 由監督者做，worker 只 commit）。
-  - [ ] 驗收：`grep -rn 'r"[A-Za-z][^"]*\\\\' cdsint/ cds/ engine/` 只剩登錄檔那兩行。
+  - [x] （1）`installs.py` 的路徑片段改成分段的 tuple 交給 `os.path.join`；登錄檔路徑不動，那不是檔案系統。
+  - [x] （2）從 IDE 來的路徑一律用 `ntpath` 拆，不用 `os.path`：IDE 只在 Windows 上跑，它給的永遠是 Windows 路徑，而 `ntpath` 同時吃斜線與反斜線，所以在兩種作業系統上都對。每一處加一句註解說為什麼是 `ntpath`。CLI 自己產生的路徑（`--sync-dir`、`--report`、暫存目錄）維持 `os.path`。
+  - [x] （3）那條測試改成 monkeypatch `os.remove` 丟 `OSError`，兩種作業系統都能讓刪除失敗；不准用 `skipif`。
+  - [x] （4）`.github/workflows/ci.yml` 改成 matrix：`ubuntu-latest` 與 `windows-latest` 各跑一次。產品只在 Windows 上有意義，Linux 那條守的是可攜性，Windows 那條守的是真目標。
+  - [x] 驗收（GitHub 那半還需要人）：WSL 裡 `python3 -m pytest tests -q` 926 passed；Windows 本機 `python -m pytest tests -q` 與根目錄 `python -m pytest` 各 926 passed。改之前 WSL 是收集階段整份中斷（`tests/test_version.py` 的 `tomllib` 在 Python 3.10 沒有），跳過那一支之後才看得到工單記的 16 failed 909 passed。GitHub 兩條 job 要 push 才看得到，push 歸監督者。
+  - [x] 驗收：`grep -rn 'r"[A-Za-z][^"]*\\\\' cdsint/ cds/ engine/` 剩四行，不是兩行。`cdsint/installs.py:50、51` 是工單放行的登錄檔鍵；另外兩行是 `engine/entry_build.py:218、309` 的正規表示式（`\)` 與 `\s`），不是路徑片段。那條 grep 的樣式抓得比它的意圖寬，意圖本身成立。見底下的 Ruling。
 
 ---
 
@@ -668,6 +668,46 @@ identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`�
 都是 00:56 起的）沒有被碰過。來源專案 `softplc_refactor.project` 只讀，
 最後寫入時間仍是 9 月 4 日 16:55。
 
+
+階段 4 追加二（Linux CI）新增的：
+
+- Ruling: `tests/test_version.py` 不再用 `tomllib`，改成自己掃 `[project]` 底下那一行 —
+  `tomllib` 是 Python 3.11 才進標準函式庫的，而本機用來守可攜性的 Linux 迴圈（WSL 的
+  Ubuntu 22.04）只有 3.10，收集階段就整份中斷，一條測試都跑不了。工單問的是「Linux 上
+  這套測試會怎樣」，不能因為量測工具比產品的底線舊就答不出來。可以選的另外兩條是
+  `pytest.importorskip`（那條測試在迴圈裡就靜靜消失，等於少一個守門的）與在 WSL 裝
+  3.11（要 PPA、要 sudo，而且下一台機器又要再裝一次）。整份 TOML 解析只為了拿一個
+  字串本來就過重，一個表一個鍵不需要 parser — 錯了的代價是 `pyproject.toml` 若哪天把
+  version 寫成多行或行內表，這個掃法讀不到；那時它會丟 `AssertionError` 說找不到，
+  不會安靜地比對一個錯的值。
+- Ruling: `VENDORS` 的 `under` 從字串改成路徑片段的 tuple，順手把「有值才 join」那個
+  分支刪掉 — `os.path.join(base, *())` 就是 `base`，空 tuple 讓「裝在根目錄底下」不再
+  是特殊情況。改成 tuple 而不是把 `\` 換成 `/`，是因為分隔符該由 `os.path` 決定，寫死
+  哪一種都只是換一個會在某個作業系統上壞掉的字面值 — 錯了的代價是加新廠商的人要記得
+  寫成 tuple 不是字串；寫成字串會在 Linux 的 CI job 立刻紅。
+- Ruling: 從 IDE 來的路徑改用 `ntpath`，範圍限在 `cds/core/ipc.make_instance_id`、
+  `cds/core/instances.set_project`、`cds/ide/project.sync_dir` 與 `ide_name` 四處，
+  `engine/` 一個字都不改 — `engine/` 只在 IDE 裡的 IronPython 底下跑，那裡 `os.path`
+  本來就是 `ntpath`，改它是零收益的大 diff。`sync_dir` 裡原本那句
+  `raw.replace("/", os.sep)` 一併刪掉：`ntpath` 兩種斜線都吃，正斜線的相對資料夾自己就
+  解得開 — 錯了的代價是哪天 IDE 側多一個拆 IDE 路徑的地方而作者用了 `os.path`，
+  Windows 上不會失敗，只有 Linux 那條 CI job 會抓到；這正是加那條 job 的理由。
+- Ruling: `cdsint/lock.py` 與 `cdsint/report.py` 拆 `--project` 的值維持 `os.path`，
+  不跟著改 `ntpath` — 那個值是使用者在命令列上打的，而 `--project` 形式要起一個真的
+  IDE，只有 Windows 上有意義。工單的分界線是「IDE 給的用 `ntpath`，CLI 自己的用
+  `os.path`」，命令列參數屬於後者 — 錯了的代價是無：那條路在 Linux 上根本走不到。
+- Ruling: 刪不掉的孤兒檔那條測試改成 monkeypatch `os.remove` 丟 `OSError`，不是
+  monkeypatch 整個 `entry_compare` 的刪除函式 — 要驗的是「刪除失敗時 export 怎麼辦」，
+  把失敗擺在最靠近系統呼叫的那一層，測試就不必知道引擎內部叫哪個名字。只對那一個
+  路徑丟例外、其他路徑照樣刪，是為了不讓假的 `os.remove` 影響 tmp_path 的清理 —
+  錯了的代價是這條測試不再證明「Windows 真的會拒絕刪開著的檔」；那是作業系統的行為，
+  本來就不該由這套測試來證明。
+- Ruling: 驗收那條 grep（`grep -rn 'r"[A-Za-z][^"]*\\' cdsint/ cds/ engine/`）跑完剩四行
+  不是兩行，多的兩行不改 — `engine/entry_build.py:218` 的 `r"stPath=([^,\)]+)"` 與
+  `:309` 的 `r"instead of\s+..."` 是正規表示式，裡面的反斜線是 `\)` 跟 `\s`，跟檔案系統
+  路徑無關。那條 grep 的樣式抓得比它的意圖寬。意圖是「沒有任何檔案系統路徑片段把
+  分隔符寫死」，這一點成立：`cdsint/installs.py:50、51` 是登錄檔的鍵，工單自己放行 —
+  錯了的代價是下次照字面跑這條 grep 的人會多看兩行；本段就是給那個人看的。
 
 階段 4 追加（那一行 `1;`）新增的：
 
