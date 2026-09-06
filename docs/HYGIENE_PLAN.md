@@ -106,12 +106,12 @@
   - [x] 驗收：`test_print_function.py` 掃到 `tools/` 且綠（53 passed）。單執行緒那條的範圍見 Ruling 7。
   - [x] 驗收：readMe 的 `tools/` 一節列出每一支，而且由 `tests/test_tools_are_documented.py` 兩條測試守著，不再是一次性的 grep。
 
-- [ ] **階段 3：測試（第 4 節 5 到 7）**
-  - [ ] 驗收：`grep -rn "^class \(Projects\|Info\|Node\|DeafSystem\|DeafUI\|FakeTimer\)\b" tests/` 只在 `tests/fakes.py`；`grep -rn "from tests.test_" tests/` 為零。
-  - [ ] 驗收：`wc -l tests/*.py` 本 repo 寫的每支在 400 以內（`git log --follow` 首次出現不是 `5c96d4e` 的那些）。
-  - [ ] 驗收：`grep -n "DRIVEN_FILES" tests/test_silent.py` 的清單是排除清單，測試對 `engine/` 目錄現數。
-  - [ ] 驗收：`python -W error::SyntaxWarning -m pytest tests -q` 綠（反斜線那條）。
-  - [ ] 驗收：測試總數不少於開工前，Windows 與 WSL 都綠。
+- [x] **階段 3：測試（第 4 節 5 到 7）**
+  - [x] 驗收：`grep -rn "^class \(Projects\|Info\|Node\|DeafSystem\|DeafUI\|FakeTimer\)\b" tests/` 只在 `tests/fakes.py`；`grep -rn "from tests.test_" tests/` 為零。要多做一點的測試改成子類別化並以行為命名（`RemovableNode`、`WalkCountingNode`、`ReadCountingNode`、`DeviceNode`），所以一個叫 `Node` 的東西永遠是共用那一個。
+  - [x] 驗收：本 repo 寫的每支測試檔都在 400 以內，最大的是 `tests/plc_fakes.py` 315。切的份數見第 7 節 Ruling 9。
+  - [x] 驗收：`DRIVEN_FILES` 改成 `driven_files()`，掃 `engine/` 目錄、只維護排除清單（現在只有 `settings.py`）。掃到 17 支，原本寫死十支。
+  - [x] 驗收：`python -W error::SyntaxWarning -m pytest tests -q` 綠。
+  - [x] 驗收：Windows 1072 passed、WSL 1072 passed，開工前是 1043。
 
 - [ ] **階段 4：收尾**
   - [ ] CHANGELOG Unreleased 加一句說文件與測試整理過。
@@ -158,6 +158,17 @@
    D5 的那一個例外（`headless_watch.park()` 的 `system.delay()`）在測試裡登記成一筆，同一個檔第二筆 `delay()` 還是紅的 — 跟 `test_layering.py` 登記 `silent.py` 那個 `__import__` 同一個做法。
 
 8. 給 C：`PROFILE_HASH` 是 `profiles/default.json` **整份原始文字**的 CRC，所以改一句 `description` 或一則 `alias_notes` 註解，全世界的 `sync_cache.json` 都會被丟掉重建一次。這次改 profile 的註解就觸發了。改註解會讓使用者的下一趟慢一輪，這不對；但改成只 hash 會影響分類的那幾個鍵是行為改動，不在這張工單裡。
+
+9. **Ruling：測試檔切成的份數比工單寫的多，因為工單的 400 行上限比它寫的檔名重要。**
+   `test_plc.py` 1131 行切成五支加一份共用替身，不是四支：`test_plc_permit.py`（兩道門）、`test_plc_cli.py`（命令列與退出碼）、`test_plc_trip.py`（一整趟與判決）、`test_plc_link.py`（連到哪台、用誰的帳密）、`test_plc_crc.py`（`plc_crc` 自己），共用的 IDE 替身與 fixture 在 `tests/plc_fakes.py`。權限那一支是工單沒列的第五支，理由是 `cds/ide/permit.py` 是一個真的模組，照它命名比硬塞進別支清楚。
+   `test_headless.py` 657 行切成三支加一份 fixture：切成兩支的話 CLI 那半是 456 行，硬上限就破了。`test_headless_cli.py` 是「決定要起什麼」，`test_headless_result.py` 是「起完之後怎麼讀回來的東西」，共用的 fixture 在 `tests/headless_fakes.py`。
+   工單沒提但開工當天已經超過 400 的 `test_verify.py`（409）也切了：`test_verify.py` 留驗證那四步，`test_cli_surface.py` 收命令列表面與 `COMMANDS` 表，共用的 `FakeRunner` 在 `tests/cli_fakes.py`。
+   兩個 `FakeRunner` 沒有合成一個：`test_verify` 那個照命令查表回答並在失敗時停下，`test_plc_cli` 那個不管問什麼都回同一筆。合成一個就要有兩種模式，那正是第 3 條說不要做的事。
+   錯了的代價：檔名跟工單第 4 節 6 寫的對不上，所以寫在這裡。
+
+10. **Ruling：`tests/conftest.py` 的 `load_engine` 刪掉了，但各測試檔自己的模組 fixture（`utils`、`env`、`managers`）留著。**
+    理由：要拔掉的是「用字串名字繞過 import」那一層，那一層現在沒有了 — 每個檔案頂上是真的 `from engine import ...`。剩下的 fixture 只是那個模組在這個檔案裡的稱呼，是 pytest 正常用法。把它們也拆掉要動大約九十個測試函式的簽名，換不到任何東西。
+    順帶：那些 `for dep in (...): load_engine(dep)` 的預熱迴圈全刪了。引擎模組自己 import 自己的相依（`codesys_managers` 頂上就 import 了 `codesys_utils` 與 `codesys_constants`），那些迴圈是 `imp.load_source` 時代留下的殘骸。
 
 做的時候看到但不在範圍的，記在這裡給 C：
 
