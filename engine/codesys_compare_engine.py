@@ -248,7 +248,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
             # Check type cache first to avoid classify_object AND path building
             # Cache stores (eff_type, is_xml, cached_rel_path)
             cached_info = cached_types.get(obj_guid)
-            cached_rel_path = cached_info[2] if (cached_info and len(cached_info) > 2) else None
+            cached_rel_path = cached_info[2] if cached_info else None
             if cached_rel_path:
                 # Fast path: trust the cache ONLY for objects that previously had a
                 # real path (i.e. were exported). Validate it against the live tree
@@ -345,7 +345,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
             # The type cache remembers where it used to live; that is enough
             # to keep the old entry alive.
             stale = cached_types.get(obj_guid) if obj_guid else None
-            carry_over(stale[2] if (stale and len(stale) > 2) else None)
+            carry_over(stale[2] if stale else None)
 
     # Build folder hashes (Merkle Tree)
     from engine.codesys_utils import build_folder_hashes

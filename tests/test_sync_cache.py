@@ -151,3 +151,45 @@ class TestNativeHashContent:
     def test_missing_file_returns_empty(self, managers, tmp_path):
         mgr = managers.NativeManager()
         assert mgr._hash_file(str(tmp_path / "nope.xml")) == ""
+
+
+class TestCachedClassification:
+    """Every reader of the type cache indexes [2] without checking the length.
+
+    That only holds because the cache is reshaped as it is loaded. Three
+    readers used to ask `len(entry) > 2` for themselves, which is one
+    question written three times and three chances to answer it differently.
+    """
+
+    def test_a_full_entry_is_returned_as_is(self, utils):
+        assert utils.cached_classification(["guid", True, "A/B.st"]) == (
+            "guid", True, "A/B.st")
+
+    def test_a_short_entry_is_padded(self, utils):
+        """An older cache stored (eff_type, is_xml) with no path."""
+        assert utils.cached_classification(["guid", False]) == (
+            "guid", False, None)
+
+    def test_a_long_entry_is_cut(self, utils):
+        assert utils.cached_classification(["guid", False, "A.st", "extra"]) == (
+            "guid", False, "A.st")
+
+    def test_something_that_is_not_a_list_is_no_entry(self, utils):
+        """A string would otherwise explode into one character per element."""
+        assert utils.cached_classification("guid") is None
+        assert utils.cached_classification(None) is None
+
+    def test_load_reshapes_what_it_reads(self, utils, tmp_path):
+        from engine.codesys_constants import PROFILE_HASH
+        path = tmp_path / "sync_cache.json"
+        path.write_text(json.dumps({
+            "version": utils.CACHE_VERSION,
+            "profile_hash": PROFILE_HASH,
+            "objects": {}, "folders": {},
+            "types": {"short": ["t", True], "full": ["t", False, "A.st"],
+                      "junk": "not a list"},
+        }), encoding="utf-8")
+        types = utils.load_sync_cache(str(tmp_path))["types"]
+        assert types["short"] == ("t", True, None)
+        assert types["full"] == ("t", False, "A.st")
+        assert "junk" not in types

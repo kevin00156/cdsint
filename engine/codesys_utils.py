@@ -1427,6 +1427,24 @@ def build_folder_hashes(object_hashes):
     return result
 
 
+def cached_classification(entry):
+    """One cached classification, always (eff_type, is_xml, rel_path).
+
+    JSON hands the tuple back as a list, and older caches stored a shorter
+    one. Padding it here is what lets every reader write `entry[2]` instead
+    of asking how long it is -- that question used to be asked in three
+    places, in the same defensive one-liner, which is three chances for one
+    of them to answer it differently.
+
+    None for anything that is not a list at all: a cache file of the wrong
+    shape is no cache.
+    """
+    if not isinstance(entry, (list, tuple)):
+        return None
+    padded = list(entry) + [None, None, None]
+    return tuple(padded[:3])
+
+
 def load_sync_cache(base_dir):
     """Load the synchronization cache from sync_cache.json in the base directory.
 
@@ -1451,10 +1469,15 @@ def load_sync_cache(base_dir):
                              "(cache=%s, current=%s) - full re-classification."
                              % (data.get("profile_hash"), PROFILE_HASH))
                     return empty
+                types = {}
+                for guid, entry in (data.get("types") or {}).items():
+                    shaped = cached_classification(entry)
+                    if shaped is not None:
+                        types[guid] = shaped
                 return {
                     "objects": data.get("objects", {}),
                     "folders": data.get("folders", {}),
-                    "types": data.get("types", {}),
+                    "types": types,
                     "version": cache_version
                 }
         except Exception as e:
