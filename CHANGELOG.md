@@ -14,6 +14,77 @@ a fork of upstream `cds-text-sync` and does not carry over. Nothing compares
 that number against a project any more — the version stamp went with the move
 to a settings file, below — so the renumbering costs nobody a prompt.
 
+- **The engine's parallel paths came down to one each.** Export and compare
+  had carried the same thirty lines twice, with a comment in one copy asking
+  whoever edited it to remember the other. Every `.st` and `.xml` file this
+  writes is byte for byte what it wrote before: two real IDEs, two real
+  projects, 229 objects each, and the SHA-256 of the whole listing unchanged
+  at every step.
+
+  - **Classifying an object.** One `resolve_object()` answers "what kind is
+    this, where does its file go, and is it written at all" for both
+    directions (`engine/classify.py`). When the two disagreed, compare saw
+    "no disk file" for something export never writes, called it an orphan,
+    and the next import deleted it.
+  - **Picking a manager.** One rule, not two. Export asked for a dedicated
+    manager first; import saw a `.xml` suffix and went straight to native, so
+    a device was handled by one manager on the way out and another on the way
+    back. That cost nothing only because of which methods ConfigManager
+    happened not to override.
+  - **Walking the sync folder.** One walk and one set of skip rules
+    (`engine/sync_dir.py`). The orphan sweep did not skip `__pycache__` and
+    never consulted RESERVED_FILES, so it could offer to delete a file the
+    new-file scan refuses to see.
+  - **Reading an IDE object.** One `name_of`, `kind_of`, `parent_of`,
+    `children_of`, `guid_of`, `child_named` (`engine/ide_read.py`) instead of
+    a private version in each of four modules, with three different sentences
+    for "it will not say its name".
+  - **Writing a text file.** POU and property export ended in twenty-five
+    identical lines; they now say only how the content is built.
+  - **The native-XML round trip.** Three callers each named their own temp
+    file for the same "export it, read it back, delete it".
+
+- **Long functions became lists of steps.** `perform_import_items` was 256
+  lines and nine levels deep; it is four named passes and an order
+  (`engine/import_items.py`). `build_project` was 343 lines and seven deep;
+  working out which line a build message points at is now pure text in, text
+  out, with 26 tests and no IDE (`engine/build_log.py`). `ensure_folder_path`
+  makes a folder once and says so when it cannot, instead of four attempts at
+  one thing and a `None` the caller carried on with.
+
+- **The engine stopped going looking for the IDE.** `projects`, `system`,
+  `online` and `PouType` are handed in from the entry body's own namespace
+  (`engine/entry.py`'s `borrowed()`). Four resolvers used to search the
+  caller's globals, then `__main__`, then every loaded module until something
+  looked close enough — a hunt for an object the caller was already holding,
+  and a way to pick up a dead one from a previous run. `import __main__` and
+  `sys.modules` no longer appear in `engine/` at all.
+
+- **Three silent failures that had been costing real work.**
+  - A property whose accessors could not be read was hashed as if GET and SET
+    were empty. The previous run had computed it the same way, so the two
+    matched, the cache said "identical", and the export skipped it.
+  - `_hash_content` answered an error with `""`, and `NativeManager.export`
+    tests `old_hash and old_hash == new_hash` — which `""` makes false
+    forever, so that file was reported "updated" on every single export and
+    nothing said why.
+  - A fourth strategy for finding `PouType` scanned `sys.modules` in a module
+    that never imported `sys`; the NameError went into a bare `except: pass`.
+    Measured on both IDEs, the strategy that actually fires is the one that
+    reads the script's own namespace.
+
+- **`codesys_ui.py` says out loud that it needs WinForms.** The module-level
+  `clr.AddReference` was wrapped in a bare `except: pass`, and every class in
+  the file subclasses `Form` — so a "tolerated" failure raised NameError one
+  line further down, with a message about nothing. It raises a sentence now,
+  and the second dialog path that reached into `__main__` is gone.
+
+- **Bare `except:` in the engine: 81 down to 35**, and `engine/entry_build.py`
+  and `engine/codesys_ui.py` are at zero. `tests/test_names_resolve.py` is new
+  and asks pyflakes which names do not resolve, with the IDE's globals listed
+  by name — two NameErrors reached a real IDE during this work because a
+  filter wide enough to hide `system` was wide enough to hide a typo.
+
 - **Every kind of thing now happens in one place.** The two layers this repo
   wrote had grown a habit of answering the same question twice, and each copy
   was a place for the next change to be forgotten:
