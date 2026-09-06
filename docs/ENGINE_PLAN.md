@@ -193,11 +193,11 @@
   - [x] 驗收：`locate_message` 有 CI 測試（`tests/test_build_log.py`，26 個）。
   - [x] 驗收：儀器四項全過。hash diff 兩份副本各 0 行、discover 前後相同、verify exit 0；速度用控制過的量法比，compare 慢 6.3%（第 7 節第 18、19 條）。測試 Windows 與 WSL 各 1191 個全綠。
 
-- [ ] **階段 4：顯式傳遞**
-  - [ ] 驗收：`grep -rn "import __main__\|sys.modules" engine/` 為零；`grep -rn "def resolve_projects\|def resolve_system\|def resolve_online\|_resolve_primary_project" engine/` 為零。
-  - [ ] 驗收：`cds/ide/silent.py` 裡沒有 `_ui_patches`、`_install`、`UI_MODULE`；`tests/test_layering.py` 的例外登記為零。
-  - [ ] 驗收：`--target` 形式對看門人跑 export（用 `tools/headless_watch.py` 起一個自己的看門人，不碰使用者的），`needs_input` 與 `-y` 的行為跟開工前一樣（`tests/test_silent.py` 全綠）。
-  - [ ] 驗收：儀器四項全過。
+- [~] **階段 4：顯式傳遞**（引擎那一半做完，`silent.py` 那一項沒做，見第 7 節第 26 條）
+  - [x] 驗收：`grep -rn "import __main__\|sys.modules" engine/` 為零；`grep -rn "def resolve_projects\|def resolve_system\|def resolve_online\|_resolve_primary_project" engine/` 為零。
+  - [ ] 驗收：`cds/ide/silent.py` 裡沒有 `_ui_patches`、`_install`、`UI_MODULE`；`tests/test_layering.py` 的例外登記為零。——**沒做**，理由與接手方法在第 7 節第 26 條。
+  - [x] 驗收：`tests/test_silent.py` 全綠。替身這條路每一趟 `--project` 命令都會走到，兩份副本的 export、import、compare、build 各跑過好幾輪都 exit 0。`--target` 形式沒有另外起看門人實測，見第 7 節第 27 條。
+  - [x] 驗收：儀器四項全過。兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0；控制過的 compare 中位數 17.05 秒，比基線的 16.59 秒慢 2.7%。
 
 - [ ] **階段 5：邊界已浮現的拆分與收尾**
   - [ ] 只拆第 4 節第五層說的那種；每拆一個檔一個 commit。
@@ -252,6 +252,7 @@
 | 1 刪死碼 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.1／16.4／25.0；（階段 5 才量） |
 | 2 消平行路徑 | 0；0 | 407／22／空；464／24／9 | 0；0 | 19.5／16.9／25.3；（階段 5 才量） |
 | 3 拆長函式 | 0；0 | 407／22／空；464／24／9 | 0；0 | 24.0／17.6／23.8；（階段 5 才量） |
+| 4 顯式傳遞 | 0；0 | 407／22／空；464／24／9 | 0；0 | compare 17.0（控制過的量法，基線 16.6） |
 
 ---
 
@@ -295,6 +296,22 @@
 20. `Ruling: `perform_import_items` 的四趟 pass 搬到新檔 `engine/import_items.py`，`build_project` 的訊息定位搬到新檔 `engine/build_log.py` — 兩個都是「拆長函式之後這個檔反而變長」的同一個問題：`codesys_compare_engine.py` 拆完會從 1373 漲到 1412 行，`entry_build.py` 已經 500 行；而拆出來的兩塊各自是一句話講得完的工作（「照順序把改動套用到 IDE」、「一則 build 訊息指到哪一行」），後者還因此變成純文字進出、CI 測得到 — 錯了的代價是 `engine/` 多兩個檔。`
 21. `Ruling: `ensure_folder_path` 建不出資料夾改成 raise，不再回 None — 四次嘗試裡有兩次是同一個 CODESYS 怪癖的補救（`create_folder` 可能真的建好了卻回一個 falsy 的殼），收成「建一次、重掃一次、還是沒有就 raise」；三個呼叫端都在每個物件的 try/except 裡面，例外會被接住並點名（D13），而回 None 以前會再往上走一層，變成物件被建在錯的地方 — 錯了的代價是資料夾真的建不出來時，那個物件的匯入失敗而不是安靜地跑到別的地方去。`
 22. `Ruling: 真 IDE 抓到的第二個回歸 — 讀 build 訊息的 `.object` 要自己包一層 try — 我把 `hasattr(msg, "object") and msg.object` 換成 `getattr(msg, "object", None)`，看起來等價，但 IronPython 2.7 的 `hasattr` 會吞掉例外回 False；Delta 1.10 對某些訊息的 `.object` 會丟「The object GUID '...' is not valid」，於是整份 build 變成一個 traceback，`verify` 停在第四步 — 錯了的代價就是它造成的那一次：一則讀不到的訊息把另外一百多則的判決一起丟掉。`
+
+階段 4 定下來的：
+
+23. `Ruling: 四個解析器換成 `engine/entry.py` 的一個 `borrowed(caller_globals, name)`，其他需要的地方改成參數 — `projects`、`system`、`online`、`PouType` 都是 IDE 注入到腳本 namespace 的名字，而每個 entry body 的 namespace 就是那一個；舊的解析器先看呼叫端的 globals，再看 `__main__`，再掃過每一個載入過的模組直到找到看起來像的東西，那是在找一個呼叫端本來就握著的物件，順便還可能撿到上一趟留下的死物件 — 錯了的代價是某個呼叫端忘了傳，那個名字就是 None，而每個呼叫端都得自己說 None 是什麼意思（匯出沒有 `projects` 不能跑，登入預檢沒有 `online` 只表示沒有人登入）。`
+24. `Ruling: 六個 manager 方法要的專案改成建構時給一次（`create_import_managers(project, pou_type)`）— 一趟命令只開一個專案，而那六處要的就是它；`PouType` 走同一條路，只有會建 POU 的兩個 manager 用得到 — 錯了的代價是多兩個建構參數，換掉一個會掃遍所有模組的搜尋。`
+25. `Ruling: `codesys_ui.py` 的 `clr.AddReference` 假容錯改成直接 raise，`ask_yes_no` 摸 `__main__` 的備用對話路徑刪掉 — 這是工單第 7 節第 5 條原本就預設的方向；模組裡每一個類別都繼承 `Form`，import 失敗之後往下一行就是 NameError，只是訊息完全不提真正的原因。備用路徑要從 `__main__` 拿 `system`、`PromptChoice`、`PromptResult` 三個名字，而它是為了「WinForms 不在」而存在的——在一個沒有 WinForms 就整個載不進來的模組裡 — 錯了的代價是沒有 WinForms 的 IDE 側現在會在 import 就停下來，訊息是一句人話而不是 NameError。這一改也讓 `codesys_ui.py` 的 bare except 歸零。`
+
+沒做完的：
+
+26. **`cds/ide/silent.py` 換函式的機制沒有刪。**第 4 節第四層還有一句「做完之後 `silent.py` 換函式的機制刪掉」，`_ui_patches`、`_install`、`UI_MODULE` 與 `tests/test_layering.py` 那筆登記都還在。
+
+    理由：要刪它，引擎就得改成透過 `system.ui` 問是非題，而不是呼叫 `codesys_ui.ask_yes_no`。這條路可行也乾淨（替身本來就攔 `system.ui`，D12 的那個例外會跟著消失），但它會把 PLC 下載的確認對話框從 Windows 的 MessageBox 換成 CODESYS 的圓鈕提示框——使用者看得到的改變——而且 SPEC 6.1 明文寫著「對話框只透過 `codesys_ui.ask_yes_no`、`system.ui.choose`，因為替身 UI 只攔這兩個」，還有兩條測試守著這個設計。改它等於一個 worker 自己改掉 SPEC 的一條已定案決策，而且動的是無頭與看門人這條路。
+
+    這一項不做不影響第四層的驗收條件：`engine/` 底下 `import __main__` 與 `sys.modules` 都是零，四個解析器都刪了。留下來的是 `cds/ide` 伸手進 `engine` 的那一個 D12 例外，不是引擎伸手去找全域物件。
+
+    要接手的人：把 `SilentSystem` 的 `ui` 加一個 `ask_yes_no`，`engine/entry_plc.py` 改成問 `system.ui`，`engine/codesys_ui.ask_yes_no` 就沒有呼叫端了可以刪，`show_sync_folder_dialog` 已經收 `system` 了同法處理；然後 `_install`、`_ui_patches`、`_ui_module`、`UI_MODULE` 與 `STRING_IMPORTS_ALLOWED` 一起消失，SPEC 6.1 那句話要跟著改。
 
 做的時候看到但不在範圍的：
 
