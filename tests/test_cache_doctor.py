@@ -4,7 +4,7 @@
 It used to replay two hand-written expressions, one per side, because that
 was the bug it was built to find: export compared int(st_mtime) and compare
 compared a float, so each side rejected everything the other had written.
-That is fixed -- both sides go through codesys_utils.file_signature() -- and
+That is fixed -- both sides go through sync_cache.file_signature() -- and
 a diagnostic still replaying the old expressions reports a war that is over
 and misjudges a healthy cache.
 
@@ -17,8 +17,8 @@ import os
 
 import pytest
 
-from engine.codesys_utils import (CACHE_VERSION, file_signature,
-                                  save_sync_cache)
+from engine.codesys_utils import CACHE_VERSION
+from engine.sync_cache import file_signature, save_sync_cache
 from tools import cache_doctor
 
 

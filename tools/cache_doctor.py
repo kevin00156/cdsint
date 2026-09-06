@@ -44,7 +44,8 @@ if _HERE not in sys.path:
 import _root  # noqa: E402,F401
 
 from engine.codesys_constants import PROFILE_HASH  # noqa: E402
-from engine.codesys_utils import CACHE_VERSION, file_signature  # noqa: E402
+from engine.codesys_utils import CACHE_VERSION  # noqa: E402
+from engine.sync_cache import file_signature  # noqa: E402
 
 CACHE_NAME = "sync_cache.json"
 

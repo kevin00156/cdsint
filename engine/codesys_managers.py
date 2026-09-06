@@ -11,13 +11,13 @@ import os
 import codecs
 import tempfile
 import zlib
+from engine.sync_cache import file_signature, normalize_path
 from engine.codesys_utils import (
-    safe_str, clean_filename, calculate_hash, log_info, log_error, log_warning,
-    format_st_content, format_property_content, parse_property_content,
-    is_container_device, get_quick_ide_hash, normalize_path,
-    read_ide_attrs, write_ide_attrs, render_sync_pragmas, build_state_hash,
-    parse_sync_pragmas, attrs_from_pragmas, needs_kind_pragma, file_signature,
-    ide_flag, read_sync_text
+    safe_str, clean_filename, calculate_hash, log_info,
+    log_error, log_warning, format_st_content, format_property_content,
+    parse_property_content, is_container_device, get_quick_ide_hash, read_ide_attrs,
+    write_ide_attrs, render_sync_pragmas, build_state_hash, parse_sync_pragmas,
+    attrs_from_pragmas, needs_kind_pragma, ide_flag, read_sync_text
 )
 from engine.codesys_constants import (
     TYPE_GUIDS, XML_TYPES, EXPORTABLE_TYPES, IMPLEMENTATION_TYPES,

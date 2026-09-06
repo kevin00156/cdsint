@@ -14,7 +14,7 @@ import pytest
 
 from tests.fakes import Project
 
-from engine import codesys_managers, codesys_utils, entry_build
+from engine import codesys_managers, codesys_utils, entry_build, sync_cache
 
 
 @pytest.fixture(scope="module")
@@ -298,7 +298,7 @@ class TestFindingApplications:
 class TestCompactCache:
     def test_cache_is_written_without_indentation(self, env, tmp_path):
         utils, _, _ = env
-        utils.save_sync_cache(str(tmp_path), {"a/b.st": {"ide_hash": "X"}},
+        sync_cache.save_sync_cache(str(tmp_path), {"a/b.st": {"ide_hash": "X"}},
                               {"a": "Y"}, {"g": ["t", False, "a/b.st"]})
         raw = (tmp_path / "sync_cache.json").read_text(encoding="utf-8")
         assert "\n" not in raw
@@ -307,8 +307,8 @@ class TestCompactCache:
     def test_round_trips(self, env, tmp_path):
         utils, _, _ = env
         objects = {"a/b.st": {"ide_hash": "X", "disk_mtime": 1, "disk_size": 2}}
-        utils.save_sync_cache(str(tmp_path), objects, {"a": "Y"},
+        sync_cache.save_sync_cache(str(tmp_path), objects, {"a": "Y"},
                               {"g": ["t", False, "a/b.st"]})
-        loaded = utils.load_sync_cache(str(tmp_path))
+        loaded = sync_cache.load_sync_cache(str(tmp_path))
         assert loaded["objects"] == objects
         assert loaded["folders"] == {"a": "Y"}

@@ -4,12 +4,11 @@ import os
 import time
 
 from engine.codesys_constants import sync_direction_of
+from engine.sync_cache import build_folder_hashes, load_sync_cache, normalize_path, save_sync_cache
 from engine.codesys_utils import (
     safe_str, log_info, log_warning, log_error,
-    init_logging,  ensure_git_configs,
-    load_sync_cache, save_sync_cache, build_folder_hashes,
-    normalize_path, reset_interaction_timer,
-    get_interaction_seconds, format_elapsed
+    init_logging, ensure_git_configs, reset_interaction_timer, get_interaction_seconds,
+    format_elapsed
 )
 from engine.codesys_managers import clear_path_caches
 from engine.classify import (

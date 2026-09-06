@@ -23,8 +23,8 @@ from engine.codesys_constants import (
     TYPE_GUIDS, kind_allows_import, kind_of, sync_direction_of,
 )
 from engine.codesys_utils import (
-    ensure_folder_path, find_object_by_path, log_error, log_info, log_warning,
-    safe_str,
+    ensure_folder_path, find_object_by_path, log_error, log_info,
+    log_warning, safe_str
 )
 from engine.ide_read import child_named, guid_of, parent_of
 

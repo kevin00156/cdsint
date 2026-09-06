@@ -13,7 +13,8 @@ import os
 
 import pytest
 
-from engine import classify, codesys_compare_engine, codesys_managers, codesys_utils
+from engine import (classify, codesys_compare_engine, codesys_managers,
+                    codesys_utils, sync_cache)
 
 
 @pytest.fixture(scope="module")
@@ -37,19 +38,19 @@ class TestFileSignature:
     def test_path_and_stat_agree(self, utils, sample_file):
         """Passing a pre-fetched stat must not change the answer -- the export
         path reuses a stat it already has, the compare path does not."""
-        from_path = utils.file_signature(sample_file)
-        from_stat = utils.file_signature(sample_file, os.stat(sample_file))
+        from_path = sync_cache.file_signature(sample_file)
+        from_stat = sync_cache.file_signature(sample_file, os.stat(sample_file))
         assert from_path == from_stat
 
     def test_components_are_ints(self, utils, sample_file):
         """A float would make cache equality depend on repr() round-tripping
         the exact same value through JSON."""
-        mtime, size = utils.file_signature(sample_file)
+        mtime, size = sync_cache.file_signature(sample_file)
         assert isinstance(mtime, int)
         assert isinstance(size, int)
 
     def test_survives_json_round_trip(self, utils, sample_file):
-        sig = utils.file_signature(sample_file)
+        sig = sync_cache.file_signature(sample_file)
         restored = json.loads(json.dumps({"disk_mtime": sig[0], "disk_size": sig[1]}))
         assert (restored["disk_mtime"], restored["disk_size"]) == sig
 
@@ -57,16 +58,16 @@ class TestFileSignature:
         """Truncating to whole seconds would silently miss an edit made in the
         same second as the cached stamp when the size happens to match."""
         os.utime(sample_file, (1_700_000_000.000, 1_700_000_000.000))
-        first = utils.file_signature(sample_file)
+        first = sync_cache.file_signature(sample_file)
         os.utime(sample_file, (1_700_000_000.500, 1_700_000_000.500))
-        second = utils.file_signature(sample_file)
+        second = sync_cache.file_signature(sample_file)
         assert first != second
 
     def test_detects_content_change(self, utils, sample_file):
-        before = utils.file_signature(sample_file)
+        before = sync_cache.file_signature(sample_file)
         with open(sample_file, "a", encoding="utf-8") as handle:
             handle.write("// more\n")
-        assert utils.file_signature(sample_file) != before
+        assert sync_cache.file_signature(sample_file) != before
 
 
 class TestCrossSideAgreement:
@@ -74,17 +75,17 @@ class TestCrossSideAgreement:
 
     def _export_side_entry(self, utils, file_path):
         """What ObjectManager._update_cache_entry stores."""
-        mtime, size = utils.file_signature(file_path, os.stat(file_path))
+        mtime, size = sync_cache.file_signature(file_path, os.stat(file_path))
         return {"ide_hash": "A1B2C3D4", "disk_mtime": mtime, "disk_size": size}
 
     def _compare_side_accepts(self, utils, file_path, entry):
         """The predicate in find_all_changes."""
-        mtime, size = utils.file_signature(file_path)
+        mtime, size = sync_cache.file_signature(file_path)
         return entry.get("disk_mtime") == mtime and entry.get("disk_size") == size
 
     def _export_side_accepts(self, utils, file_path, entry):
         """The predicate in ObjectManager._try_cache_skip."""
-        mtime, size = utils.file_signature(file_path, os.stat(file_path))
+        mtime, size = sync_cache.file_signature(file_path, os.stat(file_path))
         return entry.get("disk_mtime") == mtime and entry.get("disk_size") == size
 
     def test_compare_accepts_what_export_wrote(self, utils, sample_file):
@@ -92,7 +93,7 @@ class TestCrossSideAgreement:
         assert self._compare_side_accepts(utils, sample_file, entry)
 
     def test_export_accepts_what_compare_wrote(self, utils, sample_file):
-        mtime, size = utils.file_signature(sample_file)
+        mtime, size = sync_cache.file_signature(sample_file)
         entry = {"ide_hash": "A1B2C3D4", "disk_mtime": mtime, "disk_size": size}
         assert self._export_side_accepts(utils, sample_file, entry)
 
@@ -162,34 +163,34 @@ class TestCachedClassification:
     """
 
     def test_a_full_entry_is_returned_as_is(self, utils):
-        assert utils.cached_classification(["guid", True, "A/B.st"]) == (
+        assert sync_cache.cached_classification(["guid", True, "A/B.st"]) == (
             "guid", True, "A/B.st")
 
     def test_a_short_entry_is_padded(self, utils):
         """An older cache stored (eff_type, is_xml) with no path."""
-        assert utils.cached_classification(["guid", False]) == (
+        assert sync_cache.cached_classification(["guid", False]) == (
             "guid", False, None)
 
     def test_a_long_entry_is_cut(self, utils):
-        assert utils.cached_classification(["guid", False, "A.st", "extra"]) == (
+        assert sync_cache.cached_classification(["guid", False, "A.st", "extra"]) == (
             "guid", False, "A.st")
 
     def test_something_that_is_not_a_list_is_no_entry(self, utils):
         """A string would otherwise explode into one character per element."""
-        assert utils.cached_classification("guid") is None
-        assert utils.cached_classification(None) is None
+        assert sync_cache.cached_classification("guid") is None
+        assert sync_cache.cached_classification(None) is None
 
     def test_load_reshapes_what_it_reads(self, utils, tmp_path):
         from engine.codesys_constants import PROFILE_HASH
         path = tmp_path / "sync_cache.json"
         path.write_text(json.dumps({
-            "version": utils.CACHE_VERSION,
+            "version": codesys_utils.CACHE_VERSION,
             "profile_hash": PROFILE_HASH,
             "objects": {}, "folders": {},
             "types": {"short": ["t", True], "full": ["t", False, "A.st"],
                       "junk": "not a list"},
         }), encoding="utf-8")
-        types = utils.load_sync_cache(str(tmp_path))["types"]
+        types = sync_cache.load_sync_cache(str(tmp_path))["types"]
         assert types["short"] == ("t", True, None)
         assert types["full"] == ("t", False, "A.st")
         assert "junk" not in types

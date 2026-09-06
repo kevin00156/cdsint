@@ -103,7 +103,7 @@ def resolve_object(obj, obj_guid, cached_types, export_xml, project):
     whoever edited it to remember the other.
 
     cached_types is the type cache from sync_cache.json, already reshaped by
-    codesys_utils.cached_classification.
+    engine/sync_cache.py's cached_classification.
 
     obj_guid is passed in rather than read here. Every caller already has it,
     and reading it again crosses into .NET for an answer they are holding

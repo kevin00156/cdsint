@@ -24,17 +24,14 @@ from engine.codesys_constants import (
     TYPE_NAMES, KNOWN_TYPE_SUFFIXES, kind_of, sync_direction_of,
     kind_allows_import
 )
+from engine.sync_cache import build_folder_hashes, file_signature, load_sync_cache, normalize_path, save_sync_cache
 from engine.codesys_utils import (
-    safe_str, calculate_hash, log_info, log_error, log_warning,
-    merge_native_xmls,
-    parse_st_file, find_object_by_path,
-    ensure_folder_path, determine_object_type, find_object_by_name,
-    find_child_transparent,
-    format_st_content, format_property_content,
-    load_sync_cache, save_sync_cache, normalize_path, get_quick_ide_hash,
-    parse_sync_pragmas, attrs_from_pragmas, read_ide_attrs,
-    normalize_sync_attrs, build_state_hash, render_sync_pragmas, file_signature,
-    read_sync_text
+    safe_str, calculate_hash, log_info, log_error,
+    log_warning, merge_native_xmls, parse_st_file, find_object_by_path,
+    ensure_folder_path, determine_object_type, find_object_by_name, find_child_transparent,
+    format_st_content, format_property_content, get_quick_ide_hash, parse_sync_pragmas,
+    attrs_from_pragmas, read_ide_attrs, normalize_sync_attrs, build_state_hash,
+    render_sync_pragmas, read_sync_text
 )
 from engine.codesys_managers import (
     NativeManager, export_object_content, native_xml_of,
@@ -299,8 +296,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
             carry_over(stale[2] if stale else None)
 
     # Build folder hashes (Merkle Tree)
-    from engine.codesys_utils import build_folder_hashes
-    ide_folder_hashes = build_folder_hashes(ide_hashes)
+        ide_folder_hashes = build_folder_hashes(ide_hashes)
     log_info("  Pass 1 complete ({} objects, {} path cache hits, {} invalidated) in {:.2f}s".format(
         len(ide_hashes), path_cache_hits, path_invalidations, time.time() - p1_start))
 
