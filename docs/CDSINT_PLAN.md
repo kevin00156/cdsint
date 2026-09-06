@@ -277,7 +277,7 @@ img/        readMe 用的圖
   - [x] （2）從 IDE 來的路徑一律用 `ntpath` 拆，不用 `os.path`：IDE 只在 Windows 上跑，它給的永遠是 Windows 路徑，而 `ntpath` 同時吃斜線與反斜線，所以在兩種作業系統上都對。每一處加一句註解說為什麼是 `ntpath`。CLI 自己產生的路徑（`--sync-dir`、`--report`、暫存目錄）維持 `os.path`。
   - [x] （3）那條測試改成 monkeypatch `os.remove` 丟 `OSError`，兩種作業系統都能讓刪除失敗；不准用 `skipif`。
   - [x] （4）`.github/workflows/ci.yml` 改成 matrix：`ubuntu-latest` 與 `windows-latest` 各跑一次。產品只在 Windows 上有意義，Linux 那條守的是可攜性，Windows 那條守的是真目標。
-  - [x] 驗收（GitHub 那半還需要人）：WSL 裡 `python3 -m pytest tests -q` 926 passed；Windows 本機 `python -m pytest tests -q` 與根目錄 `python -m pytest` 各 926 passed。改之前 WSL 是收集階段整份中斷（`tests/test_version.py` 的 `tomllib` 在 Python 3.10 沒有），跳過那一支之後才看得到工單記的 16 failed 909 passed。GitHub 兩條 job 要 push 才看得到，push 歸監督者。
+  - [x] 驗收（GitHub 那半還需要人）：WSL 裡 `python3 -m pytest tests -q` 926 passed；Windows 本機 `python -m pytest tests -q` 與根目錄 `python -m pytest` 各 926 passed。改之前 WSL 是收集階段整份中斷（`tests/test_version.py` 的 `tomllib` 在 Python 3.10 沒有），跳過那一支之後才看得到工單記的 16 failed 909 passed。GitHub 兩條 job 要 push 才看得到，push 歸監督者。——監督者 2026-09-06 12:15 驗證：Windows 926 passed、WSL Linux 926 passed 都是監督者自己跑的；push 之後 GitHub run 34010716597 兩條 job `core unit tests (ubuntu-latest)`、`core unit tests (windows-latest)` 都 success，這是這個 repo 第一次綠。
   - [x] 驗收：`grep -rn 'r"[A-Za-z][^"]*\\\\' cdsint/ cds/ engine/` 剩四行，不是兩行。`cdsint/installs.py:50、51` 是工單放行的登錄檔鍵；另外兩行是 `engine/entry_build.py:218、309` 的正規表示式（`\)` 與 `\s`），不是路徑片段。那條 grep 的樣式抓得比它的意圖寬，意圖本身成立。見底下的 Ruling。
 
 ---
@@ -882,6 +882,9 @@ identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`�
 - Ruling: `irm/setup.ps1` 階段 0 只換名字與 URL，不改安裝佈局，檔頭加「還不能跑」的警告 — 它現在會把整棵樹倒進一個 ScriptDir 資料夾，而 IDE 是遞迴掃的，選單會列出 `engine/`、`tools/`、`tests/` 底下每一支 `.py`；要修就是階段 1 的重寫，硬塞進階段 0 等於把搬家跟改行為混在一起 — 錯了的代價是這段期間 `irm/setup.ps1` 是不能用的，安裝只能照 readMe 手動做，這件事寫在檔頭與 `irm/setup.md` 開頭。
 
 監督者已裁的：
+
+- Ruling（CI 驗收後）: worker 這一輪的六條 Ruling 全部接受 — `tomllib` 換成自己掃一行（守門的測試不能因為量測機器的 Python 太舊就消失）、`ntpath` 只用在四處從 IDE 來的路徑而 `engine/` 不動（那裡本來就是 Windows 上的 `os.path`）、刪除失敗放在 `os.remove` 那一層、驗收 grep 多抓到的兩行是正規表示式不是路徑 — 錯了的代價是無。
+- Ruling（CI 驗收後）: CI 從此兩條 job，`ubuntu` 守可攜性、`windows` 守真目標；任何一條紅就不合併 — 這個 repo 之前七次 push 全紅卻沒人看，因為沒人把「CI 綠」當驗收的一部分；從現在起每個階段的驗收句都含「push 後兩條 job 綠」 — 錯了的代價是每次 push 多等一分鐘。
 
 - Ruling（BOM 驗收後）: worker 這一輪的五條 Ruling 全部接受，包括「引擎沒有這個 bug」的結案（真 API 量下去是乾淨的，假物件證明不了真 API）、留下 9 條一開始就綠的測試（那條分支以前零覆蓋）、上一輪誤判的原文留著只接一句指向新段落（現象是真的，錯的只有結論） — 錯了的代價是無。教訓寫進第 3 節事實：Windows 上寫 `.st` 的工具（PowerShell `Set-Content`、記事本）會加 BOM，同步資料夾的讀檔只能有一個入口而且要吃 `utf-8-sig`。
 - Ruling（CRC 判決驗收後）: worker 的判決設計全部接受 — MATCH 收窄成「控制器上還是 cdsint 從這份專案放上去的那份」，紀錄放專案旁、一台控制器一筆、下載前後各讀一次控制器的 CRC、離線 boot application 與 `local_crc` 拿掉。理由是它自己寫的那句：會漏抓的閘門比沒有閘門更糟；「控制器跑的是不是這棵原始碼樹」要靠 source download 加封存比對，那是另一件事，留在 SPEC 11 未決 — 錯了的代價是專案複製到別台電腦 `connect` 回 UNKNOWN 而不是 MATCH，訊息會說原因。
