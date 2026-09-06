@@ -2,7 +2,7 @@
 
 > 建立日期 2026-09-06。分支 `ticket/engine`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-engine`。
 > 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
-> 這是四張工單的最後一張，在 `HYGIENE_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，前三張做完會漂很多，開工先重核。
+> 這是四張工單的最後一張，在 `history/HYGIENE_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，前三張做完會漂很多，開工先重核。
 > 這張最重，也是唯一一張每一層都要用真 IDE 驗的。驗收儀器在 `WORKER_RULES.md` 的「儀器」節，hash 清單 diff 為空是硬條件。
 
 ---
