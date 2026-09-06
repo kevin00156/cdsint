@@ -14,6 +14,9 @@ from __future__ import print_function
 import os
 import sys
 
+from cds.core.exits import EXIT_HEADLESS
+from cdsint.exits import Failure
+
 # What each vendor's tree looks like. Only the executable proves an install:
 # these vendors put shared targets, gateways and an unversioned stub
 # directory beside the real ones, and a scan by directory name reports every
@@ -52,12 +55,17 @@ LAYER_KEYS = (
 )
 
 
-class InstallError(Exception):
-    """No install matched, or more than one did. Carries the candidates."""
+def _no_install(message, matches=()):
+    """The one exception the CLI catches, with the candidates under it.
 
-    def __init__(self, message, matches=None):
-        Exception.__init__(self, message)
-        self.matches = matches or []
+    Exit 4, because "no usable IDE for this project" is what 4 means and the
+    reader's next move is the same as for a project somebody else has open:
+    look at what is actually installed (SPEC 4.3). This used to be an
+    exception of its own with no code on it, and cdsint/cli.py caught only
+    Failure -- so a wrong --install printed a traceback and exited 1.
+    """
+    return Failure(message, EXIT_HEADLESS,
+                   ["%-34s %s" % (i["name"], i["exe"]) for i in matches])
 
 
 def find():
@@ -86,15 +94,15 @@ def resolve(installs, wanted):
     project (SPEC 6.4).
     """
     if not wanted:
-        raise InstallError("say which IDE with --install; `cdsint installs` "
-                           "lists them", installs)
+        raise _no_install("say which IDE with --install; `cdsint installs` "
+                          "lists them", installs)
     matches = [i for i in installs if wanted.lower() in i["name"].lower()]
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise InstallError("no IDE matches --install %r" % (wanted,), installs)
-    raise InstallError("several IDEs match --install %r; be more specific"
-                       % (wanted,), matches)
+        raise _no_install("no IDE matches --install %r" % (wanted,), installs)
+    raise _no_install("several IDEs match --install %r; be more specific"
+                      % (wanted,), matches)
 
 
 def profile_of(install, wanted=None):
@@ -111,10 +119,10 @@ def profile_of(install, wanted=None):
     if len(profiles) == 1:
         return profiles[0]
     if not profiles:
-        raise InstallError("%s has no profile in %s; pass --profile"
-                           % (install["name"], install["exe"]))
-    raise InstallError("%s has %d profiles (%s); pass --profile"
-                       % (install["name"], len(profiles), ", ".join(profiles)))
+        raise _no_install("%s has no profile in %s; pass --profile"
+                          % (install["name"], install["exe"]))
+    raise _no_install("%s has %d profiles (%s); pass --profile"
+                      % (install["name"], len(profiles), ", ".join(profiles)))
 
 
 def warn_if_elevated(install):

@@ -25,28 +25,38 @@ through an IDE of our own must reach the same verdict (SPEC D2).
 """
 from __future__ import print_function
 
+from cds.core import commands
+from cdsint import flags
+
 # The counts compare hands back. Any of them above zero means the IDE and the
 # disk disagree about something after a full round trip, which is exactly
 # what verify exists to catch.
 DIFFERENCE_COUNTS = ("different", "new_in_ide", "new_on_disk", "moved")
 
+# The order that makes each step mean something, as the docstring explains.
+ORDER = ("import", "export", "compare", "build")
+
+LOOK_ONLY = [("compare", {})]
+
 
 def steps():
     """The four commands, with the answers the caller's flags already gave.
 
-    `yes` here is not a guess on anyone's behalf: run() only builds these
-    steps when the caller passed -y, so the engine's own confirmation dialog
-    would be asking a question that has already been answered.
+    Each step's args come from that command's own row in cdsint/flags.py, so
+    a flag added to import or build arrives here unsaid rather than not at
+    all. `yes` is the one this fills in, and it is not a guess on anyone's
+    behalf: run() only builds these steps when the caller passed -y, so the
+    engine's confirmation dialog would be asking a question already answered.
     """
-    return [
-        ("import", {"yes": True}),
-        ("export", {"delete_orphans": None}),
-        ("compare", {}),
-        ("build", {"app": None}),
-    ]
+    return [(name, _answered(name)) for name in ORDER]
 
 
-LOOK_ONLY = [("compare", {})]
+def _answered(name):
+    args = flags.blank_args(name)
+    if "yes" in args:
+        args["yes"] = True
+    return args
+
 
 # What compare calls each count, and what the import step would do with it.
 PLAN = (("modified", "different"), ("new_on_disk", "new_on_disk"),
@@ -73,23 +83,30 @@ def look(runner):
     caller would be agreeing to instead of just naming a missing flag.
     """
     results = runner.run(LOOK_ONLY)
-    if not results or not results[-1].get("ok"):
+    if not results or not results[-1]["ok"]:
         return results, problems(results, len(LOOK_ONLY))
-    refusal = needs_yes(results[-1].get("data") or {})
+    refusal = needs_yes(results[-1]["data"] or {})
     return results + [refusal], [refusal["error"]]
 
 
 def needs_yes(counts):
-    """The import step as it would have been, had it been allowed to run."""
+    """The import step as it would have been, had it been allowed to run.
+
+    Built by the same constructor every other result goes through, because
+    cdsint/report.py and cdsint/cli.py read it the same way as the rest. The
+    hand-written version carried seven of the twelve fields, so a reader that
+    asked about `denied` got a KeyError on this one record alone.
+    """
     plan = dict((name, counts.get(key) or 0) for name, key in PLAN)
     question = ("verify includes an import, so it needs -y like import does. "
                 "This one would change %(modified)d object(s), create "
                 "%(new_on_disk)d and delete %(delete)d from the IDE. Nothing "
                 "was changed. Check those numbers against the sync folder you "
                 "meant, then re-run with -y." % plan)
-    return {"ok": False, "command": "import", "elapsed_s": 0.0, "messages": [],
-            "data": plan, "error": question,
-            "needs_input": {"question": question, "arg": "yes"}}
+    return commands.new_result(
+        commands.new_command("import", flags.blank_args("import")), False,
+        error=question, data=plan,
+        needs_input={"question": question, "arg": "yes"})
 
 
 def problems(results, planned=None):
@@ -101,13 +118,13 @@ def problems(results, planned=None):
     """
     found = []
     for result in results:
-        if not result.get("ok"):
-            found.append("%s failed: %s" % (result.get("command"),
-                                            result.get("error")))
-    ran = dict((r.get("command"), r) for r in results)
-    if "compare" in ran and ran["compare"].get("ok"):
-        found.extend(_differences(ran["compare"].get("data") or {}))
-    planned = len(steps()) if planned is None else planned
+        if not result["ok"]:
+            found.append("%s failed: %s" % (result["command"],
+                                            result["error"]))
+    ran = dict((r["command"], r) for r in results)
+    if "compare" in ran and ran["compare"]["ok"]:
+        found.extend(_differences(ran["compare"]["data"] or {}))
+    planned = len(ORDER) if planned is None else planned
     if len(ran) < planned:
         found.append("stopped after %d of %d steps" % (len(ran), planned))
     return found

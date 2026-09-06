@@ -1,14 +1,19 @@
 # -*- coding: utf-8 -*-
-"""What you may type, and which combinations are refused.
+"""What you may type: one table, and the refusals that come out of it.
 
-The shape of the command line is one subject and what to do with a parsed
-one is another, so this is the whole of the first: the subcommands, the
-flags each carries, how a flag becomes an argument the IDE side reads, and
-the three combinations that are answered with a reason instead of a run.
+Every fact about a subcommand is one row of COMMANDS: what it does, which of
+the two forms it has (SPEC D2), what flags it carries, and what it is called
+on the wire. Adding a command means adding a row. It used to mean editing
+seven places — a help string here, a tuple of names there, an if/elif in the
+flag builder, a branch in the argument packer — and the failure that came of
+missing one was never "unknown command", it was a flag that parsed and then
+quietly did not reach the IDE.
 
 Every refusal here is a decision somebody made once, and the message says
 which one. "unrecognized arguments" would be shorter and would send the
-reader looking for a typo they did not make.
+reader looking for a typo they did not make. All of them are exit 2, which
+means "the command line itself is wrong" (SPEC 4.3): the caller's next move
+is to change what they typed, not to run it again.
 
 cdsint/cli.py is the other half.
 """
@@ -16,53 +21,153 @@ from __future__ import print_function
 
 import argparse
 
-from cdsint import target
-from cdsint.exits import Failure
+# Seconds one command step may take (SPEC 4.2). The one number: the help text
+# renders it with %(default)s, and both runners take it as their default, so
+# there is nowhere for a second 120 to be written down and go stale.
+DEFAULT_TIMEOUT_S = 120.0
 
-DEFAULT_TIMEOUT_S = target.DEFAULT_TIMEOUT_S
+# The two forms of every command (SPEC D2), plus the two that have neither.
+#
+#   NO_IDE     asks about this machine, not about a project: installs, list
+#   WATCHER    only --target: the watcher's own life, which needs a watcher
+#   EITHER     both forms, the ordinary case
+#   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
+#              still offered --target, so that asking for the other form is
+#              answered with the reason rather than with "unrecognized"
+NO_IDE = "none"
+WATCHER = "target"
+EITHER = "both"
+HEADLESS = "project"
 
-_HELP = {
-    "installs": "list the IDEs on this machine, and what to call each one",
-    "list": "show the IDEs that are listening",
-    "ping": "check that an IDE is answering",
-    "status": "show what an IDE has open right now",
-    "export": "write the project out to the sync folder",
-    "import": "read the sync folder back into the project",
-    "compare": "report how the project and the sync folder differ",
-    "discover": "name every object and the kind it counted as; use it when "
-                "a command reports failed_objects",
-    "build": "build the application and report the error count",
-    "verify": "import (-y), export, compare and build, and pass only if all "
-              "agree",
-    "plc": "talk to the controller: read what it runs, or download to it",
-    "stop": "tell a watcher to shut down",
+# What shape a flag is. The kind decides both how argparse is told about it
+# and what the IDE side receives; every one of them defaults to None rather
+# than False or 0, so "not said" and "said no" stay different all the way
+# through (cds/core/commands.py new_command).
+SWITCH = "switch"     # --delete-orphans
+CONFIRM = "confirm"   # -y/--yes: the same flag wherever a step changes things
+NAME = "name"         # --app NAME
+NUMBER = "number"     # --port N
+PAIRS = "pairs"       # --answer KEY=VALUE, and again for the next one
+
+KINDS = {
+    SWITCH: {"action": "store_true", "default": None},
+    CONFIRM: {"action": "store_true", "default": None},
+    NAME: {"default": None},
+    NUMBER: {"type": int, "default": None, "metavar": "N"},
+    PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE"},
 }
 
-# Commands that need an IDE with the project open, in either form.
-BOTH_FORMS = ("export", "import", "compare", "discover", "build", "verify")
-# Commands about a watcher's life, which only the --target form has.
-WATCHER_ONLY = ("ping", "status", "stop")
-# The one command with only the --project form. It gets --target anyway, so
-# that asking for the other form is answered with the reason rather than
-# with "unrecognized arguments" (SPEC D8).
-PROJECT_ONLY_COMMAND = "plc"
+def _dest(spelling):
+    """What argparse calls a flag: its last long spelling, as an identifier."""
+    return spelling.split("/")[-1].lstrip("-").replace("-", "_")
 
-# Extra flags per command, and how they become the command's args. A flag left
-# out arrives as None so the watcher can tell "not said" from "said no".
-FLAGS = {
-    "export": [("--delete-orphans", "delete the sync files with no object behind them")],
-    "import": [("--yes", "confirm the import; without it the watcher asks")],
-    "build": [("--app", "which application to build, when there are several")],
-    "verify": [("--yes", "confirm the import step; without it verify only "
-                         "looks and says what the import would have done")],
-    "plc": [("--yes", "confirm the download; connect never needs it")],
+
+# -y is the spelling in SPEC 4.2 and the one every other tool that asks "are
+# you sure" uses, so the flag carries both and argparse names it after the
+# long one.
+CONFIRM_IMPORT = ("-y/--yes", CONFIRM,
+                  "confirm the import; without it the watcher asks")
+
+
+class Command(object):
+    """One subcommand, and everything the command line knows about it."""
+
+    def __init__(self, summary, form, flags=(), action=None, one_form=None):
+        self.summary = summary
+        self.form = form
+        self.flags = tuple(flags)
+        # The positional argument, when the command has one. `plc` is the
+        # only one: its two halves are separate rows in cds/ide/entries.py
+        # because one is read-only and one writes to a machine, and a table
+        # that tells them apart needs no dispatcher to read the difference
+        # back out (SPEC 4.2).
+        self.action = action
+        # Why this command has only one form, in the words the refusal uses.
+        self.one_form = one_form
+
+    def dests(self):
+        """What argparse will call each of this command's flags."""
+        return [_dest(spelling) for spelling, _kind, _help in self.flags]
+
+
+COMMANDS = {
+    "installs": Command(
+        "list the IDEs on this machine, and what to call each one", NO_IDE),
+    "list": Command("show the IDEs that are listening", NO_IDE),
+    "ping": Command("check that an IDE is answering", WATCHER),
+    "status": Command("show what an IDE has open right now", WATCHER),
+    "stop": Command("tell a watcher to shut down", WATCHER),
+    "export": Command(
+        "write the project out to the sync folder", EITHER,
+        flags=[("--delete-orphans", SWITCH,
+                "delete the sync files with no object behind them")]),
+    "import": Command(
+        "read the sync folder back into the project", EITHER,
+        flags=[CONFIRM_IMPORT]),
+    "compare": Command(
+        "report how the project and the sync folder differ", EITHER),
+    "discover": Command(
+        "name every object and the kind it counted as; use it when a command "
+        "reports failed_objects", EITHER),
+    "build": Command(
+        "build the application and report the error count", EITHER,
+        flags=[("--app", NAME,
+                "which application to build, when there are several")]),
+    "verify": Command(
+        "import (-y), export, compare and build, and pass only if all agree",
+        EITHER,
+        flags=[("-y/--yes", CONFIRM,
+                "confirm the import step; without it verify only looks and "
+                "says what the import would have done")]),
+    "plc": Command(
+        "talk to the controller: read what it runs, or download to it",
+        HEADLESS,
+        action=("connect", "download"),
+        flags=[("-y/--yes", CONFIRM,
+                "confirm the download; connect never needs it"),
+               ("--gateway", NAME,
+                "reach the controller through this address instead of "
+                "whatever the project already holds"),
+               ("--port", NUMBER,
+                "device port behind --gateway; left out, the standard "
+                "CODESYS device port is used")],
+        one_form="The watcher runs inside an IDE somebody is using, and "
+                 "logging into a controller would take their online session "
+                 "away from them (SPEC D8)."),
 }
 
-# Only meaningful when we start the IDE ourselves. --answer is among them
-# because the prompts it answers are the IDE's own, and in the --target form
-# there is a person sitting in front of that IDE to answer them.
-PROJECT_ONLY = ("install", "profile", "report", "force_lock", "sync_dir",
-                "answer")
+# Flags that only mean something when we start the IDE ourselves. --answer is
+# among them because the prompts it answers are the IDE's own, and in the
+# --target form there is a person sitting in front of that IDE to answer them.
+# One list, so that what the parser offers and what check() refuses without a
+# --project cannot be two different sets of six names.
+PROJECT_FLAGS = (
+    ("--install", NAME, "which IDE to start; `cdsint installs` lists them"),
+    ("--profile", NAME,
+     "the IDE profile name, when the install has more than one"),
+    ("--report", NAME, "where to write the run's report"),
+    ("--force-lock", SWITCH,
+     "start even though the project looks open elsewhere"),
+    ("--sync-dir", NAME,
+     "use this folder for this run instead of the sync_folder in the "
+     "project's settings file; nothing is written back"),
+    ("--answer", PAIRS, "answer one of the IDE's own prompts; repeatable"),
+)
+
+PROJECT_ONLY = tuple(_dest(spelling)
+                     for spelling, _kind, _help in PROJECT_FLAGS)
+
+# Every attribute a parsed command line can carry, worked out from the rows
+# above rather than listed again. Each subparser is given all of them as
+# defaults after its own arguments are added, and argparse keeps an
+# argument's own default over one set this way -- so a subcommand that has
+# the flag behaves as before, and one that does not still answers to the
+# name. That is what lets cdsint/cli.py read ns.project the same way
+# whichever subcommand ran, instead of asking with getattr whether the
+# attribute is there at all.
+EVERY_ATTRIBUTE = tuple(sorted(
+    set(["target", "project", "action"]) | set(PROJECT_ONLY)
+    | set(dest for row in COMMANDS.values() for dest in row.dests())))
 
 
 class Parser(argparse.ArgumentParser):
@@ -84,147 +189,123 @@ def build_parser():
     parser = Parser(prog="cdsint", description="Drive a CODESYS-family IDE.")
     sub = parser.add_subparsers(dest="command", required=True,
                                 parser_class=Parser)
-    _shared(sub.add_parser("installs", help=_HELP["installs"]))
-    _shared(sub.add_parser("list", help=_HELP["list"]))
-    for name in WATCHER_ONLY:
-        _target_flag(_shared(sub.add_parser(name, help=_HELP[name])))
-    for name in BOTH_FORMS + (PROJECT_ONLY_COMMAND,):
-        command = _both_forms(_shared(sub.add_parser(name, help=_HELP[name])))
-        for flag, help_text in FLAGS.get(name, []):
-            _add_flag(command, flag, help_text)
-    _plc_arguments(sub.choices[PROJECT_ONLY_COMMAND])
+    # In the table's order, not sorted: the table reads life-cycle first,
+    # then the commands that do work, and `cdsint --help` should too.
+    for name, row in COMMANDS.items():
+        _build_one(sub, name, row)
     return parser
 
 
-def _shared(parser):
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S,
-                        help="seconds one command step may take (default "
-                             "120); also how long a busy IDE counts as alive. "
-                             "With --project the process deadline is derived "
-                             "from it, so a four-step verify waits longer "
-                             "than this number")
-    parser.add_argument("--json", action="store_true",
-                        help="print the raw record instead of a summary")
-    return parser
+def _build_one(sub, name, row):
+    """One subparser, from one row. Nothing about a command is added later."""
+    command = sub.add_parser(name, help=row.summary)
+    if row.action is not None:
+        command.add_argument("action", choices=row.action,
+                             help="connect reads what the controller holds; "
+                                  "download writes this project to it")
+    command.add_argument("--timeout", type=float,
+                         default=DEFAULT_TIMEOUT_S,
+                         help="seconds one command step may take (default "
+                              "%(default)g); also how long a busy IDE counts "
+                              "as alive. With --project the process deadline "
+                              "is derived from it, so a four-step verify "
+                              "waits longer than this number")
+    command.add_argument("--json", action="store_true",
+                         help="print the raw record instead of a summary")
+    if row.form != NO_IDE:
+        _forms(command, row)
+    _add_flags(command, row.flags)
+    command.set_defaults(**dict((name, None) for name in EVERY_ATTRIBUTE))
 
 
-def _target_flag(parser):
-    parser.add_argument("--target", help="instance id, or a project name")
-    return parser
+def _forms(command, row):
+    """--target, --project, and the flags that only fit the second one.
 
-
-def _both_forms(parser):
-    """The two forms, and the flags that only make sense in the second one."""
-    form = parser.add_mutually_exclusive_group()
+    --target is described once, whichever form the command has. It used to be
+    added twice with two help texts, and two help texts for one flag is two
+    places to say what it means.
+    """
+    form = command.add_mutually_exclusive_group()
     form.add_argument("--target", help="instance id, or a project name of a "
                                        "watcher that is already listening")
+    if row.form == WATCHER:
+        return
     form.add_argument("--project", help="a .project to open in an IDE of our "
                                         "own; needs --install")
-    parser.add_argument("--install", help="which IDE to start; `cdsint "
-                                          "installs` lists them")
-    parser.add_argument("--profile", help="the IDE profile name, when the "
-                                          "install has more than one")
-    parser.add_argument("--report", help="where to write the run's report")
-    parser.add_argument("--force-lock", action="store_true",
-                        help="start even though the project looks open elsewhere")
-    parser.add_argument("--sync-dir",
-                        help="use this folder for this run instead of the "
-                             "sync_folder in the project's settings file; "
-                             "nothing is written back")
-    parser.add_argument("--answer", action="append", default=[],
-                        metavar="KEY=VALUE",
-                        help="answer one of the IDE's own prompts; repeatable")
-    return parser
+    _add_flags(command, PROJECT_FLAGS)
 
 
-def _add_flag(command, flag, help_text):
-    if flag == "--app":
-        return command.add_argument(flag, default=None, help=help_text)
-    if flag == "--yes":
-        # -y is the spelling in SPEC 4.2, and the one every other tool that
-        # asks "are you sure" uses.
-        return command.add_argument("-y", flag, action="store_true",
-                                    default=None, help=help_text)
-    return command.add_argument(flag, action="store_true", default=None,
-                                help=help_text)
-
-
-def _plc_arguments(parser):
-    parser.add_argument("action", choices=("connect", "download"),
-                        help="connect reads what the controller holds; "
-                             "download writes this project to it")
-    parser.add_argument("--gateway", metavar="IP",
-                        help="reach the controller through this address "
-                             "instead of whatever the project already holds")
-    parser.add_argument("--port", type=int, default=None, metavar="N",
-                        help="device port behind --gateway; left out, the "
-                             "standard CODESYS device port is used")
+def _add_flags(command, flags):
+    for spelling, kind, help_text in flags:
+        command.add_argument(*spelling.split("/"), help=help_text,
+                             **KINDS[kind])
 
 
 def command_args(ns):
-    """Turn the parsed flags back into the args the IDE side reads."""
-    args = dict((flag.lstrip("-").replace("-", "_"),
-                 getattr(ns, flag.lstrip("-").replace("-", "_")))
-                for flag, _ in FLAGS.get(ns.command, []))
-    if ns.command == PROJECT_ONLY_COMMAND:
-        args.update({"gateway": ns.gateway, "port": ns.port})
-    return args
+    """Turn the parsed flags back into the args the IDE side reads.
+
+    Indexed, not getattr-with-a-default: every subparser carries every
+    attribute (EVERY_ATTRIBUTE above), so a name that is not there is a row
+    and a parser that disagree, and that should be a KeyError here rather
+    than a None the IDE side reads as "not said".
+    """
+    given = vars(ns)
+    return dict((dest, given[dest]) for dest in COMMANDS[ns.command].dests())
+
+
+def blank_args(name):
+    """Every arg this command takes, all unsaid. What a caller starts from."""
+    return dict((dest, None) for dest in COMMANDS[name].dests())
 
 
 def wire_name(ns):
-    """What this invocation is called between the CLI and the IDE side.
+    """What this invocation is called between the CLI and the IDE side."""
+    if COMMANDS[ns.command].action is None:
+        return ns.command
+    return "%s %s" % (ns.command, ns.action)
 
-    `plc connect` rather than `plc` with an action inside args, so that the
-    two halves are separate rows in cds/ide/entries.py — one is read-only and
-    one downloads to a machine, and a table that tells them apart needs no
-    dispatcher to read the difference back out (SPEC 4.2).
+
+def check(parser, ns):
+    """Every refusal that belongs to the command line, in one call.
+
+    All of them go through parser.error, so all of them are exit 2 (SPEC
+    4.3). A Failure's exit 1 would say "the command ran and did not work",
+    and nothing has run: the flags do not go together.
     """
-    if ns.command == PROJECT_ONLY_COMMAND:
-        return "%s %s" % (ns.command, ns.action)
-    return ns.command
+    row = COMMANDS[ns.command]
+    _one_form_only(parser, ns, row)
+    _project_flags_need_a_project(parser, ns, row)
 
 
-def _only_the_project_form(parser, ns):
-    """plc has one form, and the reason is worth saying out loud (SPEC D8).
+def _one_form_only(parser, ns, row):
+    """A command with a single form, asked for the other one (SPEC D8).
 
     argparse could simply not offer --target here, but then asking for it
-    reads as a typo. The watcher runs inside an IDE somebody is using and a
-    PLC login takes their online session away from them; that is a decision,
-    so it gets a sentence rather than "unrecognized arguments".
+    reads as a typo. Which form a command has and why is a decision, so it
+    gets a sentence, and the sentence is the row's.
     """
-    if ns.command != PROJECT_ONLY_COMMAND:
+    if row.form != HEADLESS:
         return
-    if getattr(ns, "target", None):
-        parser.error(
-            "plc has no --target form. The watcher runs inside an IDE "
-            "somebody is using, and logging into a controller would take "
-            "their online session away from them, so a PLC command starts "
-            "an IDE of its own: --project P --install I (SPEC D8).")
-    if not getattr(ns, "project", None):
-        parser.error(
-            "plc needs --project P --install I. It is the only command with "
-            "no --target form, because logging into a controller from the "
-            "IDE somebody is using would take their online session away "
-            "from them (SPEC D8).")
+    if ns.target:
+        parser.error("%s has no --target form; it starts an IDE of its own, "
+                     "so it wants --project P --install I. %s"
+                     % (ns.command, row.one_form))
+    if not ns.project:
+        parser.error("%s needs --project P --install I. It is the only "
+                     "command with no --target form. %s"
+                     % (ns.command, row.one_form))
 
 
-def refuse_project_flags(ns):
+def _project_flags_need_a_project(parser, ns, row):
     """A --project flag with no --project is a caller who thinks it is headless.
 
     Ignoring it would run the command against somebody's open IDE while the
     caller believed it was driving one of its own.
     """
-    given = [name for name in PROJECT_ONLY if getattr(ns, name, None)]
+    if row.form == NO_IDE or ns.project:
+        return
+    said = vars(ns)
+    given = [name for name in PROJECT_ONLY if said[name]]
     if given:
-        raise Failure("--%s only works with --project"
-                      % given[0].replace("_", "-"))
-
-
-def check(parser, ns):
-    """Every refusal that belongs to the parser, in one call.
-
-    Exit 2 rather than a Failure's exit 1: it says the flags do not go
-    together, which is what argparse's own errors mean, and exit 1 is
-    reserved for a command that ran and did not work.
-    """
-    _only_the_project_form(parser, ns)
+        parser.error("--%s only works with --project"
+                     % given[0].replace("_", "-"))

@@ -25,15 +25,16 @@ from __future__ import print_function
 import os
 import sys
 
+# The install root. Needed by the one caller that reaches this file by path
+# rather than by name: irm/setup.ps1 asks a fresh clone what is installed
+# here, and at that moment nothing has been pip-installed yet. The console
+# script and `python -m cdsint.cli` both arrive with the path already set up.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cds.core import ipc  # noqa: E402
-from cds.core.exits import (EXIT_DENIED, EXIT_FAILED, EXIT_OK,  # noqa: E402,F401
-                            EXIT_HEADLESS, EXIT_TARGET, EXIT_TIMEOUT)
+from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK  # noqa: E402
 from cdsint import flags, headless, installs, report, target, verify  # noqa: E402
 from cdsint.exits import Failure  # noqa: E402
-
-DEFAULT_TIMEOUT_S = flags.DEFAULT_TIMEOUT_S
 
 
 # --------------------------------------------------------------------------
@@ -42,12 +43,11 @@ DEFAULT_TIMEOUT_S = flags.DEFAULT_TIMEOUT_S
 
 def make_runner(ns):
     """The --target form or the --project form, both answering run(steps)."""
-    if getattr(ns, "project", None):
+    if ns.project:
         return headless.Headless(
             ns.project, ns.install, ns.profile, ns.report,
             answers=_answers(ns.answer), sync_dir=ns.sync_dir,
             timeout=ns.timeout, force_lock=ns.force_lock)
-    flags.refuse_project_flags(ns)
     return target.Target(ipc.default_root(), ns.target, ns.timeout)
 
 
@@ -84,15 +84,31 @@ def run_list(ns):
 
 
 def run_verify(ns, runner):
-    results, problems = verify.run(runner, getattr(ns, "yes", None))
+    results, problems = verify.run(runner, ns.yes)
     show_folder(ns, runner, results)
     report.show_steps(results, ns.json)
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
-    if problems:
-        return EXIT_FAILED
-    print("verify: %s round-tripped and built cleanly" % runner.describe())
-    return EXIT_OK
+    if not problems:
+        print("verify: %s round-tripped and built cleanly" % runner.describe())
+    return verify_code(results, problems)
+
+
+def verify_code(results, problems):
+    """Which of verify's results decides its exit code.
+
+    The first step that failed, and then through the same door as a single
+    command, because a step refused by the project's settings file is still a
+    refusal and still earns exit 5 (SPEC 4.3) -- this used to answer 1 for
+    that, which tells the reader to fix a flag when the fix is a word in a
+    file. When every step came back ok and there are still problems, compare
+    found differences after a round trip: nothing was refused and nothing
+    crashed, so that is a plain failure.
+    """
+    for result in results:
+        if not result["ok"]:
+            return exit_code(result)
+    return EXIT_FAILED if problems else EXIT_OK
 
 
 def run_command(ns, runner):
@@ -114,7 +130,7 @@ def show_folder(ns, runner, results):
     that knows what the project's settings file said; from the runner when no
     step got far enough to report one, which is all a refused run has.
     """
-    if not getattr(ns, "project", None):
+    if not ns.project:
         return
     for result in results:
         if result.get("sync_dir"):
@@ -125,15 +141,22 @@ def show_folder(ns, runner, results):
 def exit_code(result):
     """What one result is worth as an exit code (SPEC 4.3).
 
-    A refusal is not a failure and earns a code of its own: the reader's next
-    move is a person editing the project's settings file, not another flag,
-    and only exit 5 says that without the caller having to parse prose.
+    The only place that decision is made. A refusal is not a failure and
+    earns a code of its own: the reader's next move is a person editing the
+    project's settings file, not another flag, and only exit 5 says that
+    without the caller having to parse prose.
     """
-    if result.get("ok"):
+    if result["ok"]:
         return EXIT_OK
-    if result.get("denied"):
+    if result["denied"]:
         return EXIT_DENIED
     return EXIT_FAILED
+
+
+# The two commands that answer without an IDE: what is installed on this
+# machine, and who is listening. cdsint/flags.py says they take neither form;
+# this says which function answers each.
+ABOUT_THIS_MACHINE = {"installs": run_installs, "list": run_list}
 
 
 def main(argv=None):
@@ -141,10 +164,8 @@ def main(argv=None):
     ns = parser.parse_args(argv)
     flags.check(parser, ns)
     try:
-        if ns.command == "installs":
-            return run_installs(ns)
-        if ns.command == "list":
-            return run_list(ns)
+        if flags.COMMANDS[ns.command].form == flags.NO_IDE:
+            return ABOUT_THIS_MACHINE[ns.command](ns)
         runner = make_runner(ns)
         if ns.command == "verify":
             return run_verify(ns, runner)

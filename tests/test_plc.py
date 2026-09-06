@@ -454,11 +454,18 @@ def test_the_other_commands_are_not_gated(monkeypatch):
     assert ran == ["main"]
 
 
+def record(ok, **rest):
+    """One result record, built the way every producer builds one."""
+    return commands.new_result(commands.new_command("plc download"), ok,
+                               **rest)
+
+
 def test_a_refusal_is_exit_5_and_a_failure_is_exit_1():
-    denied = {"ok": False, "denied": permit.record(None, "download")}
+    denied = record(False, error="not allowed",
+                    denied=permit.record(None, "download"))
     assert cli.exit_code(denied) == EXIT_DENIED
-    assert cli.exit_code({"ok": False, "error": "it broke"}) == EXIT_FAILED
-    assert cli.exit_code({"ok": True}) == EXIT_OK
+    assert cli.exit_code(record(False, error="it broke")) == EXIT_FAILED
+    assert cli.exit_code(record(True)) == EXIT_OK
 
 
 class FakeRunner(object):
@@ -488,8 +495,8 @@ def drive(monkeypatch, record):
 def test_a_project_that_forbids_it_comes_back_as_exit_5(monkeypatch, capsys):
     projects = ide(allowed=None)["projects"]
     said = permit.refusal(projects, "download")
-    drive(monkeypatch, {"ok": False, "error": said,
-                        "denied": permit.record(projects, "download")})
+    drive(monkeypatch, record(False, error=said,
+                              denied=permit.record(projects, "download")))
     code = cli.main(["plc", "download", "-y", "--project", "P", "--install",
                      "I", "--sync-dir", "S"])
     assert code == EXIT_DENIED
@@ -500,8 +507,9 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
     # Not 5: the settings file allows it and a flag would fix this, which is a
     # different next move for whoever is reading the code.
     question = "Confirm PLC Download: ..."
-    drive(monkeypatch, {"ok": False, "error": question, "denied": None,
-                        "needs_input": {"question": question, "arg": "yes"}})
+    drive(monkeypatch, record(False, error=question,
+                              needs_input={"question": question,
+                                           "arg": "yes"}))
     code = cli.main(["plc", "download", "--project", "P", "--install", "I",
                      "--sync-dir", "S"])
     assert code == EXIT_FAILED
@@ -509,8 +517,7 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
 
 
 def test_a_match_comes_back_as_exit_0(monkeypatch):
-    runner = drive(monkeypatch, {"ok": True, "data": {"crc": "MATCH"},
-                                 "messages": []})
+    runner = drive(monkeypatch, record(True, data={"crc": "MATCH"}))
     assert cli.main(["plc", "connect", "--project", "P", "--install", "I",
                      "--sync-dir", "S"]) == EXIT_OK
     assert runner.asked[0][0] == "plc connect"

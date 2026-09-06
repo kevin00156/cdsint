@@ -10,7 +10,9 @@ import json
 import pytest
 
 from cdsint import cli, flags, verify
-from cds.core.exits import EXIT_FAILED, EXIT_OK
+from cds.core import commands
+from cds.core.exits import (EXIT_DENIED, EXIT_FAILED, EXIT_OK,
+                            EXIT_TARGET)
 
 
 FROM_THE_FILE = "C:" + chr(92) + "p" + chr(92) + "from-the-file"
@@ -34,23 +36,35 @@ class FakeRunner(object):
         self.asked = steps
         results = []
         for command, _args in steps:
-            results.append(self.answers.get(command)
-                           or {"ok": True, "command": command, "data": {},
-                               "elapsed_s": 1.0})
+            results.append(self.answers.get(command) or done(command))
             if not results[-1]["ok"]:
                 break
         return results
 
 
+def record(command, ok, **rest):
+    """One result, built the way every real producer builds one.
+
+    Not a dict literal with the four fields a test happens to read: the
+    printer indexes all twelve now, because a record that is short of one is
+    a producer that forgot it (cds/core/commands.py new_result).
+    """
+    return commands.new_result(commands.new_command(command), ok, **rest)
+
+
+def done(command, **rest):
+    rest.setdefault("data", {})
+    return record(command, True, **rest)
+
+
 def failed(command, error="it broke"):
-    return {"ok": False, "command": command, "error": error, "data": {},
-            "elapsed_s": 1.0}
+    return record(command, False, error=error, data={})
 
 
 def compared(**counts):
     data = {"different": 0, "new_in_ide": 0, "new_on_disk": 0, "moved": 0}
     data.update(counts)
-    return {"ok": True, "command": "compare", "data": data, "elapsed_s": 1.0}
+    return done("compare", data=data)
 
 
 # --- what verify asks for --------------------------------------------------
@@ -149,8 +163,11 @@ def test_the_two_forms_cannot_be_given_together():
 
 def test_a_project_only_flag_without_project_is_refused(capsys):
     # Ignoring it would drive somebody's open IDE while the caller believed
-    # it was driving one of its own.
-    assert cli.main(["export", "--target", "X", "--profile", "P"]) == EXIT_FAILED
+    # it was driving one of its own. Exit 2, like every other "these flags do
+    # not go together" (SPEC 4.3): nothing ran, so 1 would be a lie.
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["export", "--target", "X", "--profile", "P"])
+    assert raised.value.code == EXIT_TARGET
     assert "only works with --project" in capsys.readouterr().err
 
 
@@ -208,9 +225,7 @@ def test_the_folder_it_names_is_the_one_the_run_reported(monkeypatch, capsys):
     # Without --sync-dir nobody out here knows the answer until the IDE has
     # read the project's settings file, so the line comes from the result
     # rather than from the flag (SPEC 4.2).
-    answered = {"compare": {"ok": True, "command": "compare", "data": {},
-                            "elapsed_s": 1.0,
-                            "sync_dir": FROM_THE_FILE}}
+    answered = {"compare": dict(done("compare"), sync_dir=FROM_THE_FILE)}
     runner = FakeRunner(answered)
     monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
     cli.main(["compare", "--project", "P", "--install", "I"])
@@ -265,3 +280,57 @@ def test_verify_with_yes_runs_the_round_trip(monkeypatch):
     assert cli.main(["verify", "-y", "--target", "X"]) == EXIT_OK
     assert [name for name, _ in runner.asked] == ["import", "export",
                                                   "compare", "build"]
+
+
+def test_a_step_the_project_refuses_is_exit_5(monkeypatch, capsys):
+    # verify used to decide its own exit code, so a step stopped by the
+    # project's `plc` list came back as 1 -- which tells the reader to fix a
+    # flag when the fix is a word in a file (SPEC 4.3, 6.5).
+    refused = record("import", False, error="this project does not allow it",
+                     denied={"file": "Line.cdsint.json", "key": "plc",
+                             "action": "download"})
+    runner = FakeRunner({"import": refused})
+    monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
+    assert cli.main(["verify", "-y", "--target", "X"]) == EXIT_DENIED
+    assert "import failed" in capsys.readouterr().err
+
+
+def test_the_refusal_without_yes_is_a_whole_result_record():
+    # It reaches cdsint/report.py through the same door as every real answer,
+    # and that printer indexes all twelve fields now.
+    refusal = verify.needs_yes({"different": 2})
+    assert sorted(refusal) == sorted(record("import", False,
+                                            error="x"))
+    assert refusal["denied"] is None
+    assert refusal["needs_input"]["arg"] == "yes"
+    assert refusal["data"]["modified"] == 2
+
+
+# --- the table is the command line -----------------------------------------
+
+def test_every_row_in_the_table_is_a_command_you_can_type(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    printed = capsys.readouterr().out
+    for name in flags.COMMANDS:
+        assert name in printed, name + " is in the table but not in --help"
+
+
+def test_every_command_you_can_type_is_a_row_in_the_table():
+    parser = flags.build_parser()
+    choices = [action.choices for action in parser._subparsers._actions
+               if action.choices]
+    assert set(choices[0]) == set(flags.COMMANDS)
+
+
+def test_every_command_line_is_the_same_shape():
+    # cdsint/cli.py reads ns.project whichever subcommand ran. A namespace
+    # missing an attribute would send it back to getattr with a default, and
+    # that reads the same whether the flag was left out or never existed.
+    parser = flags.build_parser()
+    for argv in (["installs"], ["list"], ["ping"], ["export"],
+                 ["plc", "connect", "--project", "P"]):
+        given = vars(parser.parse_args(argv))
+        missing = [name for name in flags.EVERY_ATTRIBUTE
+                   if name not in given]
+        assert not missing, "%s has no %s" % (argv, missing)

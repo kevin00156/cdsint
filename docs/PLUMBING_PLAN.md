@@ -130,11 +130,11 @@
   - [x] 驗收：三條測試都在。`tests/test_plc.py` 的 `test_a_settings_file_that_cannot_be_read_is_a_failure_not_a_refusal` 是第一條（A 就寫好了，本工單加一條斷言釘住「不是拒絕的措辭」）；`tests/test_silent.py` 兩條 `test_a_dialog_asked_at_module_level_*` 是第二條，把 `_install` 挪回 exec 之後就會紅（實測過）；`tests/test_layering.py` 的 `test_no_engine_file_imports_the_dialogs_as_it_loads` 加 `test_that_rule_would_catch_one` 是第三條，後者把合成的一行餵給檢查函式，不碰 `engine/`。
   - [x] 驗收：`cds/ide/*.py` 最大的是 `watcher.py` 299 行、`silent.py` 287 行，其餘都在 220 以內；`StatusForm.__init__` 23 行。
 
-- [ ] **階段 2：CLI 的表與退出碼（第 4 節 3、4、5、7 的 CLI 側、10 的 CLI 側）**
-  - [ ] 驗收：`cdsint build --project x --install definitely-not-an-ide` 回一句話加候選清單，exit 4，沒有 traceback。
-  - [ ] 驗收：`cdsint build --target foo --profile bar`、`cdsint plc connect --target foo`、`cdsint export --target a --project b` 都 exit 2 且訊息各自說理由。
-  - [ ] 驗收：`grep -n "getattr(ns" cdsint/` 為零；`grep -n "BOTH_FORMS\|WATCHER_ONLY\|PROJECT_ONLY_COMMAND\|_add_flag" cdsint/` 為零；`--target` 的 `add_argument` 只出現一次。
-  - [ ] 驗收：測試涵蓋「verify 某步回 denied 時 exit 5」「`needs_yes` 的紀錄有 `new_result` 全部十二個鍵」「COMMANDS 表每一列都出現在 `cdsint --help`」。
+- [x] **階段 2：CLI 的表與退出碼（第 4 節 3、4、5、7 的 CLI 側、10 的 CLI 側）**
+  - [x] 驗收：`python -m cdsint.cli build --project x --install definitely-not-an-ide` 印一句 `no IDE matches --install 'definitely-not-an-ide'` 加這台七套 IDE 的名字與路徑，exit 4，沒有 traceback。
+  - [x] 驗收：三條都 exit 2。`build --target foo --profile bar` 說 `--profile only works with --project`；`plc connect --target foo` 說 plc 沒有 `--target` 形式並附上 D8 的理由；`export --target a --project b` 由 argparse 的互斥群組說 `argument --project: not allowed with argument --target`。
+  - [x] 驗收：`grep -n "getattr(ns" cdsint/` 為零；`grep -n "BOTH_FORMS\|WATCHER_ONLY\|PROJECT_ONLY_COMMAND\|_add_flag" cdsint/` 為零；`--target` 的 `add_argument` 只出現一次。
+  - [x] 驗收：三條測試在 `tests/test_verify.py`：`test_a_step_the_project_refuses_is_exit_5`、`test_the_refusal_without_yes_is_a_whole_result_record`、`test_every_row_in_the_table_is_a_command_you_can_type`（加反向的 `test_every_command_you_can_type_is_a_row_in_the_table` 與 `test_every_command_line_is_the_same_shape`）。
 
 - [ ] **階段 3：安裝探測一個主人（第 4 節 6）**
   - [ ] 驗收：`cdsint installs --json` 每筆有 `script_dir` 與 `needs_admin`；`irm/setup.ps1` 裡 `grep -c "Program Files\|ProgramData\|ScriptDir\\\\"` 為零（路徑知識只在 Python）。
@@ -184,6 +184,20 @@
 26. `Ruling: `silent.py` 拆成 `cds/ide/outcome.py`（`NeedsInput` 與 `Outcome`）、`cds/ide/tee.py`（`Tee`）與 `silent.py` 本身 — 名字照它們各自的那一件事取，不叫 `silent_data.py` 這種跟著舊檔名走的名字；`_Tee` 順手去掉底線，它現在是一個模組的公開東西 — 錯了的代價是 `silent.NeedsInput` 這個寫法的呼叫端都要改（四處，加測試）。`
 27. `Ruling: `Watcher.__init__` 缺 `system` 改丟 `TypeError`（第 4 節第 11 條照做） — 錯的是傳進來的引數，而從建構子丟出來的 `KeyError` 讀起來像是它內部查表查壞了 — 錯了的代價是 `tests/test_watcher.py` 那一條要改，而任何接 `KeyError` 的呼叫端會漏接；目前沒有這種呼叫端。`
 28. `Ruling: `tests/test_silent.py` 原本用正規表示式掃引擎原始碼裡的對話框標題字面值，改成掃「還有沒有人用字面值」加「`cds/core/dialogs.py` 公布的每個標題都在答案表裡」 — 標題收成共用常數之後，引擎那邊就沒有字面值可以掃了，原本那兩條測試會空對空全綠；新的形狀直接擋住「又寫了一個字面值」，而不是等兩份清單漂開之後才發現 — 錯了的代價是有人用非常數的字串呼叫 `ask_yes_no` 時，測試指的是「別用字面值」而不是「這個標題沒有答案」。`
+
+### 階段 2 新增的 Ruling
+
+29. `Ruling: `COMMANDS` 用 dict，鍵是命令名，值是一個小 `Command` 類別，照第 7 節原本的預設 1；表的順序就是 `cdsint --help` 的順序，不排序 — dict 從 Python 3.7 起保序，而 `cdsint/` 是 CPython 3.11 以上；照字母排會把 `installs` 排到 `import` 後面，抓 `--help` 第一行的腳本會壞 — 錯了的代價是加一個命令的人要想一下放哪一列。`
+30. `Ruling: `EVERY_ATTRIBUTE`（每個 namespace 都要有的屬性）從表推出來，不另外列一份 — 手寫那份跟 `PROJECT_FLAGS`、跟每一列的旗標是同一組事實的第三次抄寫，漏一個就是 `command_args` 在 `vars(ns)[dest]` 丟 KeyError — 錯了的代價是讀者要看兩行推導式才知道有哪些屬性。`
+31. `Ruling: 只在 `--project` 形式有效的六個旗標升成一張 `PROJECT_FLAGS` 表，`PROJECT_ONLY` 從它推出來 — 原本 parser 加六個 `add_argument`、`PROJECT_ONLY` 又手寫六個名字，兩份漂開的結果是拒絕檢查漏掉一個旗標，或對一個不存在的屬性丟 KeyError — 錯了的代價是多一個只有 `--answer` 在用的旗標種類 `PAIRS`（它的 `metavar` 是 `KEY=VALUE`，寫在種類裡）。`
+32. `Ruling: 120 秒的定義搬到 `cdsint/flags.py`，`target.py` 與 `cdsint/headless.py` 都從那裡 import；`Headless` 仍然有預設值，不是拿掉 — 第 4 節第 10 條說「`Headless` 不給預設」，理由是別讓它變成第二個答案；改成 import 同一個常數就已經沒有第二個答案了，而拿掉預設會讓建構子的參數順序得改（Python 不准有預設的參數後面跟沒預設的），連帶動到 `tests/test_headless.py` 十幾處，換來的是 `Target` 有預設、`Headless` 沒有的不對稱 — 錯了的代價是有人直接建 `Headless` 而忘了給 timeout 時，拿到的是文件上的預設而不是一個錯誤。`
+33. `Ruling: 幫助文字用 `%(default)g` 而不是 `%(default)s` — 常數是 float，`%s` 會印成「(default 120.0)」，跟原本的「(default 120)」差一個字；`%g` 印出 120 — 錯了的代價是常數改成非整數時幫助文字會四捨五入。`
+34. `Ruling: `installs.InstallError` 併成 `Failure(msg, EXIT_HEADLESS, lines)`，候選清單放進 `lines` 而不是新開一個欄位 — `Failure.report()` 本來就會把 `lines` 每行縮排印出來，那正是候選清單要的樣子；`raised.value.matches` 的三個測試改看 `raised.value.lines` — 錯了的代價是測試只能數行數，不能再直接拿到候選的 dict。`
+35. `Ruling: `--project` 沒給 `--install` 仍然是 exit 4，不改成 2 — 它現在走 `installs.resolve` 的「say which IDE with --install」，而那是「這個專案沒有可用的 IDE」；改成 2 會是本工單第 1 節明列三件事以外的第四個對外行為改變 — 錯了的代價是有人以為所有「旗標不搭」都是 2，而這一個不是。記給 `HYGIENE_PLAN.md`。`
+36. `Ruling: `cdsint/flags.py` 收成一張表之後是 311 行，過 300 的軟上限（PRINCIPLES 2） — 它現在是「一張宣告式的表加上照著表蓋 parser」，把表拆出去等於把「有哪些命令」和「命令怎麼解析」分成兩個檔，那正是本工單在收掉的那種分家；軟上限的意思是「下一次要加東西之前先拆」，所以留給加第十三個命令的人 — 錯了的代價是這個檔比規矩允許的長 11 行。`
+37. `Ruling: `cdsint/cli.py` 的 `sys.path.insert` 留著，SKILL.md 不動 — 第 4 節第 10 條說兩者二選一，但它的前提（SKILL.md 的 `python -m cdsint.cli` 靠這一行）是錯的：`-m` 自己會把工作目錄放上 `sys.path`。真正需要這一行的是階段 3 的 `irm/setup.ps1`，它要對一份還沒 pip 裝過的 clone 用路徑直接跑 `cdsint\cli.py installs --json` — 錯了的代價是這個檔多一行，而註解得說清楚是誰在用它。`
+38. `Ruling: `cdsint/report.py` 的 `show` 改成直接索引結果紀錄，測試裡手拼的假紀錄全部改用 `commands.new_result` 建 — 這是第 4 節第 7 條「`report.show` 不再 `.get()`」的另一半：印的人不再防禦，拼的人就必須拼完整。動到 `tests/test_verify.py`、`test_plc.py`、`test_cli.py` 各幾處 — 錯了的代價是測試要多寫一個 helper 才能造一筆結果。`
+39. `Ruling: verify 的退出碼由新的 `cli.verify_code(results, problems)` 決定「哪一筆算數」，再交給 `cli.exit_code` 決定「那一筆值多少」 — 第 4 節第 4 條要 `exit_code` 當唯一一扇門，但「每一步都 ok 卻仍然有問題」（compare 在來回之後找到差異）沒有任何一筆失敗的紀錄可以交給它，那種情況直接是 1 — 錯了的代價是多一個函式，而「一扇門」變成「一扇門加一個指路的」。`
 
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 

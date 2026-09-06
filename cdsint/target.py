@@ -5,8 +5,11 @@ Writes a command file, waits for the result file, hands it back. Nothing here
 touches CODESYS — the whole exchange is files in the instance directory
 (docs/WATCHER.md), which is what lets the CLI be plain CPython.
 
-The other form is cdsint/headless.py. They have the same shape on purpose:
-`sync_dir()` and `run(steps)`, so `verify` is written once (SPEC D2).
+The other form is cdsint/headless.py. Both answer `run(steps)`, which is
+what lets `verify` be written once (SPEC D2). Only the headless one has
+`sync_dir()`: naming the folder a run took for the truth is a --project
+thing, because the --target form is talking to an IDE somebody set up and
+has open (SPEC 4.2, cdsint/cli.py show_folder).
 """
 from __future__ import print_function
 
@@ -15,8 +18,8 @@ import time
 from cds.core import commands, instances
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
 from cdsint.exits import Failure
+from cdsint.flags import DEFAULT_TIMEOUT_S
 
-DEFAULT_TIMEOUT_S = 120.0
 POLL_S = 0.05
 
 GONE = "gone"  # the watcher shut down while we were waiting
@@ -50,10 +53,6 @@ class Target(object):
     def describe(self):
         return self.instance_id
 
-    def sync_dir(self):
-        """Where this IDE's .st files are, from its registration."""
-        return self.reg.get("sync_dir")
-
     def run(self, steps):
         """Run each command in turn, stopping at the first one that fails."""
         results = []
@@ -64,28 +63,32 @@ class Target(object):
         return results
 
     def run_one(self, command, args):
-        result = send(self.root, self.instance_id, command, args, self.timeout)
+        cmd = commands.new_command(command, args)
+        result = send(self.root, self.instance_id, cmd, self.timeout)
         if result is GONE:
-            return self._gone(command)
+            return self._gone(cmd)
         if result is None:
             raise Failure("timed out after %gs waiting for %s"
                           % (self.timeout, self.instance_id), EXIT_TIMEOUT)
         return result
 
-    def _gone(self, command):
+    def _gone(self, cmd):
         """The watcher vanished mid-wait: what that means depends on the ask.
 
         stop tears down one tick after answering, so the answer can be gone by
-        the time we look. The instance being gone IS the confirmation.
+        the time we look. The instance being gone IS the confirmation, and it
+        is written as the record every other answer is written as, so a reader
+        of `messages` or `elapsed_s` does not have to know which of the two
+        this was.
         """
-        if command == "stop":
-            return {"ok": True, "command": "stop", "messages": [
-                {"level": "info", "text": "%s is gone" % self.instance_id}]}
-        raise Failure("%s stopped before answering %s"
-                      % (self.instance_id, command), EXIT_FAILED)
+        if cmd["command"] != "stop":
+            raise Failure("%s stopped before answering %s"
+                          % (self.instance_id, cmd["command"]), EXIT_FAILED)
+        return commands.new_result(cmd, True, messages=[
+            commands.message("info", "%s is gone" % self.instance_id)])
 
 
-def send(root, instance_id, name, args, timeout, poll=POLL_S):
+def send(root, instance_id, cmd, timeout, poll=POLL_S):
     """Queue a command and wait for its result.
 
     None means it timed out; GONE means the watcher went away. A command that
@@ -93,7 +96,8 @@ def send(root, instance_id, name, args, timeout, poll=POLL_S):
     has walked away. If the watcher already claimed it, the result it writes
     is swept by that watcher's next start instead.
     """
-    cmd = commands.write_command(root, instance_id, name, args)
+    commands.write_command(root, instance_id, cmd["command"], cmd["args"],
+                           cmd_id=cmd["id"])
     deadline = time.time() + timeout
     missing_since = None
     try:

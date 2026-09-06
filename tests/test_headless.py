@@ -323,8 +323,9 @@ def test_a_project_that_is_not_there_is_refused(machine):
 
 def test_the_install_has_to_be_named(machine):
     (machine / "line.project").write_text("binary", encoding="utf-8")
-    with pytest.raises(installs.InstallError):
+    with pytest.raises(Failure) as raised:
         cli_side.Headless(str(machine / "line.project"))
+    assert raised.value.code == EXIT_HEADLESS
 
 
 # --- the launch ------------------------------------------------------------

@@ -77,19 +77,26 @@ def show_sync_dir(path, want_json=False):
 
 
 def show(result, want_json=False):
-    """Print one command's result record."""
+    """Print one command's result record.
+
+    Indexed, not .get()-ed. Every producer builds these through
+    cds/core/commands.py new_result, so all twelve fields are there; the
+    defensive version could not tell a field that is legitimately null from
+    one a producer forgot, which is how the refusal record went seven fields
+    short for a year without anything noticing.
+    """
     if want_json:
         return as_json(result)
     said = []
-    for message in result.get("messages") or []:
-        said.append(message.get("text", ""))
-        print("%s: %s" % (message.get("level", "info"), said[-1]))
-    _show_data(result.get("data") or {})
+    for message in result["messages"]:
+        said.append(message["text"])
+        print("%s: %s" % (message["level"], said[-1]))
+    _show_data(result["data"] or {})
     _show_needs(result, said)
     # The error repeats the first bad message, or the question. Say it once.
-    if result.get("error") and result["error"] not in said:
+    if result["error"] and result["error"] not in said:
         print("error: " + result["error"], file=sys.stderr)
-    if _wants_tail(result) and result.get("stdout_tail"):
+    if _wants_tail(result) and result["stdout_tail"]:
         print("--- output from the IDE ---", file=sys.stderr)
         print(result["stdout_tail"], file=sys.stderr)
 
@@ -99,8 +106,7 @@ def show_steps(results, want_json=False):
     if want_json:
         return as_json(results)
     for result in results:
-        print("--- %s (%.1fs) ---" % (result.get("command"),
-                                      result.get("elapsed_s") or 0.0))
+        print("--- %s (%.1fs) ---" % (result["command"], result["elapsed_s"]))
         show(result)
 
 
@@ -153,16 +159,16 @@ def _one_line(item):
 
 
 def _show_needs(result, said):
-    needs = result.get("needs_input")
+    needs = result["needs_input"]
     if not needs:
         return
-    said.append(needs.get("question"))
+    said.append(needs["question"])
     # Some dialogs have no flag that answers them — the sync-folder setup is
     # one. The question already says what to do instead, so naming a "--None"
     # flag would only be noise.
-    arg = needs.get("arg")
     print("needs input: %s%s"
-          % (said[-1], " (answer with --%s)" % arg if arg else ""),
+          % (said[-1], " (answer with --%s)" % needs["arg"]
+             if needs["arg"] else ""),
           file=sys.stderr)
 
 
@@ -172,4 +178,4 @@ def _wants_tail(result):
     A failure always earns the room. So does compare, whose useful output is
     the per-object list it prints — the messages only carry the counts.
     """
-    return not result.get("ok") or result.get("command") == "compare"
+    return not result["ok"] or result["command"] == "compare"

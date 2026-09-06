@@ -11,6 +11,8 @@ import time
 import pytest
 
 from cds.core import commands, instances, ipc
+from cds.core.exits import (EXIT_FAILED, EXIT_OK, EXIT_TARGET,
+                            EXIT_TIMEOUT)
 from cds.ide import watcher
 from cdsint import cli, flags, target
 from tests.test_watcher import make_globals
@@ -41,12 +43,12 @@ def answering(watch, monkeypatch):
 # --- list ------------------------------------------------------------------
 
 def test_list_says_so_when_nothing_is_listening(root, capsys):
-    assert cli.main(["list"]) == cli.EXIT_OK
+    assert cli.main(["list"]) == EXIT_OK
     assert "no IDE is listening" in capsys.readouterr().out
 
 
 def test_list_shows_a_live_watcher(watch, capsys):
-    assert cli.main(["list"]) == cli.EXIT_OK
+    assert cli.main(["list"]) == EXIT_OK
     out = capsys.readouterr().out
     assert watch.instance_id in out and "softplc.project" in out
 
@@ -67,7 +69,7 @@ def test_list_json_is_machine_readable(watch, capsys):
 # --- picking a target ------------------------------------------------------
 
 def test_a_command_with_no_live_ide_exits_two(root, capsys):
-    assert cli.main(["ping"]) == cli.EXIT_TARGET
+    assert cli.main(["ping"]) == EXIT_TARGET
     assert "no live IDE" in capsys.readouterr().err
 
 
@@ -75,21 +77,21 @@ def test_an_ambiguous_target_exits_two_and_lists_the_candidates(root, capsys):
     for pid in (11, 22):
         instances.write(root, instances.new_registration(
             "softplc-%d" % pid, pid, "ide", "C:\\p\\softplc.project"))
-    assert cli.main(["ping", "--target", "softplc"]) == cli.EXIT_TARGET
+    assert cli.main(["ping", "--target", "softplc"]) == EXIT_TARGET
     err = capsys.readouterr().err
     assert "softplc-11" in err and "softplc-22" in err
 
 
 def test_a_project_name_finds_the_watcher(watch, monkeypatch):
     answering(watch, monkeypatch)
-    assert cli.main(["ping", "--target", "softplc"]) == cli.EXIT_OK
+    assert cli.main(["ping", "--target", "softplc"]) == EXIT_OK
 
 
 # --- the round trip --------------------------------------------------------
 
 def test_ping_comes_back(watch, monkeypatch, capsys):
     answering(watch, monkeypatch)
-    assert cli.main(["ping"]) == cli.EXIT_OK
+    assert cli.main(["ping"]) == EXIT_OK
     assert "pong" in capsys.readouterr().out
 
 
@@ -106,13 +108,13 @@ def test_the_target_form_does_not_name_a_sync_folder(watch, monkeypatch,
 
 def test_status_prints_what_the_ide_has_open(watch, monkeypatch, capsys):
     answering(watch, monkeypatch)
-    assert cli.main(["status"]) == cli.EXIT_OK
+    assert cli.main(["status"]) == EXIT_OK
     assert "softplc" in capsys.readouterr().out
 
 
 def test_stop_ends_the_watcher(watch, monkeypatch):
     answering(watch, monkeypatch)
-    assert cli.main(["stop"]) == cli.EXIT_OK
+    assert cli.main(["stop"]) == EXIT_OK
     assert watch.running is False
 
 
@@ -127,7 +129,7 @@ def test_a_failed_command_exits_one(watch, monkeypatch, capsys):
     watch.handlers["ping"] = lambda cmd, started: commands.new_result(
         cmd, False, error="the IDE said no", started_at=started)
     answering(watch, monkeypatch)
-    assert cli.main(["ping"]) == cli.EXIT_FAILED
+    assert cli.main(["ping"]) == EXIT_FAILED
     assert "the IDE said no" in capsys.readouterr().err
 
 
@@ -158,7 +160,7 @@ def test_a_command_that_needs_an_answer_exits_one(watch, monkeypatch, capsys):
         cmd, False, error="Confirm Import?", started_at=started,
         needs_input={"question": "Confirm Import?", "arg": "yes"})
     answering(watch, monkeypatch)
-    assert cli.main(["ping"]) == cli.EXIT_FAILED
+    assert cli.main(["ping"]) == EXIT_FAILED
     printed = capsys.readouterr()
     assert "--yes" in printed.err
     assert (printed.out + printed.err).count("Confirm Import?") == 1
@@ -174,7 +176,7 @@ def test_a_question_with_no_flag_behind_it_does_not_invent_one(watch,
         cmd, False, error=question, started_at=started,
         needs_input={"question": question, "arg": None})
     answering(watch, monkeypatch)
-    assert cli.main(["ping"]) == cli.EXIT_FAILED
+    assert cli.main(["ping"]) == EXIT_FAILED
     assert "--None" not in capsys.readouterr().err
 
 
@@ -225,7 +227,7 @@ def test_the_arguments_reach_the_watcher(watch, monkeypatch):
 # --- giving up -------------------------------------------------------------
 
 def test_a_silent_watcher_times_out_with_exit_three(watch, capsys):
-    assert cli.main(["ping", "--timeout", "0"]) == cli.EXIT_TIMEOUT
+    assert cli.main(["ping", "--timeout", "0"]) == EXIT_TIMEOUT
     assert "timed out" in capsys.readouterr().err
 
 
@@ -265,18 +267,18 @@ def test_timeout_stretches_how_long_a_busy_ide_counts_as_alive(root, capsys,
 
     reached = []
 
-    def fake_send(root, instance_id, *args, **kwargs):
+    def fake_send(root, instance_id, cmd, *args, **kwargs):
         reached.append(instance_id)
-        return {"ok": True, "command": "ping", "messages": []}
+        return commands.new_result(cmd, True)
 
     monkeypatch.setattr(target, "send", fake_send)
-    assert cli.main(["ping", "--timeout", "600"]) == cli.EXIT_OK
+    assert cli.main(["ping", "--timeout", "600"]) == EXIT_OK
     assert reached == ["softplc-9"]
 
 
 def test_the_default_timeout_still_writes_off_a_long_gone_command(root, capsys):
     busy_since(root, 200.0)
-    assert cli.main(["ping"]) == cli.EXIT_TARGET
+    assert cli.main(["ping"]) == EXIT_TARGET
     assert "no live IDE" in capsys.readouterr().err
 
 
@@ -310,20 +312,20 @@ def test_a_registration_blinking_out_mid_rewrite_is_not_death(watch,
             watch.run_one(cmd)
 
     monkeypatch.setattr(time, "sleep", blink)
-    assert cli.main(["ping"]) == cli.EXIT_OK
+    assert cli.main(["ping"]) == EXIT_OK
 
 
 def test_stop_counts_a_vanished_watcher_as_success(watch, monkeypatch, capsys):
     # stop tears down one tick after answering, so the answer can be gone by
     # the time the CLI looks. The instance being gone IS the confirmation.
     gone_after_first_wait(watch, monkeypatch)
-    assert cli.main(["stop"]) == cli.EXIT_OK
+    assert cli.main(["stop"]) == EXIT_OK
     assert "gone" in capsys.readouterr().out
 
 
 def test_any_other_command_says_the_watcher_died(watch, monkeypatch, capsys):
     gone_after_first_wait(watch, monkeypatch)
-    assert cli.main(["export"]) == cli.EXIT_FAILED
+    assert cli.main(["export"]) == EXIT_FAILED
     assert "stopped before answering export" in capsys.readouterr().err
 
 
@@ -335,7 +337,7 @@ def test_compare_shows_the_per_object_differences(watch, monkeypatch, capsys):
         messages=[{"level": "info", "text": "modified 1, only on disk 0"}],
         stdout_tail="M  Newcomer.st  (pou)")
     answering(watch, monkeypatch)
-    assert cli.main(["compare"]) == cli.EXIT_OK
+    assert cli.main(["compare"]) == EXIT_OK
     printed = capsys.readouterr()
     assert "M  Newcomer.st" in printed.err
 

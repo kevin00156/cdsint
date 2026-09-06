@@ -22,6 +22,7 @@ from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
 from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV
 from cdsint import installs, lock
 from cdsint.exits import Failure
+from cdsint.flags import DEFAULT_TIMEOUT_S
 from cdsint.report import default_report, warn_untrusted_exit
 
 # The install root: this file is <root>/cdsint/headless.py, and the IDE-side
@@ -50,7 +51,8 @@ class Headless(object):
     """One IDE started for one job, then left to end on its own."""
 
     def __init__(self, project, install=None, profile=None, report=None,
-                 answers=None, sync_dir=None, timeout=120.0, force_lock=False):
+                 answers=None, sync_dir=None, timeout=DEFAULT_TIMEOUT_S,
+                 force_lock=False):
         self.project = os.path.abspath(project)
         self.install = installs.resolve(installs.find(), install)
         self.profile = installs.profile_of(self.install, profile)
