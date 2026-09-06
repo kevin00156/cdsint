@@ -14,9 +14,9 @@ from engine.codesys_utils import (
     get_interaction_seconds, format_elapsed
 )
 from engine.codesys_managers import (
-    classify_object, build_expected_path, clear_path_caches
+    classify_object, build_expected_path, clear_path_caches,
+    create_import_managers, manager_for
 )
-from engine.codesys_compare_engine import create_import_managers
 from engine.sync_dir import sync_files
 from engine import entry, settings, unhandled
 
@@ -295,14 +295,7 @@ def export_project(export_dir, values, projects_obj=None):
                 if not always_exported and not export_xml:
                     continue
 
-            # Select manager
-            if is_xml:
-                manager = managers["native"] if effective_type not in managers else managers[effective_type]
-            elif effective_type in managers:
-                manager = managers[effective_type]
-            else:
-                manager = managers["default"]
-
+            manager = manager_for(managers, effective_type, is_xml)
             wrote = manager.export(obj, effective_type, rel_path, context)
             if wrote == "new":
                 exported_new += 1

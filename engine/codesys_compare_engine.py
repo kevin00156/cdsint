@@ -7,7 +7,6 @@ Provides:
   - find_all_changes()       : compare IDE objects with disk files  
   - scan_new_disk_files()    : find files on disk not tracked in metadata
   - perform_import_items()   : import selected items from disk to IDE
-  - create_import_managers() : create manager dict for import operations
   - update_existing_object() : update an existing IDE object from disk file  
   - create_new_object()      : create a new IDE object from disk file
   - batch_import_native_xmls_with_children() : batch-import native XML objects with child restore
@@ -38,7 +37,7 @@ from engine.codesys_utils import (
     read_sync_text
 )
 from engine.codesys_managers import (
-    NativeManager, FolderManager, PropertyManager, ConfigManager, POUManager,
+    NativeManager, create_import_managers, manager_for,
     classify_object, export_object_content, native_xml_of,
     build_expected_path, update_object_code, clear_path_caches
 )
@@ -591,31 +590,15 @@ def scan_new_disk_files(base_dir, ide_paths):
 #  IMPORT ENGINE
 # ═══════════════════════════════════════════════════════════════════
 
-def create_import_managers():
-    """Create the standard manager dict used by import operations."""
-    return {
-        TYPE_GUIDS["folder"]: FolderManager(),
-        TYPE_GUIDS["property"]: PropertyManager(),
-        TYPE_GUIDS["task_config"]: ConfigManager(),
-        TYPE_GUIDS["alarm_config"]: ConfigManager(),
-        TYPE_GUIDS["visu_manager"]: ConfigManager(),
-        TYPE_GUIDS["device"]: ConfigManager(),
-        TYPE_GUIDS["softmotion_pool"]: ConfigManager(),
-        "default": POUManager(),
-        "native": NativeManager()
-    }
+def _is_xml_backed(rel_path, type_guid):
+    """Is this object stored as native XML rather than as ST text?
 
-
-def resolve_manager(import_managers, type_guid, rel_path):
-    """Pick the correct manager for a given type/path."""
-    if rel_path.endswith(".xml"):
-        return import_managers["native"]
-    mgr = import_managers.get(type_guid)
-    if not mgr:
-        if type_guid in XML_TYPES:
-            return import_managers["native"]
-        return import_managers["default"]
-    return mgr
+    Export is told by classify_object. Import has to work it out, and the disk
+    file is the truth (PRINCIPLES 5), so the suffix answers first. The type is
+    the second half of the answer for a file that has not been written yet --
+    a create_new_object() whose path has no extension to read.
+    """
+    return rel_path.endswith(".xml") or type_guid in XML_TYPES
 
 
 def update_existing_object(obj, rel_path, file_path, import_managers):
@@ -624,7 +607,8 @@ def update_existing_object(obj, rel_path, file_path, import_managers):
     An import always forces the content through; the manager's update() is
     the one that checks whether the IDE side would actually change.
     """
-    manager = resolve_manager(import_managers, safe_str(obj.type), rel_path)
+    type_guid = safe_str(obj.type)
+    manager = manager_for(import_managers, type_guid, _is_xml_backed(rel_path, type_guid))
     return manager.update(obj, file_path)
 
 
@@ -789,7 +773,8 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
         log_warning(msg)
         return None
 
-    manager = resolve_manager(import_managers, type_guid, rel_path)
+    manager = manager_for(import_managers, type_guid,
+                          _is_xml_backed(rel_path, type_guid))
     res = manager.create(container, name, file_path, type_guid)
     
     if res:

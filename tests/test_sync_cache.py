@@ -193,3 +193,43 @@ class TestCachedClassification:
         assert types["short"] == ("t", True, None)
         assert types["full"] == ("t", False, "A.st")
         assert "junk" not in types
+
+
+class TestManagerDispatch:
+    """Which manager handles an object, asked once for both directions.
+
+    There used to be two rules. Export looked for a dedicated manager first;
+    import saw a ".xml" suffix and went straight to native, so a device --
+    which has a ConfigManager of its own -- was handled by one manager on the
+    way out and a different one on the way back.
+    """
+
+    def managers(self):
+        return codesys_managers.create_import_managers()
+
+    def test_a_kind_with_its_own_manager_gets_it_either_way(self):
+        from engine.codesys_constants import TYPE_GUIDS
+        mgrs = self.managers()
+        device = TYPE_GUIDS["device"]
+        assert codesys_managers.manager_for(mgrs, device, True) is mgrs[device]
+        assert codesys_managers.manager_for(mgrs, device, False) is mgrs[device]
+
+    def test_xml_without_a_dedicated_manager_goes_native(self):
+        mgrs = self.managers()
+        assert codesys_managers.manager_for(mgrs, "no-such-guid", True) is mgrs["native"]
+
+    def test_text_without_a_dedicated_manager_goes_to_the_text_manager(self):
+        mgrs = self.managers()
+        assert codesys_managers.manager_for(mgrs, "no-such-guid", False) is mgrs["default"]
+
+    def test_import_treats_an_xml_file_as_xml_backed(self):
+        """Disk is the truth, so the suffix answers first (PRINCIPLES 5)."""
+        assert codesys_compare_engine._is_xml_backed("A/B.device.xml", "guid")
+
+    def test_import_treats_an_xml_kind_as_xml_backed_before_the_file_exists(self):
+        from engine.codesys_constants import XML_TYPES
+        any_xml_kind = sorted(XML_TYPES)[0]
+        assert codesys_compare_engine._is_xml_backed("A/B", any_xml_kind)
+
+    def test_a_plain_st_file_is_not_xml_backed(self):
+        assert not codesys_compare_engine._is_xml_backed("A/B.st", "guid")

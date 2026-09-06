@@ -1324,3 +1324,41 @@ class ConfigManager(NativeManager):
         return super(ConfigManager, self).export(obj, effective_type, rel_path,
                                                  context, recursive=recursive)
     
+
+
+def create_import_managers():
+    """One manager per kind that needs its own, plus the two fallbacks.
+
+    Export and import share this dict: they are the same objects, and a kind
+    that needs special handling on the way out needs it on the way back.
+    """
+    return {
+        TYPE_GUIDS["folder"]: FolderManager(),
+        TYPE_GUIDS["property"]: PropertyManager(),
+        TYPE_GUIDS["task_config"]: ConfigManager(),
+        TYPE_GUIDS["alarm_config"]: ConfigManager(),
+        TYPE_GUIDS["visu_manager"]: ConfigManager(),
+        TYPE_GUIDS["device"]: ConfigManager(),
+        TYPE_GUIDS["softmotion_pool"]: ConfigManager(),
+        "default": POUManager(),
+        "native": NativeManager()
+    }
+
+
+def manager_for(managers, effective_type, is_xml):
+    """Which manager handles this object. The only rule, for both directions.
+
+    A kind with a manager of its own gets it; everything else goes to native
+    when it is stored as XML and to the text manager when it is not.
+
+    There were two rules. Export asked for a dedicated manager first; import
+    saw the ".xml" suffix and went straight to native, so a device -- which
+    has a dedicated ConfigManager -- was handled by one manager on the way out
+    and another on the way back. That cost nothing only because ConfigManager
+    inherits update() and create() unchanged from NativeManager, which is a
+    fact about today's class body and not a rule anybody wrote down.
+    """
+    dedicated = managers.get(effective_type)
+    if dedicated is not None:
+        return dedicated
+    return managers["native"] if is_xml else managers["default"]
