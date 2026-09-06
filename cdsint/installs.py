@@ -19,7 +19,6 @@ from __future__ import print_function
 
 import fnmatch
 import os
-import sys
 
 from cds.core.exits import EXIT_HEADLESS
 from cdsint.exits import Failure
@@ -191,19 +190,21 @@ def profile_of(install, wanted=None):
                       % (install["name"], len(profiles), ", ".join(profiles)))
 
 
-def warn_if_elevated(install):
-    """Say who asked for elevation before the launch fails without saying.
+def elevation_note(install):
+    """Who asked for elevation, or None. Said before the launch fails.
 
     Windows refuses to start a RUNASADMIN executable from an ordinary shell
     with a message that names neither the flag nor who set it, so the fact
     this module already read out of the registry is worth spending a line on
-    up front.
+    up front. Returned rather than printed: cdsint/report.py is the one place
+    that decides what a caller sees, and under --json this belongs in the
+    record instead of on stderr.
     """
     if not install["run_as_admin"]:
-        return
-    print("warning: %s is marked RUNASADMIN in %s, so this launch will fail "
-          "unless this shell is elevated"
-          % (install["exe"], install["run_as_admin"]), file=sys.stderr)
+        return None
+    return ("%s is marked RUNASADMIN in %s, so this launch will fail unless "
+            "this shell is elevated"
+            % (install["exe"], install["run_as_admin"]))
 
 
 def run_as_admin_layers():

@@ -141,11 +141,11 @@
   - [x] 驗收：`.\irm\setup.ps1 -List` 列出五個 ScriptDir，跟 `installs --json` 逐項相同（CODESYS 三套合成一列、Delta 兩套各一列、Lenze 兩套各一列）；`-ScriptDir %TEMP%\cdsint-work\plumbing\fake-scriptdir -Clone .` 裝得起來，junction 指向 worktree 的 `stub\`，三個 stub 加 `body.path` 都在。事後確認兩個真 junction 仍指向 `repo\cdsint\stub`，一個位元組沒動。
   - [x] 驗收：`irm/setup.md` 改寫成「問 cdsint」，管理員那段只剩 Delta 一項，實測結果見第 7 節 Ruling 41。
 
-- [ ] **階段 4：印東西與 `report.py`（第 4 節 8、9、12）**
-  - [ ] 驗收：`grep -rn "print(" cdsint/ | grep -v report.py | grep -v exits.py` 為零。
-  - [ ] 驗收：逾時的一趟（用 `--timeout 1` 對一個會慢的命令，或測試裡模擬）stderr 那句只出現一次。
-  - [ ] 驗收：`compare --json` 的 `data` 有逐物件清單，`report` 對成功的 compare 不印 `stdout_tail`；`grep -n '"compare"' cdsint/report.py` 為零。
-  - [ ] 驗收：`--json` 模式下 stderr 沒有任何 runner 自己印的字。
+- [x] **階段 4：印東西與 `report.py`（第 4 節 8、9、12）**
+  - [x] 驗收：`grep -rn "print(" cdsint/ | grep -v report.py | grep -v exits.py` 為零。
+  - [x] 驗收：逾時那句只說一次。做完工作才被 kill 的那一趟，那句話是一則 note，`Failure` 不會拿它再印一次；沒做完的那一趟只有 `Failure` 說（`tests/test_headless.py` 的 `test_a_kill_after_the_script_finished_is_not_a_failed_run` 加了 `notes.count(...) == 1` 這條斷言）。
+  - [x] 驗收：`compare` 的 `data` 多一個 `changes` 逐物件清單（`tests/test_compare_changes.py` 八條）；成功的 compare 不印 `stdout_tail`，失敗的照印；`grep -n '"compare"' cdsint/report.py` 為零。
+  - [x] 驗收：`--json` 之下 runner 的 note 進 JSON 的 `notes` 欄位，stderr 完全空白（`tests/test_verify.py` 的 `test_a_json_run_gets_the_notes_in_the_record_not_on_stderr`）。
 
 - [ ] **階段 5：收尾**
   - [ ] `python -m pytest tests -q` 綠，WSL 綠；`tests/test_layering.py`、`test_bare_excepts.py`、`test_doc_links.py` 綠。
@@ -207,6 +207,18 @@
 43. `Ruling: 每一家的 ScriptDir 用一個 callable 放進 `VENDORS` 那一列，不是字串模板 — Lenze 要看目錄名是不是 `4.` 開頭才知道答案，模板表達不了；callable 讓那個分岔待在 Lenze 自己那一列，而不是在表外用 `vendor["exe"]` 的 if/elif 把三家的知識重編一次 — 錯了的代價是表裡有三個函式名，讀者要往上看十行才看得到內容。`
 44. `Ruling: `roots` 從每一列的欄位升成模組常數 `ROOTS` — 三列填的是同一組值，而它本來就不是「這一家的性質」而是「Windows 把程式裝在哪」 — 錯了的代價是將來若真有一家只裝在其中一個 root，得把欄位加回去。`
 45. `Ruling: `setup.ps1` 用 `python <body>\cdsint\cli.py installs --json` 而不是 `cdsint installs --json` — 安裝當下還沒有人跑過 `pip install -e`，PATH 上不會有 `cdsint`；這也是 `cdsint/cli.py` 那行 `sys.path.insert` 現在唯一的理由（Ruling 37） — 錯了的代價是 PATH 上沒有 `python` 的機器裝不起來，訊息會直說要 Python 3.11 以上。`
+
+### 階段 4 新增的 Ruling
+
+46. `Ruling: runner 的警告收成 `Headless.notes`，並且掛在 `--project` 形式的結果紀錄上（跟 `ide`、`sync_dir`、`report_path` 同一排） — 只把它們從 stderr 拿掉會讓一個 `--json` 呼叫端完全聽不到「我幫你清了一個鎖檔」；掛在紀錄上，兩種模式都拿得到，而 SPEC 4.3 本來就說 `--project` 形式的紀錄會多幾個欄位 — 錯了的代價是 `report.show` 裡多一個 `.get("notes")`（`--target` 的紀錄沒有這個欄位），而那是這個檔唯一一個 `.get()`。`
+47. `Ruling: `compare` 的 `data.changes` 每筆是 `name`、`path`、`state`，`state` 的四個值是 `changed`、`new_in_ide`、`new_on_disk`、`moved` — 第 7 節預設 3 寫的是 `changed`、`new_in_ide`、`new_on_disk`、`pending_import`，但 `pending_import` 是匯出那條路的事（SPEC 6.1），compare 根本不產生它；compare 真正會找到而預設漏掉的是「搬過位置」 — 錯了的代價是預設那句話跟實際欄位對不上，已經照實改寫在這裡。`
+48. `Ruling: 搬過位置的那一筆，`path` 寫成 `IDE 路徑 -> 磁碟路徑` — 一筆搬移的意義就是兩端都在，只留一端等於沒說；`report._one_line` 把每個 dict 的值照鍵名排序接成一行，所以多一個欄位會讓四種 state 的列印寬度不一致 — 錯了的代價是想拆開兩端的呼叫端要自己 split 那個箭頭。`
+49. `Ruling: `report.show` 的 `said` 只收掉一半，不是全消失 — 「`needs_input` 那一筆的 `error` 就是那個問題本身」是結構性的（`cds/ide/outcome.py` 的 `error_text` 就是這樣定義的），改成結構判斷；剩下那一半是引擎本體自己說兩次（`system.ui.error(msg)` 之後再 `entry.result(False, msg)`），而修生產者要動 `engine/`，本工單第 0 節說不碰 — 錯了的代價是 `report.py` 還留著一次字串比對，註解裡寫明它在等 `ENGINE_PLAN.md`。`
+50. `Ruling: `_show_needs` 改成回傳那個問題，不再往呼叫端傳進來的 list 裡塞 — 兩個函式共用一個想法卻用一個變數溝通，讀 `show` 的人得先讀 `_show_needs` 才知道 `said` 為什麼會變長 — 錯了的代價是多一個回傳值。`
+51. `Ruling: `verify` 的判決句（`verify: ...`）兩種模式都印，不隨 `--json` 收掉 — 那是 CLI 的判決，不是 runner 的警告；`compare` 每一步都 ok 卻仍然有差異的那種情況，判決不在任何一筆紀錄裡，收掉等於要求呼叫端自己把 `verify.problems` 再實作一遍 — 錯了的代價是 `--json` 之下 stderr 仍然有幾行散文，但沒有一行是 runner 印的。`
+52. `Ruling: `installs.warn_if_elevated` 改名 `elevation_note` 並回傳字串 — 名字裡的 `warn` 是「它會印」的意思，而它現在不印了 — 錯了的代價是任何直接呼叫舊名字的東西會壞；repo 裡只有一個呼叫端。`
+53. `Ruling: `cdsint/headless.py` 收完之後是 364 行，比開工時的 338 行更長，仍在 400 的硬上限內 — `_collect` 拆成 `_annotate` 與 `_verdict` 加上「為什麼」的註解就是這 26 行；它已經是「下一次加東西之前先拆」的狀態（PRINCIPLES 2），而本工單能拆的自然切點（「起 IDE 等它」與「把回來的東西變成報告」）需要把七八個欄位當參數傳，換來的不是更好讀 — 錯了的代價是這個檔離硬上限只剩 36 行。記給 `HYGIENE_PLAN.md`。`
+54. `Ruling: `Target.__init__` 改成把 `instances.read_all(root)` 整份交給 `resolve_target` — `resolve_target` 本來就用 `is_alive` 濾過一次，外面再濾一次是同一個判斷寫兩處，而外面那份還讓「幾個候選」的錯誤訊息看不到它自己已經丟掉的那些 — 錯了的代價是候選清單可能列出已經死掉的實例；不會，因為濾的還是同一個函式，只是只濾一次。`
 
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 

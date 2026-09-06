@@ -329,17 +329,27 @@ def test_any_other_command_says_the_watcher_died(watch, monkeypatch, capsys):
     assert "stopped before answering export" in capsys.readouterr().err
 
 
-# --- compare's real answer is what it printed -----------------------------
+# --- compare's real answer is in data, not in what it printed --------------
 
 def test_compare_shows_the_per_object_differences(watch, monkeypatch, capsys):
+    # It used to be read off stdout_tail, which meant cdsint/report.py had a
+    # branch naming one command by name. compare hands back the same list of
+    # rows discover hands back for the type GUIDs it did not recognise, so
+    # the summary prints it the way it prints any other list.
     watch.handlers["compare"] = lambda cmd, started: commands.new_result(
         cmd, True, started_at=started,
-        messages=[{"level": "info", "text": "modified 1, only on disk 0"}],
-        stdout_tail="M  Newcomer.st  (pou)")
+        messages=[commands.message("info", "modified 1, only on disk 0")],
+        data={"different": 1, "changes": [{"name": "Newcomer",
+                                           "path": "POUs/Newcomer.st",
+                                           "state": "changed"}]},
+        stdout_tail="200 lines of progress nobody asked for")
     answering(watch, monkeypatch)
     assert cli.main(["compare"]) == EXIT_OK
     printed = capsys.readouterr()
-    assert "M  Newcomer.st" in printed.err
+    assert "POUs/Newcomer.st" in printed.out
+    assert "changed" in printed.out
+    # And the tail stays where it belongs: a run that worked does not need it.
+    assert "nobody asked for" not in printed.err
 
 
 def test_a_successful_export_stays_quiet(watch, monkeypatch, capsys):

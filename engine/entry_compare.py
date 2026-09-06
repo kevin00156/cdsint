@@ -23,6 +23,32 @@ from engine.codesys_utils import (
 from engine.codesys_compare_engine import find_all_changes
 from engine import entry, settings, unhandled
 
+# What one row of data.changes says happened to an object. A caller reading
+# only the JSON gets the same answer a person reads off the console: the
+# counts say how many, and this says which (SPEC 4.3). Same shape as
+# discover's data.unknown -- a list of small dicts, one line each.
+CHANGED = "changed"
+NEW_IN_IDE = "new_in_ide"
+NEW_ON_DISK = "new_on_disk"
+MOVED = "moved"
+
+
+def changed_objects(different, new_in_ide, new_on_disk, moved):
+    """Every object the two sides disagree about, one row each.
+
+    A move is the one that needs both paths, because that is the whole of
+    what it is; the others are in one place or the other.
+    """
+    rows = [{"name": item["name"], "path": item["path"], "state": CHANGED}
+            for item in different]
+    rows.extend({"name": item["name"], "path": item["path"],
+                 "state": NEW_IN_IDE} for item in new_in_ide)
+    rows.extend({"name": item["name"], "path": item["path"],
+                 "state": NEW_ON_DISK} for item in new_on_disk)
+    rows.extend({"name": item["name"], "state": MOVED,
+                 "path": item["ide_path"] + " -> " + item["disk_path"]}
+                for item in moved)
+    return rows
 
 
 def compare_project(base_dir, values, projects_obj=None):
@@ -111,7 +137,9 @@ def compare_project(base_dir, values, projects_obj=None):
                         counts + " -- " + unhandled.summary(),
                         different=len(different), new_in_ide=len(new_in_ide),
                         new_on_disk=len(new_on_disk), moved=len(moved),
-                        unchanged=unchanged_count, failed_objects=missing)
+                        unchanged=unchanged_count, failed_objects=missing,
+                        changes=changed_objects(different, new_in_ide,
+                                                new_on_disk, moved))
 
 
 def main():

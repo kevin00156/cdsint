@@ -38,10 +38,15 @@ class Target(object):
         self.root = root
         self.timeout = timeout
         try:
+            # Every registration, not the live ones: resolve_target decides
+            # what "live" means and it needs the timeout to say so. Filtering
+            # first put the same judgement in two places, and the copy out
+            # here had no way to explain a candidate it had already dropped.
+            #
             # --timeout is how long the caller will wait, so it is also how
             # long a busy instance still counts as alive. Both places, one
             # meaning.
-            self.reg = instances.resolve_target(live_instances(root, timeout),
+            self.reg = instances.resolve_target(instances.read_all(root),
                                                 target, busy_timeout=timeout)
         except instances.TargetError as exc:
             raise Failure(str(exc), EXIT_TARGET,
@@ -99,22 +104,12 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     commands.write_command(root, instance_id, cmd["command"], cmd["args"],
                            cmd_id=cmd["id"])
     deadline = time.time() + timeout
-    missing_since = None
+    gone_since = None
     try:
         while True:
-            result = commands.take_result(root, instance_id, cmd["id"])
-            if result is not None:
-                return result
-            if instances.read(root, instance_id) is not None:
-                missing_since = None
-            else:
-                missing_since = missing_since or time.time()
-                if time.time() - missing_since >= GONE_AFTER_S:
-                    # The instance directory goes with the registration, so
-                    # the answer is not coming. For `stop` that IS the answer;
-                    # for anything else, better to say so than wait out the
-                    # clock.
-                    return GONE
+            answer, gone_since = _poll_once(root, instance_id, cmd, gone_since)
+            if answer is not None:
+                return answer
             if time.time() >= deadline:
                 commands.delete_command(root, instance_id, cmd["id"])
                 return None
@@ -122,6 +117,28 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     except KeyboardInterrupt:
         commands.delete_command(root, instance_id, cmd["id"])
         raise
+
+
+def _poll_once(root, instance_id, cmd, gone_since):
+    """One look. Returns (the result, GONE, or None) and the new gone_since.
+
+    The debounce is why this needs a memory. Under IronPython the watcher has
+    no os.replace, so its every-two-second rewrite deletes the registration
+    and renames the new one into place -- for a moment there is no file, and
+    a single missed read would call a healthy IDE dead (docs/WATCHER.md 2.1).
+    The instance directory goes with the registration, so once it has really
+    stayed away the answer is not coming: for `stop` that IS the answer, and
+    for anything else saying so beats waiting out the clock.
+    """
+    result = commands.take_result(root, instance_id, cmd["id"])
+    if result is not None:
+        return result, None
+    if instances.read(root, instance_id) is not None:
+        return None, None
+    gone_since = gone_since or time.time()
+    if time.time() - gone_since >= GONE_AFTER_S:
+        return GONE, gone_since
+    return None, gone_since
 
 
 def live_instances(root, busy_timeout=DEFAULT_TIMEOUT_S):

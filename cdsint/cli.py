@@ -67,19 +67,8 @@ def run_installs(ns):
 
 
 def run_list(ns):
-    root = ipc.default_root()
-    regs = target.live_instances(root, ns.timeout)
-    if ns.json:
-        report.as_json(regs)
-        return EXIT_OK
-    if not regs:
-        # An empty list is the answer to "who is listening", not a failure,
-        # so this is exit 0 (SPEC 4.3).
-        print("no IDE is listening; start Project_watch.py in one")
-        return EXIT_OK
-    for reg in regs:
-        print("%-28s %-6s %s" % (reg["instance_id"], reg.get("state", "?"),
-                                 reg.get("project_path") or "(no project)"))
+    regs = target.live_instances(ipc.default_root(), ns.timeout)
+    report.show_instances(regs, ns.json)
     return EXIT_OK
 
 
@@ -87,10 +76,7 @@ def run_verify(ns, runner):
     results, problems = verify.run(runner, ns.yes)
     show_folder(ns, runner, results)
     report.show_steps(results, ns.json)
-    for problem in problems:
-        print("verify: " + problem, file=sys.stderr)
-    if not problems:
-        print("verify: %s round-tripped and built cleanly" % runner.describe())
+    report.show_verify(problems, runner.describe())
     return verify_code(results, problems)
 
 

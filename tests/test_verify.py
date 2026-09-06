@@ -242,6 +242,32 @@ def test_json_output_stays_json(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["command"] == "compare"
 
 
+def test_a_json_run_gets_the_notes_in_the_record_not_on_stderr(monkeypatch,
+                                                               capsys):
+    # A lock we cleared, an IDE we had to kill, an exit code we cannot vouch
+    # for: prose on stderr is invisible to a caller parsing stdout, and it
+    # had no way to attach it to anything even if it read both.
+    noted = dict(done("compare"), notes=["removed a lock file we left"])
+    runner = FakeRunner({"compare": noted})
+    monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
+
+    cli.main(["compare", "--project", "P", "--install", "I", "--json"])
+
+    printed = capsys.readouterr()
+    assert json.loads(printed.out)["notes"] == ["removed a lock file we left"]
+    assert printed.err == ""
+
+
+def test_the_same_run_without_json_says_it_out_loud(monkeypatch, capsys):
+    noted = dict(done("compare"), notes=["removed a lock file we left"])
+    runner = FakeRunner({"compare": noted})
+    monkeypatch.setattr(cli, "make_runner", lambda ns: runner)
+
+    cli.main(["compare", "--project", "P", "--install", "I"])
+
+    assert "removed a lock file" in capsys.readouterr().err
+
+
 def test_there_is_no_config_command(capsys):
     # The file is the interface (SPEC 4.2). A command that edited it would be
     # a second editor for the same eleven keys, and the validation would have

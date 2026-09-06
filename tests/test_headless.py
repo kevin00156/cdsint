@@ -405,7 +405,9 @@ def test_a_disagreeing_exit_code_is_recorded_and_said_out_loud(machine,
     started = make(machine, monkeypatch)
     started.run([("export", {})])
     assert ipc.read_json(started.report_path)["exit_code_trusted"] is False
-    assert "cannot be used as a gate" in capsys.readouterr().err
+    # Kept as a note rather than printed here: cdsint/report.py decides where
+    # a sentence goes, and under --json this belongs in the record.
+    assert any("cannot be used as a gate" in note for note in started.notes)
 
 
 def test_a_matching_exit_code_is_trusted(machine, monkeypatch):
@@ -457,7 +459,10 @@ def test_a_kill_after_the_script_finished_is_not_a_failed_run(machine,
     saved = ipc.read_json(started.report_path)
     assert saved["timed_out"] is True
     assert "did not exit" in saved["error"] and "dialog" not in saved["error"]
-    assert "did not exit" in capsys.readouterr().err
+    # Said once. It used to be printed here and again by cdsint/exits.py when
+    # the Failure carrying the same sentence was reported.
+    assert started.notes.count(saved["error"]) == 1
+    assert results[0]["notes"] == started.notes
 
 
 def test_the_lock_our_own_killed_ide_left_behind_is_cleared(machine,
@@ -471,7 +476,7 @@ def test_the_lock_our_own_killed_ide_left_behind_is_cleared(machine,
     with pytest.raises(Failure):
         started.run([("export", {})])
     assert not os.path.exists(started.project + ".~u")
-    assert "lock" in capsys.readouterr().err
+    assert any("lock" in note for note in started.notes)
 
 
 def test_a_lock_that_was_there_before_we_started_is_left_alone(machine,
@@ -490,7 +495,7 @@ def test_a_lock_that_was_there_before_we_started_is_left_alone(machine,
         started.run([("export", {})])
 
     assert os.path.exists(started.project + ".~u")
-    assert "was there before" in capsys.readouterr().err
+    assert any("was there before" in note for note in started.notes)
 
 
 def test_a_process_that_survives_its_own_kill_keeps_its_lock(machine,
