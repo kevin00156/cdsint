@@ -302,7 +302,7 @@ img/        readMe 用的圖
 
 1. `cds-text-sync-multipleApps` 要不要併入 `cds-sync-` 常數。併入要對每個現有 `.project` 做遷移；不併就留一個有註解的例外。（階段 4 已裁：不併，見底下的 Ruling。）
 2. `engine/codesys_utils.py` 的 `threading.Lock` 去留。單執行緒設計下它是空轉的。
-3. 搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。
+3. ~~搬到 `tools/` 的 `Project_perf_probe.py` 等診斷腳本，無頭啟動器怎麼跑它們。是加一個 `--script` 旗標，還是各自帶啟動命令列。~~（2026-09-06 的收斂工單裁掉：`discover` 變成正式命令走既有的兩種形式，`resources` 刪掉，`perf_probe` 維持 Execute Script File。沒有加 `--script` 旗標。）
 4. 分紙機 Makefile 要改的行（階段 2 寫下，**人做**；本 worker 一個位元組都沒有寫進那個 repo）。
 
    現在的 `st-verify`（`Makefile:164` 起）只做兩件事：對 buildstamp，然後 `git diff --exit-code -- codesys_export`。

@@ -516,7 +516,7 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 | `Project_compare.py`、`Project_Build.py` | 改成引擎模組，只由 CLI 與看門人呼叫 |
 | `Project_directory.py`、`Project_parameters.py` | 併進 6.7 的設定流程後刪除 |
 | `Project_discover.py` | 本體成為 `engine/entry_discover.py`，命令名 `discover`，兩種形式都有（診斷「物件靜默不匯出」只有這一條路）|
-| `Project_perf_probe.py` | 搬到 `tools/`，Execute Script File 跑 |
+| `Project_perf_probe.py` | 搬到 `tools/perf_probe.py`，Execute Script File 跑。`Project_` 前綴只給選單入口（PRINCIPLES 12）|
 | `Project_resources.py` | 刪除。幾乎沒人用，檔案大小任何工具都看得到 |
 | `Project_perf_test.py` | 刪除。`perf_probe` 已經取代它，而且它的檔名符合 `*_test.py`，今天讓 `python -m pytest` 在收集階段就報錯 |
 | `codesys_*.pyw` | 搬進 `engine/`，副檔名改回 `.py`，因為已經不在 ScriptDir 裡 |

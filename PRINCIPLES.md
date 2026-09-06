@@ -162,3 +162,14 @@ enforces this by parsing the code, so it cannot rot.
 - A rule worth writing down twice — once here and once as a test that parses
   the code — is worth writing down twice. The tests named above exist because
   a rule nobody can forget beats a rule everybody agrees with.
+
+## 12. `Project_` means "a button in the Scripts menu".
+
+The IDE lists every `Project_*.py` it finds in its ScriptDir, so the prefix
+is not decoration — it is what puts a name in front of a user. Only the three
+stubs in `stub/` carry it.
+
+Nothing in `tools/` does. Those are a maintainer's instruments: a profiler, a
+cache doctor, a call-tree dumper, the probes. Naming one of them
+`Project_perf_probe.py` made it look like a feature somebody was meant to
+click, which is how it ended up in a menu it had no business being in.

@@ -75,9 +75,9 @@
   - [x] 驗收（監督者會重現）：`cdsint discover --project <softplc 副本> --install 3.5.21.40 --sync-dir S --json` 回 `total` 229、`unknown` 空、exit 0。——**跑過，74.9 秒 exit 0**，`ok` true、`unknown` 空、`failed_objects` 空、22 種 kind。`total` 是 **407 不是 229**：229 是 export 寫出的檔案數（同一份副本、空同步資料夾跑 `compare --project` 回 `new_in_ide=229`），407 是樹上全部節點。理由與為什麼不改成 229，見第 7 節那條 Ruling。
   - [x] readMe 與 `docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md`：`failed_objects` 出現時下一步是 `cdsint discover`，未知 GUID 加進 `profiles/default.json` 的 `guid_aliases` 再跑。
 
-- [ ] **C. perf_probe 改名**
-  - [ ] `tools/Project_perf_probe.py` → `tools/perf_probe.py`，檔頭寫 Execute Script File 的用法與參數；PRINCIPLES 加 `Project_` 前綴那一條。
-  - [ ] 驗收：`ls tools/ | grep Project_` 為空。
+- [x] **C. perf_probe 改名**
+  - [x] `tools/Project_perf_probe.py` → `tools/perf_probe.py`，檔頭寫 Execute Script File 的用法與參數；PRINCIPLES 加 `Project_` 前綴那一條。
+  - [x] 驗收：`ls tools/ | grep Project_` 為空。
 
 - [ ] **D. Settings 加同步資料夾列**
   - [ ] 照第 4 節。`cds/ide/config.py` 的 `_set` 對 `cds-sync-folder` 也跑 `_prepare` 與 `_remember_who_and_what`，兩條路寫出來的屬性一樣。

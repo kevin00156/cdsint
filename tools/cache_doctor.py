@@ -281,7 +281,7 @@ def main(argv=None):
     if healthy:
         print("")
         print("  Cache looks healthy. If sync still feels slow the cost is")
-        print("  elsewhere -- run Project_perf_probe.py inside CODESYS.")
+        print("  elsewhere -- run tools/perf_probe.py inside CODESYS.")
     return 0
 
 

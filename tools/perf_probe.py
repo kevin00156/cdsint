@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Project_perf_probe.py - Instrument the REAL sync engine and rank its costs.
+"""perf_probe.py - Instrument the REAL sync engine and rank its costs.
+
+A maintainer's instrument, not one of the tool's features, so it carries no
+`Project_` prefix: that prefix means "an entry in the Scripts menu somebody
+clicks", and only the three stubs in stub/ are that (PRINCIPLES 12).
 
 It wraps the actual engine functions in place and then runs the real export
 or compare, so whatever the engine does, the numbers below describe. The
@@ -9,10 +13,18 @@ the engine was really doing; it did not come across in the move to cdsint.
 Every wrapped call records inclusive and exclusive time. Rank by EXCL to find
 where time is really spent; read CALLS to spot per-object IDE round-trips.
 
-Usage inside CODESYS (Scripting > Execute Script File):
-    Project_perf_probe.py              -> profile a full export
-    Project_perf_probe.py compare      -> profile the comparison only
-    Project_perf_probe.py import       -> profile a full import
+How to run it. It is not a cdsint command and has no --target or --project
+form; it profiles an IDE somebody already has open, with the project open in
+it. In that IDE: Tools > Scripting > Execute Script File, and pick
+tools/perf_probe.py. The mode is the one argument, taken from the script
+arguments box (anything unrecognised leaves the default):
+
+    (no argument)   profile a full export -- the default
+    compare         profile the comparison only
+    import          profile a full import
+
+The report is printed and written to perf_probe_<mode>.txt in the sync
+folder.
 
 Notes:
   * export and import modes run the REAL operation. Import CREATES, UPDATES,
