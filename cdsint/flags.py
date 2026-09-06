@@ -68,11 +68,11 @@ PROJECT_ONLY = ("install", "profile", "report", "force_lock", "sync_dir",
 class Parser(argparse.ArgumentParser):
     """argparse, minus the abbreviations.
 
-    `--force` was a flag until the version and computer stamps went (SPEC
-    6.7). With abbreviations on, a script that still passes it does not get
-    an error -- argparse reads it as `--force-lock` and the run goes ahead
-    against a project another IDE may have open. A flag that was deleted has
-    to be refused by name.
+    There was a flag spelled like the first half of `--force-lock` until the
+    version and computer stamps went (SPEC 6.7). With abbreviations on, a
+    script that still passes it does not get an error: argparse reads it as
+    `--force-lock` and the run goes ahead against a project another IDE may
+    have open. A flag that was deleted has to be refused by name.
     """
 
     def __init__(self, *args, **kwargs):

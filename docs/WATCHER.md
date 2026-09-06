@@ -89,11 +89,10 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 | `status` | 無 | 無 |
 | `stop` | 無 | 無 |
 | `export` | `delete_orphans`，預設 false | 「Delete Orphaned Files?」由它回答 |
-| `import` | `yes` 必要、`force` 預設 false | 「Confirm Import」由 `yes` 回答，沒給回 `needs_input`；「Version Mismatch」與「Computer Mismatch」由 `force` 回答，預設不繼續 |
+| `import` | `yes` 必要 | 「Confirm Import」由 `yes` 回答，沒給回 `needs_input` |
 | `compare` | 無 | 無。逐物件的清單印在 stdout，會進 `stdout_tail`；互動式挑選視窗已經刪了 |
 | `discover` | 無 | 無。物件樹印在 stdout，未知的型別 GUID 在 `data.unknown` |
 | `build` | 多個 application 時要 `app` | `system.ui.choose` 用 `app` 的名字對應選項，沒給回 `needs_input` |
-| `config` | `key`、`value`（`value` 是 None 就是讀） | 無。寫 `cds-sync-folder` 這一個 key 會多按一次 `engine/settings.py` 的 `folder_was_set`，把資料夾建起來、寫 git 規則、寫 `cds-sync-pc` 與 `cds-sync-version`，跟設定對話框那條路一致 |
 | `plc connect`、`plc download` | — | 看門人一律拒絕，回一句說明理由的錯誤。理由是它跑在別人正在用的 IDE 裡，登入控制器會搶走那個人的線上狀態（SPEC D8）。這兩個命令只有 `--project` 形式有 |
 
 ## 5. 一拍做什麼
@@ -154,7 +153,7 @@ IDE 完全回到使用者手上。
 
 儀器是 `tools/probe_click_menu.py`：`SetForegroundWindow` 加 `mouse_event` 對選單列最左邊的 File
 做真實點擊，用 `EnumWindows` 數有沒有長出下拉視窗。啟動器是 `tools/probe_watcher_ui.py`，
-它建一個臨時專案、設好 `cds-sync-folder`、走 `Project_watch.py` 的啟動路徑然後返回。
+它建一個臨時專案、在旁邊寫一個只有 `sync_folder` 的設定檔、走 `Project_watch.py` 的啟動路徑然後返回。
 
 流程是：起 IDE 跑啟動器，儀器每 5 秒點一次 File 選單要求每次都開得出下拉，同時從外面跑
 `cdsint ping`、`export`、`stop`。`export` 那幾秒點不開是正常的，之後要恢復；`stop` 之後登記檔消失、

@@ -1022,7 +1022,7 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
 
 
 # finalize_import() used to live here and saved the project (and, with
-# cds-sync-backup-binary on, copied the whole .project binary) at the end of
+# backup_binary on, copied the whole .project binary) at the end of
 # perform_import_items. Every caller -- Project_import and Project_compare --
 # then called finalize_sync_operation(), which does exactly the same thing, so
 # each import saved twice on top of the pre-import safety backup's own save.

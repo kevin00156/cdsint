@@ -65,13 +65,15 @@ cdsint verify -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p
 `verify` imports the text, exports it back, checks the IDE and the disk still
 agree about every object, and builds. Exit 0 means all four held.
 
-Two flags are not decoration. `-y` confirms the import, the same way `import`
+Two flags are worth a sentence. `-y` confirms the import, the same way `import`
 needs it: without it `verify` compares, prints what the import would have
 changed, created and deleted, and stops without touching the IDE. `--sync-dir`
-is required in this form, because the project you point at may be a copy whose
-`cds-sync-folder` still names the original's folder — and an export would then
-write there. The folder that run treated as the truth is the first line of the
-output and the `sync_dir` field of the report.
+says "use this folder for this run": it overrides the `sync_folder` in the
+project's settings file and is never written back, which is what makes it safe
+to point at a copy. Leave it out and the settings file decides; with neither,
+export and import say so and change nothing. The folder that run treated as
+the truth is the first line of the output and the `sync_dir` field of the
+report.
 
 ## Install
 
@@ -169,8 +171,11 @@ Four things moved, and none of them migrate themselves:
   measured either way; if the button stops doing anything, remove it and add
   it again from the new entry.
 
-The project properties keep their `cds-sync-` prefix and are not touched, so a
-project already set up carries on working.
+**Where the settings live.** They used to be project properties inside the
+`.project` file. They are a text file beside it now (see **Settings**). The
+old properties are no longer read; they stay in the `.project` untouched and
+nothing removes them. A project already set up is asked for its sync folder
+once more, on its next export, and that answer goes into the new file.
 
 ## The commands
 
@@ -187,12 +192,11 @@ Every command that touches a project takes one of two forms, and never both:
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
 | `list`, `ping`, `status`, `stop` | yes | — | the listeners' lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
-| `import -y [--force]` | yes | yes | read the `.st` back in, disk wins |
+| `import -y` | yes | yes | read the `.st` back in, disk wins |
 | `compare` | yes | yes | list what differs, change nothing |
 | `discover` | yes | yes | name every object and the kind it counted as; run it when something reports `failed_objects` |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
-| `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
-| `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
+| `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
 | `plc connect [--gateway IP --port N]` | — | yes | is the controller still holding the last download from here |
 | `plc download -y` | — | yes | download to the controller, read the CRC back, write it down |
 
@@ -201,9 +205,13 @@ take, in both forms; with `--project` the deadline for the whole process is
 derived from it — a launch allowance, plus that many seconds per step, plus a
 shutdown allowance — so a four-step `verify` waits well past 120 seconds.
 `--json` prints the raw record.
-Only with `--project`: `--sync-dir D` (required — see below), `--profile NAME`
-when an install has several, `--report FILE`, `--force-lock`, and
-`--answer KEY=VALUE` (repeatable) for the IDE's own prompts.
+Only with `--project`: `--sync-dir D` (optional — this run's sync folder,
+overriding the settings file and never written back), `--profile NAME` when an
+install has several, `--report FILE`, `--force-lock`, and `--answer KEY=VALUE`
+(repeatable) for the IDE's own prompts.
+
+There is no `config` command. The settings are a text file next to the
+project; **Settings** below is the whole of it.
 
 **Every dialog of cdsint's own is answered by a flag, never guessed.** A question
 with no flag behind it comes back as `needs_input` naming the flag you need, exit
@@ -264,13 +272,17 @@ created and deleted, `needs_input`, exit 1, and an untouched IDE.
 one with a permission layer in front of it, and the layer has two parts that
 cannot stand in for each other.
 
-- **The project has to allow it.** The project property `cds-sync-plc` is a
-  comma-separated list, and it recognises exactly `connect` and `download`. A
-  command that is not in it comes back as exit 5 with the property's current
-  value quoted at you. Only a person can change that — set it in **Project
-  Information > Properties**. `cdsint config set` refuses to write this one
-  property, because the whole meaning of it is that somebody decided in the
-  IDE.
+- **The project has to allow it.** The `plc` key in the project's settings
+  file is a list, and it recognises exactly `connect` and `download`:
+
+  ```json
+  { "plc": ["connect", "download"] }
+  ```
+
+  A command that is not in the list comes back as exit 5, and the message
+  names the file, what the list holds now, and what to add. This is a policy,
+  not a wall — whoever can write the file can write this key — so the gate
+  that actually stops a download is the `-y` below.
 - **This call has to be confirmed.** `plc download` needs `-y`, the same `-y`
   as `import` and `verify`. Without it: what the download would do,
   `needs_input`, exit 1, controller untouched.
@@ -309,7 +321,51 @@ neither, `connect` refuses rather than hanging.
 | 2 | no single listening IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, or the IDE would not start |
-| 5 | the project's `cds-sync-plc` does not allow this `plc` command |
+| 5 | the `plc` list in the project's settings file does not allow this command |
+
+## Settings
+
+Every setting for a project lives in one JSON file beside the project file,
+named after it: `Line.project` sits next to `Line.cdsint.json`. Any editor
+opens it, no IDE needed. It is a separate file from the download record
+`Line.cdsint-plc.json`, because one is what a person decided and the other is
+what a machine wrote down.
+
+Only the keys somebody has decided appear in it. Everything else takes the
+default below, and that default lives in one place in the code — so a file
+like this is complete:
+
+```json
+{
+  "plc": ["connect"],
+  "sync_folder": "./sync"
+}
+```
+
+| Key | Type | Meaning | Default |
+|---|---|---|---|
+| `sync_folder` | string | where the `.st` files live. Starting with `./` it is relative to the directory holding the `.project`; anything else is used as written | none — the first export asks |
+| `plc` | list of strings | which PLC commands this project allows; only `connect` and `download` are recognised | `[]` |
+| `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
+| `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |
+| `backup_binary` | boolean | copy the `.project` into the sync folder on export | `false` |
+| `safety_backup` | boolean | back the `.project` up before an import | `true` |
+| `backup_name` | string | what to call those backups; empty means the project's own filename | `""` |
+| `backup_retention_count` | integer | how many timestamped backups to keep | `10` |
+| `save_after_import` | boolean | save the project after an import | `true` |
+| `save_after_export` | boolean | save the project after an export | `true` |
+| `auto_delete_orphans` | boolean | delete `.st` files with no object behind them, without asking | `false` |
+
+**A file that is wrong stops the command.** A key cdsint does not know, a
+value of the wrong type, a word `plc` does not recognise, broken JSON — any of
+them and the whole command refuses, with the table above in the message. The
+file is edited by hand, so a typo will happen; a setting that quietly does
+nothing is worse than one that says so.
+
+The first export or import of a project that has no file yet asks where the
+sync folder goes and writes it — that one key, nothing else. With nobody at
+the keyboard there is no dialog to answer, so the command comes back saying
+which file to write and what to put in it.
 
 ## FAQ
 
@@ -330,14 +386,8 @@ cdsint does not answer them for you — a project saved by an older IDE asks
 older IDE can never open it again. The keys are printed; answer the one you mean
 with `--answer UpgradeProjectConfirmation=Yes`.
 
-**A sync says the version does not match.** The tool that wrote the sync folder
-was a different version from this one. `--force` goes ahead anyway; without it
-nothing is changed.
-
-**Where do the settings live?** In the project's own properties, prefixed
-`cds-sync-`. Read and write them with `cdsint config`, from the **Settings**
-button on the watcher's status window, or by hand in **Project Information >
-Properties**.
+**Where do the settings live?** In a text file beside the project — see
+**Settings**.
 
 ## Sync pragmas in `.st` files
 

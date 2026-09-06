@@ -5,8 +5,8 @@ For the real-input acceptance in docs/WATCHER.md 8. Start an IDE with
 
     <exe> --profile="<name>" --culture=en --runscript="<this file>"
 
-and it builds a scratch project, points cds-sync-folder at a sync folder
-beside it, arms the watcher exactly the way Project_watch.py does, and
+and it builds a scratch project, writes a settings file pointing at a sync
+folder beside it, arms the watcher exactly the way Project_watch.py does, and
 returns. Once it has returned the IDE belongs to the user again, which is the
 thing being measured: clicking File must open its menu on every attempt.
 
@@ -30,7 +30,8 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import headless_watch
-from cds.ide import headless, session
+from cds.core import settings
+from cds.ide import session
 
 PROBE_DIR = os.environ.get("CDS_PROBE_DIR",
                            os.path.join(tempfile.gettempdir(),
@@ -43,7 +44,7 @@ PROJECT_PATH = os.path.join(PROBE_DIR, os.path.basename(PROBE_DIR) + ".project")
 
 
 def open_or_create():
-    """The scratch project, with cds-sync-folder pointing beside it."""
+    """The scratch project, with a settings file pointing beside it."""
     for path in (PROBE_DIR, SYNC_DIR):
         if not os.path.isdir(path):
             os.makedirs(path)
@@ -51,7 +52,8 @@ def open_or_create():
         project = projects.open(PROJECT_PATH)
     else:
         project = projects.create(PROJECT_PATH)
-    headless.point_sync_folder(projects, SYNC_DIR)
+    settings.write(settings.path_for(PROJECT_PATH),
+                   {"sync_folder": SYNC_DIR})
     return project
 
 

@@ -16,9 +16,9 @@ question is actually answered — why the offline CRC alone cannot answer it,
 what the record holds, and the three verdicts — is engine/plc_crc.py.
 
 Two gates stand in front of both commands, and neither is here (SPEC D8,
-6.5): the project property cds-sync-plc says whether this project allows the
-action at all (cds/ide/permit.py), and -y says the caller means this call. By
-the time a function in this file runs, both have been passed.
+6.5): the `plc` list in the project's settings file says whether this project
+allows the action at all (cds/ide/permit.py), and -y says the caller means
+this call. By the time a function in this file runs, both have been passed.
 
 Only the headless form reaches this file, so it has no menu stub and its
 flags arrive as `command_args` rather than as answers to dialogs

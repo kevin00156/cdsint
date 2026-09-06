@@ -69,12 +69,13 @@ def test_the_refusal_says_what_to_do_about_it(importer):
     # folder", and the reader cannot tell which without being told both.
     importer["sync"].mkdir()
     said = importer["run"](importer["sync"])["summary"]
-    assert "export" in said and "cds-sync-folder" in said
+    assert "export" in said and "sync_folder" in said
 
 
 def test_a_folder_that_does_not_exist_yet_is_the_same_refusal(importer):
-    # load_base_dir() creates the folder it was pointed at, so a typo arrives
-    # here as a brand new empty directory rather than as an error.
+    # The settings are resolved before this runs and that step creates the
+    # folder it was pointed at, so a typo arrives here as a brand new empty
+    # directory rather than as an error.
     result = importer["run"](importer["sync"])
     assert result["ok"] is False and importer["compared"] == []
 

@@ -10,9 +10,48 @@ All notable changes to this project will be documented in this file.
 `kevin-cds-text-sync` (branch `fix/member-creation-parent-resolution`, commit
 `9aa9886`) and moved here unchanged in behaviour; that repo keeps the history
 up to that commit. Version numbering restarts at `0.0.1` — the `k1.x` line was
-a fork of upstream `cds-text-sync` and does not carry over. `cds-sync-version`
-is compared as a plain string, so the first sync of an existing project warns
-about a version mismatch once and then records the new number.
+a fork of upstream `cds-text-sync` and does not carry over. Nothing compares
+that number against a project any more — the version stamp went with the move
+to a settings file, below — so the renumbering costs nobody a prompt.
+
+- **The settings moved out of the `.project` and into a text file beside it.**
+  They lived in the project's own properties, which only a running IDE can
+  open. That one fact meant changing a boolean needed an IDE, reading the
+  settings needed an IDE, and every new project started from nothing — and it
+  had grown four ways in (the Properties grid, a Settings window, a `config`
+  command, the first export's dialog) and three mechanisms that existed only to
+  hold it up. All of that is gone. `Line.project` now sits beside
+  `Line.cdsint.json`, eleven keys, any editor:
+
+  ```json
+  { "plc": ["connect"], "sync_folder": "./sync" }
+  ```
+
+  Only the keys somebody decided appear in the file; the defaults live once, in
+  the code. Reading it is the only validation and every path goes through it, so
+  an unknown key, a wrong type, a word `plc` does not recognise or broken JSON
+  stops the command and prints the whole table — a hand-edited file gets typos,
+  and a setting that quietly does nothing is worse than one that says so.
+
+  What went with it: `cdsint config`, the Settings window and the status
+  window's button that opened it, the computer-name stamp and its mismatch
+  dialog, the tool-version stamp and its mismatch dialog, `--force` (which only
+  ever answered those two), and `tools/grant_plc.py`. `--sync-dir` is optional
+  now: it overrides `sync_folder` for one run and is never written back, so
+  pointing it at a copy is safe — it was compulsory only because a copied
+  `.project` carried the original's folder inside it, and it no longer does.
+  The old `cds-sync-*` properties are not read, not migrated and not removed;
+  a project already set up is asked for its folder once more.
+
+  Two things the move uncovered and fixed. `build` counted the project's
+  applications from a flag the last export had written, so the first build
+  after a second application appeared skipped the chooser, compiled the active
+  one and reported success with `--app` doing nothing; it walks the tree every
+  build now, and a `--app` naming an application that is not there is a
+  failure rather than a different build. And the engine's logger read the sync
+  folder through a `projects` name that does not exist in that module, so the
+  `NameError` went into a bare `except` and debug logs quietly stayed in
+  `%TEMP%`; the folder is passed in now.
 
 - **Six hundred lines nobody could reach are gone.** The compare window, the
   side-by-side diff viewer and the `.diff/` folder they wrote to were only ever
@@ -33,13 +72,9 @@ about a version mismatch once and then records the new number.
   a name in the IDE's Scripts menu, so a maintainer's profiler wearing it looked
   like a feature to click. Only the three stubs carry it now (PRINCIPLES 12).
 - **The sync folder can be changed again.** It was set on the first export and
-  then unreachable: `Project_directory.py` had gone and the Settings dialog had
-  no row for it. There is one now, with a Browse button, and it writes only when
-  the text actually changed — stamping the machine onto a project every time
-  somebody opened Settings would quietly claim one that was set up elsewhere.
-  `cdsint config set cds-sync-folder=...` used to write the property alone,
-  leaving `cds-sync-pc` and `cds-sync-version` unset; it now runs the same
-  engine tail the dialog does.
+  then unreachable: `Project_directory.py` had gone and there was no other way
+  in. Editing the settings file is that way now (above); the first export still
+  asks when there is nothing to read.
 - **The version number lives in one place.** `pyproject.toml` carried a copy of
   `SCRIPT_VERSION` kept honest by a test; it reads the constant directly through
   `[tool.setuptools.dynamic]` instead, and the readMe no longer prints a number

@@ -55,9 +55,9 @@ def import_project(base_dir, values, projects_obj=None):
         refused = ("No .st files in the sync folder: " + base_dir + "\n\n"
                    "Refusing to import. Disk wins, so importing from an empty "
                    "folder would delete every object in the project.\n\n"
-                   "Run export first, or point cds-sync-folder (--sync-dir in "
-                   "the --project form) at the folder that holds the .st "
-                   "files.")
+                   "Run export first, or point sync_folder in the project's "
+                   "settings file (--sync-dir in the --project form) at the "
+                   "folder that holds the .st files.")
         print(refused)
         system.ui.error(refused)
         return entry.result(False, refused)

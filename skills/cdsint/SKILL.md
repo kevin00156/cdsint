@@ -40,8 +40,8 @@ Find the sync folder — the only directory to edit — from:
 cdsint status --json      # data.sync_dir
 ```
 
-`null` there means the project has no `cds-sync-folder` property set. Ask the user
-to set it; do not guess a path.
+`null` there means the project's settings file has no `sync_folder` in it yet
+(see **Settings**). Ask the user to set it; do not guess a path.
 
 ## The loop
 
@@ -69,12 +69,13 @@ cdsint verify -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p
 ```
 
 `--install` takes a fragment of a name from `installs`; more than one match is
-refused rather than guessed. `--sync-dir D` is required in this form: the project
-you name may be a copy, and a copy carries the original's `cds-sync-folder`, which
-often points into the original's own export folder. The resolved folder is the
-first line of the output and the report's `sync_dir`. Also here: `--report FILE`
-for the full record, `--force-lock`, `--profile NAME`, and `--answer KEY=VALUE`
-for the IDE's own prompts.
+refused rather than guessed. `--sync-dir D` is optional: it is this run's sync
+folder, overriding the settings file and never written back, which is what makes
+it safe against a copy. Without it the settings file decides; with neither,
+export and import come back as `needs_input`. The resolved folder is the first
+line of the output and the report's `sync_dir`. Also here: `--report FILE` for
+the full record, `--force-lock`, `--profile NAME`, and `--answer KEY=VALUE` for
+the IDE's own prompts.
 
 `verify` is the one worth knowing: import, export, compare, build, and exit 0 only
 if all four agree. It contains an import, so it takes `-y` like `import` does —
@@ -89,6 +90,37 @@ IDE's own prompts get no default answer — a project saved by an older IDE asks
 `UpgradeProjectConfirmation`, and yes rewrites its storage format so that older IDE
 can never open it again. The message names the key; the user decides.
 
+## Settings
+
+Every setting for a project is one JSON file beside the project file, named
+after it: `Line.project` sits next to `Line.cdsint.json`. There is no `config`
+command — read and write the file. Only the keys somebody decided appear in
+it; the rest take their default:
+
+```json
+{
+  "plc": ["connect"],
+  "sync_folder": "./sync"
+}
+```
+
+| Key | Type | Default |
+|---|---|---|
+| `sync_folder` | string, `./` is relative to the `.project`'s directory | none — the first export asks |
+| `plc` | list of `connect` and `download` | `[]` |
+| `debug` | boolean — write `sync_metadata.json` and the `*.log` files | `false` |
+| `export_xml` | boolean — also export visualisations and alarms as XML | `false` |
+| `backup_binary` | boolean — copy the `.project` into the sync folder on export | `false` |
+| `safety_backup` | boolean — back the `.project` up before an import | `true` |
+| `backup_name` | string — what to call those backups | `""` |
+| `backup_retention_count` | integer — how many backups to keep | `10` |
+| `save_after_import`, `save_after_export` | boolean | `true` |
+| `auto_delete_orphans` | boolean — delete orphaned `.st` files without asking | `false` |
+
+A key cdsint does not know, a wrong type, a word `plc` does not recognise, or
+broken JSON stops the whole command with the table in the message. Nothing is
+guessed and nothing is silently ignored.
+
 ## Talking to a controller: `plc`
 
 ```
@@ -97,12 +129,11 @@ cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-di
 ```
 
 `plc download` is the only command that changes a machine, and it has two gates in
-front of it. **The project has to allow it**: the property `cds-sync-plc` lists
-`connect`, `download`, or both, and a command that is not listed is exit 5 with the
-current value quoted back. No flag answers that one — `cdsint config set` refuses
-to write this property, because its whole meaning is that a person decided in the
-IDE. Ask the user to set it in **Project Information > Properties**. **And the call
-has to be confirmed**: `plc download` takes `-y`, exactly as `import` does.
+front of it. **The project has to allow it**: the `plc` key in the settings file
+lists `connect`, `download`, or both, and a command that is not listed is exit 5
+with the file, the current list and what to add named in the message. No flag
+answers that one — ask the user to add the word. **And the call has to be
+confirmed**: `plc download` takes `-y`, exactly as `import` does.
 
 There is no `--target` form. The watcher runs inside an IDE somebody is using, and
 a PLC login would take their online session away from them.
@@ -125,8 +156,8 @@ the project's are left alone.
 Exit codes: `0` done, `1` failed or a flag is missing, `2` no single live IDE
 matched, `3` timed out with no report to show for it (raise `--timeout`: it
 bounds one step, default 120s, and big imports and builds need more), `4` the
-project is open elsewhere or the IDE would not start, `5` the project's
-`cds-sync-plc` does not allow this `plc` command.
+project is open elsewhere or the IDE would not start, `5` the `plc` list in the
+project's settings file does not allow this command.
 
 A `--project` run that was killed after its report was written is not exit 3:
 the report is the answer, and the exit code is the thing that went missing. The
@@ -160,7 +191,6 @@ A question with no flag behind it comes back as `needs_input`, exit code 1, and
 | `arg` | flag | the question |
 |---|---|---|
 | `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify` and `plc download` |
-| `force` | `--force` | version or computer mismatch; stop and ask the user instead of forcing |
 | `app` | `--app NAME` | which application to build |
 | `delete_orphans` | `--delete-orphans` | export found sync files with no object behind them |
 
@@ -183,7 +213,6 @@ time and wait for it.
   every create, move and delete anyway.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
-- Use `--force` when unsure. It exists to override a safety check.
 
 ## The `.st` format
 

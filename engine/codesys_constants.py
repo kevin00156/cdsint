@@ -21,8 +21,9 @@ import zlib
 # this line through [tool.setuptools.dynamic], so a release changes it here
 # and nowhere else; the tag is the only other place the number appears.
 # The k1.x line ended with the move out of kevin-cds-text-sync; cdsint counts
-# from zero, and the .project property cds-sync-version is compared as a plain
-# string, so the change costs one version-mismatch prompt per project.
+# from zero. Nothing compares this number against a project any more -- the
+# version stamp and the mismatch prompt went with the move to a settings file
+# (SPEC 6.7) -- so a release is free to renumber.
 SCRIPT_VERSION = "0.0.1"
 
 # Sync direction policy values allowed in the profile

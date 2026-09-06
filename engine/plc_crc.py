@@ -18,9 +18,9 @@ CODESYS 3.5.21.40 (ScriptEngine 4.2.0.0):
   stamped into every 64 KB block of the boot application, and the compiler
   mints a new one whenever the project has been written to: aiming the device
   at a gateway moved it, so did logging in, and so does setting a project
-  property -- and the --project form sets cds-sync-folder on every run, so
-  two identical `plc connect` runs a minute apart built 128DBA21 and
-  59B20109. It is stable only for an untouched working copy, and not even the
+  property -- and the --project form used to set the sync folder as one on
+  every run, so two identical `plc connect` runs a minute apart built
+  128DBA21 and 59B20109. It is stable only for an untouched working copy, and not even the
   same for a byte-identical copy at another path, because it comes from the
   .compileinfo and .bootinfo files the IDE keeps beside the project file.
 
