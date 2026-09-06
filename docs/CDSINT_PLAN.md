@@ -269,6 +269,7 @@ img/        readMe 用的圖
   - [x] 順便查：為什麼「把原文寫回去再 import」沒有把 IDE 修回來——**比對沒有拿快取充數，它讀的就是 IDE**（`i2.json` 的 `IDE hash=C14C4121` 正是第一趟匯入寫進去的兩行內容）。救不回來的原因在磁碟那一側：第二趟的 `Disk hash=260F25A2` 不等於原文的任何一種寫法（約五百種 BOM／換行／結尾組合都掃過），留下來的那份 `PLC_PRG.after-revert.st` 也不是它（那份是 `693B17FA`）。原文根本沒有被寫回磁碟過。
   - [x] 台架上另外量到一個真的引擎 bug 並修掉：**`.st` 檔開頭的 UTF-8 BOM 會被當成程式碼寫進 IDE。** 留下來的那份 revert 檔就帶著 BOM。同一份原文加 BOM 匯入之後 build 從 0 errors 變 **6 errors**（全部在 PLC_PRG），修法是 `engine/codesys_utils.read_sync_text` 一支用 `utf-8-sig` 讀，同步資料夾的六個讀取點全部走它。修完同一份帶 BOM 的檔重跑：import updated 1、build 0 errors 101 warnings exit 0、`compare` 229 unchanged 0 different。
   - [x] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。——`python -m pytest tests -q` 與根目錄各 926 passed（改之前 915，新增 11 條）。
+  - 監督者驗證（2026-09-06 11:30）：926 passed 監督者自己跑的。監督者在原廠 3.5.21.40、新的 softplc 副本上重現：export 之後用 PowerShell `Set-Content -Encoding UTF8`（會寫 BOM，檔頭確認是 EF BB BF）把 `PLC_PRG.st` 改成一個宣告加一行實作；`import -y` updated 1；`build` 0 errors 101 warnings；再 export 到另一個資料夾，實作段一字不差就是那一行，沒有多出來的 `1;`，檔頭沒有 BOM。沒有殘留的 IDE 行程。接受 worker 的結案：引擎寫文字的路徑是乾淨的，錯的是帶 BOM 的輸入；`read_sync_text` 用 `utf-8-sig` 當同步資料夾唯一的讀檔入口。
 
 ---
 
@@ -833,6 +834,7 @@ identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`�
 
 監督者已裁的：
 
+- Ruling（BOM 驗收後）: worker 這一輪的五條 Ruling 全部接受，包括「引擎沒有這個 bug」的結案（真 API 量下去是乾淨的，假物件證明不了真 API）、留下 9 條一開始就綠的測試（那條分支以前零覆蓋）、上一輪誤判的原文留著只接一句指向新段落（現象是真的，錯的只有結論） — 錯了的代價是無。教訓寫進第 3 節事實：Windows 上寫 `.st` 的工具（PowerShell `Set-Content`、記事本）會加 BOM，同步資料夾的讀檔只能有一個入口而且要吃 `utf-8-sig`。
 - Ruling（CRC 判決驗收後）: worker 的判決設計全部接受 — MATCH 收窄成「控制器上還是 cdsint 從這份專案放上去的那份」，紀錄放專案旁、一台控制器一筆、下載前後各讀一次控制器的 CRC、離線 boot application 與 `local_crc` 拿掉。理由是它自己寫的那句：會漏抓的閘門比沒有閘門更糟；「控制器跑的是不是這棵原始碼樹」要靠 source download 加封存比對，那是另一件事，留在 SPEC 11 未決 — 錯了的代價是專案複製到別台電腦 `connect` 回 UNKNOWN 而不是 MATCH，訊息會說原因。
 - Ruling（CRC 判決驗收後）: 「改一個 POU 再 connect 回 DIFFERENT」那句驗收是監督者寫錯，改成「另一份副本下載到同一台之後回 DIFFERENT」 — 控制器確實沒變，判決說 MATCH 是對的 — 錯了的代價是無。
 - Ruling（CRC 判決驗收後）: 台架上撞到的 import 多一行 `1;` 當引擎 bug 立刻修，列成「階段 4 追加」 — 它讓一次回報成功的匯入把專案弄到編譯不過，而且把原文寫回去也救不回來，這是 D13 與「磁碟是事實來源」兩條同時破掉 — 錯了的代價是多一輪。
