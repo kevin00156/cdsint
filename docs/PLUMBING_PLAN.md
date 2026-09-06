@@ -147,12 +147,12 @@
   - [x] 驗收：`compare` 的 `data` 多一個 `changes` 逐物件清單（`tests/test_compare_changes.py` 八條）；成功的 compare 不印 `stdout_tail`，失敗的照印；`grep -n '"compare"' cdsint/report.py` 為零。
   - [x] 驗收：`--json` 之下 runner 的 note 進 JSON 的 `notes` 欄位，stderr 完全空白（`tests/test_verify.py` 的 `test_a_json_run_gets_the_notes_in_the_record_not_on_stderr`）。
 
-- [ ] **階段 5：收尾**
-  - [ ] `python -m pytest tests -q` 綠，WSL 綠；`tests/test_layering.py`、`test_bare_excepts.py`、`test_doc_links.py` 綠。
-  - [ ] readMe、`docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md` 裡 exit 2 的說法跟 SPEC 4.3 一致；`--install` 給錯的行為若文件有寫就對齊。
-  - [ ] CHANGELOG Unreleased 加一段。
-  - [ ] 真 IDE：softplc 副本 `verify -y --project ... --install 3.5.21.40 --sync-dir S` exit 0，hash 清單跟開工前的 diff 為空（B 不該碰輸出，這是保險）。
-  - [ ] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\plumbing\` 清掉。
+- [x] **階段 5：收尾**
+  - [x] Windows `python -m pytest tests -q` 1037 passed，WSL 1037 passed；`test_layering.py`、`test_bare_excepts.py`、`test_doc_links.py` 三個合起來 228 passed。
+  - [x] readMe 第 334 行、`docs/AI_WORKFLOW.md` 的 exit code 表、`skills/cdsint/SKILL.md` 的那一段都改成 SPEC 4.3 的「命令列本身不對」；SKILL.md 的 exit 4 補上「`--install` 沒對到任何 IDE」，`--json` 那段改成指向 `data`（compare 的 `changes`）而不是 `stdout_tail`。
+  - [x] CHANGELOG 的 Unreleased 加了「Every kind of thing now happens in one place」一段，六條收斂、三件對外可見的改變、兩個真 bug。
+  - [x] 真 IDE 驗過（原廠 3.5.21.40，softplc 副本，2026-09-06）：舊碼（`c67dcb7`）與新碼各對一份全新副本匯出一次，兩邊各 231 個檔、SHA-256 清單 diff 為空（排除 `sync_cache.json`，SETTINGS_PLAN Ruling 11）；`discover` 兩邊都是 402 節點 21 種 kind、`unknown` 為空、`by_kind` 逐鍵相同；`verify -y --project ... --install 3.5.21.40 --sync-dir S` exit 0，四步全過（import 229 identical、export 0 created、compare 0 differences、build 0 errors 101 warnings），105 秒。另外把一個 `.st` 改一行再跑 `compare --json`，`data.changes` 回一筆 `{"name": "PLC_PRG", "path": "CODESYS_Control_for_Linux_SL/Application/PLC_PRG.st", "state": "changed"}`，跟 `stdout_tail` 那行 `M` 對得上。
+  - [x] 沒有殘留的 IDE 行程（只剩使用者自己的 CODESYS 18928 與 DIADesigner-AX 4996）；`%TEMP%\cdsint-work\plumbing\` 整個刪掉，同層的 `import-bug`、`importbug2` 不是我的，沒動；順手刪掉本次安裝器驗收在 worktree 寫出的 `stub/body.path`。
 
 ---
 
@@ -220,9 +220,33 @@
 53. `Ruling: `cdsint/headless.py` 收完之後是 364 行，比開工時的 338 行更長，仍在 400 的硬上限內 — `_collect` 拆成 `_annotate` 與 `_verdict` 加上「為什麼」的註解就是這 26 行；它已經是「下一次加東西之前先拆」的狀態（PRINCIPLES 2），而本工單能拆的自然切點（「起 IDE 等它」與「把回來的東西變成報告」）需要把七八個欄位當參數傳，換來的不是更好讀 — 錯了的代價是這個檔離硬上限只剩 36 行。記給 `HYGIENE_PLAN.md`。`
 54. `Ruling: `Target.__init__` 改成把 `instances.read_all(root)` 整份交給 `resolve_target` — `resolve_target` 本來就用 `is_alive` 濾過一次，外面再濾一次是同一個判斷寫兩處，而外面那份還讓「幾個候選」的錯誤訊息看不到它自己已經丟掉的那些 — 錯了的代價是候選清單可能列出已經死掉的實例；不會，因為濾的還是同一個函式，只是只濾一次。`
 
+### 階段 5 新增的 Ruling
+
+55. `Ruling: 「hash 清單跟開工前的 diff 為空」用「同一版本的專案副本，舊碼與新碼各匯出一次」來驗，不是先存一份開工前的清單 — 階段 0 沒有留那份清單，而重建它的正確做法本來就是 SETTINGS_PLAN Ruling 14 說的「同一份全新副本、舊碼與新碼各跑一次」：拿一份已經跑過多趟命令的副本去比會量到 IDE 自己存檔的效果，不是程式碼的差別。舊碼用 `git archive c67dcb7` 解到 `%TEMP%` 底下跑，不動 worktree 也不加 git worktree 登記 — 錯了的代價是這個比對證明的是「新舊碼對同一輸入產出相同」，而不是「輸出跟某個歷史時刻相同」；後者本來就不是這條驗收要問的事。`
+56. `Ruling: `skills/cdsint/SKILL.md` 的 `--json` 那段改成先講 `data` 再講 `stdout_tail` — compare 的逐物件清單搬進 `data.changes` 之後，原本那句「`stdout_tail` carries the detail (compare's per-object list...)」就不對了；一份說錯的文件比沒有文件糟 — 錯了的代價是讀者以為 build 的錯誤清單也搬了，它沒有，那條還在 `stdout_tail`（`cds/ide/entries.py` 的 `tail`）。`
+
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 
-- （worker 填）
+- **`HYGIENE_PLAN.md`**：`cdsint/flags.py` 311 行、`cdsint/headless.py` 364 行，都過 300 的軟上限
+  （Ruling 36、53）。兩個都在硬上限內，但都是「下一次要加東西之前先拆」的狀態。
+- **`HYGIENE_PLAN.md`**：`--project` 沒給 `--install` 現在回 exit 4（走 `installs.resolve` 的
+  「say which IDE with --install」），不是 exit 2。它讀起來像旗標不搭，但 4 的意思「這個專案沒有
+  可用的 IDE」也說得通；本工單第 1 節不准第四個對外行為改變，所以留著（Ruling 35）。
+- **`ENGINE_PLAN.md`**：引擎本體會把同一句話說兩次——`system.ui.error(msg)` 之後再
+  `entry.result(False, msg)`，例如 `entry_compare.main` 的設定檔錯誤那條。`cdsint/report.py`
+  因此還留著一次字串比對才不會印兩遍（Ruling 49）。生產者不重抄，那次比對就能刪。
+- **`HYGIENE_PLAN.md`**：`cds/core/instances.BUSY_TIMEOUT_S` 是 120.0，`cdsint/flags.DEFAULT_TIMEOUT_S`
+  也是 120.0，而 `cdsint/target.Target.__init__` 的註解自己說「Both places, one meaning」。
+  WATCHER.md 2.1 把它們寫成兩個常數，所以本工單沒動；要合併就得一起改文件。
+- **`HYGIENE_PLAN.md`**：`report` 檔名只照專案名，所以同一個專案的兩趟 `--project` 會互相覆蓋
+  stdout/stderr 檔（`SETTINGS_PLAN.md` 早就記過）。本工單做真 IDE 驗收時又踩到一次，只能每趟自己給
+  `--report`。
+- **`ENGINE_PLAN.md`**：`cds/ide/headless.py` 的報告有 `timed_out` 與 `exit_code_actual` 兩個欄位
+  說同一件事（`timed_out = code is None`），`stdout_reached` 算了、寫了、沒有讀者。三個都寫在
+  SPEC 6.4 裡，所以本工單沒刪；要刪得先改 SPEC。
+- **`ENGINE_PLAN.md`**：`cds/ide/project.py` 的 `sync_dir` 把「沒設定過」和「設定檔壞了」答成同一個
+  None（Ruling 22）。兩個呼叫端目前都需要這樣，但看門人登記檔的 `sync_dir` 欄位現在已經沒有讀者
+  （第 3 節第 18 條），整個欄位也許該連同 WATCHER.md 2 的說明一起重想。
 
 ---
 

@@ -14,6 +14,53 @@ a fork of upstream `cds-text-sync` and does not carry over. Nothing compares
 that number against a project any more — the version stamp went with the move
 to a settings file, below — so the renumbering costs nobody a prompt.
 
+- **Every kind of thing now happens in one place.** The two layers this repo
+  wrote had grown a habit of answering the same question twice, and each copy
+  was a place for the next change to be forgotten:
+
+  - **Running a command.** The watcher and the headless launcher each held
+    their own "run it, and turn what came back into a result record". A field
+    added to one was a field missing from the other. It is
+    `cds/ide/entries.py` `answer()` now, and both callers are one line.
+  - **Building a result record.** Three producers wrote one by hand, and the
+    shortest carried three of the twelve fields — so `cdsint/report.py` read
+    every field defensively and could not tell a value that is legitimately
+    null from a producer that forgot it. One constructor, and the printer
+    indexes.
+  - **The command line.** Twelve subcommands were described across seven
+    tables and an `if/elif`; adding one meant finding all seven, and the
+    failure that came of missing one was not "unknown command" but a flag
+    that parsed and then quietly did not reach the IDE. One `COMMANDS` table
+    in `cdsint/flags.py` now, one row per command.
+  - **Which directory each IDE scans for menu scripts.** The installer
+    carried a copy of `cdsint/installs.py`'s vendor table, and the two
+    disagreed for months about whether the machine-wide ScriptDir needs an
+    elevated shell — it does not, measured. `irm/setup.ps1` runs
+    `cdsint installs --json` and keeps no paths of its own.
+  - **Printing.** Five files printed, so `--json` could not be honoured
+    anywhere: a caller parsing stdout got prose on stderr with nothing to
+    attach it to. Everything goes through `cdsint/report.py`, and the
+    launcher's warnings ride back on the record as `notes`.
+  - **The exit codes.** `cds/core/exits.py` holds the table both sides read,
+    and a test checks it against SPEC 4.3. The IDE side used to define two of
+    them again, which is the one thing the launcher's exit-code comparison
+    cannot notice: both halves can be equally wrong and still agree.
+
+  Three things a caller can see changed with it. **`--install` naming no IDE**
+  printed a traceback and exited 1; it prints one sentence, lists what is
+  installed, and exits 4. **Flags that do not go together** are all exit 2 now
+  — one of them (`--profile` without `--project`) was exit 1, which tells the
+  caller the command ran. **`compare --json`** gains `data.changes`, one row
+  per differing object with `name`, `path` and `state`; the per-object answer
+  used to be readable only by parsing `stdout_tail`.
+
+  Two real bugs came out with it. A body that asked a question while it loaded
+  reached the real message box rather than the stand-in, because the dialogs
+  were swapped in after the file was exec'd — under `--noUI` that is an IDE
+  frozen on a window nobody can close. And a `verify` step refused by the
+  project's `plc` list came back as exit 1, which tells the reader to fix a
+  flag when the fix is a word in a file.
+
 - **The settings moved out of the `.project` and into a text file beside it.**
   They lived in the project's own properties, which only a running IDE can
   open. That one fact meant changing a boolean needed an IDE, reading the

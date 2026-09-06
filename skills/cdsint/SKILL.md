@@ -153,19 +153,23 @@ the project's are left alone.
 
 ## Reading the answer
 
-Exit codes: `0` done, `1` failed or a flag is missing, `2` no single live IDE
-matched, `3` timed out with no report to show for it (raise `--timeout`: it
-bounds one step, default 120s, and big imports and builds need more), `4` the
-project is open elsewhere or the IDE would not start, `5` the `plc` list in the
-project's settings file does not allow this command.
+Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
+itself is wrong — flags that do not go together, or no single live IDE matched
+— so change what you typed rather than running it again, `3` timed out with no
+report to show for it (raise `--timeout`: it bounds one step, default 120s, and
+big imports and builds need more), `4` the project is open elsewhere, the IDE
+would not start, or `--install` matched no IDE (it lists what there was), `5`
+the `plc` list in the project's settings file does not allow this command.
 
 A `--project` run that was killed after its report was written is not exit 3:
 the report is the answer, and the exit code is the thing that went missing. The
 lock file such a kill leaves behind is cleared by cdsint itself.
 
 With `--json`: `messages` carries what the IDE would have shown a person,
-`stdout_tail` carries the detail (compare's per-object list, build's error list
-with line numbers), `error` explains a failure, `needs_input` names the flag that
+`data` carries the counts and the lists behind them (compare's `changes`, one
+row per object with `name`, `path` and `state`; discover's `unknown`),
+`stdout_tail` carries what the script printed on the way, `error` explains a
+failure, `needs_input` names the flag that
 was missing, `denied` says the project's own policy refused the command (only
 `plc`, and no flag fixes it), and `data` holds this command's own numbers — the counts, and
 `failed_objects` naming anything the command could not handle.

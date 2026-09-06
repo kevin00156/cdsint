@@ -331,7 +331,7 @@ neither, `connect` refuses rather than hanging.
 |---|---|
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
-| 2 | no single listening IDE matched |
+| 2 | the command line itself is wrong: flags that do not go together, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
