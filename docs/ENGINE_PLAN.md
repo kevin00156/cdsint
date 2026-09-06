@@ -313,6 +313,11 @@
 
     要接手的人：把 `SilentSystem` 的 `ui` 加一個 `ask_yes_no`，`engine/entry_plc.py` 改成問 `system.ui`，`engine/codesys_ui.ask_yes_no` 就沒有呼叫端了可以刪，`show_sync_folder_dialog` 已經收 `system` 了同法處理；然後 `_install`、`_ui_patches`、`_ui_module`、`UI_MODULE` 與 `STRING_IMPORTS_ALLOWED` 一起消失，SPEC 6.1 那句話要跟著改。
 
+27. **`--target` 形式沒有實測。**用 `tools/headless_watch.py` 起自己的看門人試了兩次（原廠 3.5.21.40、`--noUI`、自己的副本、自己記 pid），行程兩次都在幾秒內就結束，`cdsint list` 一直看不到它，而且沒有留下任何 log 可以說為什麼。試錯的成本開始超過這一項的價值，就停在這裡。兩次的行程都確認結束了，使用者的兩個 IDE 沒有碰到，暫存資料夾清掉了。
+
+    這一項留白的影響有限：`--target` 跟 `--project` 差的只有傳輸（看門人的檔案協定），而這張工單一個位元組都沒有改 `cds/` 或 `cdsint/`；協定那一端由 `tests/test_watcher.py` 與 `tests/test_ipc.py` 守著，兩個都綠。引擎本體則是兩台真 IDE 上跑過好幾輪 export、import、compare、build，而 `--project` 走的正是同一個替身 UI。
+
+
 做的時候看到但不在範圍的：
 
 - `history/SETTINGS_PLAN.md` 第 13 條記的是「Shm 是 233 行」，今天量到 231 行，跟 softplc 一樣。兩份副本的內容幾乎相同：231 行裡有 230 行的路徑與 SHA-256 完全一樣，唯一不同的是 `Task configuration.task_config.xml` 的 hash。export 回報 `total: 229`、`failed: 0`、`failed_objects` 空，`verify` 四步全過，所以沒有物件被靜默丟掉。少掉的那兩行是什麼，這張工單沒有查，記在這裡給下一個人。
