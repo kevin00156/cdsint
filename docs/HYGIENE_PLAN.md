@@ -208,7 +208,8 @@
 
 做的時候看到但不在範圍的，記在這裡給 C：
 
-- （worker 填）
+- `tools/probe_watcher_ui.py` 的 `open_or_create()` 直接讀一個叫 `projects` 的全域，那是 ScriptEngine 注進腳本 globals 的 IDE 全域。旁邊的 `tools/headless_watch.py` 是明確收 `ide_globals` 參數的。兩支同一個目錄、同一種跑法、兩種拿 IDE 物件的方式，而讀全域那種在 IDE 外面是 `NameError`，pyflakes 也報 undefined name。這是搬進來以前就有的（`7b2e70b`），改它會動到 IDE 側程式碼，這張工單明文不做。
+- `tests/test_dirty_files.py` 72 行與 `tests/test_unhandled_objects.py` 256 行各有一個 `version = ...SCRIPT_VERSION` 指派之後沒有人讀。是版本戳記那條路被刪掉之後留下的殘骸（PRINCIPLES 7 不留死碼）。兩行而已，但不在審查派回的十九項裡，沒動。
 
 ---
 
