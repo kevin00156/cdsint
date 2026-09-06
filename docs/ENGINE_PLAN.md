@@ -134,7 +134,7 @@
 - [x] 每一條用名字 grep，行號重填，A、B、D 已經動過的標「重核」。
 - [x] 重跑 `tests/test_bare_excepts.py` 的數字（81 降到 70），重數 AST 的吞噬體（105 降到 90）。
 - [x] Windows 與 WSL 兩邊測試各 1072 個全綠。
-- [ ] 儀器基線：兩份副本各 export 一次存 hash 清單、`discover --json` 存起來、`verify` exit 0、熱機三次 export、compare、build 的中位數。全部存在 `%TEMP%\cdsint-work\engine\baseline\`，而且 commit 一份摘要（不含路徑）進本工單第 6 節。
+- [x] 儀器基線：兩份副本各 export 一次存 hash 清單、`discover --json` 存起來、`verify` exit 0、熱機三次 export、compare、build 的中位數。全部存在 `%TEMP%\cdsint-work\engine\baseline\`，摘要在第 6 節。
 
 ---
 
