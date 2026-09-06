@@ -2,7 +2,7 @@
 
 > 建立日期 2026-09-06。分支與 worktree 由監督者在派工時填：分支 `ticket/plumbing`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-plumbing`。
 > 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
-> 這是四張工單的第二張，在 `history/SETTINGS_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號是 2026-09-06 晚上在 `631259b` 查的，A 做完之後會漂，開工第一件事是照第 3 節末尾的重核清單重查一遍再動手。
+> 這是四張工單的第二張，在 `history/SETTINGS_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號已在 `c67dcb7` 重核過（階段 0），底下每一段動工前仍請先確認自己那幾行沒被前一段挪走。
 
 ---
 
@@ -38,64 +38,64 @@
 
 ## 3. 接手前必須知道的現況事實
 
-以 `631259b` 為準，A 做完之後要重核。
+2026-09-06 在 `c67dcb7` 重核過一遍，行號已重填。工單建立時寫的是 `631259b` 的行號，A 之後全部漂了。標「A 已修」或劃掉的是 A 做掉的部分，不重做。
 
 **跑命令與結果紀錄**
 
-1. `cds/ide/headless.py` 的 `run_one`（136 到 158 行）與 `cds/ide/watcher.py` 的 `_run_script`（244 到 258 行）逐字相同：叫 `entries.run`，接 `outcome.error_text()`，`commands.new_result(...)` 帶八個欄位。`NeedsInput` 的處理在 `headless.py` 142 到 145 行與 `watcher.py` 的 `_answer`（190 到 200 行）又各一份。`tests/test_watcher.py` 515 到 522 行是第三份。`cds/ide/entries.py` 檔頭說「running a command 的那部分住在這裡而不是兩邊」。
-2. 結果紀錄的唯一建構子是 `cds/core/commands.py` 的 `new_result`（12 個鍵）。手拼的有：`cdsint/target.py` 80 到 82 行 `_gone`（3 個鍵）、`cdsint/verify.py` 90 到 92 行 `needs_yes`（7 個鍵）；`cdsint/report.py` 的 `show`（74 到 89 行）全靠 `.get()` 活著。訊息紀錄 `{"level", "text"}` 在 `silent.SilentUI._record`（165 到 166 行）與 `watcher._info`（308 到 309 行）各拼一次。命令紀錄 `commands.write_command`（38 到 43 行，有 `created_at`）與 `headless.run_one`（138 行，沒有）兩種。`silent.Outcome([], "", ...)` 在 `entries.py` 90 與 138 行用位置參數拼「沒跑腳本的 Outcome」。
-3. `cds/ide/project.py` 的 `prop`、`set_prop`、`save`、`_values` 全是 `except Exception: return None/False`。A 會刪掉前三個的屬性部分；留下來的 helper 若還是「never raises」，`permit` 在讀檔失敗時仍會說「not set」。A 之後重核這個檔剩什麼。
+1. `cds/ide/headless.py` 的 `run_one`（134 到 155 行）與 `cds/ide/watcher.py` 的 `_run_script`（244 到 257 行）逐字相同：叫 `entries.run`，接 `outcome.error_text()`，`commands.new_result(...)` 帶七個具名欄位。`NeedsInput` 的處理在 `headless.py` 140 到 147 行與 `watcher._answer`（190 到 200 行）又各一份。~~`tests/test_watcher.py` 是第三份~~ ── 那份不在了，測試裡剩的是只呼叫一行 `new_result` 的假 handler。`cds/ide/entries.py` 檔頭說「running a command 的那部分住在這裡而不是兩邊」。
+2. 結果紀錄的唯一建構子是 `cds/core/commands.py` 的 `new_result`（75 到 105 行，12 個鍵）。手拼的有：`cdsint/target.py` 74 到 84 行 `_gone`（3 個鍵）、`cdsint/verify.py` 82 到 98 行 `needs_yes`（7 個鍵）；`cdsint/report.py` 的 `show`（79 到 95 行）全靠 `.get()` 活著。訊息紀錄 `{"level", "text"}` 在 `silent.SilentUI._record`（158 到 159 行）與 `watcher._info`（307 到 308 行）各拼一次。命令紀錄 `commands.write_command`（35 到 45 行，有 `created_at`）與 `headless.run_one`（136 行，沒有）兩種。`silent.Outcome([], "", ...)` 在 `entries.py` 117 與 120 行用位置參數拼「沒跑腳本的 Outcome」。
+3. **A 已修大半。** `cds/ide/project.py` 的 `prop`、`set_prop`、`save`、`_values` 都刪了，整個檔剩 51 行三個函式。`permit` 那條也修好了：`permit._written`（75 到 90 行）讓 `settings.Invalid` 往上冒，`entries._not_allowed`（113 到 121 行）接成 exit 1（`SETTINGS_PLAN.md` Ruling 19）。剩下的一處是 `project.sync_dir`（23 到 40 行）把 `settings.Invalid`、`IOError`、`OSError` 一起吞成 None，所以看門人的登記檔對「壞掉的設定檔」和「沒設定過的專案」寫同一個答案。
 
 **替身 UI**
 
-4. `cds/ide/silent.py` 的 `run`（199 到 216 行）先 `_exec_file`（213 行）再 `_install`（223 行）。`_ui_patches`（299 到 304 行）寫死要換的函式名。`YES_NO`（35 到 40 行）是對話框標題字串表，對應端在 `entry_import.py` 82 與 208 行、`entry_export.py` 109 行、`entry_plc.py` 116 行，兩邊沒有共用常數。標題改了會 raise「unexpected dialog」（322 到 323 行），這點是對的；繞過替身那條是無聲的。`tests/test_silent.py` 215 行只在 docstring 宣稱引擎沒有模組層級 import。
-5. `silent.py` 379 行、`watcher.py` 309 行，超過 300 的軟上限。`statusform.StatusForm.__init__` 62 行超過 60 的硬上限（A 刪掉 Settings 按鈕之後重量）。`headless.run_job` 47 行。
+4. `cds/ide/silent.py` 的 `run`（192 到 209 行）先 `_exec_file`（206 行）再交給 `_call`（212 到 238 行），`_install` 在 216 行 ── 順序仍然是 exec 在前。`_ui_patches`（291 到 296 行）寫死要換的函式名。`YES_NO`（35 到 39 行）是對話框標題字串表，對應端剩三處：`engine/entry_export.py` 103 行、`engine/entry_import.py` 184 行、`engine/entry_plc.py` 116 行，兩邊沒有共用常數。標題改了會 raise「unexpected dialog」（318 行），這點是對的；繞過替身那條是無聲的。`tests/test_silent.py` 209 到 212 行只在 docstring 宣稱引擎沒有模組層級 import。
+5. `silent.py` 365 行、`watcher.py` 308 行，超過 300 的軟上限。`statusform.StatusForm.__init__` 39 到 87 行共 49 行，過 40 的軟上限但已在 60 的硬上限內（A 刪掉 Settings 按鈕之後減重）。`headless.run_job` 74 到 108 行共 35 行、三個出口。
 
 **特例與死參數**
 
-6. `entries.py` 148 到 153 行 `tail` 對 `build` 有特例，`wrong_application` 166 行對 `build` 有特例（A 刪後者）。`entry_build.py` 已有 `build_messages`（47 行）。`messages.build_report` 的特例跟 `tail` 那條同源。
+6. `entries.py` 129 到 136 行 `tail` 對 `build` 有特例。~~`wrong_application` 對 `build` 的特例~~ ── A 刪了。`entry_build.py` 已有 `build_messages`。`messages.build_report` 的特例跟 `tail` 那條同源。
 7. `messages._text`（`cds/ide/messages.py` 134 到 139 行）是 `cds/core/text.py` 的 `as_text` 逐字副本，而 `text.py` 的 docstring 說三份已經收成一份。
-8. `EXIT_OK`、`EXIT_FAILED` 在 `cds/ide/headless.py` 53 到 54 行與 `cdsint/exits.py` 17 到 18 行各定義一次；SPEC 6.4 說 CLI 要拿 report 的 `intended_exit` 跟實際退出碼比對，兩邊必須相等但沒有東西釘住。
-9. `forget_engine` 的迴圈在 `entries.py` 78 到 80 行、`stub/Project_export.py` 14 到 15 行、`stub/Project_import.py` 14 到 15 行各一份。`REPO_ROOT` 在 `entries.py` 30 行與 `headless.py` 31 行各算一次。
-10. `silent._install(silent, ui, args)` 的 `ui` 未使用；`SilentUI.info/warning/error(self, text, *rest)` 的 `*rest` 靜默丟掉。`Watcher.__init__` 對 globals 缺 `system` 丟 `KeyError`。
-11. 註解裡寫死的行號全部已漂：`silent.py` 19 行「codesys_utils 517」（`resolve_system` 在 195 行）、21 行「codesys_ui 48-90」（`ask_yes_no` 在 76 到 96 行）、72 行「Project_Build.py 73」；`messages.py` 4 與 17 行「Project_Build.py」；`cds/ide/__init__.py` 6 行「Project_*.py」，4 到 9 行的模組索引列 6 個而套件有 11 個；`watcher.py` 134 行「section 12」而 WATCHER.md 只有 10 節。
-12. `statusform.py` 152 到 155、158 到 162 行兩個 `except Exception: pass`，棘輪只數 `except:` 所以看不到。`watcher.py` 294 行每 2 秒心跳跨 .NET 讀一次專案屬性（A 之後變讀 JSON，仍是每 2 秒讀一次檔）；`permit.refusal` 讀同一設定兩次。
+8. `EXIT_OK`、`EXIT_FAILED` 在 `cds/ide/headless.py` 55 到 56 行與 `cdsint/exits.py` 17 到 18 行各定義一次；SPEC 6.4 說 CLI 要拿 report 的 `intended_exit` 跟實際退出碼比對，兩邊必須相等但沒有東西釘住。
+9. `forget_engine` 的迴圈在 `entries.py` 67 到 78 行、`stub/Project_export.py` 14 到 15 行、`stub/Project_import.py` 14 到 15 行各一份。`REPO_ROOT` 在 `entries.py` 28 行與 `cds/ide/headless.py` 33 行各算一次。
+10. `silent._install(silent, ui, args)` 的 `ui` 未使用（263 行）；`SilentUI.info/warning/error(self, text, *rest)` 的 `*rest` 靜默丟掉（131 到 138 行）。`Watcher.__init__` 對 globals 缺 `system` 丟的是 `KeyError`（32 到 34 行）── A 把它從隱含的 KeyError 換成帶訊息的 KeyError，型別還沒換。
+11. 註解裡寫死的行號，A 清掉了 `silent.py` 檔頭那兩條（`codesys_utils 517`、`codesys_ui 48-90`）。還在的：`silent.py` 64 行「Project_Build.py 73」；`messages.py` 4 與 17 行「Project_Build.py」；`cds/ide/__init__.py` 6 行說本體是 `Project_*.py`（實際是 `engine/entry_*.py`），4 到 9 行的模組索引列 6 個而套件有 10 個（缺 display、entries、headless、permit）；`watcher.py` 135 行「section 12」而 WATCHER.md 只有 10 節。
+12. `statusform.py` 139 到 142、148 到 149 行兩個 `except Exception: pass`，棘輪只數 `except:` 所以看不到。`watcher.py` 293 行每 2 秒心跳讀一次 `project.sync_dir`，那是每 2 秒讀一次設定檔。~~`permit.refusal` 讀同一設定兩次~~ ── A 之後只讀一次；但 `project.path_of`（一趟 .NET）在一次拒絕裡仍被叫三次（`_written`、`refusal` 的 `_path`、`record` 的 `_path`）。
 
 **CLI 的命令表面**
 
-13. `cdsint/flags.py` 描述「哪個命令有哪種形式、收哪些旗標」的地方：`_HELP`（24 到 40 行）、`BOTH_FORMS`（43）、`WATCHER_ONLY`（46）、`PROJECT_ONLY_COMMAND`（50）、`FLAGS`（54 到 63）、`build_parser` 手寫 `installs`、`list` 再事後補 `config`、`plc`（76 到 85 行）、`_add_flag` 依旗標名 if/elif（127 到 136 行）、`command_args` 的分支（159 到 168 行）、`wire_name` 的 plc 分支（171 到 181 行）、`_only_the_project_form`（191 到 212 行）；`cli.py` 的 `main`（120 到 133 行）依名字分 `installs`、`list`、`verify`；`verify.py` 的 `steps`（40 到 45 行）手抄四個命令的 args。五個 `getattr(ns, ..., None)`（`cli.py` 45、128；`flags.py` 201、207、225、239 行）是各子命令 namespace 形狀不同的症狀。`cli._answers`（54 到 61 行）與 `flags._config_args`（184 到 188 行）是兩個 KEY=VALUE 解析器（A 刪後者）。`--target` 定義兩次、兩段幫助文字（101 到 103 與 109 到 110 行）。
+13. `cdsint/flags.py` 描述「哪個命令有哪種形式、收哪些旗標」的地方：`_HELP`（24 到 39 行）、`BOTH_FORMS`（42）、`WATCHER_ONLY`（44）、`PROJECT_ONLY_COMMAND`（48）、`FLAGS`（52 到 59）、`build_parser` 手寫 `installs`、`list` 再事後補 `plc`（83 到 96 行）、`_add_flag` 依旗標名 if/elif（140 到 149 行）、`command_args` 的分支（164 到 171 行）、`wire_name` 的 plc 分支（174 到 184 行）、`_only_the_project_form`（187 到 208 行）；`cli.py` 的 `main`（137 到 153 行）依名字分 `installs`、`list`、`verify`；`verify.py` 的 `steps`（33 到 45 行）手抄四個命令的 args。七個 `getattr(ns, ..., None)`（`cli.py` 43、85、115；`flags.py` 167、197、203、217 行）是各子命令 namespace 形狀不同的症狀。~~`flags._config_args`~~ ── A 刪了，KEY=VALUE 解析器只剩 `cli._answers`（54 到 61 行）。`--target` 的 `add_argument` 定義兩次（`flags.py` 112 與 119 行），兩段幫助文字。
 
 **退出碼與拒絕**
 
-14. `cdsint/installs.py` 的 `InstallError`（55 到 60 行）跟 `exits.Failure` 同形（message 加 candidates）但沒帶 code，`cli.main`（118 到 135 行）只接 `Failure`。實測 `cdsint build --project x --install definitely-not-an-ide --sync-dir y` 噴整段 traceback。SPEC 4.3 說「IDE 啟動失敗」是 4。
-15. `flags.check`（245 到 253 行）走 `parser.error` 回 2；`refuse_project_flags`（233 到 242 行）丟 `Failure` 回 1，而且不在 `check` 裡，是 `cli.py` 50 行呼叫。實測 `--target foo --profile bar` 回 1。`flags.py` 6 到 7 行說「三種組合」、`check` 的 docstring 說「每個拒絕一次呼叫」，實際四種、跑兩種。
-16. 退出碼的決定：`cli.exit_code`（104 到 115 行）管單命令；`cli.run_verify`（86 到 95 行）自己判 OK/FAILED 不經 `exit_code`；`Failure` 丟出點在 `target.py` 43、70、83 行、`headless.py` 127、133、259、263 行、`cli.py` 59 行、`flags.py` 241 行；argparse 三處隱含 2。verify 某步回 `denied` 會是 1 不是 5。
+14. `cdsint/installs.py` 的 `InstallError`（55 到 60 行）跟 `exits.Failure` 同形（message 加 matches）但沒帶 code，`cli.main`（137 到 153 行）只接 `Failure`。實測 `python -m cdsint.cli build --project x --install definitely-not-an-ide --sync-dir y` 噴整段 traceback，exit 1。SPEC 4.3 說「IDE 啟動失敗」是 4。
+15. `flags.check`（223 到 230 行）走 `parser.error` 回 2；`refuse_project_flags`（211 到 220 行）丟 `Failure` 回 1，而且不在 `check` 裡，是 `cli.make_runner`（50 行）呼叫。實測 `build --target foo --profile bar` 回 1，`plc connect --target foo` 與 `export --target a --project b` 回 2。`flags.py` 6 到 7 行說「三種組合」、`check` 的 docstring 說「每個拒絕一次呼叫」，實際四種、跑兩種。
+16. 退出碼的決定：`cli.exit_code`（129 到 135 行）管單命令；`cli.run_verify`（84 到 95 行）自己判 OK/FAILED 不經 `exit_code`；`Failure` 丟出點在 `cli.py` 57 行、`flags.py` 219 行、`cdsint/headless.py` 134、139、266、270 行、`target.py` 43、70、83 行；`InstallError` 丟出點在 `installs.py` 89、95、96、114、116 行；argparse 三處隱含 2。verify 某步回 `denied` 會是 1 不是 5。
 
 **無頭啟動器 CLI 側**
 
-17. `cdsint/headless.py` 的 `_collect`（226 到 273 行）48 行做六件事。257 行 `print("warning: " + error)` 後 259 行 `raise Failure(error)`，`exits.py` 36 到 40 行再印一次。`_kill`（175 到 196 行）兩個分支都 `return None`，`_launch` 167 行卻拿它當回傳值。`Headless.__init__` 讀 `lock.held` 三次（67、128、213 行），建構子還掃 Program Files 與登錄檔（56 行）。
-18. `sync_dir`：`headless.py` 239 行頂層用 IDE 回報值 `or` 旗標；272 行逐筆填旗標值。A 會改成只從 report 來；重核。`Target.sync_dir()`（`target.py` 52 到 54 行）在正式路徑沒人呼叫，`cli.py` 128 到 130 行只在 `--project` 時叫。
-19. `timed_out` 與 `exit_code_actual` 是一個事實兩個名字（`headless.py` 241 行 `timed_out = code is None`）；`stdout_reached`（244、301 到 308 行）算了、寫了、沒人讀。`headless.py` 33 到 46 行是帶日期的量測日誌，40 行「the phase-2 table」指的是 SPEC 第 7 節。
+17. `cdsint/headless.py` 的 `_collect`（233 到 283 行）51 行做六件事。264 行 `print("warning: " + ...)` 後 266 行 `raise Failure(...)`，`exits.py` 39 到 43 行再印一次。`_kill`（182 到 203 行）兩個分支都 `return None`，`_launch` 173 行卻拿它當回傳值。`Headless.__init__` 讀 `lock.held` 三次（67、135、220 行），建構子還掃 Program Files 與登錄檔（56 行）。
+18. `sync_dir`：`cdsint/headless.py` 246 行頂層仍是「IDE 回報值 `or` 旗標」；~~272 行逐筆填旗標值~~ ── A 改成 282 行從已合併的 report 讀，逐筆那份沒了。`Target.sync_dir()`（`target.py` 51 到 53 行）與 `Headless.sync_dir()`（74 到 83 行）現在都只被 `cli.show_folder`（113 到 127 行）當後備用，而 `show_folder` 第一件事就是「不是 `--project` 形式就返回」，所以 `Target.sync_dir()` 沒有呼叫端。
+19. `timed_out` 與 `exit_code_actual` 是一個事實兩個名字（`cdsint/headless.py` 248 行 `timed_out: code is None`）；`stdout_reached`（251、311 到 318 行）算了、寫了、沒人讀。`cdsint/headless.py` 33 到 46 行是帶日期的量測日誌，40 行「the phase-2 table」指的是 SPEC 第 7 節。
 
 **印東西**
 
-20. `report.py` 18 處、`headless.py` 6 處（136 到 137、190 到 194、212 到 223、257 行直印 stderr）、`cli.py` 4 處（`run_list` 自己排表 81 到 83 行、verify 判決 90 到 94 行）、`installs.warn_if_elevated`（130 到 132 行）、`exits.Failure.report`。`report.py` 4 行宣稱「One printer for both forms」。`--json` 下 stderr 會漏警告。
-21. `report.py` 的 `show`（78 到 86 行）把 message 文字與 question 收進 `said`，再以 `result["error"] not in said` 決定印不印 error；`_show_needs`（150 到 161 行）為此改動呼叫端傳進來的 list。`_wants_tail`（164 到 170 行）用 `result.get("command") == "compare"` 決定印 tail，因為 compare 的真答案在 `stdout_tail` 不在 `data`。`report.py` 107 到 108 行硬寫廠商清單。
+20. `report.py` 18 處、`cdsint/headless.py` 6 處（143、197、219、225、228、264 行）、`cli.py` 4 處（`run_list` 自己排表 72 到 78 行、verify 判決 89 到 93 行）、`installs.warn_if_elevated`（130 到 132 行）、`exits.Failure.report`（39 到 43 行）。`report.py` 4 行宣稱「One printer for both forms」。`--json` 下 stderr 會漏警告。
+21. `report.py` 的 `show`（79 到 95 行）把 message 文字與 question 收進 `said`，再以 `result["error"] not in said` 決定印不印 error；`_show_needs`（157 到 168 行）為此改動呼叫端傳進來的 list。`_wants_tail`（171 到 177 行）用 `result.get("command") == "compare"` 決定印 tail，因為 compare 的真答案在 `stdout_tail` 不在 `data`。`report.py` 111 到 112 行硬寫廠商清單。
 
 **安裝探測**
 
-22. `irm/setup.ps1` 73 到 128 行 `Find-ScriptDirs` 與 `installs.py` 30 到 42 行 `VENDORS` 加 208 到 224 行 `_script_dir` 加 227 到 241 行 `_under_program_files` 各答一次。PS 第 102 行把 Lenze 3.x 的 ProgramData 標 `NeedsAdmin=$true`，`irm/setup.md` 36 到 38 行照抄；`installs.py` 227 到 241 行的 docstring 卻說 ProgramData 不需要。PS 只掃 `$env:ProgramFiles`（81、107 行），Python 掃兩個 root。`installs.py` 每列的 `roots`（33、35、38 行）完全相同；`_script_dir` 用 `vendor["exe"]` if/elif 加目錄名 `startswith("4.")` 在表外重編每家知識。`run_as_admin_layers`（135 到 156 行）與 `find`（63 到 78 行）巢狀 4 層。`script_dir` 與 `needs_admin` 兩個欄位的唯一讀者是 `report.show_installs`（116 到 117 行）。
+22. `irm/setup.ps1` 73 到 128 行 `Find-ScriptDirs` 與 `installs.py` 30 到 42 行 `VENDORS` 加 208 到 224 行 `_script_dir` 加 227 到 241 行 `_under_program_files` 各答一次。PS 第 102 行把 Lenze 3.x 的 ProgramData 標 `NeedsAdmin=$true`，`irm/setup.md` 照抄；`installs.py` 227 到 241 行的 docstring 卻說 ProgramData 不需要。PS 只掃 `$env:ProgramFiles`（81、107 行），Python 掃兩個 root。`installs.py` 每列的 `roots`（31、35、38 行）完全相同；`_script_dir` 用 `vendor["exe"]` if/elif 加目錄名 `startswith("4.")` 在表外重編每家知識。`run_as_admin_layers`（135 到 156 行）與 `find`（63 到 78 行）巢狀 4 層。`script_dir` 與 `script_dir_needs_admin` 兩個欄位的唯一讀者是 `report.show_installs`（119 到 121 行）。
 
 **其他**
 
-23. `target.send`（`target.py` 87 到 119 行）巢狀 4 層，交錯輪詢、`missing_since` 去抖、deadline 加清理、Ctrl-C 清理。去抖是在 CLI 端重判存活，`cds/core/instances.is_alive` 已是存活定義；`Target.__init__` 40 到 41 行又先 `live_instances` 過濾一次。
-24. 120 秒：`target.py` 18 行 `DEFAULT_TIMEOUT_S`、`flags.py` 91 到 92 行幫助文字硬寫「(default 120)」、`headless.py` 54 行 `timeout=120.0`；`target→flags→cli` 轉手三次，`cli.py` 36 行零使用者。`cli.py` 33 到 34 行帶 `noqa: F401` import 三個 `EXIT_*` 只為讓 `tests/test_cli.py` 寫 `cli.EXIT_TARGET`（20 處）。`cli.py` 28 行模組層 `sys.path.insert` 是 pyproject console script 之外的第二條可 import 路徑，SKILL.md 22 行靠它跑 `python -m cdsint.cli`。
+23. `target.send`（`target.py` 88 到 121 行）巢狀 4 層，交錯輪詢、`missing_since` 去抖、deadline 加清理、Ctrl-C 清理。去抖是在 CLI 端重判存活，`cds/core/instances.is_alive` 已是存活定義；`Target.__init__` 38 到 40 行又先 `live_instances` 過濾一次。
+24. 120 秒：`target.py` 18 行 `DEFAULT_TIMEOUT_S`、`flags.py` 100 到 105 行幫助文字硬寫「(default 120)」、`cdsint/headless.py` 54 行 `timeout=120.0`；`target→flags→cli` 轉手三次，`cli.py` 34 行零使用者。`cli.py` 32 到 33 行帶 `noqa: F401` import 三個 `EXIT_*` 只為讓 `tests/test_cli.py` 寫 `cli.EXIT_TARGET`（18 處）。`cli.py` 28 行模組層 `sys.path.insert` 是 pyproject console script 之外的第二條可 import 路徑；SKILL.md 22 行說的 `python -m cdsint.cli` 其實不靠它（`-m` 自己會把工作目錄放上 sys.path），靠它的是「用路徑直接跑 `cli.py`」那種叫法。
 
 **開工前重核清單**
 
-- 上面每一條先用名字 grep 一次，行號重填，A 已經刪掉的劃掉。
-- 特別看 A 之後 `cds/ide/project.py`、`cdsint/headless.py`、`cdsint/flags.py`、`cds/ide/silent.py` 剩什麼。
-- 測試基線重跑，Windows 與 WSL 各記一個數字。
+- 上面每一條先用名字 grep 一次，行號重填，A 已經刪掉的劃掉。（2026-09-06 做完）
+- 特別看 A 之後 `cds/ide/project.py`、`cdsint/headless.py`、`cdsint/flags.py`、`cds/ide/silent.py` 剩什麼。（做完，見第 3、5、10、13、17、18 條）
+- 測試基線重跑，Windows 與 WSL 各記一個數字。（`c67dcb7`：Windows `python -m pytest tests -q` 960 passed；WSL Ubuntu-22.04 `python3 -m pytest tests -q` 960 passed）
 
 ---
 
@@ -121,9 +121,9 @@
 
 ## 5. 分階段與驗收
 
-- [ ] **階段 0：重核與基線**
-  - [ ] 第 3 節重核清單做完，行號重填，commit。
-  - [ ] 驗收：Windows 與 WSL 測試數記進第 6 節。
+- [x] **階段 0：重核與基線**
+  - [x] 第 3 節重核清單做完，行號重填，commit。
+  - [x] 驗收：Windows 與 WSL 測試數記進第 6 節。（`c67dcb7` 基線：Windows 960 passed、WSL 960 passed）
 
 - [ ] **階段 1：IDE 側（第 4 節 1、2、7 的 IDE 側、10 的 IDE 側、11、13）**
   - [ ] 驗收：`grep -rn "new_result" cds/ide/` 只剩 `entries.py` 一處；`grep -rn "error_text()" cds/ide/` 一處。
