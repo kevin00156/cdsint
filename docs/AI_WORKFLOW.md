@@ -76,6 +76,8 @@ cdsint compare
 它只讀不寫。人類可讀的輸出有兩層：一行摘要（改了幾個、只在 IDE 有幾個、只在磁碟有幾個），
 以及腳本印出來的逐物件清單。用 `--json` 的話，摘要在 `messages`，逐物件清單在 `stdout_tail`。
 
+若它回報 `failed_objects`，下一步是 `cdsint discover`（見第 4 節）。
+
 **改完之後先 compare 一次是好習慣**，因為它會告訴你 IDE 那邊是不是也有人動過。
 如果同一個物件兩邊都改了，匯入會以磁碟為準覆蓋掉 IDE 那邊。
 
@@ -157,6 +159,9 @@ cdsint export
   這個不是補旗標能解決的，見第 6 節。
 - `data` 是這個命令自己的數字：匯出匯入的計數、compare 的差異數、build 的錯誤與警告數、
   `config` 的屬性值。處理不了的物件會以名字列在 `data.failed_objects` 裡，而且 `ok` 是 false。
+  這個清單不空的時候，下一步是 `cdsint discover`：它走同一棵樹，把沒有任何 kind 認得的
+  型別 GUID 連同一個例子物件的名字列出來（`data.unknown`）。把那些 GUID 接到
+  `profiles/default.json` 的 `guid_aliases` 裡對應 kind 的清單後面，再跑一次。
 - 匯出還有一個 `data.pending_import`：那些檔案你在磁碟上改過而還沒匯入，匯出不會覆蓋它們，
   也會讓那一趟 `ok` 是 false。這不是錯誤，是提醒你先跑一次 `import`（或者你不要那份改動，
   就把檔案刪掉再匯出一次）。

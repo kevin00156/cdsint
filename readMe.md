@@ -150,6 +150,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
 | `import -y [--force]` | yes | yes | read the `.st` back in, disk wins |
 | `compare` | yes | yes | list what differs, change nothing |
+| `discover` | yes | yes | name every object and the kind it counted as; run it when something reports `failed_objects` |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
 | `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
@@ -168,6 +169,31 @@ when an install has several, `--report FILE`, `--force-lock`, and
 **Every dialog of cdsint's own is answered by a flag, never guessed.** A question
 with no flag behind it comes back as `needs_input` naming the flag you need, exit
 code 1, and nothing in the IDE changed.
+
+### When something reports `failed_objects`
+
+That list names objects the command could not handle, and the run is not ok.
+The usual cause is a type GUID this build of CODESYS emits that
+`profiles/default.json` does not know: `classify_object` recognises nothing,
+so the object is exported nowhere and counted nowhere.
+
+`cdsint discover` is the diagnostic. It walks the same tree, prints it, and
+names every type GUID no kind claimed:
+
+```
+cdsint discover
+cdsint discover --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --json
+```
+
+The fix is a JSON edit, not a code change: append the GUID to the matching
+kind's list under `guid_aliases` in `profiles/default.json` (the first GUID in
+each list is the primary one; the rest are aliases other CODESYS versions
+emit), then run `discover` again and the export after it.
+
+`data.total` counts every object in the tree, so it is larger than the number
+of files an export writes — property accessors, tasks and device modules are
+skipped on purpose, and an object that vanished is only visible if they are
+counted too. On one 229-file project `discover` reports 407.
 
 ### Three lines you cannot cross by accident
 

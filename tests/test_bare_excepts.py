@@ -30,7 +30,6 @@ ALLOWED = {
     "engine/codesys_utils.py": 33,
     "engine/entry_build.py": 6,
     "engine/entry_compare.py": 2,
-    "tools/Project_discover.py": 5,
 }
 
 

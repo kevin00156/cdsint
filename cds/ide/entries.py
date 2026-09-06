@@ -38,6 +38,7 @@ SCRIPTS = {
     "export": ("entry_export.py", "main"),
     "import": ("entry_import.py", "main"),
     "compare": ("entry_compare.py", "main"),
+    "discover": ("entry_discover.py", "main"),
     "build": ("entry_build.py", "main"),
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),

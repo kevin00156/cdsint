@@ -125,15 +125,26 @@ def show_installs(found, want_json=False):
 
 def _show_data(data):
     for key, value in sorted(data.items()):
-        # A list gets a line each: the one that matters is the names of the
-        # objects a command could not handle, and those are what the reader
-        # has to go and look up.
-        if isinstance(value, list):
-            print("  %-16s %d" % (key, len(value)))
-            for item in value:
-                print("  %-16s   %s" % ("", item))
+        # A list or a mapping gets a line each. Those are the ones the reader
+        # has to go and look up: the objects a command could not handle, the
+        # type GUIDs discover did not recognise, its count per kind.
+        if isinstance(value, dict):
+            lines = ["%s %s" % (name, value[name]) for name in sorted(value)]
+        elif isinstance(value, list):
+            lines = [_one_line(item) for item in value]
         else:
             print("  %-16s %s" % (key, UNSET if value is None else value))
+            continue
+        print("  %-16s %d" % (key, len(lines)))
+        for line in lines:
+            print("  %-16s   %s" % ("", line))
+
+
+def _one_line(item):
+    """An unrecognised object is a name and a GUID; a failed one is a name."""
+    if isinstance(item, dict):
+        return "  ".join("%s" % item[name] for name in sorted(item))
+    return item
 
 
 def _show_needs(result, said):

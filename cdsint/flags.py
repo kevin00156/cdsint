@@ -29,6 +29,8 @@ _HELP = {
     "export": "write the project out to the sync folder",
     "import": "read the sync folder back into the project",
     "compare": "report how the project and the sync folder differ",
+    "discover": "name every object and the kind it counted as; use it when "
+                "a command reports failed_objects",
     "build": "build the application and report the error count",
     "verify": "import (-y), export, compare and build, and pass only if all "
               "agree",
@@ -38,7 +40,8 @@ _HELP = {
 }
 
 # Commands that need an IDE with the project open, in either form.
-BOTH_FORMS = ("export", "import", "compare", "build", "verify", "config")
+BOTH_FORMS = ("export", "import", "compare", "discover", "build",
+              "verify", "config")
 # Commands about a watcher's life, which only the --target form has.
 WATCHER_ONLY = ("ping", "status", "stop")
 # The one command with only the --project form. It gets --target anyway, so

@@ -139,6 +139,14 @@ was missing, `denied` says the project's own policy refused the command (only
 `plc`, and no flag fixes it), and `data` holds this command's own numbers — the counts, and
 `failed_objects` naming anything the command could not handle.
 
+When `failed_objects` is not empty, run `cdsint discover` next. It walks the
+same tree and reports `data.unknown` — every type GUID no kind in
+`profiles/default.json` claimed, with an example object's name. Append each
+GUID to the matching kind's list under `guid_aliases` in that file (first
+entry is the primary GUID, the rest are aliases other CODESYS versions emit),
+then run `discover` again and the command that failed after it. No code
+change is involved.
+
 export adds `data.pending_import`: files you edited on disk and have not
 imported yet. It does not overwrite those, and the run is not ok. That is not
 an error — run `import` first, or delete the file if you do not want the edit.

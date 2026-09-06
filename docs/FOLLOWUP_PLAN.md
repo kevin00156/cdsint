@@ -69,11 +69,11 @@
   - [x] 刪 `tools/Project_resources.py`、`img/`；SPEC 10.1 跟著改。
   - [x] 驗收：`grep -rn "show_compare_dialog\|codesys_ui_diff\|\.diff" engine/ cds/ cdsint/ tests/` 為零（`git diff` 這種字串不算）；測試綠。
 
-- [ ] **B. `discover` 進 CLI**
-  - [ ] `engine/entry_discover.py` 照第 4 節；`cds/ide/entries.py` 加一列；`cdsint/flags.py` 加子命令，兩種形式；`tools/Project_discover.py` 刪。
-  - [ ] 驗收：測試涵蓋「有未知 GUID 時 `ok` False 且名字與 GUID 在 `data.unknown`」「全部認得時 `ok` True」。
-  - [ ] 驗收（監督者會重現）：`cdsint discover --project <softplc 副本> --install 3.5.21.40 --sync-dir S --json` 回 `total` 229、`unknown` 空、exit 0。
-  - [ ] readMe 與 `docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md`：`failed_objects` 出現時下一步是 `cdsint discover`，未知 GUID 加進 `profiles/default.json` 的 `guid_aliases` 再跑。
+- [x] **B. `discover` 進 CLI**
+  - [x] `engine/entry_discover.py` 照第 4 節；`cds/ide/entries.py` 加一列；`cdsint/flags.py` 加子命令，兩種形式；`tools/Project_discover.py` 刪。
+  - [x] 驗收：測試涵蓋「有未知 GUID 時 `ok` False 且名字與 GUID 在 `data.unknown`」「全部認得時 `ok` True」。
+  - [x] 驗收（監督者會重現）：`cdsint discover --project <softplc 副本> --install 3.5.21.40 --sync-dir S --json` 回 `total` 229、`unknown` 空、exit 0。——**跑過，74.9 秒 exit 0**，`ok` true、`unknown` 空、`failed_objects` 空、22 種 kind。`total` 是 **407 不是 229**：229 是 export 寫出的檔案數（同一份副本、空同步資料夾跑 `compare --project` 回 `new_in_ide=229`），407 是樹上全部節點。理由與為什麼不改成 229，見第 7 節那條 Ruling。
+  - [x] readMe 與 `docs/AI_WORKFLOW.md`、`skills/cdsint/SKILL.md`：`failed_objects` 出現時下一步是 `cdsint discover`，未知 GUID 加進 `profiles/default.json` 的 `guid_aliases` 再跑。
 
 - [ ] **C. perf_probe 改名**
   - [ ] `tools/Project_perf_probe.py` → `tools/perf_probe.py`，檔頭寫 Execute Script File 的用法與參數；PRINCIPLES 加 `Project_` 前綴那一條。
@@ -109,10 +109,10 @@
 
 實作時決定，決定了寫回：`Ruling: 決定 — 理由 — 錯了的代價`。
 
-1. `discover` 的 `data` 形狀細節（第 4 節只定最少要有的三個欄位）。
-
 本工單裁的：
 
+- Ruling: `discover` 的 `data` 是 `total`（樹上全部節點）、`by_kind`（kind → 幾個，dict）、`unknown`（`[{"name", "guid"}]`）、`failed_objects`（跟其他命令同名同形） — `unknown` 用結構化的兩個欄位而不是一句字串，因為讀它的人下一步是把那個 GUID 貼進 `profiles/default.json`，agent 不該去剖析人話；`by_kind` 用 dict 因為 `--json` 那邊要的是可查表的東西 — 錯了的代價是 `cdsint/report.py` 的 `_show_data` 多了一段處理 dict 與 dict 清單的分支。
+- Ruling: `total` 數的是樹上每一個節點，不是 export 會寫出去的那些 — 工單驗收寫「回 `total` 229」，實際量到 407；229 是 export 寫出的檔案數（空同步資料夾跑 `compare --project` 的 `new_in_ide` 就是 229），兩個數字量的是不同的東西。export 故意跳過的那些（property accessor 60、task 3、device 44、device_module 38，以及被單體容器擁有的子物件）正是「物件靜默消失」的藏身處，不數它們就等於把答案拿掉。要讓兩個數字對齊只有兩條路，都比數字不好看更糟：對每個物件呼叫 `classify_object` 會把 survey 已經讀過的 `.type` 與 `.parent` 再讀一次（PRINCIPLES 3），自己重寫一份跳過規則則是同一套規則的第二份拷貝（PRINCIPLES 7）— 錯了的代價是監督者重現驗收時會看到 407 而不是 229，所以這件事寫進了 `entry_discover.py` 的檔頭與 readMe。
 - Ruling: `entry_compare.py` 留著當一支獨立模組，不並進 `codesys_compare_engine` — 它剩下的 181 行是 `entries.SCRIPTS` 裡 `compare` 那一列的本體，而 SPEC D12 要求每一個命令名字對到一支 `entry_*`；`codesys_compare_engine` 是算差異的引擎，把「載設定、印報告、回 result」塞進去就是兩個職責掉進同一支檔（PRINCIPLES 1）— 錯了的代價是多一支小檔案。
 
 監督者已裁的：

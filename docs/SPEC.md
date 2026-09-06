@@ -168,6 +168,7 @@
 | `export [--delete-orphans]` | 有 | 有 | 把 IDE 專案寫成 `.st` |
 | `import -y [--force]` | 有 | 有 | 把 `.st` 讀回 IDE，磁碟贏 |
 | `compare` | 有 | 有 | 列出 IDE 與磁碟的差異 |
+| `discover` | 有 | 有 | 唱名每一個物件與它算成哪一種 kind，並列出沒有任何 kind 認得的型別 GUID（`data.unknown`）。唯讀，不需要權限 |
 | `build [--app NAME]` | 有 | 有 | 編譯，回錯誤清單 |
 | `verify -y [--force]` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完。含匯入，所以跟 `import` 一樣要 `-y` |
 | `plc connect [--gateway IP --port N]` | 拒絕 | 有 | 唯讀：列檔案、拉 `Application.crc`、跟上次下載記下的值比 |
@@ -514,7 +515,8 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 | `Project_export.py`、`Project_import.py`、`Project_watch.py` | 留在 stub 資料夾，各十行，本體邏輯搬進 `engine/` 並回傳結果（D11） |
 | `Project_compare.py`、`Project_Build.py` | 改成引擎模組，只由 CLI 與看門人呼叫 |
 | `Project_directory.py`、`Project_parameters.py` | 併進 6.7 的設定流程後刪除 |
-| `Project_discover.py`、`Project_perf_probe.py` | 搬到 `tools/`，無頭啟動器可以跑它們 |
+| `Project_discover.py` | 本體成為 `engine/entry_discover.py`，命令名 `discover`，兩種形式都有（診斷「物件靜默不匯出」只有這一條路）|
+| `Project_perf_probe.py` | 搬到 `tools/`，Execute Script File 跑 |
 | `Project_resources.py` | 刪除。幾乎沒人用，檔案大小任何工具都看得到 |
 | `Project_perf_test.py` | 刪除。`perf_probe` 已經取代它，而且它的檔名符合 `*_test.py`，今天讓 `python -m pytest` 在收集階段就報錯 |
 | `codesys_*.pyw` | 搬進 `engine/`，副檔名改回 `.py`，因為已經不在 ScriptDir 裡 |

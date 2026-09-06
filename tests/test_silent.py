@@ -359,7 +359,8 @@ DRIVEN_FILES = (
     # (test_the_sync_folder_dialog_is_refused_rather_than_opened), so silent
     # mode never reaches them.
     "engine/entry_export.py", "engine/entry_import.py",
-    "engine/entry_compare.py", "engine/entry_build.py", "engine/entry_plc.py",
+    "engine/entry_compare.py", "engine/entry_discover.py",
+    "engine/entry_build.py", "engine/entry_plc.py",
     "engine/codesys_utils.py", "engine/codesys_managers.py",
     "engine/codesys_compare_engine.py", "engine/codesys_online.py",
 )
@@ -424,7 +425,8 @@ class NoProjectSystem(object):
 # entry_build.py is missing: its first line is `from System import Guid`, and
 # System is the .NET one, which only exists inside the IDE. Its give-up paths
 # are covered by the headless acceptance run in the plan instead.
-BODIES = ("entry_export.py", "entry_import.py", "entry_compare.py")
+BODIES = ("entry_export.py", "entry_import.py", "entry_compare.py",
+          "entry_discover.py")
 
 
 @pytest.mark.parametrize("script", BODIES)
