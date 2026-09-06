@@ -142,3 +142,54 @@ class TestTheTable:
 def test_what_counts_as_code_in_a_declaration(text, expected):
     decl = "FUNCTION_BLOCK X\n" + text + "\n"
     assert build_log._is_code_in_a_declaration(decl, 2) is expected
+
+
+class TestMessagesThatWillNotBeRead:
+    """A build message can refuse every read, and the verdict on the other
+    two hundred must survive it.
+
+    Delta 1.10 answers "The object GUID '...' is not valid" when asked about
+    the object of a message whose object the build no longer has. The guard
+    has to be around the read of `.object` itself: IronPython's hasattr()
+    swallowed that exception and returned False, so a `getattr` with a
+    default looks equivalent and is not.
+    """
+
+    class Sulking(object):
+        text = "warning  something"
+        severity = "Warning"
+        prefix = "C"
+        number = 1
+        position = -1
+
+        @property
+        def object(self):
+            raise RuntimeError("The object GUID '...' is not valid.")
+
+    class Plain(object):
+        text = "error  something else"
+        severity = "Error"
+        prefix = "C"
+        number = 2
+        position = -1
+        object = None
+
+    def test_one_unreadable_object_does_not_lose_the_other_messages(self):
+        from engine import entry_build
+        rows, errors, warnings = entry_build.collect_rows(
+            [self.Sulking(), self.Plain()], "App")
+        assert (errors, warnings) == (1, 1)
+        assert len(rows) == 2
+
+    def test_a_message_whose_text_will_not_be_read_is_skipped_not_fatal(self):
+        from engine import entry_build
+
+        class Mute(object):
+            @property
+            def text(self):
+                raise RuntimeError("gone")
+
+        rows, errors, warnings = entry_build.collect_rows(
+            [Mute(), self.Plain()], "App")
+        assert (errors, warnings) == (1, 0)
+        assert len(rows) == 1

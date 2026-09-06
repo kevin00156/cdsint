@@ -173,8 +173,20 @@ def _message_id(msg):
 
 
 def _message_object(msg, app_name):
-    """(object column text, the object itself). "N/A" when there is none."""
-    obj_ref = getattr(msg, "object", None)
+    """(object column text, the object itself). "N/A" when there is none.
+
+    Reading `.object` at all can raise: Delta 1.10 answers "The object GUID
+    '...' is not valid" for messages about an object the build no longer has.
+    The guard has to be around the read itself, not just around the name --
+    IronPython's hasattr() swallowed that exception and returned False, so a
+    getattr with a default looks equivalent and is not.
+    """
+    try:
+        obj_ref = getattr(msg, "object", None)
+    except Exception as exc:
+        log_warning("A build message will not say which object it is about: "
+                    + safe_str(exc))
+        return "N/A", None
     if not obj_ref:
         return "N/A", None
     try:
@@ -196,10 +208,17 @@ def collect_rows(messages, app_name):
     errors = 0
     warnings = 0
     for msg in messages:
-        text = safe_str(msg.text)
+        try:
+            text = safe_str(msg.text)
+            severity = str(msg.severity)
+        except Exception as exc:
+            # One message that will not be read must not throw away the
+            # verdict on all the others (SPEC D13).
+            log_warning("Skipping a build message that will not be read: "
+                        + safe_str(exc))
+            continue
         if "Build started" in text or "Compile complete" in text:
             continue
-        severity = str(msg.severity)
         if "Error" in severity:
             errors += 1
         if "Warning" in severity:
