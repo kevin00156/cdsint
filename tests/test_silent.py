@@ -15,19 +15,10 @@ import types
 
 import pytest
 
-from tests.fakes import DeafUI
+from tests.fakes import DeafUI, FakeSystem
 
 from cds.core import dialogs
 from cds.ide import silent, tee
-
-
-class FakeSystem(object):
-    def __init__(self):
-        self.ui = "the real ui, which must survive"
-        self.abortable = False
-
-    def delay(self, ms):
-        pass
 
 
 @pytest.fixture

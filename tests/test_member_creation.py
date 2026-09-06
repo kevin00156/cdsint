@@ -23,6 +23,8 @@ import os
 
 import pytest
 
+from tests.fakes import StubManager
+
 from engine import codesys_compare_engine
 
 
@@ -150,16 +152,10 @@ class TestMemberDispatch:
 class TestParentResolution:
     """create_new_object must resolve the parent POU, not a same-named folder."""
 
-    class _StubManager(object):
-        def __init__(self):
-            self.calls = []
-
-        def create(self, container, name, file_path, type_guid):
-            self.calls.append((container, name, type_guid))
-            return FakeObj(name, type_guid)
-
     def _managers(self):
-        stub = self._StubManager()
+        # The IDE hands back the object it made, and the parent-resolution
+        # tests read it; StubManager returns None unless told what to make.
+        stub = StubManager(makes=FakeObj)
         return stub, {"default": stub, "native": stub}
 
     def test_prefers_pou_over_same_named_folder(self, env, tmp_path):

@@ -12,6 +12,8 @@ import sys
 
 import pytest
 
+from tests.fakes import Project
+
 from engine import codesys_managers, codesys_utils, entry_build
 
 
@@ -260,12 +262,7 @@ class TestFindingApplications:
         objs = [CountingObj("Device", guids["device"]),
                 CountingObj("Folder", guids["folder"])]
         objs.extend(CountingObj(n, guids["application"]) for n in app_names)
-
-        class Project(object):
-            def get_children(self, recursive=False):
-                return objs
-
-        return Project(), objs
+        return Project(children=objs), objs
 
     def _applications(self, project):
         build = entry_build
@@ -290,20 +287,11 @@ class TestFindingApplications:
             def get_name(self):
                 return "Odd"
 
-        class Project(object):
-            def get_children(self, recursive=False):
-                return [NoType()]
-
-        assert self._applications(Project()) == []
+        assert self._applications(Project(children=[NoType()])) == []
 
     def test_matches_the_application_guid_case_insensitively(self, env):
         upper = CountingObj("App", env[2]["application"].upper())
-
-        class Project(object):
-            def get_children(self, recursive=False):
-                return [upper]
-
-        assert self._applications(Project()) == [upper]
+        assert self._applications(Project(children=[upper])) == [upper]
 
 
 

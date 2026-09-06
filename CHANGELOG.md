@@ -68,7 +68,7 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   had grown four ways in (the Properties grid, a Settings window, a `config`
   command, the first export's dialog) and three mechanisms that existed only to
   hold it up. All of that is gone. `Line.project` now sits beside
-  `Line.cdsint.json`, eleven keys, any editor:
+  `Line.cdsint.json` — one text file, any editor:
 
   ```json
   { "plc": ["connect"], "sync_folder": "./sync" }

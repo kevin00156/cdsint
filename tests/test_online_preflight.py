@@ -57,8 +57,14 @@ class WalkCountingNode(BaseNode):
         return BaseNode.get_children(self, recursive)
 
 
-class Session(object):
-    """Stand-in for ScriptOnlineApplication."""
+class LoginSession(object):
+    """ScriptOnlineApplication, as far as "is this one logged in" goes.
+
+    Not plc_fakes.Session, which stands in for the same .NET class but for
+    the download: login, create_boot_application, start, logout. The two
+    share no method at all, so one fake for both would be a fake with two
+    personalities and every test carrying the half it did not ask for.
+    """
 
     def __init__(self, is_logged_in):
         self.is_logged_in = is_logged_in
@@ -68,8 +74,10 @@ class Session(object):
         self.disposed = True
 
 
-class Online(object):
-    """Stand-in for the CODESYS 'online' global."""
+class LoginStates(object):
+    """The CODESYS `online` global, answering only which applications are
+    logged in. plc_fakes.Online is the same global seen from the credentials
+    and device-connection side; see LoginSession above."""
 
     def __init__(self, logged_in=(), unanswerable=()):
         self.logged_in = set(logged_in)
@@ -80,7 +88,7 @@ class Online(object):
         name = application.get_name()
         if name in self.unanswerable:
             raise RuntimeError("No gateway configured")
-        session = Session(name in self.logged_in)
+        session = LoginSession(name in self.logged_in)
         self.sessions.append(session)
         return session
 
@@ -109,13 +117,13 @@ def _find(module, project, online, caller_globals=None):
 def test_nothing_logged_in_reports_nothing(env):
     module, guids, _ = env
     project = _project([_device("PLC", guids)])
-    assert _find(module, project, Online()) == []
+    assert _find(module, project, LoginStates()) == []
 
 
 def test_logged_in_application_is_reported_with_device_prefix(env):
     module, guids, _ = env
     project = _project([_device("CODESYS_Control_for_Linux_SL", guids)])
-    online = Online(logged_in=["Application"])
+    online = LoginStates(logged_in=["Application"])
     assert _find(module, project, online) == \
         ["CODESYS_Control_for_Linux_SL/Application"]
 
@@ -123,7 +131,7 @@ def test_logged_in_application_is_reported_with_device_prefix(env):
 def test_application_under_plc_logic_is_found(env):
     module, guids, _ = env
     project = _project([_device("PLC", guids, under_plc_logic=True)])
-    online = Online(logged_in=["Application"])
+    online = LoginStates(logged_in=["Application"])
     assert _find(module, project, online) == ["PLC/Application"]
 
 
@@ -133,7 +141,7 @@ def test_only_the_logged_in_device_is_reported(env):
         _device("PLC_A", guids, app_name="App1"),
         _device("PLC_B", guids, app_name="App2"),
     ])
-    online = Online(logged_in=["App2"])
+    online = LoginStates(logged_in=["App2"])
     assert _find(module, project, online) == ["PLC_B/App2"]
 
 
@@ -143,7 +151,7 @@ def test_every_logged_in_application_is_reported(env):
         _device("PLC_A", guids, app_name="App1"),
         _device("PLC_B", guids, app_name="App2"),
     ])
-    online = Online(logged_in=["App1", "App2"])
+    online = LoginStates(logged_in=["App1", "App2"])
     assert _find(module, project, online) == ["PLC_A/App1", "PLC_B/App2"]
 
 
@@ -152,7 +160,7 @@ def test_alias_application_guid_is_detected(env):
     alias = kind_guids["application"][-1]
     assert alias != guids["application"], "profile lost the application alias"
     project = _project([_device("PLC", guids, app_guid=alias)])
-    online = Online(logged_in=["Application"])
+    online = LoginStates(logged_in=["Application"])
     # The alias is not the primary GUID, so get_container_prefix cannot see the
     # application — the label still has to name it.
     assert _find(module, project, online) == ["PLC/Application"]
@@ -162,7 +170,7 @@ def test_device_inside_a_folder_is_found(env):
     module, guids, _ = env
     project = _project([WalkCountingNode("Line1", guids["folder"],
                              [_device("PLC", guids)])])
-    online = Online(logged_in=["Application"])
+    online = LoginStates(logged_in=["Application"])
     assert _find(module, project, online) == ["PLC/Application"]
 
 
@@ -177,7 +185,7 @@ def test_no_online_global_reports_nothing(env):
 def test_unanswerable_online_api_reports_nothing(env):
     module, guids, _ = env
     project = _project([_device("PLC", guids)])
-    online = Online(logged_in=["Application"], unanswerable=["Application"])
+    online = LoginStates(logged_in=["Application"], unanswerable=["Application"])
     assert _find(module, project, online) == []
 
 
@@ -192,7 +200,7 @@ def test_unlistable_container_does_not_crash_the_walk(env):
         Deaf("Broken", guids["device"]),
         _device("PLC", guids),
     ])
-    online = Online(logged_in=["Application"])
+    online = LoginStates(logged_in=["Application"])
     assert _find(module, project, online) == ["PLC/Application"]
 
 
@@ -204,7 +212,7 @@ def test_every_session_is_disposed(env):
         _device("PLC_A", guids, app_name="App1"),
         _device("PLC_B", guids, app_name="App2"),
     ])
-    online = Online(logged_in=["App1"])
+    online = LoginStates(logged_in=["App1"])
     _find(module, project, online)
     assert len(online.sessions) == 2
     assert all(session.disposed for session in online.sessions)
@@ -215,7 +223,7 @@ def test_walk_stops_at_the_application(env):
     pou = WalkCountingNode("MainProgram", guids["pou"])
     app = WalkCountingNode("Application", guids["application"], [pou])
     project = _project([WalkCountingNode("PLC", guids["device"], [app])])
-    _find(module, project, Online())
+    _find(module, project, LoginStates())
     # Nothing below an application can be an application.
     assert app.get_children_calls == 0
     assert pou.get_children_calls == 0
@@ -226,7 +234,7 @@ def test_pou_pool_is_not_swept(env):
     pous = [WalkCountingNode("POU%d" % i, guids["pou"]) for i in range(5)]
     pool = WalkCountingNode("Pool", guids["folder"], pous)
     project = _project([pool, _device("PLC", guids)])
-    _find(module, project, Online())
+    _find(module, project, LoginStates())
     assert pool.get_children_calls == 1          # folders may hold devices
     assert all(p.get_children_calls == 0 for p in pous)
 

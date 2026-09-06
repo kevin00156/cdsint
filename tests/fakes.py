@@ -117,6 +117,47 @@ class DeafSystem(object):
         pass
 
 
+class FakeSystem(object):
+    """CODESYS's `system`, with a sentinel where the UI should be.
+
+    The string is the point. cds/ide/silent.py swaps `system.ui` for a
+    stand-in while a body runs and puts the original back afterwards, and a
+    test can only prove the second half happened if the original is something
+    no engine code could have produced. A `DeafUI` there would look the same
+    before and after.
+
+    Use DeafSystem when the test wants the popups swallowed; use this one when
+    the test is about the swapping itself.
+    """
+
+    def __init__(self):
+        self.ui = "the real ui, which must survive"
+        self.abortable = False
+
+    def delay(self, milliseconds):
+        pass
+
+
+class StubManager(object):
+    """The object manager, recording what it was asked to create.
+
+    `calls` is (container, name, type_guid) per call — the whole triple, so a
+    test that only cares about two of them can ignore one, rather than each
+    copy recording a different pair and neither being able to answer the
+    other's question. `makes` decides what create() hands back: the IDE
+    returns the new object, and returning None is what it does when it will
+    not make one.
+    """
+
+    def __init__(self, makes=None):
+        self.calls = []
+        self.makes = makes
+
+    def create(self, container, name, file_path, type_guid):
+        self.calls.append((container, name, type_guid))
+        return self.makes(name, type_guid) if self.makes else None
+
+
 class FakeTimer(object):
     """`System.Windows.Forms.Timer`, both of the ways it is used.
 

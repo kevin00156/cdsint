@@ -11,6 +11,8 @@ import os
 
 import pytest
 
+from tests.fakes import StubManager
+
 from engine import codesys_compare_engine
 
 
@@ -52,14 +54,6 @@ class TestCreateFromKindPragma:
     """create_new_object must resolve the kind pragma to the profile's
     primary GUID and hand it to the manager."""
 
-    class _StubManager(object):
-        def __init__(self):
-            self.calls = []
-
-        def create(self, container, name, file_path, type_guid):
-            self.calls.append((name, type_guid))
-            return None  # creation outcome is not under test
-
     def _write(self, tmp_path, name, text):
         p = os.path.join(str(tmp_path), name)
         with io.open(p, "w", encoding="utf-8") as f:
@@ -69,7 +63,7 @@ class TestCreateFromKindPragma:
     def test_kind_pragma_overrides_sniffed_type(self, env, tmp_path):
         engine = env["engine"]
         constants = env["constants"]
-        stub = self._StubManager()
+        stub = StubManager()
         managers = {"default": stub, "native": stub}
 
         path = self._write(
@@ -78,22 +72,22 @@ class TestCreateFromKindPragma:
         engine.create_new_object("PersistentVars.st", path, managers, {}, {},
                                  object())
         assert stub.calls, "manager.create was never called"
-        _, got_guid = stub.calls[0]
+        _container, _name, got_guid = stub.calls[0]
         assert got_guid == constants.TYPE_GUIDS["persistent_gvl"]
 
     def test_no_pragma_falls_back_to_sniffing(self, env, tmp_path):
         engine = env["engine"]
         constants = env["constants"]
-        stub = self._StubManager()
+        stub = StubManager()
         managers = {"default": stub, "native": stub}
 
         path = self._write(tmp_path, "GVL.st", _PLAIN_GVL_DECL + "\n")
         engine.create_new_object("GVL.st", path, managers, {}, {}, object())
-        assert stub.calls[0][1] == constants.TYPE_GUIDS["gvl"]
+        assert stub.calls[0][2] == constants.TYPE_GUIDS["gvl"]
 
     def test_unknown_kind_fails_loud(self, env, tmp_path):
         engine = env["engine"]
-        stub = self._StubManager()
+        stub = StubManager()
         managers = {"default": stub, "native": stub}
 
         path = self._write(

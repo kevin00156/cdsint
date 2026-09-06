@@ -20,7 +20,7 @@ import pytest
 from cds.core import settings
 from cds.ide import entries
 from engine import plc_crc as plc_crc_module
-from tests.fakes import Node as BaseNode, Project, Projects
+from tests.fakes import FakeSystem, Node as BaseNode, Project, Projects
 
 ENGINE_ROOT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "engine")
@@ -214,11 +214,6 @@ setattr(CredentialSourceKind, "None", "no-dialog")
 
 class OnlineChangeOption(object):
     Never = "never"
-
-
-class FakeSystem(object):
-    def __init__(self):
-        self.ui = "the real ui, which must survive"
 
 
 # --------------------------------------------------------------------------

@@ -11,6 +11,8 @@ import sys
 
 import pytest
 
+from tests.fakes import Node as BaseNode
+
 from engine import codesys_constants, codesys_managers
 
 
@@ -289,40 +291,42 @@ class TestClassifyNormalization:
     """classify_object must normalize alias GUIDs onto the primary GUID and
     honor profile sync direction."""
 
-    class Node(object):
+    class TypedNode(BaseNode):
+        """An object with nothing but a type GUID worth reading.
+
+        Takes the GUID first and no name, because every test below is about
+        the GUID and none of them cares what the object is called.
+        """
+
         def __init__(self, type_guid, parent=None):
-            self.type = type_guid
-            self.parent = parent
+            BaseNode.__init__(self, "n", type_guid, parent=parent)
             self.has_textual_implementation = True
 
-        def get_name(self):
-            return "n"
-
     def test_method_alt_normalizes_to_method(self, constants, managers):
-        obj = self.Node(_OLD_TYPE_GUIDS["method_alt"])
+        obj = self.TypedNode(_OLD_TYPE_GUIDS["method_alt"])
         eff, is_xml, skip = managers.classify_object(obj)
         assert eff == constants.TYPE_GUIDS["method"]
         assert not is_xml
         assert not skip
 
     def test_enum_normalizes_to_dut(self, constants, managers):
-        obj = self.Node(_OLD_TYPE_GUIDS["enum"])
+        obj = self.TypedNode(_OLD_TYPE_GUIDS["enum"])
         eff, is_xml, skip = managers.classify_object(obj)
         assert eff == constants.TYPE_GUIDS["dut"]
         assert not skip
 
     def test_old_persistent_gvl_guid_classifies(self, constants, managers):
-        obj = self.Node(_OLD_UPSTREAM_PERSISTENT)
+        obj = self.TypedNode(_OLD_UPSTREAM_PERSISTENT)
         eff, is_xml, skip = managers.classify_object(obj)
         assert eff == constants.TYPE_GUIDS["persistent_gvl"]
         assert not skip
 
     def test_disabled_device_skips(self, constants, managers):
-        obj = self.Node(_OLD_TYPE_GUIDS["device"])
+        obj = self.TypedNode(_OLD_TYPE_GUIDS["device"])
         eff, is_xml, skip = managers.classify_object(obj)
         assert skip
 
     def test_unknown_guid_skips(self, managers):
-        obj = self.Node("ffffffff-0000-0000-0000-000000000000")
+        obj = self.TypedNode("ffffffff-0000-0000-0000-000000000000")
         eff, is_xml, skip = managers.classify_object(obj)
         assert skip

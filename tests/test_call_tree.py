@@ -18,11 +18,20 @@ TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
 
 @pytest.fixture(autouse=True)
 def tools_on_the_path(monkeypatch):
-    """`from call_tree import ...` inside a test, without a permanent change.
+    """`from call_tree import ...` inside a test can find the tool.
 
-    This used to be a sys.path.insert at import time, which put tools/ at the
-    front of the path for every other test file in the session as a side
-    effect of collecting this one. monkeypatch puts it back.
+    It used to be a sys.path.insert at import time, so collecting this file
+    changed sys.path for every other file in the session whether or not any
+    of these tests ran. Here it is scoped to a test.
+
+    What it does not do is leave sys.path as it found it. call_tree_parse.py
+    puts tools/ and the install root there itself when it loads (that is what
+    tools/_root.py is for), and monkeypatch cannot undo an insert made by the
+    module being imported. After the first test in this file, both stay for
+    the rest of the session. Nothing in tools/ shadows a stdlib or repo name,
+    so this costs nothing today; it is written down because a fixture that
+    looks like it cleans up and does not is worse than one that never claimed
+    to.
     """
     monkeypatch.syspath_prepend(TOOLS)
 

@@ -18,10 +18,16 @@ import os
 import re
 import sys
 
-# Two lines, the same in every tool here: put this directory where the
-# import system will look, then let tools/_root.py put the install root
-# there. Neither is on sys.path already — see tools/_root.py.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The same three lines in every tool here: make sure this directory is
+# somewhere the import system will look, then let tools/_root.py put the
+# install root there. Run from a shell, `python tools/x.py` already puts this
+# directory on sys.path and the check does nothing; run inside the IDE it is
+# the only thing that does, because ScriptEngine hands IronPython the file and
+# sys.path is the IDE's own search list. Checked rather than inserted flat, so
+# one tool importing another does not stack a second copy of the same entry.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 import _root  # noqa: E402,F401
 
 # The separator the exporter writes between declaration and implementation in

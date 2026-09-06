@@ -46,7 +46,11 @@ class RemovableNode(BaseNode):
             child.removed = True
 
 
-class Project(RemovableNode):
+class ProjectRoot(RemovableNode):
+    """The tree's root. Not tests/fakes.py's Project, which is the object the
+    engine asks for children and properties -- this is the node the walk
+    starts from, and removal has to reach it the same way as any other."""
+
     def __init__(self):
         RemovableNode.__init__(self, "Project", "project-guid")
 
@@ -55,7 +59,7 @@ class Project(RemovableNode):
 def a_pou_and_its_method(engine, tmp_path):
     """A POU with one method, both of them orphans this import will remove."""
     guids = sys.modules["engine.codesys_constants"].TYPE_GUIDS
-    project = Project()
+    project = ProjectRoot()
     pou = RemovableNode("MC_BasicControl", guids["pou"], project)
     method = RemovableNode("Main", guids["method"], pou)
 

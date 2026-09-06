@@ -11,6 +11,8 @@ that walk has to give.
 """
 import pytest
 
+from tests.fakes import Project
+
 from engine import entry_build
 
 
@@ -29,14 +31,6 @@ class Other(object):
 
     def get_name(self):
         return "not an application"
-
-
-class Project(object):
-    def __init__(self, children):
-        self._children = children
-
-    def get_children(self, recursive=False):
-        return list(self._children)
 
 
 class Chooser(object):
@@ -70,7 +64,7 @@ def guids(build):
 def project_with(guids, names):
     children = [Other(guids["folder"])]
     children.extend(App(name, guids["application"]) for name in names)
-    return Project(children)
+    return Project(children=children)
 
 
 def test_one_application_is_not_a_question(build, guids):
