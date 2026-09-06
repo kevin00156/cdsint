@@ -2,7 +2,7 @@
 
 > 建立日期 2026-09-06。分支與 worktree 由監督者在派工時填：分支 `ticket/plumbing`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-plumbing`。
 > 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
-> 這是四張工單的第二張，在 `SETTINGS_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號是 2026-09-06 晚上在 `631259b` 查的，A 做完之後會漂，開工第一件事是照第 3 節末尾的重核清單重查一遍再動手。
+> 這是四張工單的第二張，在 `history/SETTINGS_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號是 2026-09-06 晚上在 `631259b` 查的，A 做完之後會漂，開工第一件事是照第 3 節末尾的重核清單重查一遍再動手。
 
 ---
 
@@ -158,7 +158,7 @@
 
 ## 6. 回報格式
 
-同 `SETTINGS_PLAN.md` 第 6 節。
+同 `history/SETTINGS_PLAN.md` 第 6 節。
 
 ---
 

@@ -119,7 +119,7 @@
 
 ## 6. 回報格式
 
-同 `SETTINGS_PLAN.md` 第 6 節。這張沒有真 IDE 驗收。
+同 `history/SETTINGS_PLAN.md` 第 6 節。這張沒有真 IDE 驗收。
 
 ---
 

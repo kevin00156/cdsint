@@ -162,7 +162,7 @@
 
 ## 6. 回報格式
 
-同 `SETTINGS_PLAN.md` 第 6 節，加上每一層的儀器結果表：層、hash diff 行數、discover 三個數字、verify exit、三個中位數秒數。
+同 `history/SETTINGS_PLAN.md` 第 6 節，加上每一層的儀器結果表：層、hash diff 行數、discover 三個數字、verify exit、三個中位數秒數。
 
 ---
 
