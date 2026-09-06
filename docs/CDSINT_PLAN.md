@@ -262,12 +262,13 @@ img/        readMe 用的圖
   - [x] 驗收（監督者會重現）：真 IDE 上 edit → `compare --project` → `export --project`，那個 `.st` 完好且列在 `pending_import`。——監督者 2026-09-05 23:20 在原廠 3.5.21.40、softplc 副本上跑：export 229 → 改 `FB_LowPass.st` 一行 → compare 回 `different=1` → export：那個檔的雜湊值前後相同、`pending_import` 列出它、其餘 228 identical、`ok` false。
   - 監督者驗證（2026-09-05 23:25，審查修正之後）：`python -m pytest tests -q` 與根目錄各 897 passed，監督者自己跑的。兩支重現腳本監督者自己跑：`repro_compare_drops_guard.py` 印 `disk still holds my edit: True`，`repro_stale_report.py` 印 `run 2 raised Failure (correct)`。`grep -L print_function` 在 IDE 側全部檔案為空；`tests/test_layering.py` 74 條綠。沒有殘留的 IDE 行程，`%TEMP%\cdsint-work\` 空，來源 repo 的 `git status` 跟派工前一字不差。**階段 0 到 4 全部做完。**
 
-- [ ] **階段 4 追加：匯入一行實作後 IDE 裡多出一行 `1;`**（2026-09-06 worker 在台架上撞到，監督者裁定當引擎 bug 修）
+- [x] **階段 4 追加：匯入一行實作後 IDE 裡多出一行 `1;`**（2026-09-06 worker 在台架上撞到，監督者裁定當引擎 bug 修）
   - 事實（worker 的重現材料在 `%TEMP%\cdsint-work\import-bug\`，含 README、匯入前後的 `.st` 與三份 report）：原廠 3.5.21.40，softplc 副本，export 之後 `Application/PLC_PRG.st` 的實作段是空的；在磁碟上把宣告加一個 `benchProbeCounter : DINT;`、實作段寫成一行 `benchProbeCounter := benchProbeCounter + 1;`，`import -y` 回 updated 1、ok；接著 build 從 0 errors 變 1 error；再 export 到別的資料夾，IDE 裡的實作段變成兩行，第二行是憑空多出來的 `1;`。把原文寫回去再 import 一次（同樣回 ok），build 仍然 1 error。同一份原始專案的全新副本一切正常，所以壞的是被匯入過的那份。
-  - [ ] 找根因：懷疑在把 `.st` 的實作段寫進 IDE 物件時，某個「原本是空的實作段」的路徑把文字切錯（例如用長度或行數當偏移，空段的偏移是 0，或是 `textual_implementation` 的設定方式對空段與非空段不同）。用假 IDE 物件把「空實作段寫入一行」與「一行寫入一行」兩種情況寫成測試，先讓它紅。
-  - [ ] 修好之後在同一台架重現 README 的步驟：import 之後 build 0 errors、再 export 出來的實作段跟磁碟上寫的一字不差；把原文寫回去 import 之後 build 也是 0 errors。
-  - [ ] 順便查：為什麼「把原文寫回去再 import」沒有把 IDE 修回來（import 判定 updated 1 但 IDE 內容還是錯的）——這是第二個洞，import 的比對可能拿磁碟跟快取比而不是跟 IDE 比，改了之後要有測試。
-  - [ ] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。
+  - [x] 找根因：**引擎沒有這個 bug，那一行 `1;` 進 IDE 之前就在磁碟上。** 台架量到寫入路徑是乾淨的（`ScriptTextDocument.replace(str)` 整份換掉，空段與非空段行為一樣），而上一輪自己的 report 記下的雜湊值直接指認了磁碟：`i1.json` 的 `Disk hash=7E7F5A8C` 等於「兩行版本加結尾換行」的雜湊，`i2.json` 的 `IDE hash=C14C4121` 等於同樣兩行版本的雜湊。匯入照著磁碟寫，寫得一字不差。細節與量法在第 7 節「階段 4 追加」。
+  - [x] 修好之後在同一台架重現 README 的步驟：import 之後 build 0 errors、再 export 出來的實作段跟磁碟上寫的一字不差；把原文寫回去 import 之後 build 也是 0 errors。——用位元組精確的單行檔案重跑：import updated 1、build **0 errors 101 warnings exit 0**（README 那一趟是 1 error）、再 export 到 `sync2` 的 `PLC_PRG.st` 跟磁碟上寫的完全相同、沒有多出來的行；原文寫回去 import updated 1、build 一樣 0 errors 101 warnings exit 0。
+  - [x] 順便查：為什麼「把原文寫回去再 import」沒有把 IDE 修回來——**比對沒有拿快取充數，它讀的就是 IDE**（`i2.json` 的 `IDE hash=C14C4121` 正是第一趟匯入寫進去的兩行內容）。救不回來的原因在磁碟那一側：第二趟的 `Disk hash=260F25A2` 不等於原文的任何一種寫法（約五百種 BOM／換行／結尾組合都掃過），留下來的那份 `PLC_PRG.after-revert.st` 也不是它（那份是 `693B17FA`）。原文根本沒有被寫回磁碟過。
+  - [x] 台架上另外量到一個真的引擎 bug 並修掉：**`.st` 檔開頭的 UTF-8 BOM 會被當成程式碼寫進 IDE。** 留下來的那份 revert 檔就帶著 BOM。同一份原文加 BOM 匯入之後 build 從 0 errors 變 **6 errors**（全部在 PLC_PRG），修法是 `engine/codesys_utils.read_sync_text` 一支用 `utf-8-sig` 讀，同步資料夾的六個讀取點全部走它。修完同一份帶 BOM 的檔重跑：import updated 1、build 0 errors 101 warnings exit 0、`compare` 229 unchanged 0 different。
+  - [x] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。——`python -m pytest tests -q` 與根目錄各 926 passed（改之前 915，新增 11 條）。
 
 ---
 
@@ -578,6 +579,110 @@ worker 沒有動任何 import／export 的程式碼——這件事不在本工�
 重現材料留在 `%TEMP%\cdsint-work\import-bug\`：兩份 `PLC_PRG.st`（改過的那份、以及 IDE 事後存出來的那份）、
 兩趟 import 的 report、build 的 report，還有一張寫清楚怎麼重現的 `README.txt`。
 其餘幾百 MB 的專案副本與同步資料夾已經刪掉。
+
+**（2026-09-06 查完了。上面那段的判讀是錯的：引擎沒有多寫那一行。）**
+見底下的「階段 4 追加：那一行 `1;` 從哪裡來」。
+
+---
+
+**階段 4 追加：那一行 `1;` 從哪裡來。**
+
+先說結論：**匯入把磁碟上寫著的東西一字不差地寫進 IDE，那一行 `1;` 在匯入之前就在磁碟上。**
+引擎沒有這個 bug。判讀錯的代價是這一輪的台架時間，程式碼一行都不用改。
+
+**怎麼證明的，三件獨立的證據。**
+
+第一，寫入路徑本身量過了。在原廠 3.5.21.40 上開一份 softplc 副本，把
+`PLC_PRG.textual_implementation` 這個物件的形狀倒出來：型別是 `ScriptTextDocument`，
+`text` 是唯讀屬性（指派會丟 `AttributeError`），`replace` 有三種呼叫法
+（`replace(str)`、`replace(offset, length, str)`、`replace(lineno, lineoffset, length, str)`），
+生產程式碼走的是第一種，語意是整份換掉。四種情況各試一次——空的寫進一行、
+一行換成另一行、一行清成空的、空的再寫進一行——每一次讀回來都跟寫進去的一模一樣。
+所謂「空實作段的偏移是 0 所以切錯」不存在，空段與非空段走的是同一條路。
+
+第二，上一輪自己留下的 report 指認了磁碟。比對用的雜湊是 CRC32，算得出來也對得回去：
+
+| report 裡的欄位 | 值 | 對應的內容 |
+|---|---|---|
+| `i1.json` 的 `IDE hash` | `FDBAE5BE` | 原始的 `PLC_PRG.st`（宣告三行、實作段空的） |
+| `i1.json` 的 `Disk hash` | `7E7F5A8C` | **兩行版本**（`... + 1;` 換行 `1;`）加結尾換行 |
+| `i2.json` 的 `IDE hash` | `C14C4121` | 同樣的兩行版本 |
+
+也就是說：第一趟匯入時磁碟上就已經是兩行；匯入照著寫；第二趟匯入時從 IDE 讀回來的
+正是那兩行。這同時回答了工單的第三個問題——**比對沒有拿快取充數，它讀的就是 IDE**。
+
+第三，照 README 重跑一次，用位元組精確的單行檔案（UTF-8、LF、沒有 BOM、沒有結尾換行），
+從乾淨的副本開始。export 寫出 229 個物件，把實作段改成一行，`import -y` 回 updated 1，
+`build` 是 **0 errors 101 warnings exit 0**（README 那一趟是 1 error）。
+再 export 到另一個資料夾，`PLC_PRG.st` 跟磁碟上寫的完全相同，沒有多出來的行。
+把原文寫回去再 import 一次，`build` 一樣 0 errors 101 warnings exit 0。
+
+**那「把原文寫回去也救不回來」是怎麼回事。** 磁碟那一側的問題，不是 IDE 那一側。
+`i2.json` 的 `Disk hash` 是 `260F25A2`，而原文的各種寫法（宣告兩種 × 實作段四種 ×
+有無 BOM × LF/CRLF × 六種結尾，約五百組）沒有一組算得出這個值；
+留在 `%TEMP%\cdsint-work\import-bug\` 的那份 `PLC_PRG.after-revert.st` 也不是它，
+那份算出來是 `693B17FA`。**原文根本沒有被寫回磁碟過。**
+所以「留下來的重現材料」跟「report 裡記錄的事實」對不起來，這是這件事最該記住的一課：
+真正說得準的是當時寫進 report 的雜湊值，不是事後另存的檔案。
+
+**但是查的過程撞到一個真的引擎 bug，順手修了：`.st` 檔開頭的 UTF-8 BOM 會被當成程式碼。**
+線索就是那份 revert 檔——它帶著 `EF BB BF`。Windows 的編輯器很容易加上去
+（PowerShell 的 `Out-File`、記事本、Visual Studio），而讀檔用的是
+`codecs.open(path, "r", "utf-8")`，BOM 不會被吃掉，會變成宣告開頭的一個 U+FEFF，
+然後被匯入寫進 IDE。台架上量的：同一份原文加一個 BOM，`import -y` 回 updated 1、ok，
+`build` 從 0 errors 變 **6 errors**，六條全在 PLC_PRG。另一半是比對——
+帶 BOM 的檔永遠跟 IDE 對不起來，於是每次 compare 都說有差異、每次 import 都再寫一次壞的宣告。
+
+修法是 `engine/codesys_utils.read_sync_text`，一支用 `utf-8-sig` 讀同步資料夾的檔案，
+六個讀取點（`parse_st_file`、`compare_engine.read_file`、POU 與 property 匯出的
+identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`）全部走它。
+台架驗證：同一份帶 BOM 的檔重跑 import updated 1、`build` 0 errors 101 warnings exit 0、
+`compare` 229 unchanged 0 different。
+
+**秒數（2026-09-06，原廠 3.5.21.40，softplc 副本 229 個物件，含 IDE 啟動）。**
+
+| 步驟 | 秒數 | 結果 |
+|---|---|---|
+| API 探針（開專案、倒出 `ScriptTextDocument` 的形狀、四種寫入） | 72.5 | 四種都正確 |
+| `export --sync-dir sync` | 92.9 | 229 new，exit 0 |
+| `import -y`（單行檔案） | 104.2 | updated 1，exit 0 |
+| `export --sync-dir sync2` | 88.7 | 229 new，`PLC_PRG.st` 與磁碟一字不差 |
+| `build` | 106.9 | 0 errors 101 warnings，exit 0 |
+| `import -y`（原文寫回）＋ `build` | 199.4 | updated 1；0 errors 101 warnings，exit 0 |
+| `import -y`（原文加 BOM，修之前）＋ `build` | 199.1 | updated 1；**6 errors 90 warnings**，exit 1 |
+| `import -y`（同一份 BOM 檔，修之後）＋ `build` | 367.1 | updated 1；0 errors 101 warnings，exit 0 |
+| `compare`（BOM 檔還在磁碟上） | 90.6 | 229 unchanged、0 different，exit 0 |
+
+這一輪的 report 與 API 探針留在 `%TEMP%\cdsint-work\importbug2\`（含 README，專案副本與同步資料夾已刪）。
+沒有殘留的 IDE 行程；使用者自己開著的兩個（CODESYS 10064、DIADesigner-AX 18924，
+都是 00:56 起的）沒有被碰過。來源專案 `softplc_refactor.project` 只讀，
+最後寫入時間仍是 9 月 4 日 16:55。
+
+
+階段 4 追加（那一行 `1;`）新增的：
+
+- Ruling: 這一項結案為「引擎沒有這個 bug」，不生一個修法出來 —
+  工單寫的是「用假 IDE 物件寫會紅的測試找根因」，但假物件證明不了真 API 的行為，
+  而真 API 量下去是乾淨的；為了讓流程有東西可修而去改一段沒有壞的程式碼，
+  比不修更糟 — 錯了的代價是若那一行真的是引擎寫的，它會再出現一次，
+  而這次留下的雜湊對照表能在幾分鐘內指認磁碟或 IDE 哪一側說謊。
+- Ruling: 新增的 11 條測試照樣留下，即使它們從第一次跑就是綠的 —
+  `update_object_code` 在此之前**一條測試都沒有**，而生產環境唯一會走的那條分支
+  （`.text` 唯讀所以掉進 `replace()`）在假物件裡根本到不了，因為假物件的 `.text` 可以指派；
+  新的假物件照台架量到的形狀寫（`text` 是唯讀 property、只有 `replace(str)` 進得去） —
+  錯了的代價是無。
+- Ruling: BOM 那條在同一輪修掉，不另開工單 — 它就在工單第三個問題（原文寫回去救不回來）
+  的路徑上，症狀一模一樣（匯入回報成功、專案編譯不過），而且台架上量得出來、修法一支函式；
+  把一個已知會靜靜弄壞 POU 的洞留到下一輪，跟這一項存在的理由矛盾 —
+  錯了的代價是本輪多動三個檔案，行為變化只有一種：帶 BOM 的 `.st` 從「永遠不一致」
+  變成「一致」，那正是對的。
+- Ruling: 讀同步資料夾的檔案收成 `read_sync_text` 一支，不在六個地方各改一個編碼字串 —
+  同一件事寫六遍，下一個人加第七個讀取點時不會知道要寫 `utf-8-sig`；
+  錯誤處理仍留在各呼叫端，因為「讀不到怎麼辦」六處的答案本來就不同
+  （回 `""`、回 `False`、回 `None`、印一句話） — 錯了的代價是無。
+- Ruling: 上一輪那段「不在本工單範圍內的一件事」原文留著不刪，只在它後面接一句「判讀是錯的」
+  並指向新的段落 — 它記錄的是當時看到的現象，現象是真的，錯的只有結論；
+  把它改掉會讓後面「為什麼會誤判」那一課失去對照 — 錯了的代價是同一件事要讀兩段。
 
 階段 4 收尾（審查後）新增的：
 
