@@ -524,6 +524,14 @@ menu, counting whether a drop-down appeared.
 python tools/probe_click_menu.py --pid 1234 --seconds 60 --every 5
 ```
 
+**`tools/attr_probe.py`** prints what `build_properties` exposes on the first
+few objects of the open project, and what each attribute answers. Use it when
+a compile attribute (`exclude_from_build` and friends) does not round-trip on
+an IDE version: the names differ between versions, and this says what this one
+calls them. Runs inside the IDE, same `--runscript` shape. It used to be a
+one-shot dump inside `read_ide_attrs()`, costing a `getattr` per object on
+every export to answer a question somebody asks once a year.
+
 And the one that is not an instrument: **`tools/_root.py`** puts the install
 root on `sys.path` so the others can import `engine/` and `cds/`. Nothing to
 run; it is imported.

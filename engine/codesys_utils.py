@@ -814,22 +814,6 @@ def read_ide_attrs(obj, obj_type=None):
     if build_props is None:
         return attrs
 
-    # One-time diagnostic: dump all build_properties attributes (debug only)
-    if is_debug() and not getattr(read_ide_attrs, '_bp_dumped', False):
-        read_ide_attrs._bp_dumped = True
-        try:
-            bp_attrs = [a for a in dir(build_props) if not a.startswith("_")]
-            log_info("BUILD_PROPERTIES DISCOVERY for %s (%s): %s" % (name_of(obj), obj_type[:8], bp_attrs))
-            for a in bp_attrs:
-                try:
-                    val = getattr(build_props, a)
-                    if not hasattr(val, "__call__"):
-                        log_info("  build_properties.%s = %s" % (a, repr(val)))
-                except Exception as e2:
-                    log_info("  build_properties.%s -> ERROR: %s" % (a, safe_str(e2)))
-        except Exception as e:
-            log_info("BUILD_PROPERTIES DISCOVERY failed: %s" % safe_str(e))
-
     for key, prop_name in _readable_attr_props(obj_type, build_props):
         try:
             if getattr(build_props, prop_name):
@@ -1015,102 +999,75 @@ def find_child_transparent(parent_obj, name):
     return None
 
 
-def ensure_folder_path(path_str, project):
+def strip_src_prefix(path_str):
+    """Drop the retired "src/" the earliest exports wrote in front of paths.
+
+    One reader for it, because two spellings of the same migration drift: a
+    path that keeps its prefix on one side and loses it on the other resolves
+    to two different places in the tree.
     """
-    Ensure folder structure exists in CODESYS project.
-    path_str: relative path string e.g. "PLC/Application/MainFolder"
-    Returns the parent object (folder/application/device) or None if failed.
-    
-    Note: The export skips 'Plc Logic' nodes in paths (e.g. PLC/ST_Application
-    instead of PLC/Plc Logic/ST_Application), so this function transparently
-    looks through plc_logic children when a direct match isn't found.
+    normalized = path_str.replace("\\", "/")
+    if normalized.startswith("src/"):
+        return normalized[4:]
+    return normalized
+
+
+def _create_folder(container, name):
+    """Make one folder under container and hand it back.
+
+    Two calls do this depending on the CODESYS version, and either of them
+    may create the folder and still return something falsy -- so the folder
+    is looked up again rather than trusted to come back. That re-scan is a
+    documented quirk, not a retry: it runs once, and if the folder is still
+    not there this raises rather than returning a None the caller would carry
+    on with (SPEC D13, PRINCIPLES 6).
+    """
+    made = None
+    try:
+        if hasattr(container, "create_folder"):
+            made = container.create_folder(name)
+        elif hasattr(container, "create_child"):
+            made = container.create_child(name, TYPE_GUIDS["folder"])
+        else:
+            raise RuntimeError(
+                "cannot create '%s' under %s: it exposes neither "
+                "create_folder() nor create_child()"
+                % (name, name_of(container)))
+    except Exception as exc:
+        # The folder may exist anyway; the exception can come from the part
+        # of the call that happens after it was made.
+        made = None
+        log_warning("create folder '%s' raised: %s" % (name, safe_str(exc)))
+
+    if made:
+        return made
+    found = find_child_transparent(container, name)
+    if found:
+        return found
+    raise RuntimeError("could not create the folder '%s' under %s"
+                       % (name, name_of(container)))
+
+
+def ensure_folder_path(path_str, project):
+    """Walk (and create) the folder path, and hand back the object it ends at.
+
+    path_str is a relative path like "PLC/Application/MainFolder". The export
+    skips 'Plc Logic' nodes, so the lookup looks through those transparently.
+
+    Raises when a component cannot be found or made. The caller is inside the
+    per-object step of an import, which records the object by name and carries
+    on with the rest (SPEC D13); a None returned from here used to travel one
+    frame further and become an object created in the wrong place.
     """
     if not path_str or path_str == "." or path_str == "src":
         return project
-        
-    # Legacy 'src/' prefix check (handled by Project_export migration now, but for robustness)
-    if path_str.startswith("src/"): path_str = path_str[4:]
-    elif path_str.startswith("src\\"): path_str = path_str[4:]
-    
-    parts = path_str.replace("\\", "/").split("/")
-    current_obj = project # Start at project root
 
-    # These traces are worth their cost only when someone is reading them.
-    # Building them touches the IDE -- the "available children" dump alone
-    # reads a name and a type off every sibling -- and ensure_folder_path runs
-    # for every new object an import creates, so an unconditional trace made
-    # the diagnostic more expensive than the work it describes. log_info also
-    # always print()s to the CODESYS console, which is slow in its own right.
-    debug = is_debug()
-
-    if debug:
-        log_info("ensure_folder_path: resolving '" + path_str + "' (" + str(len(parts)) + " parts)")
-        log_info("  Starting at: " + safe_str(current_obj) + " (type: " + safe_str(current_obj.type if hasattr(current_obj, 'type') else 'N/A') + ")")
-
-    for i, part in enumerate(parts):
-        if not part: continue
-
-        found = find_child_transparent(current_obj, part)
-
-        if found:
-            if debug:
-                log_info("  [" + str(i) + "] Found '" + part + "' -> " + safe_str(found) + " (type: " + safe_str(found.type if hasattr(found, 'type') else 'N/A') + ")")
-        else:
-            if debug:
-                log_info("  [" + str(i) + "] NOT found '" + part + "' under " + safe_str(current_obj) + " — will try to create folder")
-                # List available children for debugging
-                try:
-                    children = current_obj.get_children()
-                    child_names = []
-                    for c in children:
-                        try:
-                            child_names.append(safe_str(c.get_name()) + " (" + safe_str(c.type) + ")")
-                        except:
-                            child_names.append("???")
-                    log_info("    Available children: " + str(child_names))
-                except Exception as e:
-                    log_info("    Could not list children: " + safe_str(e))
-
-        if not found:
-            # We can only create folders, not Devices/Applications
-            try:
-                if hasattr(current_obj, "create_folder"):
-                    found = current_obj.create_folder(part)
-                    log_info("    create_folder('" + part + "') returned: " + safe_str(found))
-                elif hasattr(current_obj, "create_child"):
-                    # Use folder GUID from constants
-                    found = current_obj.create_child(part, TYPE_GUIDS.get("folder", "738bea1e-99bb-4f04-90bb-a7a567e74e3a"))
-                    log_info("    create_child('" + part + "') returned: " + safe_str(found))
-                else:
-                    # If we reached a level where we can't create (e.g. Device level), log it
-                    log_error("Cannot create component '" + part + "' at " + safe_str(current_obj))
-                    return None
-                
-                # CODESYS quirk: create_folder/create_child may create the folder
-                # but return a falsy wrapper. Re-scan children to find it.
-                if not found:
-                    log_info("    Return value was falsy, re-scanning children...")
-                    found = find_child_transparent(current_obj, part)
-                    if found:
-                        log_info("    Re-scan found: " + safe_str(found))
-                    else:
-                        log_error("    Re-scan also failed for '" + part + "'")
-                        
-            except Exception as e:
-                log_error("Failed to create folder '" + part + "': " + safe_str(e))
-                # Even if exception, the folder might have been created
-                found = find_child_transparent(current_obj, part)
-                if found:
-                    log_info("    Despite exception, found folder '" + part + "' via re-scan")
-                else:
-                    return None
-        
-        if found:
-            current_obj = found
-        else:
-            return None
-            
-    return current_obj
+    current = project
+    for part in strip_src_prefix(path_str).split("/"):
+        if not part:
+            continue
+        current = find_child_transparent(current, part) or _create_folder(current, part)
+    return current
 
 
 def find_object_by_name(name, name_map, parent_name=None):
@@ -1152,9 +1109,7 @@ def find_object_by_path(rel_path, project):
     """
     if not rel_path: return None
     
-    # Clean up path
-    path_str = rel_path.replace("\\", "/")
-    if path_str.startswith("src/"): path_str = path_str[4:]
+    path_str = strip_src_prefix(rel_path)
     
     # Strip extension for lookup
     root, ext = os.path.splitext(path_str)
