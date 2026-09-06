@@ -386,7 +386,7 @@ D8 的落地。
 - `download`：`login(OnlineChangeOption.Never, False)` 完整下載，`create_boot_application`，`start`，`logout`，再建一次 boot app 比 CRC。
 - 這兩個命令的 report 要包含比對結果 `MATCH` 或 `DIFFERENT`，pipeline 拿這個當閘門。
 
-現況：已搬（階段 3），跟 `codesys_online.py` 並排。階段 4 拆成四個檔：`entry_plc.py` 是兩個命令的門面，`plc_trip.py` 是一趟的步驟，`plc_link.py` 是連到控制器的那一段，`plc_crc.py` 是判定本身（純位元組與路徑，不碰 IDE）。台架上還沒驗過，那一條要人。
+現況：已搬（階段 3），跟 `codesys_online.py` 並排。階段 4 拆成四個檔：`entry_plc.py` 是兩個命令的門面，`plc_trip.py` 是一趟的步驟，`plc_link.py` 是連到控制器的那一段，`plc_crc.py` 是判定本身（純位元組與路徑，不碰 IDE）。2026-09-06 在兩個 WSL soft PLC 上驗過：登入、閘道、完整下載、啟動、拉回 `Application.crc` 都對。**CRC 比對是錯的**：離線 `create_boot_application` 產出的 `.crc` 每編譯一次值就不同（同一份專案三趟三個值），控制器上的值在下載後穩定；兩個檔案前 20 位元組版面相同，所以錯的不是解析，是拿來比的東西。判決改成什麼，工單「階段 3 台架收尾二」在台架上量了再定。
 
 搬過來時定的幾件事。`connect` 只在給了 `--gateway` 的時候才動裝置節點的閘道設定；沒給就用專案自己帶的，
 因為那是別人設過的答案，一個唯讀命令不該順手改掉它。`--port` 不給就用 11740。
