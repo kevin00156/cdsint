@@ -205,6 +205,33 @@
 
 ---
 
+- [ ] **階段 7：審查後修正（監督者 2026-09-06 晚上派回）**
+
+  一個沒看過對話的 reviewer 對 `main..ticket/settings` 的 diff 審過，四個真 bug 監督者逐條重現過。前四條必修，五到十一條是工單自己的勾與文件說謊，同一輪修掉；十二到十六條順手。全部修完照第 6 節再回報一次。
+
+  - [ ] **1. 設定檔壞掉時 `build` 與 `discover` 靜默用預設值跑完並回 ok。** `engine/settings.py` 的 `prepare` 對「檔案不合法」和「還沒設 `sync_folder`」都回 `(None, None, error)`，`entry_build.py` 的 `main` 與 `entry_discover.py` 為了容忍後者把 `_error` 丟掉，連前者一起吞。實測專案旁放 `{"sync_folder": "./sync", "debgu": true}`，`build` 回 `ok: True`，一句話都沒有。這正是 SPEC 4.4「整個命令拒絕」要殺的東西，階段 6「打錯字時任何命令 exit 1」對這兩個命令不成立。改法：`prepare` 把兩種情況分開，檔案壞回 error，沒資料夾回 `(values, None, None)`；`values["debug"] if values else False` 和 `values or {}` 兩處特例跟著消失；`build_project` 的 `values` 參數沒人讀，刪。
+  - [ ] **2. 設定檔壞掉時 `plc` 回 exit 5 並謊報「清單是空的」。** `cds/ide/permit.py` 的 `_written` 把 `settings.Invalid` 吞成 `[]`。它的註解說「本體等一下會再讀同一個檔完整報錯」是假的：`entries.run` 在 `_not_allowed` 拒絕後直接 return，本體從不載入。後果是 agent 照訊息加 `"plc": ["connect"]` 再跑還是 exit 5，永遠找不到那個錯字。改法：`Invalid` 往上冒，`_not_allowed` 對它回 `error` 是 `Invalid` 的訊息、`denied` 是 None，exit 1 不是 5。`tests/test_plc.py` 對應那段註解一起改。
+  - [ ] **3. `--target` 形式每個命令第一行多印 `sync folder: …`。** `cdsint/cli.py` 的 `run_command` 與 `run_verify` 現在無條件呼叫 `show_sync_dir`，`folder_used` 退而取登記檔的值，所以 `ping`、`status`、`export --target` 第一行都變了。SPEC 4.2 那句在 `--project` 段落，`main` 上的 `--target` 沒有這一行，抓第一行的腳本會壞。改回只在 `--project` 形式印。Ruling 10 補一句說明這個邊界。
+  - [ ] **4. `tools/headless_watch.py` 呼叫已刪除的 `headless.point_sync_folder`。** 那是 WATCHER.md 第 8 節無頭看門人驗收的儀器，開完專案就炸。`tools/probe_watcher_ui.py` 已經改成 `settings.write(...)`，照抄。
+  - [ ] **5.** `readMe.md` 升級段那句 `cds-sync-save-after-export`：內容正當，但階段 5 的 grep 驗收打了假勾。改寫成不含前綴（例如「the old save-after-export property」），讓驗收句成立。
+  - [ ] **6.** `docs/WATCHER.md` 替身 UI 那張表仍列 `ask_yes_no_cancel`，`docs/SPEC.md` 6.1 那句「對話框只透過 `codesys_ui.ask_yes_no`、`ask_yes_no_cancel`、`system.ui.choose`」也是，兩處都改成只剩兩個。
+  - [ ] **7.** `tools/perf_probe.py` 的量測表還列 `check_version_compatibility`，另一列的說明文字「IDE:is_debug — get_project_info() round trips」描述的是已經不存在的機制。刪那一列、改那句。
+  - [ ] **8.** `tools/probe_imports.py` 的清單還有 `"cds.ide.config"`，模組已刪，儀器會報成 import 失敗。拿掉。
+  - [ ] **9.** 說謊的測試註解：`tests/test_plc.py` 檔頭「project property cds-sync-plc」、`tests/test_headless.py` 的「The IDE side sets cds-sync-folder」、`tests/test_unhandled_objects.py` 的版本對話框註解。三處改成講現在的機制。假物件裡殘留的 `cds-sync-version`、`ask_yes_no_cancel` 留給 `HYGIENE_PLAN.md`，不用動。
+  - [ ] **10.** `cdsint/headless.py` 的 `Headless.sync_dir()` docstring 說「printed as the run's first line, before the IDE has started」，跟 Ruling 10 和 `cdsint/report.py` 的說法相反。改成一致。
+  - [ ] **11.** `engine/codesys_utils.py` `Logger._initialize` 那段「the NameError went into the bare except below」指的 except 已經被這個 diff 刪了，整段是 git log 的事。刪。
+  - [ ] **12.**（順手）`engine/settings.py` 的 `_as_written` 自己判定「是不是相對路徑」，`cds/core/settings.py` 的 `folder` 又一份。工單第 4 節說判定那半要收進 `folder`，補上。
+  - [ ] **13.**（順手）`engine/settings.py` 的 `choose_sync_folder`：「No project open!」分支從 `prepare_asking` 到不了；`_folder` 跑兩次讓 `ensure_git_configs` 做兩遍。收成一次。
+  - [ ] **14.**（順手）`cds/ide/permit.py` 拒絕訊息前半用 Python repr 印清單、後半用 JSON。統一用 `json.dumps`。
+  - [ ] **15.**（順手）`cdsint/flags.py` 的 `check()` docstring 整段是歷史，改成現在的 WHY 一句。
+  - [ ] 驗收：`{"sync_folder": "./sync", "debgu": true}` 對 `build --project`、`discover --project`、`plc connect --project` 都 exit 1，訊息含 `debgu`，`denied` 是 null。
+  - [ ] 驗收：`cdsint ping --target <你自己用 headless_watch 起的看門人>` 第一行是 `info: pong`，不是 `sync folder:`。
+  - [ ] 驗收：`tools/headless_watch.py` 對副本起得來、`cdsint list` 看得到它、`stop` 得掉。
+  - [ ] 驗收：階段 5 那條 grep 重跑為零；`grep -n "ask_yes_no_cancel" docs/WATCHER.md docs/SPEC.md tools/` 為零。
+  - [ ] 驗收：Windows 與 WSL 測試綠；softplc 副本 export 的 hash 清單跟 `main` 的 diff 仍為零（監督者會重量）。
+
+---
+
 ## 6. 回報格式
 
 最後一則訊息要有：每段狀態一句話；commit 清單，每個 hash 配一句話；Windows 與 WSL 的測試數；階段 6 每一條的 exit code 與關鍵輸出；需要人的事，每件附一句為什麼只有人能做；沒做的事與原因；第 7 節新增的 Ruling。
