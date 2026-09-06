@@ -315,7 +315,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 
 現有的 `codesys_*.pyw` 加上四支入口的本體。這一版對它的要求：
 
-- **髒檔保護**。匯出時若磁碟上的 `.st` 自上次同步後被改過而還沒匯入，不覆蓋，列出來報「待匯入」。現況：已做（階段 4）。判斷在 `ObjectManager._disk_moved_since_sync`，只在兩邊內容確定不一樣之後才問，問的是「這個檔的 mtime 與大小跟上次同步記下的一不一樣」；一樣就是 IDE 那邊動了，照舊覆蓋，不一樣就是磁碟這邊動了，留著不寫，路徑進 `data.pending_import`，而且那一趟 `ok` 是 False。快取裡沒有這個檔的紀錄時不擋，因為那不是「沒被改過」而是「不知道」——快取是本機狀態又 gitignore，剛 clone 的資料夾一筆都沒有。只看的命令不准把這個依據拿走：`find_all_changes` 對「不同」與「這一趟讀不到」的物件保留舊的快取項目，因為那一項描述的是「上次同步的時候磁碟長什麼樣」，而那正是這個判斷要問的事。以前它只寫回自己看到相同的那些，於是任何一次 `compare`、`verify`，或是沒有確認的 `import`（比對跑在確認對話框之前），都會讓下一次匯出直接蓋掉那個編輯。比對視窗按「匯出」那條路不受這條管，理由見 `entry_compare.perform_export` 的註解；但它會把自己寫出去的東西記回快取，否則下一次一般匯出會拿磁碟簽章對不上的舊紀錄，把 IDE 造成的改動誤判成磁碟動過。
+- **髒檔保護**。匯出時若磁碟上的 `.st` 自上次同步後被改過而還沒匯入，不覆蓋，列出來報「待匯入」。現況：已做（階段 4）。判斷在 `ObjectManager._disk_moved_since_sync`，只在兩邊內容確定不一樣之後才問，問的是「這個檔的 mtime 與大小跟上次同步記下的一不一樣」；一樣就是 IDE 那邊動了，照舊覆蓋，不一樣就是磁碟這邊動了，留著不寫，路徑進 `data.pending_import`，而且那一趟 `ok` 是 False。快取裡沒有這個檔的紀錄時不擋，因為那不是「沒被改過」而是「不知道」——快取是本機狀態又 gitignore，剛 clone 的資料夾一筆都沒有。只看的命令不准把這個依據拿走：`find_all_changes` 對「不同」與「這一趟讀不到」的物件保留舊的快取項目，因為那一項描述的是「上次同步的時候磁碟長什麼樣」，而那正是這個判斷要問的事。以前它只寫回自己看到相同的那些，於是任何一次 `compare`、`verify`，或是沒有確認的 `import`（比對跑在確認對話框之前），都會讓下一次匯出直接蓋掉那個編輯。
 - **每次操作只存檔備份一次**。現況：已做，`def7590`。
 - **等待人按鈕的時間不算進耗時**。現況：已做，`fc1b9da`。
 - **新寫的程式碼不准空白 `except:`**。搬過來的那些不要求一次清完，但每次碰到的函式順手改。現況：`tests/test_bare_excepts.py` 是棘輪，新寫的地方釘在零，搬過來的每個檔各記一個數字，只准往下。
@@ -514,7 +514,8 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 | `Project_export.py`、`Project_import.py`、`Project_watch.py` | 留在 stub 資料夾，各十行，本體邏輯搬進 `engine/` 並回傳結果（D11） |
 | `Project_compare.py`、`Project_Build.py` | 改成引擎模組，只由 CLI 與看門人呼叫 |
 | `Project_directory.py`、`Project_parameters.py` | 併進 6.7 的設定流程後刪除 |
-| `Project_discover.py`、`Project_resources.py`、`Project_perf_probe.py` | 搬到 `tools/`，無頭啟動器可以跑它們 |
+| `Project_discover.py`、`Project_perf_probe.py` | 搬到 `tools/`，無頭啟動器可以跑它們 |
+| `Project_resources.py` | 刪除。幾乎沒人用，檔案大小任何工具都看得到 |
 | `Project_perf_test.py` | 刪除。`perf_probe` 已經取代它，而且它的檔名符合 `*_test.py`，今天讓 `python -m pytest` 在收集階段就報錯 |
 | `codesys_*.pyw` | 搬進 `engine/`，副檔名改回 `.py`，因為已經不在 ScriptDir 裡 |
 | `cli/cds_ide.py` | 改成 `cdsint/` 套件，拆成四個模組 |
@@ -523,14 +524,14 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 | `cds/__init__.py` 的 `VERSION` | 刪除，沒人讀 |
 | `docs/WATCHER_CLI_PLAN.md`、`docs/RESEARCH_HTTP_IDE_CONTROL.md`、`docs/REWORK_PLAN.md`、`WORKFLOW.md` | 進 `docs/history/`，見第 9 節 |
 | `irm/` | 安裝腳本，跟著 5.3 的佈局改寫，改指本 repo |
-| `img/` | 留著，readMe 用 |
+| `img/` | 刪除。readMe 一張都沒用 |
 | `Performance_tests/` | 空目錄，刪除 |
 
 ### 10.2 分階段與驗收
 
 每一階段獨立可合併，合併前 CI 綠。
 
-**階段 0，搬家與身分。** 從來源 repo 把程式碼搬進 5.1 的佈局：`codesys_*.pyw` 進 `engine/` 改 `.py`，四支入口的本體進 `engine/`，stub 進 `stub/`，`cli/cds_ide.py` 進 `cdsint/`，`cds/`、`tools/`、`profiles/`、`tests/`、`irm/`、`img/` 照搬。補 `pyproject.toml`，套件名和命令名都是 `cdsint`。實例目錄用 `%LOCALAPPDATA%\cdsint`，不寫遷移，因為只有這台機器有，看門人重啟就好。抽 `docs/WATCHER.md`，改程式碼指標，四份決策紀錄進 `docs/history/`。CHANGELOG 沿用來源的，頂上加一段說明搬家。刪掉沒人讀的 `cds.VERSION` 與擋住 pytest 收集的 `Project_perf_test.py`。
+**階段 0，搬家與身分。** 從來源 repo 把程式碼搬進 5.1 的佈局：`codesys_*.pyw` 進 `engine/` 改 `.py`，四支入口的本體進 `engine/`，stub 進 `stub/`，`cli/cds_ide.py` 進 `cdsint/`，`cds/`、`tools/`、`profiles/`、`tests/`、`irm/` 照搬。補 `pyproject.toml`，套件名和命令名都是 `cdsint`。實例目錄用 `%LOCALAPPDATA%\cdsint`，不寫遷移，因為只有這台機器有，看門人重啟就好。抽 `docs/WATCHER.md`，改程式碼指標，四份決策紀錄進 `docs/history/`。CHANGELOG 沿用來源的，頂上加一段說明搬家。刪掉沒人讀的 `cds.VERSION` 與擋住 pytest 收集的 `Project_perf_test.py`。
 驗收：測試通過數不少於來源的 389。從乾淨的 clone 照 readMe 裝，裝到的是這個 repo，命令叫 `cdsint`。三家 IDE 用無頭模式都能載入引擎且沒有 traceback。
 驗收：從乾淨的 clone 照 readMe 裝，裝到的是這個 repo，命令叫 `cdsint`。
 

@@ -10,7 +10,6 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
     codesys_managers    one manager per object kind: read it, write it back
     codesys_compare_engine  what differs between the IDE and the disk
     codesys_ui          the WinForms dialogs a person clicks
-    codesys_ui_diff     the side-by-side viewer
     codesys_online      is anyone logged into a PLC right now
 
     entry_*             the bodies behind the Scripts menu entries. stub/ has

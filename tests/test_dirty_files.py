@@ -80,13 +80,12 @@ class DeafSystem(object):
 class Synced(object):
     """One POU exported once, and the ways to look at it or export it again."""
 
-    def __init__(self, pou, path, sync, export, from_dialog, look,
+    def __init__(self, pou, path, sync, export, look,
                  import_answering_no, compare_engine):
         self.pou = pou
         self.file = path
         self.sync = sync
         self.export = export
-        self.export_from_dialog = from_dialog
         self.look = look
         self.import_answering_no = import_answering_no
         self.compare_engine = compare_engine
@@ -99,7 +98,6 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
                 "codesys_compare_engine"):
         load_engine(dep)
     export = load_engine("entry_export")
-    compare = load_engine("entry_compare")
 
     sync = tmp_path / "sync"
     sync.mkdir()
@@ -109,18 +107,14 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
                        "cds-sync-version": version},
                       [pou], str(tmp_path / "Fake.project"))
     projects = Projects(project)
-    for body in (export, compare):
-        monkeypatch.setattr(body, "projects", projects, raising=False)
-        monkeypatch.setattr(body, "system", DeafSystem(), raising=False)
+    monkeypatch.setattr(export, "projects", projects, raising=False)
+    monkeypatch.setattr(export, "system", DeafSystem(), raising=False)
 
     run = lambda: export.export_project(str(sync), projects)
     first = run()
     assert first["ok"] is True, first["summary"]
     written = [p for p in sync.rglob("*.st")]
     assert len(written) == 1, written
-    chose_the_ide = lambda: compare.perform_export(
-        str(sync), [{"obj": pou, "name": pou.get_name(),
-                     "path": written[0].name}])
 
     engine_module = sys.modules["engine.codesys_compare_engine"]
     look = lambda: engine_module.find_all_changes(str(sync), projects,
@@ -135,7 +129,7 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "engine.codesys_ui", said_no)
     refuse = lambda: importer.import_project(projects)
 
-    return Synced(pou, written[0], sync, run, chose_the_ide, look, refuse,
+    return Synced(pou, written[0], sync, run, look, refuse,
                   engine_module)
 
 
@@ -200,23 +194,6 @@ def test_a_disk_edit_that_matches_the_ide_is_not_called_pending(
     result = a_synced_project.export()
 
     assert result["ok"] is True and result["data"]["pending_import"] == []
-
-
-def test_the_compare_dialog_export_writes_what_the_person_chose(
-        a_synced_project):
-    # The guard is for the export nobody was watching. Here the person read
-    # the difference in the compare dialog and picked the IDE side, so
-    # refusing them would be refusing the answer they just gave. What
-    # switches the guard off is that perform_export builds a context with no
-    # sync cache in it; this test is what stops somebody adding one.
-    edit_on_disk(a_synced_project.file,
-                 u"FUNCTION_BLOCK MC_Main\nEND_VAR\nmine := 1;\n")
-    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
-
-    result = a_synced_project.export_from_dialog()
-
-    assert u"theirs := 2;" in a_synced_project.file.read_text(encoding="utf-8")
-    assert result["ok"] is True
 
 
 def test_the_export_does_not_print_a_count_nothing_ever_counts(
@@ -285,36 +262,3 @@ def test_an_object_compare_could_not_read_keeps_its_cache_entry(
 
     assert a_synced_project.file.read_text(encoding="utf-8") == mine
     assert result["data"]["pending_import"] == ["MC_Main.st"]
-
-
-def test_the_compare_dialog_export_leaves_the_cache_describing_the_disk(
-        a_synced_project):
-    # Suggestion 11. perform_export writes the file but used to record
-    # nothing, so the cache still described the pre-edit disk. The next
-    # ordinary export then read a signature that did not match, blamed the
-    # disk for a change the IDE had made, and refused to write.
-    edit_on_disk(a_synced_project.file,
-                 u"FUNCTION_BLOCK MC_Main\nEND_VAR\nmine := 1;\n")
-    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
-    a_synced_project.export_from_dialog()
-
-    a_synced_project.pou.textual_implementation.text = u"later := 3;\n"
-    result = a_synced_project.export()
-
-    assert result["ok"] is True and result["data"]["pending_import"] == []
-    assert u"later := 3;" in a_synced_project.file.read_text(encoding="utf-8")
-
-
-def test_the_compare_dialog_export_keeps_the_entries_it_did_not_touch(
-        a_synced_project):
-    # Writing only the exported object's entry would be the same bug as
-    # compare's: one selected file must not cost every other object the
-    # entry that guards it.
-    from engine.codesys_utils import load_sync_cache
-
-    before = set(load_sync_cache(str(a_synced_project.sync)).get("objects", {}))
-    a_synced_project.pou.textual_implementation.text = u"theirs := 2;\n"
-    a_synced_project.export_from_dialog()
-
-    after = load_sync_cache(str(a_synced_project.sync))
-    assert before and before <= set(after.get("objects", {}))

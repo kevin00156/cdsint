@@ -284,7 +284,7 @@ def fake_codesys_ui():
     def opened(*args, **kwargs):
         raise AssertionError("a real message box was opened")
 
-    for name in ("ask_yes_no", "ask_yes_no_cancel", "show_compare_dialog",
+    for name in ("ask_yes_no", "ask_yes_no_cancel",
                  "show_sync_folder_dialog"):
         setattr(module, name, opened)
     sys.modules["engine.codesys_ui"] = module

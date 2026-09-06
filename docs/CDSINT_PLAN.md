@@ -742,7 +742,7 @@ identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`�
 
 - Ruling: 建議 11 的比對視窗匯出，快取是「載入現有的再蓋上這次寫的」，不是「只寫這次的」 — `save_sync_cache` 是整份替換不是合併，只寫這次選中的那幾個等於把其他每個物件的護欄拿掉，也就是必修 1 換一個入口再犯一次。這一條有自己的測試（`test_the_compare_dialog_export_keeps_the_entries_it_did_not_touch`），它在修之前是綠的，因為那時候比對視窗根本不寫快取；留著它是為了擋住這次的改法出錯 — 錯了的代價是無。
 
-- Ruling: 比對視窗的匯出仍然不放 `cache_data`，只放 `new_cache` — 前者是「讀快取來決定要不要寫」，也就是髒檔保護的開關，而那條路上有人剛剛在對話框裡看過差異並選了 IDE 這邊，攔他等於推翻他剛給的答案；後者是「把寫出去的東西記下來」，兩件事不同 — 錯了的代價是無，`entry_compare.perform_export` 的註解寫了這個分別。
+- Ruling: 比對視窗的匯出仍然不放 `cache_data`，只放 `new_cache` — 前者是「讀快取來決定要不要寫」，也就是髒檔保護的開關，而那條路上有人剛剛在對話框裡看過差異並選了 IDE 這邊，攔他等於推翻他剛給的答案；後者是「把寫出去的東西記下來」，兩件事不同 — 錯了的代價是無，`entry_compare.perform_export` 的註解寫了這個分別。（已刪：2026-09-06 的收斂工單拿掉了比對視窗，`entry_compare.perform_export`、`perform_import` 跟著消失，這條只剩下紀錄。）
 
 - Ruling: 建議 8（`point_sync_folder` 的註解與事實矛盾）除了改註解，也讓 IDE 側把實際生效的資料夾寫進 report，CLI 側不再用自己的旗標蓋掉它 — 純改註解沒有任何測試會紅，而審查那一條本來就提了「或 report 註明」這個選項；報告說的是引擎實際讀的那個資料夾，比報告說的是「我要求的那個」有用 — 錯了的代價是 report 多一個來源，IDE 沒跑到那一步時仍然退回旗標值。
 
@@ -781,12 +781,12 @@ identical 檢查、property 的 update 與 create、native XML 的 `_hash_file`�
 - Ruling: `show_toast` 改成 Timer 這件事沒有測試，也沒有在真 IDE 上跑過 — 這個檔第一行就 `import clr`，CI 上根本 import 不了，而托盤氣泡要不要正確消失只有眼睛看得出來。守得住的部分（沒有執行緒、沒有 sleep）已經由上面那條測試守住；剩下的要人在 IDE 裡跑一次比對視窗的「存到 .diff」看氣泡有沒有出現又消失 — 錯了的代價是氣泡可能出不來或者留在托盤上不走，那是外觀問題，不影響任何命令的結果。
 - Ruling: 髒檔擋下來的物件讓那一趟 `ok=False`，而且不進 `unhandled` 登記簿，自己一個 `data.pending_import` — 磁碟不再跟 IDE 一致而匯出選擇不去弄一致，那就不是一趟做完的匯出，場景 C 拿 `ok` 當閘門的話不能放行（跟階段 1 監督者那條同一個理由）。不進登記簿是因為那個登記簿的檔頭寫明「不是故意跳過的」，而這是故意跳過的，讀者要做的事也不一樣：登記簿要人去查為什麼失敗，這一份要人去跑一次匯入 — 錯了的代價是某個工作流程習慣「改磁碟、直接匯出」，那種人每次會多拿一個 exit 1 與一句話，要嘛先匯入要嘛把檔案刪掉再匯出。
 - Ruling: 判斷用 mtime 加大小跟快取比，而且只在內容已經確定不同之後才問；快取沒有紀錄就不擋 — 內容先比，所以 git checkout 把同樣內容重寫一次（時間戳動了、內容沒動）不會被誤判成待匯入；快取沒紀錄就不擋，是因為那不是「沒被改過」而是「不知道」，快取是本機狀態又 gitignore，剛 clone 的資料夾一筆都沒有，擋下去等於新機器上第一次匯出全部被拒 — 錯了的代價是兩個真的漏掉的情況：一是匯出寫完檔案但還沒存快取就被中斷，下一趟會把那些檔誤報成待匯入（跑一次匯入就好）；二是資料夾裡有檔案而這台機器從來沒同步過，那一趟照樣覆蓋，git 還救得回來，而且 `compare` 本來就是拿來先看的。
-- Ruling: 比對視窗按「匯出」不受髒檔保護 — 那條路上有人剛剛看過差異並且選了 IDE 那一邊，擋他等於推翻他剛給的答案；技術上是 `perform_export` 組的 context 裡沒有 `cache_data`，那個「沒有」現在有註解說明理由，也有一條測試釘著，免得有人日後好心加上去 — 錯了的代價是有人在比對視窗選錯邊時沒有第二道保險，但比對視窗本來就把兩邊內容都攤開給他看了。
+- Ruling: 比對視窗按「匯出」不受髒檔保護 — 那條路上有人剛剛看過差異並且選了 IDE 那一邊，擋他等於推翻他剛給的答案；技術上是 `perform_export` 組的 context 裡沒有 `cache_data`，那個「沒有」現在有註解說明理由，也有一條測試釘著，免得有人日後好心加上去 — 錯了的代價是有人在比對視窗選錯邊時沒有第二道保險，但比對視窗本來就把兩邊內容都攤開給他看了。（已刪：2026-09-06 的收斂工單拿掉了比對視窗，`entry_compare.perform_export`、`perform_import` 跟著消失，這條只剩下紀錄。）
 - Ruling: `manager.export()` 出錯一律丟例外，回傳 `False` 只剩「沒有東西要寫」一個意思 — 原本 `False` 同時代表「這個物件沒有文字內容」和「檔案寫不出去」，而兩個呼叫端（`entry_export.export_project` 與 `entry_compare.perform_export`）都只看回傳值等不等於 `new`／`updated`／`identical`，所以寫失敗被當成沒事發生。兩個呼叫端本來就各有一個「處理這一個物件」的 try/except，例外一丟就落進去，一個命令仍然只有一個地方認定失敗，跟 `engine/unhandled.py` 檔頭講的理由同一條 — 錯了的代價是原本安靜回 `False` 的三種罕見情形（`export_native` 沒產出檔案、沒有 primary project、XML 換檔失敗）現在會讓整趟匯出 `ok=False`；如果某個物件種類本來就合法地不產出 XML，那種專案會開始每次匯出都 exit 1，那時要修的是分類而不是把判決放寬。
 - Ruling: 路徑超過 Windows 260 字元不做匯出前的預檢，也不改用 `\\?\` 前綴，就照 D13 一個一個報出名字 — 預檢要精確就得先把整棵樹分類一次才知道最長的檔名會有多長，那是多走一趟專案，違反 PRINCIPLES 第 3 條；`\\?\` 那條路在這裡沒有驗證過而且很可能不成立，引擎跑在 IDE 內的 IronPython 2.7 上，檔案是 .NET Framework 開的，那一層自己就擋 `MAX_PATH`，就算開得成，寫出來的 `.st` 是 git 與編輯器打不開的路徑，等於把失敗推到一個完全沒有登記簿的地方 — 錯了的代價是同步資料夾放得太深的人拿到的是一串逐物件的失敗清單，而不是開頭一句「你的資料夾太深」，要自己從錯誤訊息看出路徑長度是原因。
 - Ruling: `entry_plc.py` 拆成四個檔不是三個，而且 `Trip` 也搬出去 — 工單建議的三分法留下的門面加 `Trip` 是 329 行，超過工單自己訂的 300；要壓到 300 只能砍掉那些解釋 CODESYS 行為的註解，那是這個檔最值錢的部分。第四刀切在「命令的門面」與「一趟的步驟」之間，這兩件事本來就不同：門面是 `cds/ide/entries.py` 叫得出名字的那個東西，步驟是工作本身。順帶的好處是 `Trip` 需要的兩樣東西（`command_args` 與腳本執行時的 `globals()`）現在是參數，在 `entry_plc.py` 那一個地方讀，而那正是 `cds/ide/silent.py` exec 出來的命名空間；留在 `Trip` 裡讀的話，`Trip` 一旦是普通 import 的模組就會讀到空的 — 錯了的代價是 `plc` 這條路多一個檔案要跟著看，而且 `tools/probe_imports.py` 的清單多三行。
 - Ruling: 搬出去的函式由測試改指新模組，不在 `entry_plc.py` 留 re-export — 留 re-export 就是同一個東西兩個名字，SPEC D16 禁的就是這個；`tests/test_plc.py` 改的只有那個 import 小工具與五處呼叫，測試本體一行沒動，61 條全綠 — 錯了的代價是無。
-- Ruling: `entry_compare.perform_export` 與 `perform_import` 的 summary 在有失敗時也接上 `unhandled.summary()`，跟 `export_project`、`compare_project`、`import_project` 一致 — `entry.result` 的約定是「`ok` 為 false 時 summary 就是呼叫端拿到的錯誤文字」，一句只有 `Failed: 1` 的文字沒說是誰 — 錯了的代價是無。
+- Ruling: `entry_compare.perform_export` 與 `perform_import` 的 summary 在有失敗時也接上 `unhandled.summary()`，跟 `export_project`、`compare_project`、`import_project` 一致 — `entry.result` 的約定是「`ok` 為 false 時 summary 就是呼叫端拿到的錯誤文字」，一句只有 `Failed: 1` 的文字沒說是誰 — 錯了的代價是無。（已刪：2026-09-06 的收斂工單拿掉了比對視窗，`entry_compare.perform_export`、`perform_import` 跟著消失，這條只剩下紀錄。）
 
 階段 3 新增的：
 

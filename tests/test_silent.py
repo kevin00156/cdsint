@@ -49,15 +49,11 @@ def fake_codesys_ui():
     def ask_yes_no_cancel(title, message):
         raise AssertionError("a real message box was opened")
 
-    def show_compare_dialog(*args):
-        raise AssertionError("a real compare window was opened")
-
     def show_sync_folder_dialog(*args):
         raise AssertionError("a real folder dialog was opened")
 
     module.ask_yes_no = ask_yes_no
     module.ask_yes_no_cancel = ask_yes_no_cancel
-    module.show_compare_dialog = show_compare_dialog
     module.show_sync_folder_dialog = show_sync_folder_dialog
     sys.modules["engine.codesys_ui"] = module
     yield module
@@ -205,18 +201,6 @@ def test_the_sync_folder_dialog_is_refused_rather_than_opened(tmp_path, ide,
     assert outcome.needs is not None
     assert "cds-sync-folder" in outcome.needs.question
     assert not outcome.ok()
-
-
-def test_the_compare_window_is_replaced_by_a_summary(tmp_path, ide,
-                                                     fake_codesys_ui):
-    body = (u"    from engine.codesys_ui import show_compare_dialog\n"
-            u"    action, selected = show_compare_dialog("
-            u"[1, 2], [3], [], 7, [])\n"
-            u"    system.ui.info('action=%s' % (action,))")
-    path = write_script(tmp_path, body)
-    outcome = silent.run(ide, path, "main", {})
-    assert "modified 2" in outcome.messages[0]["text"]
-    assert outcome.messages[1]["text"] == "action=None"
 
 
 def test_codesys_ui_is_put_back_afterwards(tmp_path, ide, fake_codesys_ui):

@@ -44,7 +44,7 @@ def cleanup_orphaned_files(export_dir, current_objects):
     
     # We'll collect everything first to show a preview
     for root, dirs, files in os.walk(export_dir):
-        # Skip hidden dirs (including .diff, .git, .project etc.)
+        # Skip hidden dirs (.git, .project etc.)
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         
         # Calculate relative path from export_dir

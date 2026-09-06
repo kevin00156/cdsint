@@ -64,10 +64,10 @@
 
 ## 5. 分階段與驗收
 
-- [ ] **A. 刪掉沒人到得了的**
-  - [ ] 刪 `engine/codesys_ui_diff.py`、`show_compare_dialog`、Ctrl+Diff 與 `.diff/` 那段、`entry_compare.py` 的視窗路徑與只從視窗到得了的函式、對應測試、`.gitignore` 產生器裡的 `/.diff/`。SPEC 6.1 那條規則刪，`CDSINT_PLAN.md` 第 7 節那條 Ruling 加一句「已刪」。
-  - [ ] 刪 `tools/Project_resources.py`、`img/`；SPEC 10.1 跟著改。
-  - [ ] 驗收：`grep -rn "show_compare_dialog\|codesys_ui_diff\|\.diff" engine/ cds/ cdsint/ tests/` 為零（`git diff` 這種字串不算）；測試綠。
+- [x] **A. 刪掉沒人到得了的**
+  - [x] 刪 `engine/codesys_ui_diff.py`、`show_compare_dialog`、Ctrl+Diff 與 `.diff/` 那段、`entry_compare.py` 的視窗路徑與只從視窗到得了的函式、對應測試、`.gitignore` 產生器裡的 `/.diff/`。SPEC 6.1 那條規則刪，`CDSINT_PLAN.md` 第 7 節那條 Ruling 加一句「已刪」。
+  - [x] 刪 `tools/Project_resources.py`、`img/`；SPEC 10.1 跟著改。
+  - [x] 驗收：`grep -rn "show_compare_dialog\|codesys_ui_diff\|\.diff" engine/ cds/ cdsint/ tests/` 為零（`git diff` 這種字串不算）；測試綠。
 
 - [ ] **B. `discover` 進 CLI**
   - [ ] `engine/entry_discover.py` 照第 4 節；`cds/ide/entries.py` 加一列；`cdsint/flags.py` 加子命令，兩種形式；`tools/Project_discover.py` 刪。
@@ -110,7 +110,10 @@
 實作時決定，決定了寫回：`Ruling: 決定 — 理由 — 錯了的代價`。
 
 1. `discover` 的 `data` 形狀細節（第 4 節只定最少要有的三個欄位）。
-2. `perform_export`、`perform_import` 刪掉之後 `entry_compare.py` 還剩什麼，要不要跟 `find_all_changes` 的呼叫端合併。
+
+本工單裁的：
+
+- Ruling: `entry_compare.py` 留著當一支獨立模組，不並進 `codesys_compare_engine` — 它剩下的 181 行是 `entries.SCRIPTS` 裡 `compare` 那一列的本體，而 SPEC D12 要求每一個命令名字對到一支 `entry_*`；`codesys_compare_engine` 是算差異的引擎，把「載設定、印報告、回 result」塞進去就是兩個職責掉進同一支檔（PRINCIPLES 1）— 錯了的代價是多一支小檔案。
 
 監督者已裁的：
 

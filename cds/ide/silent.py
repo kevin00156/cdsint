@@ -281,7 +281,7 @@ def _install(silent, ui, args):
     main.system = silent
 
     old_ui = {}
-    for name, replacement in _ui_patches(ui, args).items():
+    for name, replacement in _ui_patches(args).items():
         old_ui[name] = getattr(codesys_ui, name, None)
         setattr(codesys_ui, name, replacement)
 
@@ -295,12 +295,11 @@ def _install(silent, ui, args):
     return undo
 
 
-def _ui_patches(ui, args):
+def _ui_patches(args):
     """The codesys_ui functions that open windows of their own."""
     return {
         "ask_yes_no": _yes_no(args),
         "ask_yes_no_cancel": _yes_no_cancel(args),
-        "show_compare_dialog": _no_compare_dialog(ui),
         "show_sync_folder_dialog": _no_folder_dialog,
     }
 
@@ -339,22 +338,6 @@ def _yes_no_cancel(args):
             raise NeedsInput("unexpected dialog %r: %s" % (title, message))
         return "no" if args.get(name) else "cancel"
     return ask_yes_no_cancel
-
-
-def _no_compare_dialog(ui):
-    """Compare's picker window cannot be opened here, so report its contents.
-
-    The counts come straight from what the window would have listed; the
-    per-object lines are already on stdout, so they reach stdout_tail.
-    """
-    def show_compare_dialog(different, new_in_ide, new_on_disk,
-                            unchanged_count=0, moved=None, *rest):
-        ui.info("modified %d, only in IDE %d, only on disk %d, moved %d, "
-                "identical %d (nothing was changed; compare only looks)"
-                % (len(different), len(new_in_ide), len(new_on_disk),
-                   len(moved or []), unchanged_count))
-        return None, []
-    return show_compare_dialog
 
 
 def _exec_file(path, namespace):

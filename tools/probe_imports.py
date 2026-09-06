@@ -25,9 +25,8 @@ _INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _INSTALL_ROOT not in sys.path:
     sys.path.insert(0, _INSTALL_ROOT)
 
-# Every module that has to load inside the IDE. codesys_ui and codesys_ui_diff
-# import clr and WinForms at module level, so they are part of the question,
-# not an extra.
+# Every module that has to load inside the IDE. codesys_ui imports clr and
+# WinForms at module level, so it is part of the question, not an extra.
 MODULES = [
     "engine",
     "engine.entry",
@@ -36,7 +35,6 @@ MODULES = [
     "engine.codesys_managers",
     "engine.codesys_compare_engine",
     "engine.codesys_ui",
-    "engine.codesys_ui_diff",
     "engine.codesys_online",
     "engine.entry_export",
     "engine.entry_import",

@@ -104,7 +104,7 @@ def toast(ui, monkeypatch):
 
 def test_a_toast_that_cannot_be_disposed_does_not_reach_the_message_loop(
         ui, toast, capsys):
-    ui.show_toast("Saved", "MC_Main.diff")
+    ui.show_toast("Saved", "MC_Main.st")
     toast.handler()
 
     assert "the icon was already gone" in capsys.readouterr().out
@@ -114,7 +114,7 @@ def test_a_toast_that_cannot_be_disposed_still_lets_go_of_its_objects(
         ui, toast):
     # _TOASTS is what keeps the icon and the timer from being collected. An
     # entry left in it is a tray icon that never goes away.
-    ui.show_toast("Saved", "MC_Main.diff")
+    ui.show_toast("Saved", "MC_Main.st")
     toast.handler()
 
     assert ui._TOASTS == []

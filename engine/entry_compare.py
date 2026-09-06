@@ -17,26 +17,12 @@ import sys
 import codecs
 import time
 
-import codecs
-import json
-
 from cds.core import props
-from engine.codesys_constants import TYPE_GUIDS, SCRIPT_VERSION
 from engine.codesys_utils import (
-    safe_str, load_base_dir, init_logging, log_info, log_error, log_warning,
-    resolve_projects, clean_filename, get_project_prop,
-    check_version_compatibility, finalize_sync_operation, create_safety_backup,
-    load_sync_cache, save_sync_cache, build_folder_hashes
+    load_base_dir, init_logging, log_info, resolve_projects,
+    get_project_prop, check_version_compatibility
 )
-from engine.codesys_managers import (
-    FolderManager, POUManager, NativeManager, ConfigManager, PropertyManager,
-    is_graphical_pou, collect_property_accessors, classify_object
-)
-from engine.codesys_compare_engine import (
-    find_all_changes, perform_import_items, create_import_managers,
-    TYPE_NAMES, build_expected_path
-)
-from engine.codesys_online import find_logged_in_applications, logged_in_block_message
+from engine.codesys_compare_engine import find_all_changes
 from engine import entry, unhandled
 
 
@@ -129,18 +115,6 @@ def compare_project(projects_obj=None):
     # ── Show UI ──
     if not diff_lines:
         system.ui.info("IDE and Disk are in sync!\n\nObjects checked: " + str(unchanged_count))
-    else:
-        from engine.codesys_ui import show_compare_dialog
-        action, selected = show_compare_dialog(
-            different, new_in_ide, new_on_disk, unchanged_count, moved
-        )
-
-        # These two only happen with a person at the dialog; whichever one
-        # ran is what this command did, so its result is the result.
-        if action == "import":
-            return perform_import(projects_obj.primary, base_dir, selected, unchanged_count)
-        elif action == "export":
-            return perform_export(base_dir, selected, unchanged_count)
 
     # Compare only looks, so differences are the answer, not a failure. An
     # object it could not classify is a different matter: it is missing from
@@ -153,193 +127,6 @@ def compare_project(projects_obj=None):
                         different=len(different), new_in_ide=len(new_in_ide),
                         new_on_disk=len(new_on_disk), moved=len(moved),
                         unchanged=unchanged_count, failed_objects=missing)
-
-
-def perform_import(primary_project, base_dir, selected, unchanged_count=0):
-    """Import selected items via the shared engine."""
-    if not selected:
-        nothing = "No files selected for import."
-        system.ui.info(nothing)
-        return entry.result(True, nothing, updated=0, created=0, moved=0,
-                            deleted=0, failed=0, identical=unchanged_count)
-
-    # A live PLC login makes every create/move/delete fail inside the IDE.
-    online_apps = find_logged_in_applications(primary_project, globals())
-    if online_apps:
-        block = logged_in_block_message(online_apps)
-        print(block)
-        log_warning("Import blocked - logged into: " + ", ".join(online_apps))
-        system.ui.error(block)
-        return entry.result(False, block)
-
-    # Create timestamped safety backup if enabled
-    projects_obj = resolve_projects(None, globals())
-    backup_filename = create_safety_backup(base_dir, projects_obj, selected)
-    
-    updated, created, failed, deleted, moved = perform_import_items(
-        primary_project, base_dir, selected, globals()
-    )
-    
-    summary = "Updated: {}, Created: {}, Moved: {}, Deleted: {}, Failed: {} (Identical: {})".format(
-        updated, created, moved, deleted, failed, unchanged_count)
-    message = "Import complete!\n\n" + summary
-    if backup_filename:
-        message += "\n\nBackup created: .project/" + backup_filename
-    system.ui.info(message)
-
-    # Handle final save and backup
-    projects_obj = resolve_projects(None, globals())
-    finalize_sync_operation(base_dir, projects_obj, is_import=True)
-
-    missing = unhandled.names()
-    return entry.result(not missing,
-                        summary if not missing else
-                        summary + " -- " + unhandled.summary(),
-                        updated=updated, created=created, moved=moved,
-                        deleted=deleted, failed=failed,
-                        identical=unchanged_count, failed_objects=missing)
-
-
-def perform_export(base_dir, selected, unchanged_count=0):
-    """Trigger export for IDE-side changes"""
-    if not selected:
-        nothing = "No objects selected for export."
-        system.ui.info(nothing)
-        return entry.result(True, nothing, updated=0, created=0, removed=0,
-                            failed=0, identical=unchanged_count)
-
-
-    # Property accessors collected dynamically during export loop
-    property_accessors = {}
-    
-    # No 'cache_data' on purpose, and it must stay that way: its absence is
-    # what switches off the dirty-file guard (SPEC 6.1, ObjectManager
-    # ._disk_moved_since_sync). That guard exists to stop an export nobody
-    # was watching from writing over an unimported edit. Here somebody was
-    # watching -- they read the difference in the compare dialog and picked
-    # the IDE side -- and refusing them would be refusing the answer they
-    # just gave.
-    #
-    # 'new_cache' is a different thing and it does belong here. Reading the
-    # cache is what decides whether to write; writing it records what was
-    # written. Leaving that record stale made the next ordinary export read a
-    # disk signature no entry matched, blame the disk for a change this
-    # export had just made, and refuse to write. Seeded with every existing
-    # entry so that one selected object does not cost all the others theirs.
-    old_cache = load_sync_cache(base_dir)
-    new_cache = dict(old_cache.get('objects') or {})
-    context = {
-        'export_dir': base_dir,
-        'exported_paths': set(),
-        'property_accessors': property_accessors,
-        'new_cache': new_cache
-    }
-    
-    managers = create_import_managers()
-    
-    count_created = 0
-    count_updated = 0
-    count_removed = 0
-    count_failed = 0
-    
-    for item in selected:
-        obj = item.get("obj")
-        
-        # Scenario 1: Object missing in IDE (from 'new_on_disk' list) -> DELETION from disk
-        if not obj:
-            file_path = item.get("file_path")
-            if file_path and os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    count_removed += 1
-                except Exception as e:
-                    log_error("Could not remove orphaned file " + item.get("path") + ": " + safe_str(e))
-                    unhandled.note(item.get("path"), e)
-                    count_failed += 1
-            continue
-        
-        # Scenario 2: Object exists in IDE -> EXPORT to disk
-        from engine.codesys_managers import classify_object
-        from engine.codesys_constants import kind_allows_export, sync_direction_of
-        effective_type, is_xml, should_skip = classify_object(obj)
-        if should_skip: continue
-
-        # Per-kind sync direction (profiles/default.json)
-        if not kind_allows_export(effective_type):
-            log_info("Skipping export of %s (sync_direction=%s)"
-                     % (item.get("path"), sync_direction_of(effective_type)))
-            continue
-
-        # --- PROPERTY ACCESSOR COLLECTION ---
-        if effective_type == TYPE_GUIDS["property"]:
-            try:
-                obj_guid = safe_str(obj.guid)
-                if obj_guid not in context['property_accessors']:
-                    context['property_accessors'][obj_guid] = {'get': None, 'set': None}
-                
-                for child in obj.get_children():
-                    child_name = child.get_name().upper()
-                    if child_name == "GET":
-                        context['property_accessors'][obj_guid]['get'] = child
-                    elif child_name == "SET":
-                        context['property_accessors'][obj_guid]['set'] = child
-            except Exception as e:
-                # Without its accessors the property still gets a file, but
-                # an empty GET/SET, so say whose (SPEC D13).
-                log_warning("Could not read the accessors of %s: %s"
-                            % (unhandled.name_of(obj), safe_str(e)))
-
-        if is_xml:
-            mgr = managers.get(effective_type, managers["native"])
-        elif effective_type in managers:
-            mgr = managers[effective_type]
-        else:
-            mgr = managers["default"]
-
-        context['effective_type'] = effective_type
-        try:
-            res = mgr.export(obj, context)
-            if res == "new":
-                count_created += 1
-            elif res == "updated":
-                count_updated += 1
-            
-            # Moved file: clean up the old file at the stale disk location
-            if item.get("is_moved") and item.get("file_path"):
-                old_file = item["file_path"]
-                if os.path.exists(old_file):
-                    try:
-                        os.remove(old_file)
-                        log_info("Removed stale moved file: " + old_file)
-                        count_removed += 1
-                    except Exception as e2:
-                        log_warning("Could not remove old moved file: " + safe_str(e2))
-        except Exception as e:
-            log_error("Export failed for " + item["name"] + ": " + safe_str(e))
-            unhandled.note(obj, e)
-            count_failed += 1
-    
-    summary = "Updated: {}, Created: {}, Removed: {}, Failed: {} (Identical: {})".format(
-        count_updated, count_created, count_removed, count_failed, unchanged_count)
-        
-    system.ui.info("Export complete!\n\n" + summary)
-
-    just_hashes = {path: record.get('ide_hash')
-                   for path, record in new_cache.items()}
-    save_sync_cache(base_dir, new_cache, build_folder_hashes(just_hashes),
-                    old_cache.get('types'))
-
-    # Handle final save and backup
-    projects_obj = resolve_projects(None, globals())
-    finalize_sync_operation(base_dir, projects_obj, is_import=False)
-
-    missing = unhandled.names()
-    return entry.result(not missing,
-                        summary if not missing else
-                        summary + " -- " + unhandled.summary(),
-                        updated=count_updated, created=count_created,
-                        removed=count_removed, failed=count_failed,
-                        identical=unchanged_count, failed_objects=missing)
 
 
 def main():
