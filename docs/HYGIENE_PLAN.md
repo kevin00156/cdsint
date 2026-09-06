@@ -2,7 +2,7 @@
 
 > 建立日期 2026-09-06。分支 `ticket/hygiene`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-hygiene`。
 > 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
-> 這是四張工單的第三張，在 `PLUMBING_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，A 和 B 做完會漂，開工先重核。
+> 這是四張工單的第三張，在 `history/PLUMBING_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，A 和 B 做完會漂，開工先重核。
 
 ---
 
