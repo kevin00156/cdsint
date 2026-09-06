@@ -185,7 +185,7 @@
   - [x] 驗收：`grep -rn "honor the same\|exactly like compare\|same as export" engine/` 為零（提醒人肉同步的註解沒有存在的理由了）。
   - [x] 驗收：`grep -rn "len(.*) > 2" engine/` 為零；`grep -rn "context\['effective_type'\]\|context.get('effective_type'" engine/` 為零；`grep -rn "def _name\|def _kind\|def _children\|def _parent_o\|def _obj_label" engine/` 為零。
   - [x] 驗收：測試涵蓋「export 與 compare 對同一個物件回同一個 `(eff_type, is_xml, rel_path)`」（`tests/test_classify.py`）「`sync_files` 跳 `__pycache__`、dot-dir、RESERVED_FILES」（`tests/test_sync_dir.py`）「`_hash_content` 對每種 kind 的過濾規則」（`tests/test_sync_cache.py` 的 `TestHashContentPerKind`）。
-  - [x] 驗收：儀器四項全過。棘輪從 70 降到 61（`managers` 29→18、`utils` 26→19、`compare` 6→5、`build` 5、`ui` 2、`entry_compare` 2）。測試 Windows 與 WSL 各 1149 個全綠。
+  - [x] 驗收：儀器四項全過。棘輪從 70 降到 51（`managers` 29→18、`utils` 26→19、`compare` 6→5、`build` 5、`ui` 2、`entry_compare` 2）。測試 Windows 與 WSL 各 1149 個全綠。
 
 - [ ] **階段 3：拆長函式**
   - [ ] 驗收：`perform_import_items`、`build_project`、`ensure_folder_path` 各在 60 行內；新函式全部在 40 行、3 層內（寫一個 AST 小腳本量，放 `tools/`）。
