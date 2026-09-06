@@ -303,8 +303,7 @@ def export_project(export_dir, values, projects_obj=None):
             else:
                 manager = managers["default"]
 
-            context['effective_type'] = effective_type
-            wrote = manager.export(obj, context, rel_path=rel_path)
+            wrote = manager.export(obj, effective_type, rel_path, context)
             if wrote == "new":
                 exported_new += 1
             elif wrote == "updated":

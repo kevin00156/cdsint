@@ -731,8 +731,16 @@ class ObjectManager(object):
             context['exported_paths'].add(rel_path)
         return "pending"
 
-    def export(self, obj, context, rel_path=None):
+    def export(self, obj, effective_type, rel_path, context):
         """Write this object to disk; return "new", "updated" or "identical".
+
+        effective_type is the classification the caller already made -- the
+        normalized type GUID, which is not always obj.type (an NVL reports
+        itself as a GVL). It is a parameter because it is one: it used to be
+        stashed in the shared context dict on the way in and fished back out
+        here, so nothing in any signature said a manager needed it, and a
+        manager reached without it quietly re-read obj.type and paid a .NET
+        round trip for an answer the caller was already holding.
 
         "pending" means the file on disk holds an edit nobody imported yet,
         so this object was deliberately left alone (SPEC 6.1).
@@ -758,10 +766,7 @@ class ObjectManager(object):
 
 class FolderManager(ObjectManager):
     """Handle folder creation and management"""
-    def export(self, obj, context, rel_path=None):
-        if rel_path is None:
-            rel_path = build_expected_path(obj, safe_str(obj.type), False)
-        
+    def export(self, obj, effective_type, rel_path, context):
         # Folders have no content of their own; the cache entry is there to
         # remember the path, and "folder" is a hash that never changes.
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
@@ -807,12 +812,7 @@ class POUManager(ObjectManager):
         "itf": "create_interface",
     }
 
-    def export(self, obj, context, rel_path=None):
-        # Build path and filename
-        if rel_path is None:
-            effective_type = context.get('effective_type', safe_str(obj.type))
-            rel_path = build_expected_path(obj, effective_type, False)
-        
+    def export(self, obj, effective_type, rel_path, context):
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
 
@@ -837,7 +837,7 @@ class POUManager(ObjectManager):
         # identity metadata: it goes in the file but NOT in the state hash.
         attrs = read_ide_attrs(obj, obj_type_guid)
         pragmas = dict(attrs)
-        obj_kind = kind_of(context.get('effective_type', safe_str(obj.type)))
+        obj_kind = kind_of(effective_type)
         if obj_kind and needs_kind_pragma(obj_kind, clean_content):
             pragmas["kind"] = obj_kind
         content = render_sync_pragmas(pragmas, clean_content)
@@ -976,18 +976,14 @@ class POUManager(ObjectManager):
 
 class PropertyManager(POUManager):
     """Handle properties specifically (combining declaration, Get, and Set)"""
-    def export(self, obj, context, rel_path=None):
+    def export(self, obj, effective_type, rel_path, context):
         obj_guid = safe_str(obj.guid)
-        
+
         if obj_guid not in context['property_accessors']:
             prop_data = {'get': None, 'set': None, 'parent_obj': obj}
         else:
             prop_data = context['property_accessors'][obj_guid]
-        
-        if rel_path is None:
-            effective_type = context.get('effective_type', safe_str(obj.type))
-            rel_path = build_expected_path(obj, effective_type, False)
-        
+
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
 
@@ -1206,11 +1202,7 @@ class NativeManager(ObjectManager):
         except:
             return ""
 
-    def export(self, obj, context, recursive=False, rel_path=None):
-        if rel_path is None:
-            effective_type = context.get('effective_type', safe_str(obj.type))
-            rel_path = build_expected_path(obj, effective_type, True)
-        
+    def export(self, obj, effective_type, rel_path, context, recursive=False):
         # Determine target directory and file path
         file_path = os.path.join(context['export_dir'], rel_path.replace("/", os.sep))
         target_dir = os.path.dirname(file_path)
@@ -1322,12 +1314,13 @@ class NativeManager(ObjectManager):
 
 class ConfigManager(NativeManager):
     """Specialized handling for configurations (forced XML)"""
-    def export(self, obj, context, rel_path=None):
+    def export(self, obj, effective_type, rel_path, context):
         # Devices are monolithic only if they are not containers (Project Roots)
         recursive = True
         if safe_str(obj.type) == TYPE_GUIDS["device"]:
             if is_container_device(obj):
                 recursive = False
         
-        return super(ConfigManager, self).export(obj, context, recursive=recursive, rel_path=rel_path)
+        return super(ConfigManager, self).export(obj, effective_type, rel_path,
+                                                 context, recursive=recursive)
     
