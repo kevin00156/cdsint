@@ -6,7 +6,7 @@ apply). Adapted from upstream commit f09c438; the IDE-snapshot symbol source
 was removed — this fork resolves everything from the exported .st text.
 """
 
-from __future__ import annotations
+from __future__ import annotations, print_function
 
 import io
 import json

@@ -22,7 +22,7 @@ Usage:
     python tools/cache_doctor.py <sync-dir>
     python tools/cache_doctor.py <sync-dir> --list-misses 20
 """
-from __future__ import annotations
+from __future__ import annotations, print_function
 
 import argparse
 import json
@@ -31,11 +31,11 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-# tools/ sits beside engine/, and this is run as a script by path, so nothing
-# else puts the install root on sys.path for us.
-_INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _INSTALL_ROOT not in sys.path:
-    sys.path.insert(0, _INSTALL_ROOT)
+# Two lines, the same in every tool here: put this directory where the
+# import system will look, then let tools/_root.py put the install root
+# there. Neither is on sys.path already — see tools/_root.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _root  # noqa: E402,F401
 
 from engine.codesys_constants import PROFILE_HASH  # noqa: E402
 from engine.codesys_utils import CACHE_VERSION, file_signature  # noqa: E402

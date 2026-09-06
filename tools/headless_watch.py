@@ -34,9 +34,11 @@ from __future__ import print_function
 import os
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+# Two lines, the same in every tool here: put this directory where the
+# import system will look, then let tools/_root.py put the install root
+# there. Neither is on sys.path already — see tools/_root.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _root  # noqa: E402,F401
 
 from cds.core import settings  # noqa: E402
 from cds.ide import headless, session  # noqa: E402

@@ -446,7 +446,13 @@ rather than a change:
 ## `tools/`
 
 Offline instruments for whoever maintains this. None of them is a cdsint
-command and none appears in the Scripts menu.
+command and none appears in the Scripts menu (PRINCIPLES 12). Every `.py` in
+that directory is listed here; `tests/test_tools_are_documented.py` fails if
+one is added and this list is not.
+
+Three of them run **inside** an IDE, through **Tools > Scripting > Execute
+Script File** or `--runscript`. The rest are ordinary CPython you run from a
+shell.
 
 **`tools/call_tree.py`** builds a cross-file call graph from an exported sync
 folder. Plain CPython, no IDE:
@@ -458,14 +464,9 @@ python tools/call_tree.py <sync-dir> MAIN -o call_tree.json
 It follows calls between project functions and function-block methods across
 files, including instances declared in GVLs, tags IEC system calls from
 `tools/sys_funcs.json`, and marks whatever it could not resolve.
-
-**`tools/perf_probe.py`** wraps the real engine functions and ranks where a
-sync spends its time. It runs inside an IDE that has the project open:
-**Tools > Scripting > Execute Script File**, then pick the file. With no
-argument it profiles an export; `compare` and `import` are the other two
-modes, given in the script-arguments box. The report goes to
-`perf_probe_<mode>.txt` in the sync folder. Run the same mode twice — the
-second run is the one that says whether the cache is earning its keep.
+**`tools/call_tree_parse.py`** and **`tools/call_tree_resolve.py`** are its two
+halves — reading `.st` text, and resolving names to definitions. Import them
+if you want the pieces; run `call_tree.py`.
 
 **`tools/cache_doctor.py`** answers "would the cache actually skip anything on
 the next run?" without opening the IDE, and names the reasons it would not:
@@ -473,6 +474,44 @@ the next run?" without opening the IDE, and names the reasons it would not:
 ```
 python tools/cache_doctor.py <sync-dir>
 ```
+
+**`tools/perf_probe.py`** wraps the real engine functions and ranks where a
+sync spends its time. Runs inside an IDE that has the project open: **Execute
+Script File**, then pick the file. With no argument it profiles an export;
+`compare` and `import` are the other two modes, given in the script-arguments
+box. The report goes to `perf_probe_<mode>.txt` in the sync folder. Run the
+same mode twice — the second run is the one that says whether the cache is
+earning its keep.
+
+**`tools/headless_watch.py`** opens a project in a headless IDE and arms the
+watcher in it, so that `--target` has something to talk to without a person
+opening the IDE. Runs inside the IDE it starts:
+
+```
+<exe> --profile="<name>" --noUI --runscript="<abs path>\tools\headless_watch.py"
+```
+
+with `CDSINT_WATCH_PROJECT` naming the `.project`, and optionally
+`CDSINT_WATCH_SYNC` and `CDSINT_WATCH_ANSWERS` (`KEY=VALUE,KEY=VALUE`). Under
+`--noUI` it parks the process with `system.delay()` — SPEC D5's one stated
+exception, and it refuses to park when the IDE has a window.
+
+**`tools/probe_watcher_ui.py`** is the acceptance launcher behind
+`docs/WATCHER.md` 8: it builds a throwaway project, arms the watcher the way
+**Project_watch** does, and returns, so that somebody can check the IDE is
+still clickable. Runs inside the IDE, same `--runscript` shape.
+
+**`tools/probe_click_menu.py`** is the other half of that acceptance, and the
+only tool that drives an IDE from outside it: real mouse clicks on the File
+menu, counting whether a drop-down appeared.
+
+```
+python tools/probe_click_menu.py --pid 1234 --seconds 60 --every 5
+```
+
+**`tools/_root.py`** is not an instrument. It puts the install root on
+`sys.path` so the others can import `engine/` and `cds/`; the underscore is
+what keeps it out of this list.
 
 ## Layout
 
@@ -485,7 +524,8 @@ cds/ide/    the listener, the stand-in UI, the status window, the IDE side of
             the headless launcher.
 stub/       the three small files the IDE's menu scans.
 cdsint/     the `cdsint` command. CPython 3.11+.
-tools/      offline diagnostics: call tree, cache doctor, perf probe.
+tools/      the maintainer's instruments; every one of them is listed
+            under `tools/` above.
 profiles/   object-type GUIDs and per-kind sync policy, as JSON.
 skills/     the manual an agent reads: skills/cdsint/SKILL.md.
 docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.

@@ -22,14 +22,20 @@ Environment:
                          the very thing that makes the IDE unclickable, and
                          park() refuses when there is one.
 """
+from __future__ import print_function
+
 import os
 import sys
 import tempfile
 import traceback
 
+# Two lines, the same in every tool here: put this directory where the
+# import system will look, then let tools/_root.py put the install root
+# there. Neither is on sys.path already — see tools/_root.py.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _root  # noqa: E402,F401
 
-import headless_watch
+import headless_watch  # noqa: E402
 from cds.core import settings
 from cds.ide import session
 

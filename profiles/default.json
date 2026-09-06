@@ -1,6 +1,6 @@
 {
   "name": "sp21_p4",
-  "description": "Object-type GUID map and per-kind sync policy, verified against CODESYS 3.5 SP21 Patch 4. Edit guid_aliases to teach the engine new GUIDs (first entry in each list is the primary GUID used when creating objects); edit sync_direction to change per-kind policy (bidirectional / export_only / import_only / disabled). No code changes needed - run Project_discover.py to find unknown GUIDs.",
+  "description": "Object-type GUID map and per-kind sync policy, verified against CODESYS 3.5 SP21 Patch 4. Edit guid_aliases to teach the engine new GUIDs (first entry in each list is the primary GUID used when creating objects); edit sync_direction to change per-kind policy (bidirectional / export_only / import_only / disabled). No code changes needed - run `cdsint discover` to find unknown GUIDs.",
   "guid_aliases": {
     "pou": ["6f9dac99-8de1-4efc-8465-68ac443b7d08"],
     "gvl": ["ffbfa93a-b94d-45fc-a329-229860183b1d"],
@@ -69,13 +69,14 @@
     "method_alt": "method",
     "enum": "dut"
   },
+  "legacy_kind_names_note": "Kind names earlier versions used as their own kinds and baked into exported filenames ('<Name>.<kind>.xml'). They are GUID aliases now, so they no longer appear in TYPE_NAMES - but old exports on disk still carry the old suffix and must stay parseable. Never delete an entry here; add one whenever a kind is collapsed into an alias.",
+  "alias_notes_note": "Keyed by GUID, never by list position: 'dut[1]' meant whatever was second in the list on the day it was written, so inserting an alias silently repointed the note at a different GUID. tests/test_profile.py checks every key here is a GUID that guid_aliases still carries.",
   "alias_notes": {
-    "legacy_kind_names": "Kind names earlier versions used as their own kinds and baked into exported filenames ('<Name>.<kind>.xml'). They are GUID aliases now, so they no longer appear in TYPE_NAMES - but old exports on disk still carry the old suffix and must stay parseable. Never delete an entry here; add one whenever a kind is collapsed into an alias.",
-    "dut[1]": "Enumeration DUT variant seen on SP21 P4 (was 'enum'); textual, decl-only like a dut",
-    "method[1]": "Alternate Method GUID seen on SP21 P4, e.g. BaseStateMachine.Main/Init (was 'method_alt')",
-    "persistent_gvl[0]": "Verified via Project_discover on SP21 P4 (k1.0.1 fix)",
-    "persistent_gvl[1]": "Old upstream value that never matched here; kept as alias so foreign exports/caches still classify",
-    "application[1]": "Second Application GUID observed by upstream on other CODESYS versions"
+    "40989022-e4d2-4dc7-89d2-9a412930b20e": "Enumeration DUT variant seen on SP21 P4 (was 'enum'); textual, decl-only like a dut",
+    "62ebfd1c-d342-43e5-8efb-f22b6d8e4a04": "Alternate Method GUID seen on SP21 P4, e.g. BaseStateMachine.Main/Init (was 'method_alt')",
+    "261bd6e6-249c-4232-bb6f-84c2fbeef430": "Persistent GVL, verified via discover on SP21 P4 (k1.0.1 fix)",
+    "3183921b-cc91-4712-9781-c3b6555122b5": "Persistent GVL, old upstream value that never matched here; kept as alias so foreign exports/caches still classify",
+    "6394ad93-46a4-4927-8819-c1ca8654c6ad": "Second Application GUID observed by upstream on other CODESYS versions"
   },
   "sync_direction": {
     "library_manager": "export_only",

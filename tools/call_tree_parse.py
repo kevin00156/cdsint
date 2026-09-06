@@ -11,15 +11,23 @@ Adapted from upstream ArthurkaX/cds-text-sync `cli/external_engine/`
 retargeted at this fork's .st export format.
 """
 
-from __future__ import annotations
+from __future__ import annotations, print_function
 
 import io
 import os
 import re
+import sys
 
-# Must match IMPL_MARKER in engine/codesys_constants.py — the separator this
-# exporter writes between declaration and implementation in every .st file.
-IMPL_MARKER = "// === IMPLEMENTATION ==="
+# Two lines, the same in every tool here: put this directory where the
+# import system will look, then let tools/_root.py put the install root
+# there. Neither is on sys.path already — see tools/_root.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _root  # noqa: E402,F401
+
+# The separator the exporter writes between declaration and implementation in
+# every .st file. Imported rather than copied: a literal here would be a
+# second definition of the disk format, and D15 says the format is one thing.
+from engine.codesys_constants import IMPL_MARKER  # noqa: E402
 
 _VAR_OPENERS = [
     "VAR_GLOBAL", "VAR_INPUT", "VAR_OUTPUT", "VAR_IN_OUT",

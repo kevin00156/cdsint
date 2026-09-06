@@ -235,7 +235,8 @@ IDE 側（IronPython 2.7，只有標準函式庫）
 
 IDE 外（CPython 3.11 以上）
   cdsint/   CLI、無頭啟動器的 CLI 側、IDE 安裝探測、report 判讀
-  tools/    離線工具：call tree、cache doctor、perf probe
+  tools/    維護者的儀器：call tree、cache doctor、perf probe、幾支探針。
+            有幾支、各做什麼，readMe 的 `tools/` 一節說了算，這裡不抄
 ```
 
 層與層的界線是 D12 的三條規則。

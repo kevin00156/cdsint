@@ -12,10 +12,18 @@ The check reads the parsed code, not the text, so a comment or a docstring
 may say "no threads" — cds/ide/watcher.py does — without tripping it. What
 is banned is the call, not the word.
 
-tools/ is out of scope on purpose. tools/headless_watch.py parks a --noUI
-process with system.delay(), which is D5's one stated exception: with no
-window there is no screen to freeze, and with nothing holding the process up
-the IDE exits the moment the script returns.
+tools/ used to be out of scope by directory, which meant an IDE-side script
+was one `git mv` away from escaping the rule. It is in scope now, but only the
+files that actually load into an IDE — asked, not listed: a file that imports
+`engine` or `cds` is loaded by the IDE at some point, and one that imports
+neither cannot be. That keeps `probe_click_menu.py` out, and it has to be out:
+it drives an IDE from a *separate* CPython process over Win32, and sleeping
+between real mouse clicks is its whole method, not a violation.
+
+D5's one stated exception — headless_watch.park(), which parks a --noUI
+process with system.delay() because with no window there is no screen to
+freeze and nothing else holds the process up — is registered below by name,
+so a second delay() in that file is still red.
 """
 import ast
 import io
@@ -25,8 +33,22 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Where the rule applies: everything that runs inside the IDE.
+# Where the rule applies unconditionally: everything under these runs inside
+# the IDE.
 IDE_SIDE = ("engine", os.path.join("cds", "ide"), "stub")
+
+# And tools/, for the files there that reach into the IDE-side packages.
+# `_root` counts because that module exists for exactly one purpose: putting
+# the install root on sys.path so engine/ and cds/ can be imported. It catches
+# perf_probe.py, which reaches the engine through __import__ by string name
+# and is invisible to the import walk below.
+MIXED = ("tools",)
+IDE_SIDE_IMPORTS = ("engine", "cds", "_root")
+
+# D5's one exception, by file and by what it calls. Registered rather than
+# excused by directory: the file stays under the rule, and anything else it
+# grows is caught. See the module docstring and SPEC D5.
+ALLOWED = {"tools/headless_watch.py": ["delay"]}
 
 BANNED_CALLS = {
     "sleep": "blocks the IDE's message loop",
@@ -39,8 +61,8 @@ BANNED_CALLS = {
 BANNED_IMPORTS = ("threading", "System.Threading", "thread")
 
 
-def ide_side_sources():
-    for folder in IDE_SIDE:
+def sources_under(folders):
+    for folder in folders:
         root = os.path.join(REPO_ROOT, folder)
         for where, _dirs, files in os.walk(root):
             if "__pycache__" in where:
@@ -48,6 +70,30 @@ def ide_side_sources():
             for name in files:
                 if name.endswith(".py"):
                     yield os.path.join(where, name)
+
+
+def loads_into_an_ide(path):
+    """Does this file import its way into the IDE-side packages?"""
+    with io.open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read(), filename=path)
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+        for name in names:
+            if name.split(".")[0] in IDE_SIDE_IMPORTS:
+                return True
+    return False
+
+
+def ide_side_sources():
+    for path in sources_under(IDE_SIDE):
+        yield path
+    for path in sources_under(MIXED):
+        if loads_into_an_ide(path):
+            yield path
 
 
 def offences(path):
@@ -68,7 +114,15 @@ def offences(path):
         elif isinstance(node, ast.ImportFrom):
             if node.module in BANNED_IMPORTS:
                 found.append((node.lineno, node.module))
-    return found
+    allowed = list(ALLOWED.get(
+        os.path.relpath(path, REPO_ROOT).replace("\\", "/"), []))
+    kept = []
+    for line, what in found:
+        if what in allowed:
+            allowed.remove(what)       # one pass each, not a blanket pardon
+            continue
+        kept.append((line, what))
+    return kept
 
 
 @pytest.mark.parametrize("path", sorted(ide_side_sources()),

@@ -41,15 +41,17 @@ Notes:
   * Run the same mode TWICE in a row. The second run is the one that shows
     whether the cache is doing its job.
 """
+from __future__ import print_function
+
 import os
 import sys
 import time
 
-# tools/ sits beside engine/, and the IDE runs this file by absolute path, so
-# nothing else puts the install root on sys.path for us.
-_INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _INSTALL_ROOT not in sys.path:
-    sys.path.insert(0, _INSTALL_ROOT)
+# Two lines, the same in every tool here: put this directory where the
+# import system will look, then let tools/_root.py put the install root
+# there. Neither is on sys.path already — see tools/_root.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _root  # noqa: E402,F401
 
 # High-resolution timer. On Python 2 / Windows time.clock() is
 # QueryPerformanceCounter; time.time() only has ~15 ms granularity there, which

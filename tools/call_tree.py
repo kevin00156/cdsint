@@ -12,7 +12,7 @@ Adapted from upstream ArthurkaX/cds-text-sync commit f09c438
 (cli/external_engine/call_tree.py), minus the IDE-snapshot symbol source.
 """
 
-from __future__ import annotations
+from __future__ import annotations, print_function
 
 import argparse
 import io

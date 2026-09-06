@@ -228,6 +228,31 @@ class TestSyncDirection:
             == "bidirectional"
 
 
+class TestAliasNotes:
+    """alias_notes is keyed by GUID, and every key still names a live alias.
+
+    It used to be keyed by list position — "dut[1]" meant whatever was second
+    in guid_aliases["dut"] on the day somebody wrote the note. Inserting an
+    alias in front of it moved the note onto a different GUID without a word,
+    and nothing read the file at all, so nothing would ever have said so.
+    """
+
+    def notes(self, constants):
+        return constants._PROFILE.get("alias_notes", {})
+
+    def test_every_note_names_a_guid_the_profile_still_carries(self, constants):
+        known = set()
+        for guids in constants._PROFILE["guid_aliases"].values():
+            known.update(str(g).lower() for g in guids)
+        orphans = [key for key in self.notes(constants)
+                   if str(key).lower() not in known]
+        assert orphans == []
+
+    def test_no_note_is_keyed_by_list_position(self, constants):
+        # The shape that rotted: a kind name with an index after it.
+        assert [key for key in self.notes(constants) if key.endswith("]")] == []
+
+
 class TestProfileValidation:
     def test_missing_profile_fails_loud(self, constants, tmp_path, monkeypatch):
         monkeypatch.setattr(constants, "_profile_path",

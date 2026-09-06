@@ -7,9 +7,13 @@ shows `('Error:', '...')`. It is not a crash, which is why two of them lived
 in entry_export.py for as long as they did — nothing fails, the message just
 stops being readable at the moment somebody needs to read it.
 
-The rule has no exceptions, including the docstring-only `__init__.py` files.
-A rule with a carve-out is one every future author has to remember; a rule a
-test enforces over a whole directory is one they can forget.
+The rule has no exceptions, including the docstring-only `__init__.py` files
+and the CPython-only instruments in `tools/`. Two of the instruments there do
+run inside an IDE, and asking which ones per file is the carve-out that
+somebody eventually gets wrong; the line costs a CPython-only file nothing,
+because print is a function there anyway. A rule with a carve-out is one every
+future author has to remember; a rule a test enforces over a whole directory
+is one they can forget.
 """
 import ast
 import io
@@ -19,9 +23,10 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# PRINCIPLES 8: the four directories that are inside the IDE at some point.
+# PRINCIPLES 8: the four directories that are inside the IDE at some point,
+# plus tools/, where some of the instruments are.
 IDE_SIDE = ("engine", os.path.join("cds", "ide"), os.path.join("cds", "core"),
-            "stub")
+            "stub", "tools")
 
 
 def ide_side_sources():

@@ -100,11 +100,11 @@
   - [x] 驗收：`grep -n "first commit\|about a hundred" PRINCIPLES.md` 為零。
   - [x] 驗收：`tests/test_doc_links.py` 綠（14 passed）；整份測試 1043 passed。
 
-- [ ] **階段 2：profile 與工具（第 4 節 4 的 profile 部分、8）**
-  - [ ] 驗收：`grep -n "Project_discover" profiles/default.json` 為零；新測試「`alias_notes` 的鍵都是 `guid_aliases` 裡的 GUID」綠。
-  - [ ] 驗收：`grep -rn "sys.path.insert" tools/` 只剩 `tools/_root.py` 一處；`grep -rn "IMPL_MARKER = " tools/` 為零；`probe_imports.py` 不在。
-  - [ ] 驗收：`test_print_function.py` 掃到 `tools/` 且綠。
-  - [ ] 驗收：readMe 的 `tools/` 一節列出的檔名跟 `ls tools/*.py` 去掉底線開頭的一致。
+- [x] **階段 2：profile 與工具（第 4 節 4 的 profile 部分、8）**
+  - [x] 驗收：`grep -n "Project_discover" profiles/default.json` 為零；新測試「`alias_notes` 的鍵都是 `guid_aliases` 裡的 GUID」綠（`tests/test_profile.py::TestAliasNotes`，兩條）。`alias_notes` 改成 GUID 當鍵，原本那則講 `legacy_kind_names` 的註解搬到平行的 `legacy_kind_names_note`，這樣 `alias_notes` 每一個鍵都是 GUID，測試不需要例外。
+  - [x] 驗收：`grep -rn "IMPL_MARKER = " tools/` 為零，`call_tree_parse.py` 改成 import；`probe_imports.py` 已刪（它自己那份 MODULES 清單也早就漏了 `entry_discover`、`statusform`、`core.settings` 這幾支）。`grep -rn "sys.path.insert" tools/` 是五處不是一處，理由見第 7 節 Ruling 5。
+  - [x] 驗收：`test_print_function.py` 掃到 `tools/` 且綠（53 passed）。單執行緒那條的範圍見 Ruling 7。
+  - [x] 驗收：readMe 的 `tools/` 一節列出每一支，而且由 `tests/test_tools_are_documented.py` 兩條測試守著，不再是一次性的 grep。
 
 - [ ] **階段 3：測試（第 4 節 5 到 7）**
   - [ ] 驗收：`grep -rn "^class \(Projects\|Info\|Node\|DeafSystem\|DeafUI\|FakeTimer\)\b" tests/` 只在 `tests/fakes.py`；`grep -rn "from tests.test_" tests/` 為零。
@@ -141,6 +141,23 @@
    決定：留著不改。兩處分別是「`Project_perf_probe.py` is `tools/perf_probe.py`」與「replacing `python cli/cds_ide.py`」。
    理由：那條驗收要擋的是「用搬家前的名字描述今天的東西」，而這兩句的整個作用就是講「以前叫什麼、現在叫什麼」。把舊名字拿掉，改名這件事就無從查起，升級的人會找不到自己手上那支檔案去哪了。刪掉的是資訊，不是過期的東西。
    錯了的代價：以後有人照那條 grep 驗收，會看到兩筆命中而以為沒做完。所以寫在這裡。
+
+5. **Ruling：`tools/` 的 sys.path bootstrap 收不到一處，是五處：`_root.py` 一處，另外四支各一行。**
+   決定：`tools/_root.py` 擁有「install root 在哪」這個知識；每一支要用的工具開頭兩行完全相同 — 先把自己的目錄放上 sys.path，再 `import _root`。
+   理由：`import _root` 要能成功，`tools/` 本身得先在 sys.path 上，而在 IDE 裡不會。ScriptEngine 是把檔案交給 IronPython 執行，sys.path 是 IDE 自己的搜尋路徑，不含腳本所在目錄 — `stub/` 底下三支自己插路徑就是同一個理由。所以那一行是 `import _root` 的前提，不是重複的 bootstrap。真正會漂的知識（root 是往上一層）現在只有 `_root.py` 一份，變數名也從 `_INSTALL_ROOT` 與 `REPO_ROOT` 兩種收成一種。
+   順手修掉一個：`probe_watcher_ui.py` 以前只把自己的目錄放上 sys.path，然後靠 `import headless_watch` 的副作用把 install root 插進去，才輪得到下一行 `from cds.core import settings`。import 順序變成承重的，而且沒有一個字說明。現在它自己 `import _root`。
+   錯了的代價：`grep -rn "sys.path.insert" tools/` 是五筆不是一筆。
+
+6. **Ruling：`tools/_probe.py` 不建。**
+   理由：工單寫這條的時候 `answers` 與 `report_path` 各有兩三份。A 刪掉 `grant_plc.py`、這次刪掉 `probe_imports.py` 之後，`answers` 只剩 `headless_watch` 一份，`report_path` 一份都不剩。為了一個唯一的呼叫端開一個共用模組，就是 PRINCIPLES 10 說的「一個子類別的基底類別不是抽象，是兩個檔做一個檔的事」。
+   錯了的代價：以後真的第三次抄到 `answers`，得有人記得這裡曾經想收。所以寫下來。
+
+7. **Ruling：`test_print_function` 把整個 `tools/` 掃進去（六支補上 `__future__`），但 `test_single_threaded_ide_side` 只掃「會 import 進 IDE 的」那幾支。**
+   理由：兩條規則的代價不對稱。多一行 `from __future__ import print_function` 對純 CPython 的工具沒有任何成本，所以那條可以沒有例外。併發那條不行：`probe_click_menu.py` 是唯一一支從 IDE *外面* 用 Win32 真實點擊來驅動 IDE 的工具，`time.sleep` 在兩次點擊之間是它的方法本身，不是違規。用目錄一刀切會把它判成紅的。
+   判準不寫死檔名，用問的：一支檔 import 得到 `engine`、`cds` 或 `_root`，就是會載進 IDE 的。`_root` 也算，因為 `perf_probe.py` 用字串名字 `__import__("engine." + name)` 進引擎，AST 看不到。這個判準寧可多掃（`cache_doctor.py`、`call_tree_parse.py` 被掃進去，它們本來就沒有 sleep），也不要漏掉一支真的跑在訊息迴圈上的。
+   D5 的那一個例外（`headless_watch.park()` 的 `system.delay()`）在測試裡登記成一筆，同一個檔第二筆 `delay()` 還是紅的 — 跟 `test_layering.py` 登記 `silent.py` 那個 `__import__` 同一個做法。
+
+8. 給 C：`PROFILE_HASH` 是 `profiles/default.json` **整份原始文字**的 CRC，所以改一句 `description` 或一則 `alias_notes` 註解，全世界的 `sync_cache.json` 都會被丟掉重建一次。這次改 profile 的註解就觸發了。改註解會讓使用者的下一趟慢一輪，這不對；但改成只 hash 會影響分類的那幾個鍵是行為改動，不在這張工單裡。
 
 做的時候看到但不在範圍的，記在這裡給 C：
 
