@@ -107,10 +107,15 @@ has to be confirmed**: `plc download` takes `-y`, exactly as `import` does.
 There is no `--target` form. The watcher runs inside an IDE somebody is using, and
 a PLC login would take their online session away from them.
 
-Both commands answer one question — is the machine running this tree — by comparing
-the boot application this project compiles to against the one on the controller.
-`data.crc` is `MATCH` (exit 0), `DIFFERENT` (exit 1: it is running something else)
-or `UNKNOWN` (exit 1: one side could not be read, which is not agreement).
+Both commands answer one question — is this controller still holding what cdsint
+downloaded to it from this project. `download` writes the controller's CRC into
+`<project>.cdsint-plc.json` beside the project, one entry per controller, and
+`connect` holds the controller against that. `data.crc` is `MATCH` (exit 0),
+`DIFFERENT` (exit 1: something else has been downloaded to it since) or `UNKNOWN`
+(exit 1: nothing was ever downloaded there from here, or the controller holds
+nothing — neither is agreement). It does not answer "has the project changed
+since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
+`compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
 `--gateway IP [--port N]` overrides the project's own gateway settings; without it
 the project's are left alone.

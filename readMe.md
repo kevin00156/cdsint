@@ -153,8 +153,8 @@ Every command that touches a project takes one of two forms, and never both:
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y [--force]` | yes | yes | import, export, compare and build, all four or nothing |
 | `config get [KEY]`, `config set KEY=VALUE` | yes | yes | the project's `cds-sync-*` settings |
-| `plc connect [--gateway IP --port N]` | — | yes | read the controller and compare its CRC with this project |
-| `plc download -y` | — | yes | download to the controller, then read the CRC back |
+| `plc connect [--gateway IP --port N]` | — | yes | is the controller still holding the last download from here |
+| `plc download -y` | — | yes | download to the controller, read the CRC back, write it down |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is

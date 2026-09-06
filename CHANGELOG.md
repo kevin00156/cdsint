@@ -35,13 +35,33 @@ about a version mismatch once and then records the new number.
   `config set` refuses to write that one property), and `-y` says the caller
   means this call. There is no `--target` form, because the watcher lives in an
   IDE somebody is using and a login would take their online session. Both
-  commands end in the same check, which is the reason to have them: the boot
-  application this project compiles to, against the one the controller holds,
-  compared on the four bytes that identify it. Only `MATCH` exits 0 —
-  `DIFFERENT` means the machine runs something else, and `UNKNOWN` means one
-  side could not be read, which is not agreement. Credentials come from
-  `CDS_DEV_USER` and `CDS_DEV_PASS` and reach no command line, file or report.
-  Not yet run against real hardware.
+  commands end in the same check, which is the reason to have them: the CRC the
+  controller holds now, against the one the last download from this project
+  left there. Only `MATCH` exits 0 — `DIFFERENT` means something else has been
+  downloaded to the machine since, and `UNKNOWN` means there was nothing to
+  compare, which is not agreement. Credentials come from `CDS_DEV_USER` and
+  `CDS_DEV_PASS` and reach no command line, file or report.
+
+- **The check those two commands exist for compared two files that are not the
+  same file.** It built a boot application offline and held its `.crc` against
+  the controller's. On the bench that answered `DIFFERENT` every time, for two
+  independent reasons. The artefacts differ: the controller's `.app` is 2118764
+  bytes, the offline one 2098340, with 1.68 million bytes unalike. And the
+  offline value is not a property of the source — a four-byte identity is
+  stamped into every 64 KB block, and the compiler mints a new one whenever the
+  project has been written to, which the `--project` form does on every run when
+  it sets `cds-sync-folder`; two identical `plc connect` runs a minute apart
+  built `128DBA21` and `59B20109`. The comparison is now the controller's own
+  CRC against what the last download from this project left on that controller,
+  recorded in `<project>.cdsint-plc.json` beside the project, one entry per
+  controller. `MATCH` therefore says "this controller still holds what cdsint
+  put on it from here" and not "the controller is running this source": an
+  edited POU nobody downloaded leaves it at `MATCH`, and `compare` and `verify`
+  are the commands that read every object to answer the wider question. Neither
+  command compiles anything now, which took `connect` from about 105 seconds to
+  about 65. In exchange `download` gained the self-check it had been missing:
+  it reads the controller's CRC before and after, and a value that did not move
+  means nothing was written, however quietly the login returned.
 
 - **A compare between an edit and an export threw away the edit.** The
   dirty-file guard reads one thing: the sync-cache entry saying what the

@@ -2,15 +2,18 @@
 """plc connect and plc download: what the controller runs, and putting it there.
 
 Both commands end in the same question, and it is the only one worth asking:
-**is the machine running this tree?** `connect` asks it; `download` makes the
-answer true first and then asks it anyway, because a download that reports
-success without being read back is a claim, not a check.
+**is the machine running what cdsint put on it?** `download` makes the answer
+true, reads it back — a download that reports success without being read back
+is a claim, not a check — and writes down what it left there. `connect`
+measures the same two things again and compares them with that record. The
+one step that differs between the two is `remember`, and it is visible below
+for that reason.
 
 This file is only the surface: the two names cds/ide/entries.py presses, the
 question -y answers, and the order the steps run in. The steps themselves are
 engine/plc_trip.py, reaching a controller is engine/plc_link.py, and how the
-question is actually answered — the boot application, the two .crc files, the
-three verdicts — is engine/plc_crc.py.
+question is actually answered — why the offline CRC alone cannot answer it,
+what the record holds, and the three verdicts — is engine/plc_crc.py.
 
 Two gates stand in front of both commands, and neither is here (SPEC D8,
 6.5): the project property cds-sync-plc says whether this project allows the
@@ -42,22 +45,26 @@ DOWNLOAD_QUESTION = (
 
 
 def connect():
-    """Read the controller and compare what it holds against this project.
+    """Read the controller and compare it with the last download from here.
 
     Nothing here writes to the controller: the device-level connection
     (IScriptOnlineDevice) can list and fetch files, which is the whole of
     what this needs, whereas an application login downloads code.
+
+    Nothing here writes the record either. A connect that wrote one would
+    turn "I have never put anything on this machine" into "whatever is on it
+    is mine", which is the one answer this command must never invent.
     """
     unhandled.start()
     trip = a_trip("connect")
-    problem = trip.reach_the_device()
-    if problem:
-        return trip.failed(problem)
-    return trip.read_back()
+    return in_order(trip, [
+        trip.reach_the_device,   # build the boot application, aim the device
+        trip.read_back,          # what the controller holds, and its files
+    ]) or trip.verdict()
 
 
 def download():
-    """Put this project on the controller, then read it back and check.
+    """Put this project on the controller, read it back, and write it down.
 
     The confirmation is first, before anything is resolved or connected, so
     a run without -y costs nothing and touches nothing.
@@ -68,13 +75,31 @@ def download():
         return entry.result(False, cancelled, action="download",
                             crc=plc_crc.UNKNOWN)
     trip = a_trip("download")
-    problem = trip.reach_the_device()
-    if problem:
-        return trip.failed(problem)
-    problem = trip.send()
-    if problem:
-        return trip.failed(problem)
-    return trip.read_back()
+    failed = in_order(trip, [
+        trip.reach_the_device,   # build the boot application, aim the device
+        trip.what_it_holds,      # the CRC on the controller before this run
+        trip.send,               # put this project on it
+        trip.read_back,          # the CRC, the files and the archive after
+        trip.landed,             # and the two CRCs are not the same
+    ])
+    if failed:
+        return failed
+    trip.remember()
+    return trip.verdict()
+
+
+def in_order(trip, steps):
+    """Run steps until one reports a problem. That failure, or None.
+
+    A list rather than a run of `problem = step(); if problem: return`,
+    because the two commands differ only in which steps are in the list and
+    that difference is the thing worth seeing.
+    """
+    for step in steps:
+        problem = step()
+        if problem:
+            return trip.failed(problem)
+    return None
 
 
 def confirm():

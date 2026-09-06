@@ -6,11 +6,17 @@ because they are different jobs: the commands are the surface cds/ide has a
 name for, and this is the work. The split also makes what a trip needs from
 the IDE explicit -- the flags and the script run's globals arrive as
 arguments rather than being read off a module the caller happened to exec.
+
+Nothing here builds a boot application. It used to, so that the result could
+be held against the controller's -- engine/plc_crc.py has the bench
+measurements that say why those two can never agree, and why the offline
+value moves every run anyway.
 """
 from __future__ import print_function
 
 import os
 
+from cds.core import ipc
 from engine import entry, plc_crc, plc_link, unhandled
 from engine.codesys_online import resolve_online
 from engine.codesys_utils import resolve_projects, safe_str
@@ -33,9 +39,11 @@ class Trip(object):
         self.device_node = None     # the device in the project tree
         self.device = None          # the live connection to it
         self.notes = []             # what a reader needs to reproduce this
+        self.held_before = None     # the controller's CRC before this download
         self._workspace = None      # made only once something is written there
-        self.found = {"crc": plc_crc.UNKNOWN, "local_crc": None,
-                      "plc_crc": None, "plc_files": [], "source_archive": None}
+        self.found = {"crc": plc_crc.UNKNOWN, "why": None, "plc_crc": None,
+                      "plc_files": [], "source_archive": None,
+                      "controller": plc_crc.PROJECT_GATEWAY, "recorded": None}
 
     def note(self, text):
         """Record one step, and say it now rather than at the end.
@@ -73,10 +81,11 @@ class Trip(object):
     def point_at_gateway(self):
         """Aim the device at --gateway, or leave the project's own settings."""
         address = self.args.get("gateway")
+        port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
+        self.found["controller"] = plc_crc.controller_key(address, port)
         if not address:
             self.note("gateway: whatever the project already holds")
             return None
-        port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
         note, problem = plc_link.aim_at_gateway(self.online, self.device_node,
                                                 address, port)
         if problem:
@@ -127,8 +136,8 @@ class Trip(object):
 
     # -- reading it back ----------------------------------------------------
 
-    def read_back(self):
-        """Connect, fetch what the controller holds, compare, report.
+    def connected(self, job):
+        """Open a device connection, run job, close it. The problem, or None.
 
         Everything the controller can refuse is caught and named here. A
         traceback out of a bench command says "cdsint is broken" when what
@@ -137,26 +146,67 @@ class Trip(object):
         try:
             self.device = self.online.create_online_device(self.device_node)
         except Exception as exc:
-            return self.failed("could not open a connection to %s: %s"
-                               % (plc_link.device_name(self.device_node),
-                                  safe_str(exc)))
+            return ("could not open a connection to %s: %s"
+                    % (plc_link.device_name(self.device_node), safe_str(exc)))
         try:
             try:
                 self.device.connect()
             except Exception as exc:
-                return self.failed(
-                    "%s did not answer: %s"
-                    % (plc_link.device_name(self.device_node), safe_str(exc)))
-            self.found["plc_files"] = plc_link.list_remote(
-                self.device, plc_crc.REMOTE_APP_DIR)
-            self.found["plc_crc"] = self.pull_plc_crc()
-            self.found["local_crc"] = self.build_boot_application()
-            self.found["crc"] = plc_crc.compare_crc(self.found["local_crc"],
-                                                    self.found["plc_crc"])
-            self.found["source_archive"] = self.pull_source_archive()
+                return ("%s did not answer: %s"
+                        % (plc_link.device_name(self.device_node),
+                           safe_str(exc)))
+            return job()
         finally:
             plc_link.disconnect(self.device)
-        return self.verdict()
+
+    def what_it_holds(self):
+        """The controller's CRC, and nothing else. None when it answered.
+
+        A download runs this before it writes anything, so that afterwards it
+        can show the controller changed. Deliberately not the whole read-back:
+        the file list and the source archive would be measured twice and
+        noted twice, and neither is part of the question being asked here.
+        """
+        return self.connected(self._pull_the_crc)
+
+    def read_back(self):
+        """Connect and fetch everything. None when the controller answered."""
+        return self.connected(self._pull_everything)
+
+    def _pull_the_crc(self):
+        self.held_before = self.found["plc_crc"]
+        self.found["plc_crc"] = self.pull_plc_crc()
+        return None
+
+    def _pull_everything(self):
+        self._pull_the_crc()
+        self.found["plc_files"] = plc_link.list_remote(
+            self.device, plc_crc.REMOTE_APP_DIR)
+        self.found["source_archive"] = self.pull_source_archive()
+        return None
+
+    def landed(self):
+        """Did the download change what the controller holds? None if it did.
+
+        Every compile stamps a fresh identity into the boot application, so
+        two downloads of the same project leave two different CRCs on the
+        controller — measured on the bench, where the value moved on every
+        download. An unchanged CRC therefore means nothing was written, and a
+        download that says "no error" without having landed is exactly the
+        silent failure the read-back exists to catch. It is the only evidence
+        available: nothing built locally reproduces what the controller
+        holds, so there is nothing else to compare the result against.
+        """
+        now = self.found["plc_crc"]
+        if not now:
+            return ("the download raised nothing, but the controller has no "
+                    "%s afterwards, so there is nothing to show it landed"
+                    % plc_crc.REMOTE_CRC)
+        if now == self.held_before:
+            return ("the download raised nothing, but the controller still "
+                    "holds %s, the same boot application as before, so "
+                    "nothing was written to it" % now)
+        return None
 
     def pull_plc_crc(self):
         """The controller's own Application.crc, as hex, or None.
@@ -175,36 +225,12 @@ class Trip(object):
             return None
         return plc_crc.crc_field(plc_crc.read_bytes(local))
 
-    def build_boot_application(self):
-        """The boot application this project compiles to, as hex, or None.
-
-        Built from the offline application, which writes the .app and its
-        .crc to the path given — the argument is what separates this from
-        the call that writes one to the controller.
-        """
-        application = getattr(self.projects.primary, "active_application", None)
-        if application is None:
-            self.note("this project has no active application, so there "
-                      "is nothing to compare the controller against")
-            return None
-        target = plc_crc.forget(os.path.join(self.workspace(),
-                                             plc_crc.BOOT_NAME))
-        crc_path = plc_crc.forget(os.path.join(self.workspace(),
-                                               plc_crc.BOOT_CRC_NAME))
-        try:
-            application.create_boot_application(target)
-        except Exception as exc:
-            self.note("the boot application could not be built: "
-                      + safe_str(exc))
-            return None
-        return plc_crc.crc_field(plc_crc.read_bytes(crc_path))
-
     def pull_source_archive(self):
         """The source archive the controller holds, when it holds one.
 
         Only machines that had a source download have it. Nothing here needs
         it, but a run that can retrieve the source behind the CRC it just
-        compared has proved the whole claim without writing a byte, so it is
+        read has proved the whole claim without writing a byte, so it is
         worth the one call and the path is reported.
         """
         target = plc_crc.forget(os.path.join(self.workspace(),
@@ -212,12 +238,39 @@ class Trip(object):
         try:
             self.device.upload_source(target)
         except Exception as exc:
-            self.note("no source archive on the controller: "
-                      + safe_str(exc))
+            # The IDE's own words for this are "Value cannot be null.
+            # Parameter name: path", which tells a reader nothing. They are
+            # still carried, at the end and on one line, because the plain
+            # sentence in front of them is a reading of the failure and the
+            # reading could be wrong.
+            self.note("no source archive to fetch: nothing has been source-"
+                      "downloaded to this controller (the IDE said: %s)"
+                      % _one_line(safe_str(exc)))
             return None
         return target if os.path.isfile(target) else None
 
     # -- what came of it ----------------------------------------------------
+
+    def remember(self):
+        """Write down what this download put there, for a later connect.
+
+        Only a download may call this. It is the whole basis of the verdict:
+        nothing rebuilt locally reproduces what the controller holds, so the
+        only honest reference is what cdsint itself last left there, taken at
+        the moment it left it.
+        """
+        plc = self.found["plc_crc"]
+        if not plc:
+            self.note("nothing was written down about this download, so a "
+                      "later connect will have nothing to compare against")
+            return
+        path = plc_crc.record_path(self.project_path())
+        entry_written = {"plc_crc": plc,
+                         "device": plc_link.device_name(self.device_node),
+                         "downloaded_at": ipc.iso(ipc.now())}
+        if plc_crc.remember(path, self.found["controller"], entry_written):
+            self.note("recorded in %s: %s now holds %s"
+                      % (path, self.found["controller"], plc))
 
     def verdict(self):
         """The result record, with the CRC comparison as its gate (SPEC 6.6).
@@ -228,7 +281,14 @@ class Trip(object):
         the verdict, and a caller that reads only the exit code is exactly
         the caller SPEC 6.6 has in mind.
         """
-        return self.result(self.found["crc"] == plc_crc.MATCH,
+        path = plc_crc.record_path(self.project_path())
+        records = plc_crc.read_records(path)
+        self.found["recorded"] = records.get(self.found["controller"])
+        answer, why = plc_crc.judge(self.found["recorded"],
+                                    self.found["plc_crc"])
+        self.found["crc"] = answer
+        self.found["why"] = why
+        return self.result(answer == plc_crc.MATCH,
                            plc_crc.verdict_line(self.action, self.found))
 
     def failed(self, problem):
@@ -241,6 +301,10 @@ class Trip(object):
             workspace=self._workspace, failed_objects=unhandled.names(),
             **self.found)
 
+    def project_path(self):
+        """This run's project file on disk, or None when it was never saved."""
+        return getattr(getattr(self.projects, "primary", None), "path", None)
+
     def workspace(self):
         """This run's directory, made on first use.
 
@@ -248,7 +312,10 @@ class Trip(object):
         leaves no empty directory behind and reports no path.
         """
         if self._workspace is None:
-            path = getattr(getattr(self.projects, "primary", None), "path",
-                           None)
-            self._workspace = plc_crc.workspace(path)
+            self._workspace = plc_crc.workspace(self.project_path())
         return self._workspace
+
+
+def _one_line(text):
+    """One line of an exception's words: these arrive with a CRLF inside."""
+    return " ".join(safe_str(text).split())

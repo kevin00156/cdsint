@@ -230,7 +230,8 @@ img/        readMe 用的圖
   - [x] 驗收：`python -m pytest tests -q` 綠。四趟台架命令（A、B 各 `plc connect` 與 `plc download -y`，不設帳密）重跑：每趟 exit 1、report 的 `timed_out` 是 false、行程自己退出（總秒數在 120 以內）、`error` 或 stdout 含「Invalid user authentication」與兩個環境變數的名字、沒有 traceback；notes 裡有 `gateway: Gateway-3 -> 127.0.0.1:1174x` 那一行。秒數表更新到第 7 節。——`python -m pytest tests -q` 與根目錄各 901 passed。四趟重跑全部 exit 1、`timed_out` false、`exit_code_actual` 1 且 `exit_code_trusted` true、行程自己退出、`error` 含「Invalid user authentication on the target」、沒有 traceback，notes 有 `gateway: Gateway-3 -> 127.0.0.1:11740`（B 是 `:11741`），兩個環境變數的名字在 note 裡也在行程的 stdout 檔裡。**一項不合：秒數。** connect 是 69.7 與 67.5 秒（在 120 以內），download 是 159.4 與 160.2 秒（超過）。原因不是掛住而是 `session.login()` 之前 CODESYS 會先把整個應用程式編譯一遍；行程期限 360 秒沒有靠近。秒數表在第 7 節。
   - [x] 驗收（監督者會重現）：A 的 `plc connect` 一趟，同上。——監督者 2026-09-06 02:20 重現：新副本用 `tools/grant_plc.py` 設屬性（78 秒，`OK`），`plc connect --gateway 127.0.0.1 --port 11740` 不設帳密：exit 1、63 秒、`timed_out` false、`exit_code_trusted` true、`error` 是「did not answer: Invalid user authentication on the target」、notes 第一條點名 `CDS_DEV_USER` 與 `CDS_DEV_PASS`、第二條是 `gateway: Gateway-3 -> 127.0.0.1:11740`、stdout 沒有 traceback、行程自己退出、兩個 runtime 仍 active。監督者同時把上一條驗收的「總秒數在 120 以內」改成 connect 120 秒內、download 240 秒內：download 多的 90 秒是登入前的編譯，不編譯的下載沒有意義。
   - **帳密與登入（2026-09-06 08:30，監督者）。** 使用者給了台架的裝置帳密，監督者把它們寫在 `%LOCALAPPDATA%\cdsint\bench.env`（兩行 `KEY=VALUE`，只有使用者帳號與管理員讀得到，不在任何 repo 裡）。**用法：在要跑 PLC 命令的 shell 裡把那個檔載進環境變數，命令列、report、工單、commit、任何輸出都不准出現密碼；每趟跑完 grep report 與 stdout、stderr 確認密碼出現 0 次。** 監督者用它對 A 跑 `plc connect`：登入成功（notes 有 `logging in as kevin`）、閘道對、讀到控制器的 `Application.crc`；`plc download -y`：完整下載、`application state run`、控制器的 CRC 從 B558CA54 變成 2BDEC2A1、110 秒 exit 1；再 `connect` 一次控制器仍是 2BDEC2A1。B 台架 `connect` 同樣登入成功。**下載機制是好的，判決機制是壞的**：三趟本機 build 的 CRC 各不同（A3EF26FE、0F65D91E、729B7D04），所以永遠 `DIFFERENT`。監督者把工作目錄裡的兩個 `.crc` 印成位元組：前 20 位元組版面一樣（`b1 1a 90 00` 檔頭、4 位元組 CRC、`Application\0`），本機那份多 8 位元組尾巴 `b2 1a 84 00 01 00 00 00`；所以 `CRC_FIELD=(4,8)` 的解析沒錯，錯的是「離線建的 boot application 的 CRC」這個東西本身每次編譯都變。
-  - [ ] **階段 3 台架收尾二（CRC 判決）**：在台架上查清楚「控制器跑的是不是這份專案」該比什麼，然後改 `engine/plc_crc.py`、`plc_trip.py`。先量事實：（1）同一個 IDE 行程裡連建兩次 boot application，CRC 一不一樣；（2）兩個新行程各建一次，一不一樣（監督者的三趟說不一樣）；（3）`.app` 檔頭有沒有時間戳，`cdsint.app` 前 32 位元組是 `81 01 d4 00 70 8c 80 00 "Application" 71 a0 80 00 d3 ba 9e 4a ...`；（4）softplc 專案的 Project Information 有沒有「編譯時自動加版號」之類會讓每次編譯的程式碼不同的設定；（5）用 `system.dump_scripting_api` 把 API 倒出來，找 `OnlineApplication` 上跟「identical」「crc」「compare」有關的成員，還有 `OnlineChangeOption.Keep` 登入後能不能問出「PLC 上的應用程式跟專案一不一樣」。然後裁：如果離線 CRC 天生不穩，判決改用 IDE 自己的比對（登入時 IDE 知道 identical 與否），或改成「下載後立刻拉回控制器的 CRC 存在 report 裡，之後 `connect` 比的是控制器現在的 CRC 跟上一次下載記下的值」，兩種都要在第 7 節寫理由與代價。順便：「no source archive on the controller: Value cannot be null. Parameter name: path」那句改成人話。驗收：A 上 `download -y` 之後緊接著 `connect` 回 `MATCH`、exit 0；改一個 POU 再 `connect` 回 `DIFFERENT`、exit 1；B 同樣一輪；密碼在所有輸出出現 0 次；測試綠。
+  - [x] **階段 3 台架收尾二（CRC 判決）**：在台架上查清楚「控制器跑的是不是這份專案」該比什麼，然後改 `engine/plc_crc.py`、`plc_trip.py`。先量事實：（1）同一個 IDE 行程裡連建兩次 boot application，CRC 一不一樣；（2）兩個新行程各建一次，一不一樣（監督者的三趟說不一樣）；（3）`.app` 檔頭有沒有時間戳；（4）softplc 專案的 Project Information 有沒有「編譯時自動加版號」之類的設定；（5）用 `system.dump_scripting_api` 把 API 倒出來找 `OnlineApplication` 上跟識別有關的成員。然後裁，順便把「no source archive on the controller: Value cannot be null. Parameter name: path」改成人話。——**五件事實都量了，五個答案沒有一個支持原本的比法，所以判決整個換掉，改成「控制器現在的 CRC 對上這個專案上次下載留在這台上的值」。** 量到的事實與裁決的理由在第 7 節「階段 3 台架收尾二」那一段；SPEC 6.6 已改寫。驗收句裡「改一個 POU 再 `connect` 回 `DIFFERENT`」那一條**做不到而且不該做**，換成了「別人下載到同一台之後 `connect` 回 `DIFFERENT`」，理由同樣在第 7 節。
+  - [x] 驗收：A 上 `download -y` 之後緊接著 `connect` 回 `MATCH`、exit 0；B 同樣一輪；別的副本下載到 A 之後，原本那份 `connect` 回 `DIFFERENT`、exit 1；密碼在所有輸出出現 0 次；測試綠。——**全過。** A：`download -y` exit 0 `MATCH`（130.7 秒，控制器 DC848126），`connect` exit 0 `MATCH`（70.8 秒）。同一台再下載一次 exit 0 `MATCH`（122.3 秒），控制器變成 CF9DD644——值真的每次都變，所以「值沒變就是沒落地」這條新檢查在真機上站得住。B：`download -y` exit 0 `MATCH`（120.0 秒，CB09D46F），`connect` exit 0 `MATCH`（67.9 秒）；B 下載完再回頭 `connect` A 仍是 `MATCH`（65.2 秒），紀錄檔兩台各一筆沒有互相蓋掉。`DIFFERENT`：另一份副本下載到 A（116.4 秒，控制器變 1D1E5AD5），原本那份 `connect` A 回 `DIFFERENT` exit 1（64.2 秒），同時 `connect` B 仍是 `MATCH` exit 0（62.7 秒）。改一個 POU 之後 `connect` A 是 `MATCH`（68.5 秒），那是裁決預期的行為，不是漏抓。密碼：掃過 947 個檔（兩個暫存樹與整個 repo）出現 0 次。`python -m pytest tests -q` 與根目錄各 914 passed。
   - [ ] 驗收（監督者會重現）：A 的 `download -y` 接 `connect`，`MATCH`、exit 0。
   - [ ] 驗收（還需要人）：使用者在自己的 shell 設好 `CDS_DEV_USER`、`CDS_DEV_PASS`，對 A 跑 `cdsint plc connect --project <softplc 副本> --install 3.5.21.40 --sync-dir S --gateway 127.0.0.1 --port 11740`，列出裝置與檔案；再跑 `plc download -y`，exit 0 且 report 的 CRC 是 `MATCH`。原因：帳密只有人有。
   - 監督者驗證（2026-09-05 20:45）：`python -m pytest tests -q` 與根目錄各 596 passed，監督者自己跑的。`plc connect --target X` 與 `plc download -y --target X` 都是 exit 2 並說明 D8 的理由。`CDS_DEV_PASS` 在程式碼裡只有 `engine/entry_plc.py:46` 一處。監督者在 `%TEMP%\cdsint-sup\` 的 softplc 副本上跑 `plc connect --project --install 3.5.21.40`：屬性沒開，57 秒後 exit 5，訊息指向 SPEC 6.5；`config set cds-sync-plc=connect --project` exit 1 被拒。沒有殘留的 IDE 行程，使用者看門人心跳 20:37。台架那條沒有驗，工具刻意不從檔案讀憑證，監督者也沒有。
@@ -441,6 +442,134 @@ A 是 `0168.1000.2DDC.7F00.0001`、B 是 `0168.1000.2DDD.7F00.0001`）。兩個�
   （`systemctl is-active` 都是 active，2026-09-06 00:51 起的，demo 授權的兩小時還沒到），
   Windows 這邊 `127.0.0.1:11740` 與 `:11741` 都連得上，閘道 `Gateway-3` 兩個埠都解析得出節點位址。
 
+
+
+階段 3 台架收尾二（2026-09-06 worker 在 A、B 兩台 WSL soft PLC 上量的，原廠 3.5.21.40／ScriptEngine 4.2.0.0）：
+
+**先講結論。** 工單問「控制器跑的是不是這份專案」該比什麼。量完的答案是：**用手上的工具問不出這一題，
+問得出來的是另一題**——「這台控制器上還是不是 cdsint 從這份專案放上去的那份」。判決改成回答後者，
+`MATCH` 的意思跟著變窄。窄的那句是真的，寬的那句沒有任何可用的儀器支持。
+
+**五件事實。**
+
+一，同一個 IDE 行程裡連建三次 boot application，CRC 完全一樣（`0CDC66F3`），三個 `.app` 位元組全等。
+
+二，兩個新行程對同一個專案檔各建一次，也是 `0CDC66F3`。所以「每次編譯都不同」這個說法不精確：
+**沒被碰過的工作副本是穩定的。**
+
+三，會讓它變的是「專案被寫過」。`set_gateway_and_ip_address` 之後同一個行程裡建，值變成 `1A97B322`；
+同樣的參數再跑一次整個流程，變成 `32CF7B63`——**同樣的寫入，每次給一個新的值**。
+`device.connect()` 不會變，設 `auth_fallback_modes` 與 `set_default_credentials` 也不會變。
+設一個專案屬性會變。刪掉專案檔旁邊的 `.compileinfo`／`.bootinfo`／`.bootinfo_guids` 再建，也變。
+把同一份位元組複製到別的路徑再建，也不一樣。變的是一個四位元組的值，
+它被蓋在 boot application 每 64 KB 一個的區塊頭上（冷編的那份是 `11 47 00 00`，下載過一次之後是 `5D 6D 66 C4`），
+`.app` 的大小與前 32 位元組完全沒動，136 個位元組不同。
+所以那個值是**這個工作目錄的建置身分**，不是原始碼的性質。
+
+四，Project Information 沒有「編譯時自動加版號」這一類東西——事實二已經反證了：
+真有那種設定的話，兩個行程不會編出同一個值。
+
+五，`system.dump_scripting_api` 在這台的 ScriptEngine 上**不存在**（`SystemImpl` 沒有這個屬性），
+所以改成把物件的成員列出來。`OnlineApplication` 上是
+`application`、`application_state`、`create_boot_application`、`force_prepared_values`、`get_forced_expressions`、
+`get_online_device`、`get_prepared_expressions`、`get_prepared_value`、`is_logged_in`、`login`、`logout`、
+`operation_state`、`read_value(s)`、`reset`、`set_prepared_value`、`set_unforce_value`、`source_download`、
+`start`、`stop`、`timeout`、`unforce_all_values`、`write_prepared_values`——**沒有任何一個跟 identical、crc、compare 有關**。
+`OnlineDevice` 上同樣沒有。要讓 IDE 自己說出「PLC 上跟專案一不一樣」，唯一的路是 `login`，而 login 會下載，
+那就不是唯讀命令了。
+
+**還有第六件，事實表沒問但它自己跳出來，而且它一個人就否決了原本的比法。**
+把控制器上的 `Application.app` 拉回來跟離線編的那份比：控制器上是 2118764 位元組，離線是 2098340，
+共同前綴裡有 1684487 個位元組不同。**兩個檔案根本不是同一個東西**，所以它們的 CRC 相不相等這件事本身沒有意義——
+就算離線那個值完全穩定，也永遠不會等於控制器上那個。原本的做法從第一天起就不可能回 `MATCH`。
+
+**判決。**
+
+- Ruling: 比法改成「控制器現在的 `Application.crc`，對上這個專案上一次下載完留在這台控制器上的那個值」，
+  紀錄寫在專案檔旁邊的 `<專案名>.cdsint-plc.json` — 工單給的兩個選項裡，選項一（用 IDE 自己的比對）
+  被事實五否決，選項二就是這個。控制器上那個值是這整件事裡唯一穩定又有意義的量：它只在有人下載的時候變 —
+  錯了的代價是這個答案是**機器本地的**：同一份專案在另一台電腦上、或複製到別的路徑，`connect` 回 `UNKNOWN`
+  而不是 `MATCH`，因為那份副本從來沒有下載過任何東西。這是誠實的「我不知道」，不是漏抓。
+- Ruling: 紀錄放在專案檔旁邊，不放 `%LOCALAPPDATA%` — 它描述的是「這一份工作副本對某台機器做過什麼」，
+  跟 IDE 自己放在同一個目錄的 `.compileinfo`、`.bootinfo`、`.opt` 是同一類東西；副本複製到別處，
+  紀錄留在原地是對的行為而不是遺失 — 錯了的代價是專案目錄多一個檔，
+  如果那個目錄被 git 管理就要進 `.gitignore`（分紙機那個 `.project` 不在 repo 裡，所以那邊沒事）。
+- Ruling: 紀錄一個控制器一筆，鍵是 `IP:埠`，沒給 `--gateway` 的跑法鍵是 `project` — 台架本身就是
+  一份副本服務兩台機器；整份覆蓋的話，下載到 B 會讓「A 上是什麼」憑空消失，
+  之後 `connect` A 會回 `UNKNOWN`，而那是假的 — 錯了的代價是同一台控制器用不同的旗標跑會被當成兩台
+  （給了 `--gateway` 與沒給），第一次那樣跑會回 `UNKNOWN`；訊息裡有鍵名，看得出來為什麼。
+- Ruling: `connect` 與 `download` 都不再離線建 boot application，那段程式碼刪掉，report 的 `local_crc` 欄位也拿掉 —
+  留著它就會有人拿去比。一個每趟都不一樣的數字放在報告裡，比不放更糟 —
+  錯了的代價是 pipeline 如果需要一份 boot application 檔案，現在沒有命令產得出來；
+  在這之前也沒有人要過（`build` 是編譯，不產 boot application）。附帶的好處是 `connect` 不用編譯了，
+  從 105 秒降到 63 到 71 秒。
+- Ruling: `download` 改成「下載前先讀一次控制器的 CRC，下載後再讀一次，兩次一樣就算失敗」 —
+  原本 `download` 的自我檢查是拿本機編的去比控制器的，那條檢查永遠回 `DIFFERENT`，等於沒有檢查；
+  拿掉它就要有東西頂上，否則「登入沒丟例外」就成了成功的唯一證據。
+  台架上量到同一台連下兩次是 `DC848126` → `CF9DD644`，值真的每次都動 —
+  錯了的代價是多開一次裝置連線（約 2.5 秒），以及萬一哪天兩次下載真的產生同一個值，
+  會誤報一次失敗；那要求兩次編譯抽到同一個四位元組識別碼，事實三說每次寫入都給新值。
+- Ruling: 工單驗收句「改一個 POU 再 `connect` 回 `DIFFERENT`」拿掉，換成「別的副本下載到同一台之後回 `DIFFERENT`」 —
+  台架上實測：`import` 改掉一個 POU 之後 `connect` A 仍然是 `MATCH`，而且**那是對的**，
+  因為控制器確實沒變。要讓它回 `DIFFERENT` 就得在本機算一個「專案有沒有改過」的指紋，
+  而能算的兩種都不合格：離線 CRC 不穩（事實三），專案檔的位元組雜湊會在兩個方向上出錯——
+  存了檔但沒改程式碼會誤報，改了但沒存檔會漏抓。**會漏抓的閘門比沒有閘門更糟**，
+  因為它會誘使人相信一句它撐不住的話。專案跟磁碟一不一致是 `compare` 與 `verify` 的問題，
+  它們把每個物件讀過一遍 — 錯了的代價是 pipeline 要下兩個判斷才能得到「機器上跑的是這棵樹」：
+  `verify` 說專案等於磁碟，`connect` 說機器等於上次下載。想要一句話講完，
+  唯一誠實的路是下載時做 source download、`connect` 時把封存拉回來比，那是另一件事，沒做。
+- Ruling: `judge()` 的三個答案各自帶一句話，不只回一個字 — `UNKNOWN` 有兩種完全不同的來路
+  （沒下載過、控制器上什麼都沒有），下一步也不一樣；只回一個字的話，讀的人要自己去猜是哪一種 —
+  錯了的代價是無。
+
+**秒數表（2026-09-06，softplc 副本 229 個物件）。**
+
+| 台架 | 命令 | 退出碼 | 秒數 | 判決 | 控制器的 CRC |
+|---|---|---|---|---|---|
+| A（11740） | `download -y` | 0 | 130.7 | MATCH | DC848126 |
+| A（11740） | `connect` | 0 | 70.8 | MATCH | DC848126 |
+| A（11740） | `download -y` 再一次 | 0 | 122.3 | MATCH | CF9DD644（變了） |
+| A（11740） | `connect` | 0 | 67.7 | MATCH | CF9DD644 |
+| B（11741） | `download -y` | 0 | 120.0 | MATCH | CB09D46F |
+| B（11741） | `connect` | 0 | 67.9 | MATCH | CB09D46F |
+| A（11740） | `connect`（B 下載完之後） | 0 | 65.2 | MATCH | CF9DD644 |
+| A（11740） | `connect`（改過一個 POU 之後） | 0 | 68.5 | MATCH | CF9DD644 |
+| A（11740） | 另一份副本 `download -y` | 0 | 116.4 | MATCH | 1D1E5AD5 |
+| A（11740） | `connect`（原本那份副本） | 1 | 64.2 | **DIFFERENT** | 1D1E5AD5 |
+| B（11741） | `connect`（同時） | 0 | 62.7 | MATCH | CB09D46F |
+
+`connect` 比上一輪快 35 到 40 秒，差的就是那次不再需要的編譯。四趟 `download` 的 120 到 130 秒裡，
+登入前的完整編譯仍然佔大約 90 秒。所有 report 的 `timed_out` 都是 false、`exit_code_trusted` 都是 true，
+沒有一趟被殺，沒有 traceback。
+
+**帳密。** 從 `%LOCALAPPDATA%\cdsint\bench.env` 載進 shell 的環境變數，沒有出現在任何命令列上。
+跑完掃過 `%TEMP%\cdsint-work`、`%TEMP%\cdsint` 與整個 repo 共 947 個檔案，**密碼出現 0 次**。
+使用者帳號（`kevin`）照設計出現在 note 裡（「logging in as kevin」），那是名字不是密碼。
+
+**順手改掉的那句話。** 「no source archive on the controller: Value cannot be null. Parameter name: path」
+現在是「no source archive to fetch: nothing has been source-downloaded to this controller
+(the IDE said: Value cannot be null. Parameter name: path)」。人話在前，IDE 自己的話收在括號裡、壓成一行，
+留著是因為前面那句是對失敗原因的判讀，判讀可能是錯的。
+
+**台架上撞到、但不在這張工單範圍內的一件事（給監督者派）。**
+為了做「改一個 POU」那一步，對 softplc 副本 `export`（228 個 `.st`）、把 `PLC_PRG.st` 的實作段
+從空的改成一行 `benchProbeCounter := benchProbeCounter + 1;`、再 `import -y --force`。
+import 回報 `updated: 1`、`failed: 0`、ok。但之後 `build` 是 **1 error**（原本 0 errors、101 warnings，
+現在 1 error、90 warnings），`plc download` 也因為 `Compile errors occurred` 而失敗（失敗得很乾淨：exit 1、
+沒有寫紀錄、之後的 `connect` 仍然照實回報上一次下載的結果）。再 `export` 到另一個資料夾去看 IDE 現在存的是什麼，
+`PLC_PRG.st` 的實作段是：
+
+```
+benchProbeCounter := benchProbeCounter + 1;
+1;
+```
+
+**多出一行 `1;`。** 把原始內容寫回 `.st` 再 `import -y --force` 一次（同樣回報 `updated: 1`、ok），
+`build` 仍然是 1 error，`download` 仍然失敗。用一份全新的原廠副本下載到同一台則完全正常（116.4 秒 exit 0），
+所以壞掉的是那一份被改過的副本，不是台架也不是新的判決程式碼。
+worker 沒有動任何 import／export 的程式碼——這件事不在本工單範圍內。
+重現材料留在 `%TEMP%\cdsint-work\bench\`（`sync\` 是改過的那份、`sync2\` 是改完之後 IDE 存的內容、
+`i1.json` 與 `i2.json` 是兩趟 import 的 report、`b1.json` 是 build 的 report）。
 
 階段 4 收尾（審查後）新增的：
 

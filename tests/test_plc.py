@@ -9,10 +9,13 @@ other, and both have to hold before anything logs in — a check that runs
 inside the body it guards has already let the body start.
 
 What comes back is a CRC comparison, and that is the whole point of the pair
-(SPEC 6.6): the boot application this project compiles to, against the one
-the controller holds. MATCH is the only answer that passes, because a caller
-reading the exit code has to be able to tell "it is running this" from "it
-might be running anything".
+(SPEC 6.6) — but not the obvious comparison. An offline boot application and
+the controller's are different artefacts and never match, and the offline one
+moves every run besides; engine/plc_crc.py holds the bench measurements that
+say so. What is compared is the CRC the controller holds now against the one
+a download from this project left there. MATCH is the only answer that
+passes, because a caller reading the exit code has to be able to tell "it is
+still running what I put there" from "it might be running anything".
 
 Everything here runs against stand-in IDE objects. The controller itself is
 a bench test and needs a person (the plan's phase 3).
@@ -28,6 +31,7 @@ from cds.core import props
 from cds.ide import entries, permit, silent
 from cdsint import cli, flags
 from cdsint.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
+from engine import plc_crc as plc_crc_module
 
 ENGINE_ROOT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "engine")
@@ -35,12 +39,19 @@ PLC_BODY = os.path.join(ENGINE_ROOT, "entry_plc.py")
 
 DEVICE_GUID = "225bfe47-7336-4dbc-9419-4105a7c831fa"
 
-# Two .crc files that agree everywhere except the four bytes that matter, and
-# one that agrees only in the header — which is what makes the header worth
-# skipping.
+# Three .crc files that agree everywhere except the four bytes that matter,
+# which is what makes the header worth skipping. A is what the project builds
+# to, B is what the controller held before, C is what a download leaves on it:
+# on a real bench all three differ, and the second and third always do.
 HEADER = b"\x00\x01\x02\x03"
 CRC_A = HEADER + b"\xDE\xAD\xBE\xEF" + b"Application\x00"
 CRC_B = HEADER + b"\x11\x22\x33\x44" + b"Application\x00"
+CRC_C = HEADER + b"\x55\x66\x77\x88" + b"Application\x00"
+
+# Where the fake project's file sits. Set for each test by the `workspace`
+# fixture, because a download writes its record beside the project and a test
+# that used a made-up path would write it to a made-up place on the real disk.
+PROJECT_PATH = None
 
 
 # --------------------------------------------------------------------------
@@ -66,19 +77,13 @@ class Node(object):
 
 
 class Application(object):
-    """The offline application: create_boot_application writes a .crc."""
+    """The project's active application: what a download is a download of.
 
-    def __init__(self, crc=CRC_A):
-        self.crc = crc
-        self.built_to = []
-
-    def create_boot_application(self, path):
-        self.built_to.append(path)
-        stem = os.path.splitext(path)[0]
-        with open(stem + ".crc", "wb") as handle:
-            handle.write(self.crc)
-        with open(path, "wb") as handle:
-            handle.write(b"a boot application")
+    It has no create_boot_application of its own any more. The offline call
+    that writes one to a path was how the verdict used to be reached, and
+    engine/plc_crc.py records why that could not work; a fake that still
+    offered it would keep the idea alive in the one place nobody would look.
+    """
 
 
 class Info(object):
@@ -118,7 +123,7 @@ class RemoteFile(object):
 class Device(object):
     """A live device connection: lists files and hands them over."""
 
-    def __init__(self, crc=CRC_A, archive=True):
+    def __init__(self, crc=CRC_B, archive=True):
         self.crc = crc
         self.archive = archive
         self.connected = False
@@ -148,17 +153,28 @@ class Device(object):
 
 
 class Session(object):
-    """An online application: this is the object that downloads."""
+    """An online application: this is the object that downloads.
 
-    def __init__(self):
+    create_boot_application is what puts a boot application on the controller,
+    so it is what changes the controller's CRC. `writes` is the run of values
+    it leaves there, one per download; an empty one is a session that returns
+    without error having written nothing, which is the failure the read-back
+    is for.
+    """
+
+    def __init__(self, device=None, writes=None):
         self.calls = []
         self.application_state = "run"
+        self.device = device
+        self.writes = [CRC_C] if writes is None else list(writes)
 
     def login(self, option, delete_foreign_apps):
         self.calls.append(("login", option, delete_foreign_apps))
 
     def create_boot_application(self):
         self.calls.append(("create_boot_application",))
+        if self.device is not None and self.writes:
+            self.device.crc = self.writes.pop(0)
 
     def start(self):
         self.calls.append(("start",))
@@ -181,7 +197,7 @@ class Online(object):
     def __init__(self, device=None, gateways=()):
         self.device = device if device is not None else Device()
         self.gateways = list(gateways)
-        self.session = Session()
+        self.session = Session(device=self.device)
         self._fallback = "never set"
         self.credentials = None
 
@@ -294,8 +310,15 @@ def keep_the_engine_loaded(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def workspace(tmp_path, monkeypatch):
-    """Keep the .app, .crc and archive of a test run out of the real TEMP."""
+    """Keep everything a run writes out of the real filesystem.
+
+    Two places, not one: the .app, .crc and archive go under TEMP, and the
+    record of a download goes beside the project — so the fake project has to
+    live somewhere real and disposable too.
+    """
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_PATH",
+                        os.path.join(str(tmp_path), "Line.project"))
     return tmp_path
 
 
@@ -306,11 +329,20 @@ def ide(allowed="connect,download", device=None, application=None,
     application = application if application is not None else Application()
     children = children if children is not None else [Node("Device",
                                                            DEVICE_GUID)]
-    project = Project(values, children, r"C:\p\Line.project", application)
+    project = Project(values, children, PROJECT_PATH, application)
     online = Online(device=device, gateways=gateways)
     return {"system": FakeSystem(), "projects": Projects(project),
             "online": online, "CredentialSourceKind": CredentialSourceKind,
             "OnlineChangeOption": OnlineChangeOption}
+
+
+def recorded(plc_crc="11223344", controller=plc_crc_module.PROJECT_GATEWAY):
+    """Write the record a download would have left, and hand back its path."""
+    path = plc_crc_module.record_path(PROJECT_PATH)
+    plc_crc_module.remember(path, controller,
+                            {"plc_crc": plc_crc, "device": "Device",
+                             "downloaded_at": "2026-09-06T10:00:00"})
+    return path
 
 
 def press(ide_globals, entry, args):
@@ -587,33 +619,79 @@ def crc_of(outcome):
     return outcome.result["data"]["crc"]
 
 
-def test_the_same_boot_application_on_both_sides_is_a_match():
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_A),
-                      application=Application(crc=CRC_A))
+def test_a_controller_still_holding_what_was_downloaded_is_a_match():
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "MATCH"
     assert outcome.ok()
 
 
-def test_a_controller_running_something_else_is_different_and_fails():
+def test_a_connect_with_nothing_ever_downloaded_is_unknown_not_a_match():
+    # The bench found this the hard way round: the old comparison built a
+    # boot application and held it against the controller's, and those are
+    # different artefacts, so the answer was DIFFERENT every time and carried
+    # no information. Having nothing to compare against must say so.
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "UNKNOWN"
+    assert not outcome.ok()
+    assert "download -y" in outcome.result["summary"]
+
+
+def test_a_controller_somebody_else_loaded_is_different_and_fails():
     # The finding is the point of the command, and nothing wraps these two
     # the way verify wraps compare — so the exit code has to be the verdict.
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B),
-                      application=Application(crc=CRC_A))
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_C))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "DIFFERENT"
     assert not outcome.ok()
-    assert "NOT running" in outcome.result["summary"]
+    assert "loaded with something else since" in outcome.result["summary"]
 
 
-def test_only_the_identity_bytes_are_compared():
-    # Two files that share a header and differ in the field must not match,
-    # and that is the whole reason the first four bytes are skipped.
-    assert CRC_A[:4] == CRC_B[:4]
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B),
-                      application=Application(crc=CRC_A))
+def test_editing_the_project_does_not_move_this_verdict():
+    # The narrow claim, held to deliberately. This command answers "does the
+    # controller still hold what cdsint put there", and an edit nobody
+    # downloaded does not change that. The wider question -- is the project
+    # what the disk says -- is compare's and verify's, which read every
+    # object; answering it from here would mean guessing from a number that
+    # moves on its own (engine/plc_crc.py).
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
+
+
+def test_the_record_the_verdict_used_is_in_the_report():
+    # A verdict a reader cannot audit is a verdict they have to trust.
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
     data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
-    assert data["local_crc"] == "DEADBEEF" and data["plc_crc"] == "11223344"
+    assert data["recorded"]["plc_crc"] == "11223344"
+    assert data["recorded"]["downloaded_at"] == "2026-09-06T10:00:00"
+    assert data["controller"] == "project"
+
+
+def test_a_record_for_another_controller_is_not_this_controllers():
+    # Same working copy, two benches: the record for A must not answer for B.
+    recorded(plc_crc="11223344", controller="127.0.0.1:11740")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B),
+                      gateways=[Gateway()])
+    outcome = silent.run(ide_globals, PLC_BODY, "connect",
+                         {"gateway": "127.0.0.1", "port": 11741})
+    assert crc_of(outcome) == "UNKNOWN"
+
+
+def test_only_the_identity_bytes_are_read():
+    # Two files that share a header and differ in the field must not read the
+    # same, and that is the whole reason the first four bytes are skipped.
+    assert CRC_A[:4] == CRC_B[:4]
+    recorded(plc_crc="DEADBEEF")
+    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert outcome.result["data"]["plc_crc"] == "11223344"
+    assert crc_of(outcome) == "DIFFERENT"
 
 
 def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
@@ -627,19 +705,58 @@ def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
 
 
 def test_a_download_reports_the_crc_it_checked_afterwards():
-    ide_globals = ide(allowed="download", device=Device(crc=CRC_A),
-                      application=Application(crc=CRC_A))
+    ide_globals = ide(allowed="download", device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
+    assert outcome.result["data"]["plc_crc"] == "55667788"
+
+
+def test_a_download_writes_down_what_it_left_there():
+    # This is the whole basis of a later connect's answer: nothing built
+    # locally reproduces what the controller holds, so what cdsint itself put
+    # there, recorded at the moment it put it, is the only reference.
+    ide_globals = ide(allowed="download", device=Device(crc=CRC_B))
+    silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    written = plc_crc_module.read_records(
+        plc_crc_module.record_path(PROJECT_PATH))["project"]
+    assert written["plc_crc"] == "55667788"
+    assert written["device"] == "Device"
+
+
+def test_a_download_then_a_connect_is_a_match():
+    # The pair the bench runs, in one test: nothing is set up by hand.
+    silent.run(ide(allowed="connect,download", device=Device(crc=CRC_B)),
+               PLC_BODY, "download", {"yes": True})
+    after = ide(allowed="connect,download", device=Device(crc=CRC_C))
+    outcome = silent.run(after, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "MATCH" and outcome.ok()
 
 
-def test_a_download_that_did_not_take_is_reported_as_different():
-    # The read-back is the whole reason download does not stop at "logged
-    # out with no exception".
-    ide_globals = ide(allowed="download", device=Device(crc=CRC_B),
-                      application=Application(crc=CRC_A))
+def test_a_download_that_did_not_take_is_a_failure_not_a_success():
+    # The read-back is the whole reason download does not stop at "logged out
+    # with no exception". A session that raises nothing and writes nothing is
+    # what that check is for; it is caught by the controller's CRC not having
+    # moved, which on a real controller it does on every download.
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed="download", device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
-    assert crc_of(outcome) == "DIFFERENT" and not outcome.ok()
+    assert not outcome.ok()
+    assert "nothing was written to it" in outcome.error_text()
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(PROJECT_PATH)) == {}
+
+
+def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
+    class Wiped(Device):
+        def upload_file(self, remote, local, overwrite):
+            self.crc = None if self.uploaded else self.crc
+            Device.upload_file(self, remote, local, overwrite)
+
+    ide_globals = ide(allowed="download", device=Wiped(crc=CRC_B))
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok() and "nothing to show it landed" in \
+        outcome.error_text()
 
 
 def test_the_source_archive_comes_back_when_the_controller_has_one():
@@ -649,10 +766,21 @@ def test_the_source_archive_comes_back_when_the_controller_has_one():
 
 
 def test_no_source_archive_is_an_answer_not_a_failure():
+    recorded(plc_crc="11223344")
     ide_globals = ide(allowed="connect", device=Device(archive=False))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert outcome.result["data"]["source_archive"] is None
     assert outcome.ok()
+
+
+def test_the_missing_archive_is_said_in_words_before_the_ides_own():
+    # The IDE's words for it are "Value cannot be null. Parameter name: path",
+    # which tells a reader nothing at all about what happened.
+    ide_globals = ide(allowed="connect", device=Device(archive=False))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    note = [n for n in outcome.result["data"]["notes"] if "archive" in n][0]
+    assert note.startswith("no source archive to fetch: nothing has been "
+                           "source-downloaded to this controller")
 
 
 def test_the_files_the_controller_holds_are_named_not_counted():
@@ -698,18 +826,20 @@ def test_a_download_that_throws_is_named_and_still_logs_out():
 
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
     # The workspace is named after the project so runs overwrite each other,
-    # which is exactly what makes a file nobody rewrote dangerous.
-    class Silent(Application):
-        def create_boot_application(self, path):
-            pass          # returns without writing, as a broken IDE might
+    # which is exactly what makes a file nobody rewrote dangerous: an upload
+    # that returns without writing would otherwise be answered from a file
+    # the last run left there.
+    class Silent(Device):
+        def upload_file(self, remote, local, overwrite):
+            self.uploaded.append(remote)   # as a controller might, and has
 
     stale = os.path.join(str(workspace), "cdsint", "plc", "Line")
     os.makedirs(stale)
-    with open(os.path.join(stale, "cdsint.crc"), "wb") as handle:
-        handle.write(CRC_A)
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_A),
-                      application=Silent())
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
+        handle.write(CRC_B)
+    recorded(plc_crc="11223344")
+    outcome = silent.run(ide(allowed="connect", device=Silent()),
+                         PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
 
 
@@ -897,15 +1027,65 @@ def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
 # The pieces, on their own
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize("local,plc,verdict", [
-    ("DEADBEEF", "DEADBEEF", "MATCH"),
-    ("DEADBEEF", "11223344", "DIFFERENT"),
-    (None, "11223344", "UNKNOWN"),
-    ("DEADBEEF", None, "UNKNOWN"),
+RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
+
+
+@pytest.mark.parametrize("record,plc,verdict", [
+    (RECORD, "11223344", "MATCH"),
+    (RECORD, "55667788", "DIFFERENT"),   # somebody loaded something else
+    (None, "11223344", "UNKNOWN"),       # nothing was ever put on it from here
+    (RECORD, None, "UNKNOWN"),           # nothing is on it at all
     (None, None, "UNKNOWN"),
 ])
-def test_the_comparison_has_three_answers_not_two(local, plc, verdict):
-    assert engine_module("plc_crc").compare_crc(local, plc) == verdict
+def test_the_comparison_has_three_answers_not_two(record, plc, verdict):
+    assert engine_module("plc_crc").judge(record, plc)[0] == verdict
+
+
+def test_each_answer_says_what_it_is_about_rather_than_just_naming_itself():
+    # UNKNOWN twice over is two different situations and two different next
+    # steps, so the word on its own is not the answer.
+    judge = engine_module("plc_crc").judge
+    assert "loaded with something else since" in judge(RECORD, "55667788")[1]
+    assert "download -y" in judge(None, "11223344")[1]
+    assert "nothing on it" in judge(RECORD, None)[1]
+    assert "2026-09-06T10:00:00" in judge(RECORD, "11223344")[1]
+
+
+def test_a_second_controller_does_not_erase_the_first(tmp_path):
+    # One working copy serving two benches is the bench itself: A and B are
+    # the same project at two addresses. A download to the second that wiped
+    # what was known about the first would make a later connect to the first
+    # answer UNKNOWN about a controller cdsint did load.
+    plc_crc = engine_module("plc_crc")
+    path = str(tmp_path / "Line.cdsint-plc.json")
+    plc_crc.remember(path, "127.0.0.1:11740", {"plc_crc": "AAAA"})
+    plc_crc.remember(path, "127.0.0.1:11741", {"plc_crc": "BBBB"})
+    records = plc_crc.read_records(path)
+    assert records["127.0.0.1:11740"]["plc_crc"] == "AAAA"
+    assert records["127.0.0.1:11741"]["plc_crc"] == "BBBB"
+
+
+def test_a_record_nobody_can_read_is_no_record_rather_than_a_crash(tmp_path):
+    # A bench command that dies on a corrupt side file is worse than one that
+    # says it has nothing to compare against.
+    plc_crc = engine_module("plc_crc")
+    path = str(tmp_path / "Line.cdsint-plc.json")
+    with open(path, "w") as handle:
+        handle.write("{not json")
+    assert plc_crc.read_records(path) == {}
+
+
+def test_a_run_with_no_gateway_flag_is_filed_under_its_own_name():
+    # "whatever the project already carried" is not an address, and filing it
+    # under a guessed one would let two different controllers share a record.
+    plc_crc = engine_module("plc_crc")
+    assert plc_crc.controller_key(None, 11740) == plc_crc.PROJECT_GATEWAY
+    assert plc_crc.controller_key("127.0.0.1", 11740) == "127.0.0.1:11740"
+
+
+def test_a_project_that_was_never_saved_has_nowhere_to_keep_a_record():
+    assert engine_module("plc_crc").record_path(None) is None
+    assert engine_module("plc_crc").remember(None, "key", {}) is False
 
 
 def test_a_file_too_short_to_hold_the_field_is_no_answer():

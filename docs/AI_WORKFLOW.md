@@ -309,14 +309,23 @@ cdsint plc connect  --project C:\p\line.project --install 3.5.21.40 --sync-dir C
 cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported     --gateway 192.168.1.5 --report r.json
 ```
 
-兩個命令最後都回同一個問題的答案：機器上跑的是不是這棵樹。比法是把這個專案編出來的
-boot application 的 `.crc`，跟控制器上那顆比，`data.crc` 有三種值：
+兩個命令最後都回同一個問題的答案：**這台控制器上跑的還是不是 cdsint 放上去的那份**。
+比法是控制器現在的 `Application.crc`，跟這個專案上一次下載完留在上面的那個值比。
+下載時會把那個值記在專案檔旁邊的 `<專案名>.cdsint-plc.json`，一個控制器一筆。
+
+比的不是「本機編出來的 boot application」。那條路試過，行不通：離線編出來的 `.app`
+跟控制器上那顆根本不是同一個檔（大小差兩萬多位元組），而且離線那個值每次改到專案就變一次。
+量到的證據在 `engine/plc_crc.py` 的檔頭。
 
 | `data.crc` | 意思 | exit code |
 |---|---|---|
-| `MATCH` | 機器上跑的就是這個專案 | 0 |
-| `DIFFERENT` | 機器上跑的是別的東西 | 1 |
-| `UNKNOWN` | 有一邊拿不到，比不了——不等於一致 | 1 |
+| `MATCH` | 控制器上還是上次下載放上去的那份 | 0 |
+| `DIFFERENT` | 上次下載之後有別的東西被下載到這台上面 | 1 |
+| `UNKNOWN` | 沒有可比的：這個專案從來沒下載到這台，或控制器上什麼都沒有 | 1 |
+
+**這個答案不包含「專案有沒有改過」。** 改了 POU 但沒有重新下載，`connect` 還是 `MATCH`，
+因為控制器確實沒變。專案跟磁碟一不一致是 `compare` 與 `verify` 的問題，
+它們是把每個物件讀過一遍才回答的，那才是不會漏掉的問法。
 
 帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀，不進命令列、不進報告。
 `--gateway` 不給的話就用專案自己帶的閘道設定；給了才會去改裝置節點，`--port` 不給是 11740。

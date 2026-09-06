@@ -34,7 +34,7 @@
 
 **場景 B，AI agent 的迴圈。** agent 沒有辦法看 IDE 的視窗，只能讀檔案和命令輸出。它改 `.st`、跑 compare 看差異、跑 import 送進 IDE、跑 build 拿錯誤清單、修、再來一次。所有對話框都由命令列旗標回答，沒有旗標就回報「需要哪個旗標」而不是掛住（D7）。
 
-**場景 C，pipeline。** IDE 沒開。`make` 或 CI 起一個無頭的 IDE 行程，開專案副本，匯入、匯出驗證、編譯、產出開機應用程式、比對 CRC、視需要下載到台架。整趟沒有人在鍵盤前。
+**場景 C，pipeline。** IDE 沒開。`make` 或 CI 起一個無頭的 IDE 行程，開專案副本，匯入、匯出驗證、編譯、下載到台架，再確認台架上還是剛剛放上去的那份。整趟沒有人在鍵盤前。
 
 ---
 
@@ -170,8 +170,8 @@
 | `compare` | 有 | 有 | 列出 IDE 與磁碟的差異 |
 | `build [--app NAME]` | 有 | 有 | 編譯，回錯誤清單 |
 | `verify -y [--force]` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完。含匯入，所以跟 `import` 一樣要 `-y` |
-| `plc connect [--gateway IP --port N]` | 拒絕 | 有 | 唯讀：列檔案、拉 `Application.crc`、比對 |
-| `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、比 CRC |
+| `plc connect [--gateway IP --port N]` | 拒絕 | 有 | 唯讀：列檔案、拉 `Application.crc`、跟上次下載記下的值比 |
+| `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、讀回 CRC 並記下來 |
 | `config get`、`config set KEY=VALUE` | 有 | 有 | 讀寫 4.4 的屬性，`cds-sync-plc` 除外 |
 
 共用旗標：`--timeout 秒`（預設 120，是**一個命令步驟**的上限；`--project` 形式的行程期限由它推導：啟動寬限 + 步數 × timeout + 關閉寬限，所以 `verify` 的實際等待上限比字面值大）、`--json`。
@@ -382,11 +382,14 @@ D8 的落地。
 
 從探針搬，放在引擎裡跟 `codesys_online.py` 並排（D12），只在 `--project` 形式提供（D8）。
 
-- `connect`：把 `online.auth_fallback_modes` 設成 `CredentialSourceKind.None` 關掉憑證對話框（ScriptEngine 4.2.0.0 實測是可寫屬性，不是方法；屬性不存在才退而呼叫 `set_auth_fallback_modes`，兩個都沒有就拒絕連線，因為 `--noUI` 底下一個關不掉的對話框是掛住不是失敗），帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀（D14）。列閘道，`find_address_by_ip`，`set_gateway_and_ip_address` 設到裝置節點，`create_online_device` 連線，列 `PlcLogic/Application`，拉 `Application.crc`，跟本機 `create_boot_application` 產出的 `.crc` 比第 5 到 8 個位元組。有原始碼封存就拉回來。
-- `download`：`login(OnlineChangeOption.Never, False)` 完整下載，`create_boot_application`，`start`，`logout`，再建一次 boot app 比 CRC。
+- `connect`：把 `online.auth_fallback_modes` 設成 `CredentialSourceKind.None` 關掉憑證對話框（ScriptEngine 4.2.0.0 實測是可寫屬性，不是方法；屬性不存在才退而呼叫 `set_auth_fallback_modes`，兩個都沒有就拒絕連線，因為 `--noUI` 底下一個關不掉的對話框是掛住不是失敗），帳密只從環境變數 `CDS_DEV_USER`、`CDS_DEV_PASS` 讀（D14）。列閘道，`find_address_by_ip`，`set_gateway_and_ip_address` 設到裝置節點，`create_online_device` 連線，列 `PlcLogic/Application`，拉 `Application.crc` 取第 5 到 8 個位元組。有原始碼封存就拉回來。不編譯任何東西。
+- `download`：先拉一次控制器現在的 `Application.crc`，然後 `login(OnlineChangeOption.Never, False)` 完整下載、`create_boot_application`、`start`、`logout`，再拉一次。兩次的值一定要不一樣——每次編譯都會在 boot application 的每個區塊蓋一個新的四位元組識別碼，所以下載真的落地了值就會變；沒變就是「沒有報錯但什麼都沒寫進去」，這趟算失敗。落地了就把新的值記下來。
+- **比的是什麼。** 控制器現在的 `Application.crc`，對上這個專案上一次下載完留在這台控制器上的那個值。紀錄寫在專案檔旁邊的 `<專案名>.cdsint-plc.json`，一個控制器一筆（鍵是 `IP:埠`；沒給 `--gateway` 的那種跑法鍵是 `project`），所以同一份副本可以同時服務兩台台架而不互相蓋掉。專案複製到別的地方，紀錄不跟著走，那是對的——它描述的是這一份工作副本做過什麼。
+- **不比本機編出來的 boot application。** 那是原本的做法，在台架上量出兩個獨立的理由都不成立（2026-09-06，3.5.21.40／ScriptEngine 4.2.0.0）：一，控制器上的 `.app` 是 2118764 位元組，離線編的是 2098340，有 168 萬個位元組不同，兩個檔案根本不是同一個東西，CRC 不可能相等；二，離線那個值不是原始碼的性質，只要專案被寫過就會換一個——把裝置指到閘道會換，登入會換，設一個專案屬性也會換，而 `--project` 每一趟都會設 `cds-sync-folder`，所以兩趟隔一分鐘的 `plc connect` 編出 128DBA21 與 59B20109。它只對「沒被碰過的工作副本」穩定，連同樣位元組的副本換個路徑都不一樣，因為它來自 IDE 放在專案檔旁邊的 `.compileinfo` 與 `.bootinfo`。
+- **`MATCH` 的意思因此比原本窄：「這台控制器上還是 cdsint 從這個專案放上去的那份」，不是「控制器跑的是這棵原始碼樹」。** 專案改了沒有重新下載，`connect` 仍然回 `MATCH`，因為控制器確實沒變。專案跟磁碟一不一致由 `compare` 與 `verify` 回答，它們把每個物件讀過一遍，那是唯一不會漏掉「改了但沒存檔」的問法。要更強的宣稱只有一條路：下載時一併做 source download，`connect` 再把原始碼封存拉回來比，那是另一件事，還沒做。
 - 這兩個命令的 report 要包含比對結果 `MATCH` 或 `DIFFERENT`，pipeline 拿這個當閘門。
 
-現況：已搬（階段 3），跟 `codesys_online.py` 並排。階段 4 拆成四個檔：`entry_plc.py` 是兩個命令的門面，`plc_trip.py` 是一趟的步驟，`plc_link.py` 是連到控制器的那一段，`plc_crc.py` 是判定本身（純位元組與路徑，不碰 IDE）。2026-09-06 在兩個 WSL soft PLC 上驗過：登入、閘道、完整下載、啟動、拉回 `Application.crc` 都對。**CRC 比對是錯的**：離線 `create_boot_application` 產出的 `.crc` 每編譯一次值就不同（同一份專案三趟三個值），控制器上的值在下載後穩定；兩個檔案前 20 位元組版面相同，所以錯的不是解析，是拿來比的東西。判決改成什麼，工單「階段 3 台架收尾二」在台架上量了再定。
+現況：已搬（階段 3），跟 `codesys_online.py` 並排。階段 4 拆成四個檔：`entry_plc.py` 是兩個命令的門面，`plc_trip.py` 是一趟的步驟，`plc_link.py` 是連到控制器的那一段，`plc_crc.py` 是判定本身（純位元組、路徑與 JSON，不碰 IDE）。2026-09-06 在兩個 WSL soft PLC 上整輪驗過：A 與 B 各 `download -y` 接 `connect` 都是 `MATCH` exit 0；同一台連下兩次，控制器的值從 DC848126 變成 CF9DD644，所以「值沒變就是沒落地」這條檢查在真機上站得住；換一份副本下載到 A 之後，原本那份 `connect` 回 `DIFFERENT` exit 1，而 B 不受影響仍是 `MATCH`。`connect` 不再編譯，一趟 63 到 71 秒。
 
 搬過來時定的幾件事。`connect` 只在給了 `--gateway` 的時候才動裝置節點的閘道設定；沒給就用專案自己帶的，
 因為那是別人設過的答案，一個唯讀命令不該順手改掉它。`--port` 不給就用 11740。

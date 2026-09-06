@@ -1,18 +1,51 @@
 # -*- coding: utf-8 -*-
-"""Is the controller running this tree? The files that answer it, and the answer.
+"""Is the controller running what cdsint put on it? The files, and the answer.
 
-The compiler is what answers it. Building the boot application offline writes
-a `.crc` beside the `.app`, the controller keeps the same file at
-PlcLogic/Application/Application.crc, and bytes 5 to 8 of the two are the
-identity to compare. Everything here is plain bytes and paths: nothing in
-this module talks to an IDE or to a controller, which is why the comparison
-can be tested without either.
+The obvious instrument is the wrong one, and it took a bench to see it. The
+IDE will build a boot application offline and write a `.crc` beside it, and
+the controller keeps a file of the same name and layout at
+PlcLogic/Application/Application.crc. Holding those two against each other is
+what this module used to do, and it answered DIFFERENT every time.
+
+Two separate reasons, both measured on the WSL bench on 2026-09-06 with
+CODESYS 3.5.21.40 (ScriptEngine 4.2.0.0):
+
+  They are not the same artefact. The controller's `.app` came back 2118764
+  bytes against the offline one's 2098340, with 1.68 million bytes different.
+  Two files that unalike never agree; their CRCs were never going to either.
+
+  The offline value is not a property of the source. A four-byte identity is
+  stamped into every 64 KB block of the boot application, and the compiler
+  mints a new one whenever the project has been written to: aiming the device
+  at a gateway moved it, so did logging in, and so does setting a project
+  property -- and the --project form sets cds-sync-folder on every run, so
+  two identical `plc connect` runs a minute apart built 128DBA21 and
+  59B20109. It is stable only for an untouched working copy, and not even the
+  same for a byte-identical copy at another path, because it comes from the
+  .compileinfo and .bootinfo files the IDE keeps beside the project file.
+
+So there is exactly one stable, meaningful quantity in reach: the CRC the
+controller itself holds. It changes when, and only when, something is
+downloaded. That gives the comparison this module makes -- a download writes
+down what it left there, and a later connect holds the controller against
+that record.
+
+MATCH therefore means "this controller still holds what cdsint downloaded to
+it from this project", not "the controller is running this source". The
+narrower claim is the true one, and it is the one the message says. Whether
+the project has moved on since is a different question with its own commands:
+compare and verify answer it by reading every object, which is the only way
+to answer it that cannot silently miss an edit nobody saved.
+
+Everything here is plain bytes, paths and JSON: nothing talks to an IDE or a
+controller, which is why the comparison can be tested without either.
 """
 from __future__ import print_function
 
 import os
 import tempfile
 
+from cds.core import ipc
 from engine.codesys_utils import log_warning, safe_str
 
 # The verdict, and what it is called in the report (SPEC 6.6).
@@ -28,13 +61,24 @@ CRC_FIELD = (4, 8)
 REMOTE_APP_DIR = "PlcLogic/Application"
 REMOTE_CRC = REMOTE_APP_DIR + "/Application.crc"
 
-# The boot application is always written under the same name, so each run
-# overwrites the last one rather than leaving a pile nobody reads, and no
-# code here ever deletes a directory it did not create.
-BOOT_NAME = "cdsint.app"
-BOOT_CRC_NAME = "cdsint.crc"
+# What a run pulls off the controller, under names of its own so a reader who
+# goes and looks in the workspace knows which side each file came from. Each
+# run overwrites the last rather than leaving a pile nobody reads, and no code
+# here ever deletes a directory it did not create.
 PLC_CRC_NAME = "plc_Application.crc"
 SOURCE_ARCHIVE_NAME = "plc_source.projectarchive"
+
+# The record lives beside the project rather than in a machine-wide store,
+# because it is a fact about one working copy: it says what a download made
+# from these files put on a machine. Copy the project elsewhere and the copy
+# rightly starts out knowing nothing.
+RECORD_SUFFIX = ".cdsint-plc.json"
+
+# The record is keyed by the controller a download went to, so one working
+# copy can serve two benches without either answer overwriting the other.
+# This is the key for a run that was given no --gateway and used whatever
+# address the project already carried.
+PROJECT_GATEWAY = "project"
 
 
 # --------------------------------------------------------------------------
@@ -65,45 +109,104 @@ def crc_field(raw):
     return "".join("%02X" % _byte(value) for value in raw[start:end])
 
 
-def compare_crc(local, plc):
-    """MATCH, DIFFERENT, or UNKNOWN when either side is missing.
+# --------------------------------------------------------------------------
+# What the last download left behind
+# --------------------------------------------------------------------------
 
-    UNKNOWN is not a third shade of the same answer, it is the absence of
-    one, and it is kept apart from DIFFERENT because the two call for
-    different things: DIFFERENT means download, UNKNOWN means find out why
-    there was nothing to compare.
+def record_path(project_path):
+    """Where this project's record of its downloads lives, or None.
+
+    None when there is no project on disk to sit beside, which is the one
+    case where there is nowhere to put it and nothing sensible to invent.
     """
-    if not local or not plc:
-        return UNKNOWN
-    return MATCH if local == plc else DIFFERENT
+    if not project_path:
+        return None
+    return os.path.splitext(safe_str(project_path))[0] + RECORD_SUFFIX
+
+
+def controller_key(address, port):
+    """The name a controller is filed under: "host:port", or PROJECT_GATEWAY.
+
+    A run given no --gateway used whatever the project carried, and this
+    module has no way to find out what that was -- so it is filed under a
+    name that says exactly that, rather than under a guess.
+    """
+    if not address:
+        return PROJECT_GATEWAY
+    return "%s:%s" % (address, port)
+
+
+def read_records(path):
+    """Every controller this project has been downloaded to. {} when none.
+
+    A file that will not parse is not a reason to fail a bench command, but
+    it is a reason to say so: the run goes on and answers UNKNOWN, which is
+    what "there is no usable record" means.
+    """
+    if not path:
+        return {}
+    try:
+        found = ipc.read_json(path)
+    except (IOError, OSError, ValueError) as exc:
+        log_warning("plc: %s could not be read, so this run has nothing to "
+                    "compare against: %s" % (path, safe_str(exc)))
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def remember(path, key, entry):
+    """Add one controller's entry to the record. True when it was written.
+
+    Merged rather than replaced: downloading one copy to a second bench must
+    not erase what it knows about the first, or a later connect to the first
+    would answer UNKNOWN about a controller cdsint did load.
+    """
+    if not path:
+        return False
+    records = read_records(path)
+    records[key] = entry
+    try:
+        ipc.write_json(path, records)
+    except (IOError, OSError) as exc:
+        log_warning("plc: the download is done but %s could not be written, "
+                    "so a later connect will have nothing to compare "
+                    "against: %s" % (path, safe_str(exc)))
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------
-# Saying what it came to
+# The answer
 # --------------------------------------------------------------------------
+
+def judge(recorded, plc):
+    """The verdict and the reason for it. Three answers, and no fourth.
+
+    UNKNOWN is not a third shade of DIFFERENT, it is the absence of an
+    answer, and the two are kept apart because they call for different
+    things: DIFFERENT means download, UNKNOWN means find out why there was
+    nothing to compare.
+    """
+    if not plc:
+        return UNKNOWN, ("the controller has no %s, so there is nothing on it "
+                         "for this to be about" % REMOTE_CRC)
+    if not recorded:
+        return UNKNOWN, ("cdsint has not downloaded to this controller from "
+                         "this project, so there is nothing to compare "
+                         "against; run plc download -y")
+    when = recorded.get("downloaded_at", "an unrecorded date")
+    if plc != recorded.get("plc_crc"):
+        return DIFFERENT, ("the controller holds %s and the download from "
+                           "here on %s left %s, so it has been loaded with "
+                           "something else since"
+                           % (plc, when, recorded.get("plc_crc")))
+    return MATCH, ("the controller still holds %s, which is what the download "
+                   "from this project put there on %s" % (plc, when))
+
 
 def verdict_line(action, found):
-    """The one line a person reads, for each of the three answers."""
-    verdict = found["crc"]
-    if verdict == MATCH:
-        return ("%s: the controller is running this project (CRC %s)"
-                % (action, found["plc_crc"]))
-    if verdict == DIFFERENT:
-        return ("%s: the controller is NOT running this project. Its CRC is "
-                "%s and this project builds to %s"
-                % (action, found["plc_crc"], found["local_crc"]))
-    return ("%s: the controller and this project could not be compared. %s"
-            % (action, why_unknown(found)))
-
-
-def why_unknown(found):
-    """Which half of the comparison is missing. Both is a real case."""
-    missing = []
-    if not found["local_crc"]:
-        missing.append("this project produced no boot application CRC")
-    if not found["plc_crc"]:
-        missing.append("the controller has no %s" % REMOTE_CRC)
-    return "; ".join(missing) or "no reason was recorded, which is a bug"
+    """The one line a person reads: the reason, not just the verdict word."""
+    return "%s: %s" % (action, found["why"])
 
 
 # --------------------------------------------------------------------------
@@ -111,7 +214,7 @@ def why_unknown(found):
 # --------------------------------------------------------------------------
 
 def workspace(project_path):
-    """Make and return where this run's .app, .crc and archive go.
+    """Make and return where this run's .crc and archive go.
 
     Named after the project rather than made fresh each time, so a second run
     overwrites the first instead of leaving a numbered trail in TEMP, and so
