@@ -26,7 +26,7 @@ from engine.codesys_constants import (
     kind_allows_export, kind_allows_import
 )
 from engine.codesys_utils import (
-    safe_str, calculate_hash, clean_filename, log_info, log_error, log_warning,
+    safe_str, calculate_hash, log_info, log_error, log_warning,
     merge_native_xmls,
     parse_st_file, find_object_by_path,
     ensure_folder_path, determine_object_type, find_object_by_name,
@@ -39,7 +39,7 @@ from engine.codesys_utils import (
 )
 from engine.codesys_managers import (
     NativeManager, FolderManager, PropertyManager, ConfigManager, POUManager,
-    classify_object, export_object_content,
+    classify_object, export_object_content, native_xml_of,
     build_expected_path, update_object_code, clear_path_caches
 )
 from engine import unhandled
@@ -75,8 +75,6 @@ def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl
     ide_attrs = {} if is_xml else read_ide_attrs(obj, obj_type)
 
     if is_xml:
-        clean_name = clean_filename(obj.get_name())
-        tmp_path = os.path.join(tempfile.gettempdir(), "cds_comp_" + clean_name + ".xml")
         try:
             # ConfigManager objects require recursive=True to include all children
             monolithic_types = [
@@ -84,19 +82,22 @@ def get_ide_content(obj, is_xml, property_accessors, projects_obj, can_have_impl
                 TYPE_GUIDS["visu_manager"], TYPE_GUIDS["softmotion_pool"]
             ]
             recursive = obj_type in monolithic_types
-            
+
             # Special logic for devices: only recursive if not a project container
             if obj_type == TYPE_GUIDS["device"]:
                 from engine.codesys_utils import is_container_device
                 recursive = not is_container_device(obj)
-                
-            projects_obj.primary.export_native([obj], tmp_path, recursive=recursive)
-            if os.path.exists(tmp_path):
-                content = read_file(tmp_path)
-                os.remove(tmp_path)
+
+            content = native_xml_of(projects_obj.primary, obj, recursive)
+            if content is not None:
                 return content, {}
-        except:
-            pass
+        except Exception as exc:
+            # "" reads downstream as "the IDE side is empty", which compares
+            # as different and re-exports the object -- wrong, but harmless.
+            # An object nobody could read is not harmless, so say whose (D13).
+            unhandled.note(obj, exc)
+            log_warning("Could not read the native XML of %s: %s"
+                        % (unhandled.name_of(obj), safe_str(exc)))
         return "", {}
     
     # ST content

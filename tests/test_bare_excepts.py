@@ -26,7 +26,7 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 # numbers are the record, and a date beside them only ever says how long
 # ago somebody last looked -- git blame answers that without going stale.
 ALLOWED = {
-    "engine/codesys_compare_engine.py": 6,
+    "engine/codesys_compare_engine.py": 5,
     "engine/codesys_managers.py": 20,
     "engine/codesys_ui.py": 2,
     "engine/codesys_utils.py": 20,

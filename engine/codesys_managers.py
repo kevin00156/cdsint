@@ -23,13 +23,47 @@ from engine.codesys_constants import (
     kind_of, sync_direction_of
 )
 from engine import unhandled
-from engine.ide_read import guid_of, parent_of
+from engine.ide_read import guid_of, name_of, parent_of
 
 # Distinguishes "property absent" from "property present and falsy" when
 # reading an IDE object with a single getattr instead of hasattr-then-read.
 _MISSING = object()
 
 # --- Helper Functions ---
+
+def native_xml_of(project, obj, recursive=False):
+    """The object's native XML, as text. None when CODESYS wrote nothing.
+
+    There is no API that hands the XML over directly: export_native only
+    writes files. So seeing what CODESYS thinks an object is means writing it
+    out and reading it back, which is how an NVL is told apart from a GVL, how
+    an interface's declaration is recovered, and what compare has to hash for
+    an XML-backed object. Three callers each had their own spelling of the
+    round trip, their own temp-file name and their own idea of what to do when
+    it failed.
+
+    The temp file is named after the object's GUID, so two objects in one run
+    cannot land on the same path, and it is removed whether the read worked or
+    not. Reading goes through read_sync_text, the repo's one reader, so a BOM
+    CODESYS may have written is a byte-order mark here as everywhere else.
+
+    Raises whatever export_native raises: the callers do not agree on what a
+    failure means (one has no NVL, one has no declaration, one has nothing to
+    compare), so none of them can be answered from in here.
+    """
+    tmp_path = os.path.join(tempfile.gettempdir(),
+                            "cdsint_native_%s.xml" % (guid_of(obj) or "anon")[:8])
+    try:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        project.export_native([obj], tmp_path, recursive=recursive)
+        if not os.path.exists(tmp_path):
+            return None
+        return read_sync_text(tmp_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
 
 def is_nvl(obj):
     """
@@ -45,29 +79,13 @@ def is_nvl(obj):
         projects_obj = resolve_projects()
         if not projects_obj or not projects_obj.primary:
             return False
-            
-        tmp_path = os.path.join(tempfile.gettempdir(), "nvl_check_%s.xml" % safe_str(obj.guid)[:8])
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-        projects_obj.primary.export_native([obj], tmp_path, recursive=False)
-
-        if not os.path.exists(tmp_path):
+        xml_content = native_xml_of(projects_obj.primary, obj)
+        if xml_content is None:
             return False
-
-        import codecs as _codecs
-        with _codecs.open(tmp_path, "r", "utf-8") as xf:
-            xml_content = xf.read()
-        os.remove(tmp_path)
-
         # NVL XML contains ListIdentifier and/or NetworkType elements
-        if 'ListIdentifier' in xml_content or 'NetworkType' in xml_content:
-            return True
-        
-        return False
-
+        return 'ListIdentifier' in xml_content or 'NetworkType' in xml_content
     except Exception as e:
-        log_warning("Could not check NVL status for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+        log_warning("Could not check NVL status for " + name_of(obj) + ": " + safe_str(e))
         return False
 
 def is_graphical_pou(obj):
@@ -364,24 +382,15 @@ def export_interface_declaration(obj):
         if not projects_obj or not projects_obj.primary:
             return None
             
-        tmp_path = os.path.join(tempfile.gettempdir(), "itf_%s.xml" % safe_str(obj.guid)[:8])
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-
-        projects_obj.primary.export_native([obj], tmp_path, recursive=False)
-
-        if not os.path.exists(tmp_path):
+        xml_content = native_xml_of(projects_obj.primary, obj)
+        if xml_content is None:
             return None
-
-        with codecs.open(tmp_path, "r", "utf-8") as xf:
-            xml_content = xf.read()
-        os.remove(tmp_path)
 
         match = re.search(r'<Declaration><!\[CDATA\[(.*?)\]\]></Declaration>', xml_content, re.DOTALL)
         if match:
             return match.group(1).strip()
     except Exception as e:
-        log_warning("Could not extract interface declaration for " + safe_str(obj.get_name()) + ": " + safe_str(e))
+        log_warning("Could not extract interface declaration for " + name_of(obj) + ": " + safe_str(e))
     return None
 
 def export_object_content(obj):
