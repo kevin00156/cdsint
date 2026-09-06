@@ -271,6 +271,15 @@ img/        readMe 用的圖
   - [x] 驗收：測試綠；台架上重現通過；第 7 節寫根因與代價。——`python -m pytest tests -q` 與根目錄各 926 passed（改之前 915，新增 11 條）。
   - 監督者驗證（2026-09-06 11:30）：926 passed 監督者自己跑的。監督者在原廠 3.5.21.40、新的 softplc 副本上重現：export 之後用 PowerShell `Set-Content -Encoding UTF8`（會寫 BOM，檔頭確認是 EF BB BF）把 `PLC_PRG.st` 改成一個宣告加一行實作；`import -y` updated 1；`build` 0 errors 101 warnings；再 export 到另一個資料夾，實作段一字不差就是那一行，沒有多出來的 `1;`，檔頭沒有 BOM。沒有殘留的 IDE 行程。接受 worker 的結案：引擎寫文字的路徑是乾淨的，錯的是帶 BOM 的輸入；`read_sync_text` 用 `utf-8-sig` 當同步資料夾唯一的讀檔入口。
 
+- [ ] **階段 4 追加二：GitHub CI 從第一次 push 起每一次都紅**（2026-09-06 使用者回報，監督者查的）
+  - 事實：CI 是 `ubuntu-latest` 加 CPython 3.12，跑 `python -m pytest tests -q`。七次 run 全紅，同樣的 16 條，本機 Windows 全綠。整套測試從來沒在 Linux 上跑過，因為所有新測試都是在 Windows 上寫的。失敗分三類：（1）`cdsint/installs.py` 第 34、37 行把安裝目錄的片段寫成 `r"Lenze\PlcDesigner"`、`r"Delta Industrial Automation\DIAStudio"`，Linux 上 `os.path.join` 之後反斜線是檔名的一部分，掃描找不到，`test_installs.py` 六條紅；（2）從 IDE 來的專案路徑（`C:\p\softplc.project` 這種）在 `cds/core/ipc.py:51` 的 `make_instance_id`、`cds/ide/watcher.py` 的登記、`cds/ide/project.py` 的 `sync_dir` 用 `os.path` 拆，Linux 上反斜線不是分隔符，`basename` 回整串，`test_ipc`、`test_watcher` 四條、`test_project` 一條紅；（3）`tests/test_unhandled_objects.py::test_compare_export_names_an_orphan_it_could_not_delete` 靠「唯讀檔刪不掉」，那是 Windows 的行為，Linux 上目錄可寫就刪得掉。本機重現：`wsl -d Ubuntu-22.04 -- bash -lc 'cd /mnt/c/Users/qazsskevin/Documents/repo/cdsint && python3 -m pytest tests -q'`（監督者已在那個 distro 裝了 pytest，Python 3.10）。
+  - [ ] （1）`installs.py` 的路徑片段改成分段的 tuple 交給 `os.path.join`；登錄檔路徑不動，那不是檔案系統。
+  - [ ] （2）從 IDE 來的路徑一律用 `ntpath` 拆，不用 `os.path`：IDE 只在 Windows 上跑，它給的永遠是 Windows 路徑，而 `ntpath` 同時吃斜線與反斜線，所以在兩種作業系統上都對。每一處加一句註解說為什麼是 `ntpath`。CLI 自己產生的路徑（`--sync-dir`、`--report`、暫存目錄）維持 `os.path`。
+  - [ ] （3）那條測試改成 monkeypatch `os.remove` 丟 `OSError`，兩種作業系統都能讓刪除失敗；不准用 `skipif`。
+  - [ ] （4）`.github/workflows/ci.yml` 改成 matrix：`ubuntu-latest` 與 `windows-latest` 各跑一次。產品只在 Windows 上有意義，Linux 那條守的是可攜性，Windows 那條守的是真目標。
+  - [ ] 驗收：WSL 裡 `python3 -m pytest tests -q` 全綠；Windows 本機全綠；push 之後 GitHub 兩條 job 都綠（push 由監督者做，worker 只 commit）。
+  - [ ] 驗收：`grep -rn 'r"[A-Za-z][^"]*\\\\' cdsint/ cds/ engine/` 只剩登錄檔那兩行。
+
 ---
 
 ## 6. 回報格式
