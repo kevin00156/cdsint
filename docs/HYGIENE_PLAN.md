@@ -1,0 +1,144 @@
+# 工單 D：文件與測試衛生
+
+> 建立日期 2026-09-06。分支 `ticket/hygiene`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-hygiene`。
+> 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
+> 這是四張工單的第三張，在 `PLUMBING_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，A 和 B 做完會漂，開工先重核。
+
+---
+
+## 0. 本工單專屬的鐵律
+
+- 臨時檔在 `%TEMP%\cdsint-work\hygiene\` 底下。
+- 這張工單沒有行為改動。任何 `engine/`、`cds/`、`cdsint/` 的非註解改動都不在範圍，看到記第 7 節。
+- `docs/history/` 裡的東西是當天的紀錄，不改內容，只搬。
+
+---
+
+## 1. 目標與範圍
+
+同一個事實在三到五個地方用三到五種說法存在，而且已經互相打架：stub 幾行三份文件三個數字、`list` 收不收 `--target` 兩份文件同一個錯、鎖檔誰清、SPEC 的「現況」有七條是 9 月 5 日早上的快照。測試那邊，假 IDE 物件抄了幾十份，兩支本 repo 寫的測試檔超過硬上限一點五到二點七倍，規則守到了引擎沒守到自己。
+
+做完之後：grep 得到的每個數字和檔名都對；文件裡只有不會過期的東西；一份假物件；每個測試檔在上限內。
+
+明確不做：改任何程式行為；改 SPEC 的規則本文（只刪現況、搬第 10 節）；重寫 CHANGELOG 舊段落（只併 Unreleased）。
+
+---
+
+## 2. 使用者定案的決定（2026-09-06）
+
+| # | 決策 | 選擇 | 理由 |
+|---|---|---|---|
+| 1 | SPEC 的「現況」欄 | 整欄刪掉；第 10 節搬去 `docs/history/` | 設計上必然過期的欄位遲早講不同的話；「做到哪」由 git log 和 CHANGELOG 回答 |
+| 2 | 鐵律與已完成的工單 | 鐵律只有 `docs/WORKER_RULES.md` 一份（監督者已建）；做完的工單搬去 `docs/history/`（`CDSINT_PLAN.md`、`FOLLOWUP_PLAN.md` 監督者已搬） | Ruling 是決策紀錄，做完就是歷史 |
+| 3 | 第 4 節那八條 | 全收 | 每一條都是 grep 得到就能驗的，沒有一條改行為 |
+
+---
+
+## 3. 接手前必須知道的現況事實
+
+**文件互相打架的地方**
+
+1. `docs/SPEC.md` 第 7 行表頭說「各條『現況』指的是來源 repo 的狀態」，底下 32 條現況多數已改成「已做（階段 N）」指本 repo。已確認為假的：D1（69 行「本 repo 剛 init」）、D3（79 行「選單有十一項」）、D9（110 行「CLI 叫 cds-ide」）、5.1（243 行「現在的 codesys_*.pyw」）、6.1（317 行同句）、6.3（337 行「現有 cli/cds_ide.py」）、第 8 節（481 行說 PRINCIPLES 要改寫，早已改；488 行「389 個」，實際 948）。A 的 commit 已經把 D8、D10、4.2、4.4、6.5、6.7 改寫成沒有現況的樣子，其他條照那個樣子做。
+2. `readMe.md` 188 行與 `docs/SPEC.md` 167 行都說 `list` 收 `--target`，`cdsint/flags.py` 73 行沒給，實跑 `cdsint list --target foo` 回 unrecognized arguments。
+3. stub 行數：`readMe.md` 417 行「fifteen-line」、SPEC 246 與 295 行「各十行」、`CHANGELOG.md` 57 行「ten-line」；實際 17、17、16。
+4. `CHANGELOG.md` 有兩段 `### Unreleased`（7 行與 194 行）。第二段用搬家前的名字：`cli/cds_ide.py`、`%LOCALAPPDATA%\cds-text-sync\instances`、`docs/WATCHER_CLI_PLAN.md`、「Tests: 301」。第一段內部 32 行說 `tools/perf_probe.py`，177 行說 `tools/Project_perf_probe.py`。未收錄但使用者看得到的：`f05a233`（`--force-lock` 之後被 kill 的鎖檔不再由 cdsint 清，只清「啟動前不存在」的；readMe、`AI_WORKFLOW.md` 479 行、SKILL.md 758 行只說「會自己清掉」）與 `06394cf`、`71be709`（CI 雙 OS）。
+5. `PRINCIPLES.md` 14 到 16 行說搬來的檔案「都在第一個 commit 進來」；第一個 commit `69106ff` 只有 spec、工單、授權，程式碼是第二個 commit `5c96d4e` 進的。111 行說 bare except「約一百」，棘輪表是 81。
+6. `profiles/default.json` 3 行的 description 說「run Project_discover.py」，那支已經是 `cdsint discover`。`alias_notes` 用 `"dut[1]"` 這種清單索引當鍵，插一個 GUID 註解就無聲指錯，沒有測試看它。kind 名稱除了 `guid_aliases` 之外還手抄在 `engine/codesys_constants.py` 182 行（`EXPORTABLE_KINDS`）與 229 行（`XML_KINDS`），新增一個 kind 到 JSON 不會自動匯出；SPEC 4.5 把「47 種」寫死。
+7. `docs/history/WATCHER_CLI_PLAN.md` 240 行「PRINCIPLES §9」應為 §10；`REWORK_PLAN.md` 50 行「兩層」對上現在的「三層」。history 不改，但說明「用編號引用規則跟用行號引用代碼一樣會漂」。
+8. 「別用 `os.kill(pid,0)`」出現在 `docs/WATCHER.md` 52 行、`cds/core/instances.py` 7 行、`WATCHER_CLI_PLAN.md` 166 行、`CDSINT_PLAN.md`、`PHASE2_PLAN.md`，五處。
+
+**測試**
+
+9. 假 IDE 物件（2026-09-06 數的，A 和 B 之後重數）：`Projects` 六份逐字相同、`Info` 六份、`project` 替身十份、`system` 替身十份（`FakeSystem`×3、`DeafSystem`×3、`NoProjectSystem`、`RecordedSystem`、`System`、`PromptSystem`）、`Node` 七份、`DeafUI` 四份逐字相同、`fake_codesys_ui` fixture 三份、`FakeRunner`×2、`FakeTimer`×2（兩個對同一個 .NET Timer 的假物件介面不同：toast 版用 `.Interval` 與 `Tick +=`，watcher 版用建構子收 `(interval, handler)`）、`_StubManager`×2。三支測試檔 `from tests.test_watcher import make_globals`，`tests/` 沒有 `__init__.py`，靠根目錄 `conftest.py` 塞 sys.path。
+10. 本 repo 寫的、超硬上限的測試檔：`tests/test_plc.py` 1098 行（首次進 repo `6fdb619`，最近 `d7682c2` 又加 118 行）、`tests/test_headless.py` 606 行（`7b2e70b`）。搬來的（`test_call_tree` 692、`test_watcher` 582、`test_silent` 474）豁免。
+11. `tests/test_silent.py` 355 到 366 行 `DRIVEN_FILES` 寫死十個引擎檔名；SPEC 6.1 自己說「10.1 搬檔案時要跟著改」。加一支新的 `entry_*.py` 忘了登記，它開的對話框在 silent 模式下是「unexpected dialog」而測試全綠。
+12. `tests/test_call_tree.py` 16 行在 import 時把 `tools/` 塞進 `sys.path[0]`。`tests/test_headless.py` 170 行非 raw 字串裡的 `"D:\sync"`，Python 3.12 起是 SyntaxWarning。`tests/conftest.py` 的 `load()`、`load_engine` 只是 `importlib.import_module("engine." + name)` 的包裝，docstring 自己承認是過渡。
+13. `tests/test_ide_round_trips.py` 的讀取計數是有意識的實作釘（PRINCIPLES 3），不動。`tests/test_bare_excepts.py` 27 到 32 行的棘輪設計是好的，不動；表頭「What is left, 2026-09-05」是一個會漂的日期。
+
+**工具**
+
+14. `tools/` 六份 sys.path bootstrap、三種寫法：`cache_doctor.py` 36 行、`grant_plc.py` 38 行（A 刪）、`headless_watch.py` 35 行、`perf_probe.py` 50 行、`probe_imports.py` 24 行各三行，變數名 `_INSTALL_ROOT` 與 `REPO_ROOT` 兩種；`probe_watcher_ui.py` 30 行把 `tools/` 塞進 sys.path 再 `import headless_watch`。`headless_watch.answers` 與 `grant_plc.answers` 逐字相同；`probe_imports.report_path/main` 與 `grant_plc` 除檔名外相同。`call_tree_parse.py` 20 行把 `IMPL_MARKER` 抄成字面值配一行「Must match IMPL_MARKER in engine/codesys_constants.py」。
+15. `readMe.md` 377 到 406 行與 SPEC 5.1 253 行只認 `call_tree`、`cache_doctor`、`perf_probe`；`tools/` 有十支。`probe_imports.py` 沒有活文件、測試、skill 引用。`probe_click_menu`、`probe_watcher_ui` 由 WATCHER.md 第 8 節引用，`headless_watch` 由 SPEC D5 與 `cds/ide/headless.py` 21 行引用。
+16. `tools/perf_probe.py`、`tools/probe_watcher_ui.py` 在 IronPython 2.7 內跑卻沒有 `from __future__ import print_function`；`tests/test_print_function.py` 23 行只掃 `engine/cds/stub`，`test_single_threaded_ide_side.py` 15 行也明寫排除 tools。
+17. 搬來的長函式：`cache_doctor.main` 176 行、`call_tree_resolve._resolve_calls` 104 行、`perf_probe.build_report` 105 行與 `main` 87 行、`call_tree_parse._blank_comments` 61 行。豁免，但 PRINCIPLES 2 說碰到的函式不能變長；`cache_doctor` 搬來後改過四次。
+
+**開工前重核清單**
+
+- 第 1 到 8 條逐條 grep 確認還在；A 已改的段落劃掉。
+- 第 9 條重數一次，A 和 B 會刪掉一些替身也可能加新的。
+- 第 14 條 `grant_plc.py` 應已不在。
+- 測試基線重跑。
+
+---
+
+## 4. 設計
+
+1. **SPEC。** 每一條「現況：」開頭的段落刪掉，連同「已做（階段 N）」這類句子；D 編號的決策只留決定與理由。第 7 節的相容性矩陣與 perf 基準是量測紀錄，留著但表頭標日期。第 10 節整節搬到 `docs/history/SPEC_10_CONSTRUCTION.md`，SPEC 只留一句指過去。第 8 節的「389 個」那類數字刪，「PRINCIPLES 要改寫」那段刪。第 7 行表頭改寫。第 0 節 15 行「`cds-sync-` 是它底下同步功能的屬性前綴」A 已改。
+2. **CHANGELOG。** 兩段 Unreleased 併成一段，舊名字全改成今天的；`perf_probe` 兩個名字改成一個；補 `f05a233` 那條鎖檔規則與 CI 雙 OS。readMe、`AI_WORKFLOW.md` 479 行、SKILL.md 758 行的鎖檔說法對齊 `f05a233`。
+3. **PRINCIPLES。** 14 到 16 行的分級判準改成寫 commit hash `5c96d4e`；111 行「約一百」改成指向 `tests/test_bare_excepts.py` 的表，不寫數字。
+4. **數字與檔名。** stub 行數三處刪數字，只說「三支 stub」；`list --target` 兩處改成不收；`profiles/default.json` 的 description 改成 `cdsint discover`；`alias_notes` 改成用 GUID 當鍵，並加一條測試：每個 `alias_notes` 的鍵都在 `guid_aliases` 的某個清單裡。SPEC 4.5 的「47 種」改成不寫數字。`EXPORTABLE_KINDS`、`XML_KINDS` 跟 `guid_aliases` 的關係加一條測試：`guid_aliases` 裡的每個 kind 要嘛在 `EXPORTABLE_KINDS`、要嘛在 profile 的 `sync_direction` 標 `disabled`，不准第三種（這條若發現真的有第三種，記進第 7 節不改程式）。
+5. **一份假物件。** `tests/fakes.py`：`Project`、`Projects`、`Info`、`Node`、`DeafSystem`、`DeafUI`、`FakeTimer`、`make_globals`。每個測試模組只 import 它，`from tests.test_watcher import` 消失。`FakeTimer` 一個介面，兩邊測試都用它。`test_call_tree.py` 的 `sys.path.insert` 改成 fixture 內 monkeypatch。`tests/conftest.py` 的 `load`、`load_engine` 刪，呼叫端改直接 import。`"D:\sync"` 改 raw。
+6. **測試檔尺寸。** `test_plc.py` 切成 `test_plc_link.py`、`test_plc_trip.py`、`test_plc_crc.py`、`test_plc_cli.py`，對應引擎那四支加 CLI；`test_headless.py` 切成 `test_headless_ide.py` 與 `test_headless_cli.py`。每支在 400 以內，目標 300。
+7. **`DRIVEN_FILES`。** 改成掃 `engine/` 目錄底下每支 `.py`，只列排除清單（現在只有 `settings.py`，註解已說理由）。
+8. **工具。** bootstrap 收成 `tools/_root.py` 一份（三行，其他檔 `import _root` 或同等做法，IronPython 2.7 跑得動）；`answers`、`report_path` 各一份放 `tools/_probe.py`；`call_tree_parse` 改 import `IMPL_MARKER`；`probe_imports.py` 刪；`test_print_function` 與單執行緒那條測試把 `tools/` 掃進去，兩支缺 `print_function` 的補上；readMe 的 `tools/` 一節列出每一支和一行用法，SPEC 5.1 那句跟著改。
+9. **鐵律五處。** `WATCHER.md` 52 行與 `instances.py` 7 行留（一處規格、一處程式碼註解說為什麼），其他三處在 history 不動。
+
+---
+
+## 5. 分階段與驗收
+
+- [ ] **階段 0：重核與基線**
+  - [ ] 第 3 節重核清單做完，commit。
+  - [ ] 驗收：Windows 與 WSL 測試數記進第 6 節。
+
+- [ ] **階段 1：文件（第 4 節 1 到 4、9）**
+  - [ ] 驗收：`grep -n "現況" docs/SPEC.md` 為零；`grep -n "階段 [0-9]" docs/SPEC.md` 為零；`docs/history/SPEC_10_CONSTRUCTION.md` 存在。
+  - [ ] 驗收：`grep -c "^### Unreleased" CHANGELOG.md` 是 1；`grep -n "cds_ide\|cds-text-sync\\\\instances\|Project_perf_probe\|Tests: [0-9]" CHANGELOG.md` 只剩歷史段落（第一個非 Unreleased 標題之後）。
+  - [ ] 驗收：`grep -rn "fifteen-line\|ten-line\|各十行" readMe.md docs/SPEC.md CHANGELOG.md` 為零；`grep -n "list.*--target\|\`list\`.*有" readMe.md docs/SPEC.md` 對上 `flags.py`。
+  - [ ] 驗收：`grep -n "first commit\|about a hundred" PRINCIPLES.md` 為零。
+  - [ ] 驗收：`tests/test_doc_links.py` 綠。
+
+- [ ] **階段 2：profile 與工具（第 4 節 4 的 profile 部分、8）**
+  - [ ] 驗收：`grep -n "Project_discover" profiles/default.json` 為零；新測試「`alias_notes` 的鍵都是 `guid_aliases` 裡的 GUID」綠。
+  - [ ] 驗收：`grep -rn "sys.path.insert" tools/` 只剩 `tools/_root.py` 一處；`grep -rn "IMPL_MARKER = " tools/` 為零；`probe_imports.py` 不在。
+  - [ ] 驗收：`test_print_function.py` 掃到 `tools/` 且綠。
+  - [ ] 驗收：readMe 的 `tools/` 一節列出的檔名跟 `ls tools/*.py` 去掉底線開頭的一致。
+
+- [ ] **階段 3：測試（第 4 節 5 到 7）**
+  - [ ] 驗收：`grep -rn "^class \(Projects\|Info\|Node\|DeafSystem\|DeafUI\|FakeTimer\)\b" tests/` 只在 `tests/fakes.py`；`grep -rn "from tests.test_" tests/` 為零。
+  - [ ] 驗收：`wc -l tests/*.py` 本 repo 寫的每支在 400 以內（`git log --follow` 首次出現不是 `5c96d4e` 的那些）。
+  - [ ] 驗收：`grep -n "DRIVEN_FILES" tests/test_silent.py` 的清單是排除清單，測試對 `engine/` 目錄現數。
+  - [ ] 驗收：`python -W error::SyntaxWarning -m pytest tests -q` 綠（反斜線那條）。
+  - [ ] 驗收：測試總數不少於開工前，Windows 與 WSL 都綠。
+
+- [ ] **階段 4：收尾**
+  - [ ] CHANGELOG Unreleased 加一句說文件與測試整理過。
+  - [ ] `%TEMP%\cdsint-work\hygiene\` 清掉。
+
+---
+
+## 6. 回報格式
+
+同 `SETTINGS_PLAN.md` 第 6 節。這張沒有真 IDE 驗收。
+
+---
+
+## 7. 未決事項與裁決
+
+`Ruling: 決定 — 理由 — 錯了的代價`。
+
+先列出來的：
+
+1. `docs/history/SPEC_10_CONSTRUCTION.md` 要不要連 SPEC 第 7 節的 perf 表一起搬。預設：不搬，基準表是「現在的數字」，SPEC 11.1 的速度引擎決定要對著它比。
+2. `EXPORTABLE_KINDS` 與 `guid_aliases` 若真的有第三種 kind，記進這裡給 C。
+3. `tests/fakes.py` 收進去之後若某個測試靠替身的某個怪行為，寧可在那個測試裡子類別化，不要把怪行為加進共用替身。
+
+做的時候看到但不在範圍的，記在這裡給 C：
+
+- （worker 填）
+
+---
+
+## 8. 接手 prompt
+
+你在 `C:\Users\qazsskevin\Documents\repo\cdsint-hygiene`，分支 `ticket/hygiene`。先讀 `docs/WORKER_RULES.md`、本工單第 0 到 4 節、`PRINCIPLES.md`、`CLAUDE.md`、`docs/SPEC.md` 第 3 節與第 8 節、`tests/test_doc_links.py`。然後從第 5 節第一個沒打勾的項目開始做，階段照順序。一段做完、測試綠、commit；做完的項目打勾並 commit。決定了第 7 節的事就寫回。看到不在範圍的爛東西記進第 7 節末尾，不修。全部做完照第 6 節回報，停下來，不要 merge、不要 push。

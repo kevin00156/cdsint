@@ -12,7 +12,7 @@
 
 **磁碟上的 `.st` 文字檔是 PLC 專案的事實來源，cdsint 負責把它和 CODESYS 系列 IDE 之間的搬運、驅動與驗證做成可以從外面呼叫的東西。**
 
-名字的拆法：`cdsint` 是產品，`cds-sync-` 是它底下同步功能的屬性前綴，兩者不衝突（D9、D10）。
+名字的拆法：`cdsint` 是產品，也是專案旁設定檔 `<專案名>.cdsint.json` 的名字（D9、D10）。
 
 跟上游 cds-text-sync 3.x 與 CODESYS 官方 MCP Server 的差別，就是 cdsint 存在的理由：
 
@@ -98,20 +98,15 @@
 `UpgradeProjectConfirmation` 答 Yes 會改寫專案的儲存格式，之後舊版 IDE 就開不了它。
 沒答到的提示靠 `LogMessageKeys` 把鍵名印到 stdout，訊息會說去補哪個 `--answer`。
 
-**D8 只有碰 PLC 的動作受權限管，兩層。** 專案屬性 `cds-sync-plc` 決定這個專案允不允許，`-y` 確認這一次呼叫。看門人模式一律拒絕 PLC 命令。
-理由：一個 agent 下錯命令現在能直接下載到 PLC。`export`、`import`、`compare`、`build` 不碰硬體，把它們放進權限清單只會讓每個命令多一次預檢，換來三個場景都用不到的功能。看門人跑在使用者的 IDE 裡，登入會搶走使用者的線上狀態。
-現況：已做（階段 3）。第一層在 `cds/ide/permit.py`，攔在 `cds/ide/entries.py` 按下引擎本體之前，不通過就回 exit 5；
-第二層是 `-y`，走 `cds/ide/silent.py` 那張對話框表，跟匯入的 `-y` 同一個機制。
-看門人那半有兩道：CLI 的 argparse 收下 `--target` 再拒絕並說明理由（exit 2），
-`cds/ide/entries.py` 的 `WATCHER_REFUSES` 讓手寫的命令檔也得到同一句話而不是「不認得這個命令」。
+**D8 只有碰 PLC 的動作受權限管，兩層。** 設定檔的 `plc` 清單決定這個專案允不允許，`-y` 確認這一次呼叫。看門人模式一律拒絕 PLC 命令。
+理由：一個 agent 下錯命令現在能直接下載到 PLC。`export`、`import`、`compare`、`build` 不碰硬體，把它們放進權限清單只會讓每個命令多一次預檢，換來三個場景都用不到的功能。看門人跑在使用者的 IDE 裡，登入會搶走使用者的線上狀態。第一層以前是專案屬性，意思是「一個人在 IDE 裡決定過」；設定搬到文字檔之後（D10）那個意思不再成立，第一層只是「檔案裡有寫」，真正的門是 `-y`。
 
 **D9 產品名是 `cdsint`。** 同一個字串用在 pip 套件、Python 套件、命令、`%LOCALAPPDATA%` 目錄、ScriptDir 子資料夾、視窗標題。
 理由：上游同名、93 顆星，readMe 與安裝腳本到今天還指著上游。沒有連字號，所以 pip 名、import 名、命令名不用兩種拼法。`cds-ide` 會跟它驅動的 IDE 撞名，寫文件時每句都得多解釋一次。
 現況：readMe、junction、實例目錄都還叫 `cds-text-sync`，CLI 叫 `cds-ide`。
 
-**D10 專案屬性前綴留 `cds-sync-`，不跟產品名走。**
-理由：它描述的是同步功能，不是產品。改名要掃 13 個檔案，再加一段對每個現有 `.project` 跑的遷移，收益是零。除了手動加屬性以外沒人看得到原名。
-現況：已做（階段 4）。名字全在 `cds/core/props.py`，前綴只出現一次，其他每一處都是常數。放 `cds/core/` 是因為引擎與 `cds/ide` 都要用，而 D12 不准它們互相 import。`cds-text-sync-multipleApps` 不併進來，理由在那個檔的註解裡。`tests/test_props.py` 拿 4.4 那張表當第二個證人，兩邊名字不一致就紅。
+**D10 設定存在專案檔旁邊的 `<專案名>.cdsint.json`，不存在 `.project` 的專案屬性裡。**
+理由：`.project` 是二進位檔，只有 IDE 行程開得了，所以存在裡面的設定要改就得先弄到一個活著的 IDE，agent 要看設定得起一個 IDE，每個新專案從零開始。這一個事實養出了四條入口（Properties 表格、Settings 視窗、`config` 命令、第一次匯出的對話框）和三個只為它存在的機制（強制 `--sync-dir`、電腦名稱戳記、`config set` 之後再按引擎收尾）。文字檔任何編輯器都能改，不需要 IDE。放專案旁而不放同步資料夾裡，是因為十一個設定大多是這台機器的事，不是團隊政策，而且只有這樣同步資料夾本身才能一起搬出來，讓專案屬性那條路整個關掉。舊的 `cds-sync-*` 屬性不讀、不遷移：還沒發布過版本，唯一沒預設值的是同步資料夾，而它本來就有對話框會問。schema 在 `cds/core/settings.py`，一份，兩側共用，CI 測得到。
 
 **D11 四支入口回傳結果，替身 UI 讀回傳值判斷成功失敗。**
 理由：現在四支 `main()` 不管成功失敗都回 `None`，替身 UI 只能看 `system.ui.warning` 和 `error` 有沒有被呼叫來推。這讓「warning 只准在中止點呼叫」變成所有未來作者都得記住的規則，違反的後果離現場很遠：有人在匯出中途寫一句無害的 warning，一次成功的匯出就變成 exit 1。
@@ -166,23 +161,26 @@
 | `installs` | 不適用 | 不適用 | 列出這台的 IDE、profile 名稱、要不要管理員 |
 | `list`、`ping`、`status`、`stop` | 有 | 不適用 | 看門人的生命週期，不受權限管 |
 | `export [--delete-orphans]` | 有 | 有 | 把 IDE 專案寫成 `.st` |
-| `import -y [--force]` | 有 | 有 | 把 `.st` 讀回 IDE，磁碟贏 |
+| `import -y` | 有 | 有 | 把 `.st` 讀回 IDE，磁碟贏 |
 | `compare` | 有 | 有 | 列出 IDE 與磁碟的差異 |
 | `discover` | 有 | 有 | 唱名每一個物件與它算成哪一種 kind，並列出沒有任何 kind 認得的型別 GUID（`data.unknown`）。唯讀，不需要權限 |
 | `build [--app NAME]` | 有 | 有 | 編譯，回錯誤清單 |
-| `verify -y [--force]` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完。含匯入，所以跟 `import` 一樣要 `-y` |
+| `verify -y` | 有 | 有 | import、export、比對磁碟有沒有 diff、build，一次跑完。含匯入，所以跟 `import` 一樣要 `-y` |
 | `plc connect [--gateway IP --port N]` | 拒絕 | 有 | 唯讀：列檔案、拉 `Application.crc`、跟上次下載記下的值比 |
 | `plc download -y` | 拒絕 | 有 | 完整下載、寫開機應用程式、啟動、讀回 CRC 並記下來 |
-| `config get`、`config set KEY=VALUE` | 有 | 有 | 讀寫 4.4 的屬性，`cds-sync-plc` 除外 |
+
+沒有 `config` 命令。設定是專案旁的一個文字檔（4.4），檔案就是介面；驗證在讀檔那一支，所有路都經過它。
 
 共用旗標：`--timeout 秒`（預設 120，是**一個命令步驟**的上限；`--project` 形式的行程期限由它推導：啟動寬限 + 步數 × timeout + 關閉寬限，所以 `verify` 的實際等待上限比字面值大）、`--json`。
-只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`（必填，理由在下面）、
+只在 `--project` 形式有效：`--profile NAME`、`--report 檔案`、`--force-lock`、`--sync-dir D`（選用，語意在下面）、
 `--answer KEY=VALUE`（可多個，D7）。`--answer` 回答的是 IDE 自己的提示，而 `--target` 那半的
 IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那一排。
 
-兩條跟「磁碟贏」有關的安全界線。`import`（三條路都是：選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時拒絕，因為那不是「磁碟上什麼都沒有」這個事實，是還沒 export 或路徑指錯，照磁碟贏的規則做下去等於把專案清空。`--project` 形式必給 `--sync-dir`，因為副本帶著原專案的 `cds-sync-folder`，那可能是指向使用者 git 目錄的絕對路徑，export 會寫進去；呼叫端本來就知道兩個路徑，讓它明講。解析後的同步資料夾印在輸出第一行並寫進 report 的 `sync_dir`，而那個欄位填的是 IDE 側實際生效的值，不是旗標上寫的值。屬性寫不進去（專案唯讀、使用者管理、`project_info` 丟例外）就整趟不跑，report 記原因、`intended_exit` 是失敗——照舊跑下去等於用副本自己帶的 `cds-sync-folder`，正是這個必填旗標要防的事。
+一條跟「磁碟贏」有關的安全界線。`import`（三條路都是：選單、`--target`、`--project`）在同步資料夾裡一個 `.st` 都沒有時拒絕，因為那不是「磁碟上什麼都沒有」這個事實，是還沒 export 或路徑指錯，照磁碟贏的規則做下去等於把專案清空。
 
-`-y` 的意思統一是「確認這一步會改狀態」，`import`、`verify` 和 `plc download` 共用。沒給就印出這趟會做什麼，回 `needs_input`，exit 1，什麼都不改。沒有 `-N`，因為沒給 `-y` 就已經是「不做」，其他有安全預設值的對話框各自有具名旗標，`--force` 答版本和電腦不符，`--delete-orphans` 答刪孤兒。
+`--sync-dir` 的語意是「這一趟用這個資料夾」：它是命令的一個引數，跟 `-y` 走同一條路進 IDE 側，引擎讀到就用它蓋過設定檔裡的 `sync_folder`，永遠不寫回任何檔案。沒給就用設定檔的；兩個都沒有，export 與 import 回 `needs_input`，跟 `--target` 形式一樣。以前它是必填，理由是副本的 `.project` 帶著原專案的資料夾屬性；設定搬到專案旁的文字檔之後（D10），只複製 `.project` 的副本什麼都不帶，這個理由就沒了。解析後的同步資料夾印在輸出第一行並寫進 report 的 `sync_dir`，那個欄位填的是 IDE 側實際生效的值，不是旗標上寫的值。
+
+`-y` 的意思統一是「確認這一步會改狀態」，`import`、`verify` 和 `plc download` 共用。沒給就印出這趟會做什麼，回 `needs_input`，exit 1，什麼都不改。沒有 `-N`，因為沒給 `-y` 就已經是「不做」，其他有安全預設值的對話框各自有具名旗標，`--delete-orphans` 答刪孤兒。
 
 `plc` 命令拒絕 `--target` 形式的原因見 D8。
 
@@ -192,34 +190,39 @@ IDE 前面坐著一個人，那些提示是他的，所以它不放在共用那�
 |---|---|
 | 0 | 完成 |
 | 1 | 命令失敗，包含缺旗標的 `needs_input` |
-| 2 | 找不到看門人，或符合的 IDE 不只一個 |
+| 2 | 命令列本身不對：旗標不搭，或找不到唯一一個活著的 IDE |
 | 3 | 逾時 |
 | 4 | 無頭模式：專案被別的行程開著，或 IDE 啟動失敗 |
-| 5 | 權限拒絕：專案屬性 `cds-sync-plc` 沒有開放這個命令 |
+| 5 | 權限拒絕：設定檔的 `plc` 清單沒有這個命令 |
 
-2 和 4 是同一個問題的兩種原因，都是「這個專案有沒有活著的 IDE」，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
+2 有兩個原因，旗標不搭和找不到唯一一個活著的 IDE，合在一格是因為呼叫端的處置相同：同一行不要重試，先讀訊息。2 和 4 是「這個專案有沒有活著的 IDE」的兩種原因，對 agent 有用所以分開。`list` 不在 2 的範圍內：它問的是「有誰在聽」，一個都沒有時印一句話、`--json` 給空陣列、exit 0，因為空清單是答案不是失敗。`needs_input` 不獨立成一格，因為 agent 反正得讀 JSON 裡的 `needs_input.arg` 才知道該補哪個旗標，獨立的 code 省不掉那次解析。
 
 `--json` 輸出的結構沿用現有結果檔：`ok`、`command`、`elapsed_s`、`messages`、`stdout_tail`、`error`、`needs_input`、`denied`、`data`。`--project` 形式再加 `ide`（用了哪套）、`sync_dir`（這一趟的事實來源，跟 report 頂層同一個值）、`report_path`。
 
-`denied` 平常是 `null`，被專案屬性擋下來的時候是 `{"property", "action"}`，exit code 就是從它決定 5 的。它跟 `needs_input` 分開兩個欄位，因為兩者要呼叫端做的事不一樣：`needs_input` 是「補一個旗標再跑一次」，`denied` 是「請人去 IDE 裡改一個屬性」。
+`denied` 平常是 `null`，被設定檔擋下來的時候是 `{"file", "key", "action"}`，exit code 就是從它決定 5 的。它跟 `needs_input` 分開兩個欄位，因為兩者要呼叫端做的事不一樣：`needs_input` 是「補一個旗標再跑一次」，`denied` 是「去設定檔的 `plc` 清單加一個字」。
 
-### 4.4 專案屬性
+### 4.4 設定檔
 
-設定存在 `.project` 的專案屬性裡，不進 git。前綴 `cds-sync-` 不跟產品名走（D10），程式碼裡收成一個常數，在 `cds/core/props.py`。
+設定存在專案檔旁邊、照專案名命名的 JSON 檔（D10）：`Line.project` 旁邊是 `Line.cdsint.json`。UTF-8，真的 JSON 型別：布林、整數、字串、清單。跟下載紀錄 `Line.cdsint-plc.json` 是兩個檔，因為人決定的偏好和機器跑完留下的紀錄生命週期不同。
 
-| 屬性 | 意思 | 預設 |
-|---|---|---|
-| `cds-sync-folder` | 同步資料夾，可相對於專案檔 | 無，第一次執行時問 |
-| `cds-sync-pc` | 設定時的電腦名稱，不同就警告 | 設定時寫入 |
-| `cds-sync-version` | 上次同步用的工具版本，不同就警告 | 每次同步寫入 |
-| `cds-sync-debug` | 開了才寫 `sync_metadata.json` 與 `*.log` | false |
-| `cds-sync-export-xml` | 視覺化、警報、文字清單另存 XML | false |
-| `cds-sync-backup-binary` | 匯出時複製一份 `.project` 到同步資料夾 | false |
-| `cds-sync-safety-backup` | 匯入前備份 `.project` | true |
-| `cds-sync-backup-name`、`cds-sync-backup-retention-count` | 備份檔名與保留數 | 空、10 |
-| `cds-sync-save-after-import`、`cds-sync-save-after-export` | 同步後存檔 | true |
-| `cds-sync-auto-delete-orphans` | 匯出時自動刪磁碟孤兒 | false |
-| `cds-sync-plc` | PLC 授權，逗號分隔，只認 `connect` 與 `download`，見 6.5 | 空 |
+檔案裡只出現人決定過的鍵；沒寫的鍵用程式碼裡的預設值，預設值只有那一份。所以「我選的」和「它填的」分得出來，改程式碼的預設值不用回頭改任何檔案。第一次跑匯出或匯入時對話框問完資料夾寫出來的檔，只有 `sync_folder` 一個鍵。
+
+| 鍵 | 型別 | 意思 | 預設 |
+|---|---|---|---|
+| `sync_folder` | 字串 | 同步資料夾。`./` 開頭就相對於專案檔所在目錄，否則照用 | 無，第一次執行時問 |
+| `plc` | 字串清單 | PLC 授權，元素只認 `connect` 與 `download`，見 6.5 | 空清單 |
+| `debug` | 布林 | 開了才寫 `sync_metadata.json` 與 `*.log` | false |
+| `export_xml` | 布林 | 視覺化、警報、文字清單另存 XML | false |
+| `backup_binary` | 布林 | 匯出時複製一份 `.project` 到同步資料夾 | false |
+| `safety_backup` | 布林 | 匯入前備份 `.project` | true |
+| `backup_name` | 字串 | 備份檔名 | 空 |
+| `backup_retention_count` | 整數 | 備份保留數 | 10 |
+| `save_after_import`、`save_after_export` | 布林 | 同步後存檔 | true |
+| `auto_delete_orphans` | 布林 | 匯出時自動刪磁碟孤兒 | false |
+
+讀檔那一支是唯一的驗證：不認識的鍵、型別不對、`plc` 裡有不認識的字、JSON 壞掉，整個命令拒絕，訊息列出十一個鍵和各自的預設值。檔案是人手改的，打錯字必然發生，安靜地沒效果比錯誤更糟。
+
+沒有電腦名稱戳記，沒有工具版本戳記。前者是「資料夾在不在這台機器上」的代理人，而且只有對話框那條路會寫它；後者想擋的情況被 D15 排除了，只會在每次升級後多要一個旗標。`.st` 檔和同步資料夾的路徑一如既往不受這個檔影響（4.5）。
 
 ### 4.5 磁碟格式
 
@@ -275,7 +278,7 @@ CLI 讀到結果檔，刪掉，印出來
 ```
 CLI 找 IDE、推 profile、查鎖檔、組命令列
   起 <exe> --profile=… --noUI --runscript=<IDE 側啟動器>
-    啟動器 projects.open() 開專案，設同步資料夾，預先填 prompt_answers
+    啟動器 projects.open() 開專案，把 --sync-dir 當這一趟的覆蓋值放進每個命令的引數，預先填 prompt_answers
     載入引擎跑 export/import/build，對話框由替身 UI 依旗標回答
     寫 report 檔，腳本返回，行程結束
 CLI 等行程或逾時，讀 report，判讀 stdout 有沒有回來、退出碼可不可信
@@ -366,18 +369,13 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 
 D8 的落地。
 
-**專案屬性 `cds-sync-plc`**，由人在 IDE 裡設，逗號分隔，值只認 `connect` 和 `download`，預設空。`plc` 命令執行前先查，不在表裡就回 exit 5 與一句「這個專案沒有開放 plc X，請在 IDE 裡把 X 加進 cds-sync-plc」。
+**設定檔的 `plc` 清單**（4.4），元素只認 `connect` 和 `download`，大小寫不拘，預設空。`plc` 命令執行前先查，不在清單裡就回 exit 5，拒絕訊息說三件事：檔案在哪、現在的值是什麼、要加什麼。拼錯的字不會被猜成正確的那個，讀檔那一支會把它原樣印出來拒絕整個命令（4.4）。
 
-**`plc download` 另外要 `-y`。** 沒給就印出這趟會做什麼（完整下載、停機、寫開機應用程式、啟動），回 `needs_input`，exit 1。這跟 `import` 沒給 `-y` 一模一樣。exit 5 只有「屬性沒開」一個意思。
+**`plc download` 另外要 `-y`。** 沒給就印出這趟會做什麼（完整下載、停機、寫開機應用程式、啟動），回 `needs_input`，exit 1。這跟 `import` 沒給 `-y` 一模一樣。exit 5 只有「清單沒開」一個意思。
 
-**`config set` 不碰 `cds-sync-plc`。** 這是政策不是牆，無頭模式本來就在 IDE 裡跑任意 IronPython，誰想繞都繞得過。留這條的理由只有一個：這個屬性的意思是「一個人在 IDE 裡決定過」，讓 CLI 能寫它就把這個意思抹掉了。
+第一層以前有「只有人在 IDE 裡能寫」這一層意思，那是專案屬性時代的事（D8）。現在它是一個文字檔裡的一個鍵，誰能寫檔誰就能寫它。真正的門是 `-y`，它已經在。
 
 其他所有命令不受權限管。
-
-現況：已做（階段 3），在 `cds/ide/permit.py`。屬性以逗號切開、去空白、轉小寫再跟 `connect`、`download` 兩個字對照，
-所以 `DOWNLOAD ` 算數而 `downlaod` 什麼都不開；拼錯的字不會被猜成正確的那個，而是原樣出現在拒絕訊息裡讓人看見。
-拒絕訊息說三件事：現在的值是什麼、要改成什麼、去哪裡改（Project Information > Properties）。
-`config set` 那條原本就有，現在跟 `permit.PROPERTY` 共用同一個字串常數。
 
 ### 6.6 PLC 連線與下載
 
@@ -402,13 +400,13 @@ D8 的落地。
 
 ### 6.7 設定流程
 
-取代 `Project_directory.py` 與 `Project_parameters.py`：
+設定的三條路，各自對應一種使用者：
 
-1. `Project_export.py` 或 `Project_import.py` 啟動時若 `cds-sync-folder` 不存在，開資料夾對話框，存成相對路徑，寫入 `cds-sync-pc` 與 `cds-sync-version`，寫 `.gitattributes` 與 `.gitignore`。這個對話框沒有旗標可以回答，所以 `--target` 形式第一次跑會回 `needs_input`，解法是先跑 `cdsint config set cds-sync-folder=...` 再來；`--project` 形式用 `--sync-dir`。
-2. 電腦名稱不符：警告，問要不要繼續，`--force` 回答。
-3. 其他屬性透過 `cdsint config get/set` 讀寫。看門人的狀態視窗放一個「設定」按鈕，開跟現在 `Project_parameters.py` 一樣的對話框。這樣沒有 CLI 的人也改得到。
+1. **第一次跑。** `Project_export.py` 或 `Project_import.py` 啟動時若設定檔沒有 `sync_folder`，開資料夾對話框。選到的資料夾在專案檔那一層或底下就寫成 `./...`，其他情形（別的磁碟、專案外面）維持絕對路徑，理由是 `..\..\` 這種相對路徑只在專案不搬家時才成立。寫出只有 `sync_folder` 一個鍵的設定檔，建目錄，寫 `.gitattributes` 與 `.gitignore`。確認訊息說其他設定和預設值在 readMe 的設定表。這個對話框沒有旗標可以回答，所以無人時（`--target` 形式，或 `--project` 形式沒給 `--sync-dir`）回 `needs_input`，訊息說去專案旁寫哪個檔、哪個鍵，或從選單跑一次匯出。
+2. **之後要改。** 開檔案改。沒有 `config` 命令、沒有 Settings 視窗，因為那是同一個檔案的第二個編輯器，每加一個鍵就要多一列。
+3. **這一趟臨時換資料夾。** `--sync-dir`，語意在 4.2。
 
-現況：階段 1 已做，程式在 `engine/settings.py`。「存成相對路徑」的落地是：選到的資料夾在專案檔那一層或底下才寫成 `./...`，其他情形（別的磁碟、專案外面）維持絕對路徑，理由是 `..\..\` 這種相對路徑只在專案不搬家時才成立。`config get/set` 階段 2 做了，在 `cds/ide/config.py`，兩種形式都有；讀寫的是 4.4 那張表列的屬性，名字不在表上就拒絕，`cds-sync-plc` 只讀不寫。`config set` 寫完會存檔，因為一個只活在記憶體裡的設定在專案關掉時就沒了，而無頭模式沒有人會禮貌地關它；代價是使用者手上還沒存的編輯會跟著落地，所以 summary 會說「project saved」。第一次跑 export 或 import 而還沒設同步資料夾時，`--target` 形式仍然回 `needs_input`，訊息現在會告訴你三條路：`cdsint config set`、Project Information > Properties、或從選單跑一次匯出。
+不再有的：電腦名稱不符的對話框、版本不符的對話框、`--force`（4.4 說了為什麼）。
 
 ---
 

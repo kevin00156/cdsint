@@ -35,6 +35,17 @@ def in_code():
                and isinstance(value, str) and value.startswith(props.PREFIX))
 
 
+# SPEC 4.4 now documents the settings file that replaces these properties
+# (D10). The code catches up in docs/SETTINGS_PLAN.md, which retires this
+# module; until then these two witnesses disagree on purpose, and strict
+# xfail keeps the disagreement visible instead of red.
+BEHIND_SPEC = pytest.mark.xfail(
+    strict=True,
+    reason="SPEC 4.4 describes <project>.cdsint.json; cds/core/props.py is "
+           "replaced by cds/core/settings.py in docs/SETTINGS_PLAN.md")
+
+
+@BEHIND_SPEC
 def test_the_code_and_the_spec_name_the_same_properties():
     assert in_code() == documented()
 
@@ -54,6 +65,7 @@ def test_the_odd_one_out_keeps_its_own_prefix():
     assert props.MULTIPLE_APPS == "cds-text-sync-multipleApps"
 
 
+@BEHIND_SPEC
 def test_the_writable_table_is_the_spec_table_minus_the_one_a_person_sets():
     # cds/ide/config.py may read cds-sync-plc but never write it (SPEC 6.5),
     # so its table is every documented property except that one.
