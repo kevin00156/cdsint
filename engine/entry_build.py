@@ -6,12 +6,14 @@ Compiles the active application and reports errors/warnings.
 """
 from __future__ import print_function
 
+import codecs
 import os
 import time
 
+from engine import build_log
 from engine.codesys_constants import kind_of
 from engine.codesys_utils import (
-    safe_str, init_logging, is_debug, resolve_projects
+    log_warning, safe_str, init_logging, is_debug, resolve_projects
 )
 from engine import entry, settings
 
@@ -140,20 +142,124 @@ def choose_application(project, system, wanted):
     return found[index], None
 
 
-def build_project(base_dir, projects_obj=None):
-    """Build the active application in CODESYS and generate build.log"""
-    from System import Guid
+def _object_text(obj_ref):
+    """This object's declaration and implementation, as far as it will say.
 
-    # Resolve projects object
+    Both halves are read once and handed down: locate_message needs them
+    together, and each read crosses into .NET (PRINCIPLES 3).
+    """
+    decl = ""
+    impl = ""
+    if obj_ref is None:
+        return decl, impl
+    try:
+        if getattr(obj_ref, "textual_declaration", None):
+            decl = safe_str(obj_ref.textual_declaration.text)
+        if getattr(obj_ref, "textual_implementation", None):
+            impl = safe_str(obj_ref.textual_implementation.text)
+    except Exception as exc:
+        log_warning("Could not read the text of the object a build message "
+                    "points at: " + safe_str(exc))
+    return decl, impl
+
+
+def _message_id(msg):
+    """The 'C0018' the IDE would show, or just the prefix when it has no number."""
+    prefix = safe_str(msg.prefix) if msg.prefix else ""
+    number = getattr(msg, "number", 0)
+    if number and number > 0:
+        return "%s%04d" % (prefix, number)
+    return prefix
+
+
+def _message_object(msg, app_name):
+    """(object column text, the object itself). "N/A" when there is none."""
+    obj_ref = getattr(msg, "object", None)
+    if not obj_ref:
+        return "N/A", None
+    try:
+        return "{} [{}]".format(safe_str(obj_ref.get_name()), app_name), obj_ref
+    except Exception:
+        # A message can name an object whose plugin is missing. Its str() is
+        # ugly but it is the only handle the reader has left.
+        return safe_str(obj_ref), obj_ref
+
+
+def collect_rows(messages, app_name):
+    """(rows, errors, warnings) from the messages one build produced.
+
+    The IDE's own started/completed lines are skipped: they are asked for --
+    the severity mask includes Information, which is how run_build tells a
+    silent build from a clean one -- but they are not findings.
+    """
+    rows = []
+    errors = 0
+    warnings = 0
+    for msg in messages:
+        text = safe_str(msg.text)
+        if "Build started" in text or "Compile complete" in text:
+            continue
+        severity = str(msg.severity)
+        if "Error" in severity:
+            errors += 1
+        if "Warning" in severity:
+            warnings += 1
+
+        obj_text, obj_ref = _message_object(msg, app_name)
+        decl, impl = _object_text(obj_ref)
+        line, col, section = build_log.locate_message(
+            text, getattr(msg, "position", -1), decl, impl)
+        rows.append(build_log.row("{}: {}".format(_message_id(msg), text),
+                                  obj_text, build_log.position_text(line, col,
+                                                                    section)))
+    return rows, errors, warnings
+
+
+def _write_build_log(base_dir, app_name, lines):
+    """Write build_<app>.log, in debug mode only.
+
+    A normal run leaves the sync folder holding project content and nothing
+    else; this file is part of the debug audit trail.
+    """
+    if not (base_dir and os.path.exists(base_dir) and is_debug()):
+        return
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_"
+                        for c in app_name)
+    path = os.path.join(base_dir, "build_{}.log".format(safe_name))
+    try:
+        with codecs.open(path, "w", "utf-8") as handle:
+            handle.write("\n".join(lines))
+        print("Build log saved to: " + path)
+    except (IOError, OSError) as exc:
+        print("Error saving build log: " + safe_str(exc))
+
+
+def _nothing_was_built(app_name, elapsed):
+    """A build that produced no output at all, not even its own summary line.
+
+    Reported as a failure rather than as zero errors: run_build already built
+    twice, so this is the IDE saying nothing twice over, and "0 errors" would
+    be a green light for code nobody compiled.
+    """
+    return ("{} built in {:.2f}s and the IDE reported nothing at all, not "
+            "even its own summary line, so there is no build result here to "
+            "trust".format(app_name, elapsed))
+
+
+def build_project(base_dir, projects_obj=None):
+    """Build the active application, write its log, and report the counts.
+
+    Three steps and nothing else: build, collect what the IDE said, hand back
+    a verdict. Working out which line each message points at is
+    engine/build_log.py, where it can be tested without an IDE.
+    """
+    from System import Guid
+    # The category CODESYS files build messages under.
+    build_category = Guid("97F48D64-A2A3-4856-B640-75C046E37EA9")
+
     projects_obj = resolve_projects(projects_obj, globals())
-    
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
-        system.ui.error(msg)
-        return entry.result(False, msg)
-
-    if not projects_obj.primary:
-        msg = "Error: No project open!"
         system.ui.error(msg)
         return entry.result(False, msg)
 
@@ -163,326 +269,67 @@ def build_project(base_dir, projects_obj=None):
         system.ui.error(refused)
         return entry.result(False, refused)
 
-    # CODESYS Build GUID Category
-    BUILD_CATEGORY = Guid("97F48D64-A2A3-4856-B640-75C046E37EA9")
-    
+    app_name = safe_str(app.get_name())
     print("=== Starting Project Build ===")
-    print("Application: " + safe_str(app.get_name()))
-    
-    # Clear previous build messages
-    try:
-        system.clear_messages(BUILD_CATEGORY)
-    except:
-        pass
+    print("Application: " + app_name)
 
-    # Log Header for build.log
-    log_lines = []
-    log_lines.append("------ Build started: Application: {} ------".format(safe_str(app.get_name())))
-    log_lines.append("Typify code...") # Aesthetic phase marker
-    
     try:
-        # Trigger Build
-        messages, elapsed = run_build(app, system, BUILD_CATEGORY, Severity)
+        system.clear_messages(build_category)
+    except Exception as exc:
+        # An IDE that will not clear the category still builds; the count is
+        # then of this build plus whatever was already filed, which is worth
+        # a line rather than a silent skip.
+        log_warning("Could not clear the previous build messages: "
+                    + safe_str(exc))
+
+    try:
+        messages, elapsed = run_build(app, system, build_category, Severity)
         if not messages:
-            nothing = ("{} built in {:.2f}s and the IDE reported nothing at "
-                       "all, not even its own summary line, so there is no "
-                       "build result here to trust".format(
-                           safe_str(app.get_name()), elapsed))
+            nothing = _nothing_was_built(app_name, elapsed)
             print(nothing)
             system.ui.error(nothing)
-            return entry.result(False, nothing,
-                                application=safe_str(app.get_name()),
+            return entry.result(False, nothing, application=app_name,
                                 errors=0, warnings=0)
 
-        error_count = 0
-        warning_count = 0
-
-        # Try to get project name safely
-        project_name = "Unknown Project"
-        try:
-            # projects.primary on some versions returns a project object whose string 
-            # representation is complex. Let's try to get a clean name.
-            p = projects_obj.primary
-            if hasattr(p, "name"):
-                project_name = safe_str(p.name)
-            elif hasattr(p, "get_name"):
-                project_name = safe_str(p.get_name())
-            
-            # If it's still a long path or object string, take the filename
-            if "\\" in project_name or "/" in project_name:
-                project_name = os.path.basename(project_name).replace(".project", "")
-            if "Project(" in project_name:
-                 # Fallback: try to find the path in the string
-                 import re
-                 match = re.search(r"stPath=([^,\)]+)", project_name)
-                 if match:
-                     project_name = os.path.basename(match.group(1)).replace(".project", "")
-        except:
-            pass
-
-        app_name = safe_str(app.get_name())
-
-        for msg in messages:
-            msg_text = safe_str(msg.text)
-            
-            # Skip messages that are just headers/footers (avoid double logging)
-            if "Build started" in msg_text or "Compile complete" in msg_text:
-                continue
-                
-            sev = str(msg.severity)
-            if "Error" in sev: error_count += 1
-            if "Warning" in sev: warning_count += 1
-            
-            # Format ID using old-school % for maximum compatibility with IronPython
-            # prefix is usually 'C', number is the code like 18
-            prefix = safe_str(msg.prefix) if msg.prefix else ""
-            if msg.number and msg.number > 0:
-                msg_id = "%s%04d" % (prefix, msg.number)
-            else:
-                msg_id = prefix
-                
-            desc = "{}: {}".format(msg_id, msg_text)
-            
-            # Object information
-            obj_str = "N/A"
-            obj_ref = None
-            if hasattr(msg, "object") and msg.object:
-                try:
-                    obj_ref = msg.object
-                    obj_str = "{} [{}]".format(safe_str(obj_ref.get_name()), app_name)
-                except:
-                     obj_str = str(msg.object) if msg.object else "N/A"
-                
-            # Position information
-            pos_str = ""
-            msg_line = 0
-            msg_col = 0
-            section = ""
-            
-            # --- Attempt 1: Default calculation from 'position' index ---
-            # Try to get position index
-            pos_index = getattr(msg, "position", -1)
-            
-            decl_text = ""
-            impl_text = ""
-            
-            if obj_ref:
-                if hasattr(obj_ref, "textual_declaration") and obj_ref.textual_declaration:
-                    decl_text = safe_str(obj_ref.textual_declaration.text)
-                if hasattr(obj_ref, "textual_implementation") and obj_ref.textual_implementation:
-                    impl_text = safe_str(obj_ref.textual_implementation.text)
-            
-            if pos_index >= 0 and obj_ref:
-                try:
-                    target_text = None
-                    rel_index = pos_index
-                    
-                    # Check if index is within Declaration
-                    if pos_index < len(decl_text):
-                        target_text = decl_text
-                        section = "(Decl)"
-                    else:
-                        # Assume it is in Implementation
-                        rel_index = pos_index - len(decl_text)
-                        target_text = impl_text
-                        section = "(Impl)"
-                    
-                    if target_text is not None and rel_index >= 0:
-                        if rel_index > len(target_text): rel_index = len(target_text)
-                        part = target_text[:rel_index]
-                        lines = part.split('\n')
-                        msg_line = len(lines)
-                        msg_col = len(lines[-1]) + 1
-                except:
-                    pass
-            
-            # --- Attempt 2: Heuristic Text Search (Override if found) ---
-            # If the default calculation seems suspect or purely to improve accuracy,
-            # we search for the offending code in the text.
-            try:
-                import re
-                candidates = []
-                # 1. Quoted text inside message
-                candidates.extend(re.findall(r"'([^']+)'", msg_text))
-                # 2. "instead of <Identifier>" pattern (common in syntax errors)
-                m_instead = re.search(r"instead of\s+([a-zA-Z0-9_]+)", msg_text)
-                if m_instead:
-                    candidates.append(m_instead.group(1))
-                    
-                # Keywords that are valid standalone in Declaration (no colon needed)
-                decl_keywords = {'VAR', 'END_VAR', 'VAR_INPUT', 'VAR_OUTPUT', 'VAR_IN_OUT', 
-                                 'VAR_TEMP', 'VAR_GLOBAL', 'VAR_CONFIG', 'VAR_EXTERNAL', 'VAR_STAT',
-                                 'PROGRAM', 'FUNCTION_BLOCK', 'FUNCTION', 'TYPE', 'END_TYPE', 
-                                 'STRUCT', 'END_STRUCT', 'PROTECTED', 'INTERNAL'}
-                
-                best_match = None   # (line, col, section)
-                high_priority_found = False
-                min_dist = 999999999
-                
-                for item in candidates:
-                    # Allow length 1 items only if they were explicitly captured (e.g. "j" from "instead of j")
-                    # But filter out extremely common delimiters if they slipped in (like , or ;) unless quoted
-                    if len(item) < 1: continue
-                    
-                    # Regex for whole word search to avoid partial matches
-                    pattern = r"\b" + re.escape(item) + r"\b"
-                    
-                    # --- Search Declaration ---
-                    for m in re.finditer(pattern, decl_text):
-                        idx = m.start()
-                        
-                        # Calculate Line/Col
-                        part = decl_text[:idx]
-                        lines = part.split('\n')
-                        match_line = len(lines)
-                        match_col = len(lines[-1]) + 1
-                        
-                        # Analyze content for High Priority (Code in Decl)
-                        lines_all = decl_text.split('\n')
-                        if match_line <= len(lines_all):
-                            line_content = lines_all[match_line-1].strip()
-                            # Check if line has colon (valid decl) or is a keyword (valid block marker)
-                            has_colon = ":" in line_content
-                            # Check if it starts with a keyword
-                            is_keyword = any(line_content.startswith(k) for k in decl_keywords) or line_content in decl_keywords
-                            
-                            if not has_colon and not is_keyword:
-                                # High Priority: This looks like executable code in declaration!
-                                msg_line = match_line
-                                msg_col = match_col
-                                section = "(Decl)"
-                                high_priority_found = True
-                                break
-                        
-                        # Calculate distance to reported position (if valid)
-                        # Decl index is absolute 0..len
-                        dist = abs(idx - pos_index)
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match = (match_line, match_col, "(Decl)")
-                            
-                    if high_priority_found: break
-
-                    # --- Search Implementation ---
-                    # Only search impl if we haven't found a High Priority Decl error
-                    offset = len(decl_text)
-                    for m in re.finditer(pattern, impl_text):
-                        idx = m.start()
-                        
-                        # Calculate Line/Col
-                        part = impl_text[:idx]
-                        lines = part.split('\n')
-                        match_line = len(lines)
-                        match_col = len(lines[-1]) + 1
-                        
-                        # Calculate distance (Impl matches start after Decl)
-                        abs_pos = offset + idx
-                        dist = abs(abs_pos - pos_index)
-                        
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match = (match_line, match_col, "(Impl)")
-
-                    if high_priority_found: break
-                
-                # Apply best match if no high priority one was set directly
-                if not high_priority_found and best_match:
-                    msg_line = best_match[0]
-                    msg_col = best_match[1]
-                    section = best_match[2]
-                    
-            except:
-                pass
-            
-            # --- Attempt 3: Regex Parse from Message Text (Fallback) ---
-            if msg_line == 0:
-                import re
-                line_match = re.search(r'[Ll]ine[:\s]+(\d+)', msg_text)
-                if line_match:
-                    msg_line = int(line_match.group(1))
-                    col_match = re.search(r'[Cc]olumn[:\s]+(\d+)', msg_text)
-                    if col_match:
-                        msg_col = int(col_match.group(1))
-            
-            if msg_line > 0:
-                pos_str = "Line {}, Col {} {}".format(msg_line, msg_col, section)
-            
-            # Sanitize description for table formatting
-            # 1. Remove newlines that break the row structure
-            clean_desc = desc.replace('\r', '').replace('\n', ' ')
-            # 2. Truncate if too long to maintain column width (optional, but good for cleanliness)
-            # if len(clean_desc) > 90: clean_desc = clean_desc[:87] + "..."
-            # Actually, standard format specifier {:<90} will not truncate, it just pads. 
-            # If string is longer, it overflows. Table alignment breaks.
-            # So truncation is recommended for strict table.
-            if len(clean_desc) > 90:
-                clean_desc = clean_desc[:87] + "..."
-
-            # Recreate table-like row for log (Removed Project Column)
-            log_lines.append("{:<90} | {:<40} | {}".format(clean_desc, obj_str, pos_str))
-
-        # --- Formatting for File Output ---
-        # Add Header Table
-        header = "{:<90} | {:<40} | {}".format("Description", "Object", "Position")
-        separator = "-" * 160
-        
-        # Insert Header at the top
-        log_lines.insert(0, separator)
-        log_lines.insert(0, header)
-        
-        # Add Footer with separator
-        footer = "Compile complete -- {} errors, {} warnings".format(error_count, warning_count)
-        log_lines.append(separator)
-        log_lines.append(footer)
-        
-        # Write to build_[AppName].log in base directory (debug mode only)
-        if base_dir and os.path.exists(base_dir) and is_debug():
-            # Sanitize app name for filename
-            clean_app_name = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in app_name])
-            log_filename = "build_{}.log".format(clean_app_name)
-            log_path = os.path.join(base_dir, log_filename)
-            try:
-                import codecs
-                with codecs.open(log_path, "w", "utf-8") as f:
-                    f.write("\n".join(log_lines))
-                print("Build log saved to: " + log_path)
-            except Exception as e:
-                print("Error saving build log: " + str(e))
-
-        status = "Success" if error_count == 0 else "Failed"
-        msg_title = "Build " + status
-        msg_body = "{}\nErrors: {}\nWarnings: {}\nTime: {:.2f}s".format(
-            app_name, error_count, warning_count, elapsed
-        )
-        
-        print(footer + " (Time: {:.2f}s)".format(elapsed))
-        
-        # Feedback
-        if error_count == 0:
-            system.ui.info(msg_body)
-        else:
-            system.ui.error(msg_body)
-
-        # The errors themselves are not in here: the IDE's message store has
-        # them with object and line, and cds/ide/messages.py reads them from
-        # there. Two copies of the same list would drift (SPEC D16).
-        verdict = "{}: {}, {} errors, {} warnings in {:.2f}s".format(
-            msg_title, app_name, error_count, warning_count, elapsed)
-        return entry.result(error_count == 0, verdict,
-                            application=app_name, errors=error_count,
-                            warnings=warning_count)
-
-    except Exception as e:
+        rows, errors, warnings = collect_rows(messages, app_name)
+        _write_build_log(base_dir, app_name,
+                         build_log.table(app_name, rows, errors, warnings))
+        return _verdict(app_name, errors, warnings, elapsed)
+    except Exception as exc:
         # The traceback goes to stdout, which reaches the caller as
         # stdout_tail. A .NET exception's message on its own can be as
-        # useless as "值不能為 null。參數名稱: category" — true, and no help
+        # useless as "值不能為 null。參數名稱: category" -- true, and no help
         # at all in saying which of these calls said it.
         import traceback
-        failure = "Build process failed: " + str(e)
-        print("Build Error: " + str(e))
+        failure = "Build process failed: " + safe_str(exc)
+        print("Build Error: " + safe_str(exc))
         print(traceback.format_exc())
         system.ui.error(failure)
         return entry.result(False, failure)
+
+
+def _verdict(app_name, errors, warnings, elapsed):
+    """Say how it went, on screen and in the result (SPEC D11).
+
+    The errors themselves are not in here: the IDE's message store has them
+    with object and line, and cds/ide/messages.py reads them from there. Two
+    copies of the same list would drift (SPEC D16).
+    """
+    body = "{}\nErrors: {}\nWarnings: {}\nTime: {:.2f}s".format(
+        app_name, errors, warnings, elapsed)
+    print(build_log.summary(errors, warnings)
+          + " (Time: {:.2f}s)".format(elapsed))
+    if errors == 0:
+        system.ui.info(body)
+    else:
+        system.ui.error(body)
+
+    status = "Build Success" if errors == 0 else "Build Failed"
+    return entry.result(errors == 0,
+                        "{}: {}, {} errors, {} warnings in {:.2f}s".format(
+                            status, app_name, errors, warnings, elapsed),
+                        application=app_name, errors=errors, warnings=warnings)
+
 
 def main():
     # A build does not need the sync folder, so a project that has not chosen
