@@ -368,8 +368,8 @@ count := count + 1;
 檔案開頭可能有 `//% cds-text-sync.<key>=<value>` 的 pragma 行，那些是 kind 與建置屬性，
 匯入時會被讀走。**不要自己刪掉或改寫 pragma 行**，除非你確定要改那個屬性。
 完整說明在 readMe 的
-[Sync Pragmas in `.st` Files](../readMe.md#-sync-pragmas-in-st-files) 與
-[Type Profiles](../readMe.md#-type-profilesprofilesdefaultjson) 兩節。
+[Sync pragmas in `.st` files](../readMe.md#sync-pragmas-in-st-files) 與
+[Type profiles](../readMe.md#type-profiles-profilesdefaultjson) 兩節。
 
 **在磁碟上新建一個 `.st` 檔就等於在 IDE 裡新建一個物件。** 檔案放在哪個資料夾，
 物件就會出現在 IDE 裡對應的位置。

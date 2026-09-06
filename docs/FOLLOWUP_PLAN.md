@@ -88,11 +88,11 @@
   - [x] pyproject 改 dynamic version 讀 `SCRIPT_VERSION`；刪 `tests/test_version.py`；readMe 拿掉手寫的版本號。
   - [x] 驗收：`pip install -e .` 之後 `pip show cdsint` 的 Version 等於 `SCRIPT_VERSION`；`grep -n "0\.0\.1" readMe.md pyproject.toml` 為零。——兩條都過。兩邊都是 0.0.1 證明不了什麼，所以另外把 `SCRIPT_VERSION` 暫時改成 `0.9.99` 重裝一次，`pip show` 跟著變成 0.9.99，再改回來重裝確認回到 0.0.1。
 
-- [ ] **F. 文件**
-  - [ ] readMe：Install 寫成兩步（`pip install -e .` 裝命令、`npx skills add kevin00156/cdsint` 裝 skill）；加 pragma 與 `profiles/default.json` 兩節（從來源 readMe 332 到 346 行搬，改名字）；加 `tools/` 一節（perf_probe、call_tree 各一行用法）；加「從 cds-text-sync 升級」一段（拆舊 junction、停舊看門人、實例目錄換了、toolbar 按鈕若失效重加）；Layout 列 `skills/`；開頭那句「PLC 命令還沒做」改成現況。
-  - [ ] `docs/AI_WORKFLOW.md` 兩個死錨點改指新的節。
-  - [ ] SPEC：第 7 節矩陣 PLC 那列改成 6.6 的現況、「無頭 boot app 產出」那列刪；10.1 對照表跟著 A、B、C 改。
-  - [ ] 驗收：`grep -rn "#-sync-pragmas\|#-type-profiles" docs/ skills/` 為零；readMe 裡每個 `[...](#...)` 錨點都存在（寫一個小腳本檢查）。
+- [x] **F. 文件**
+  - [x] readMe：Install 寫成兩步（`pip install -e .` 裝命令、`npx skills add kevin00156/cdsint` 裝 skill）；加 pragma 與 `profiles/default.json` 兩節（從來源 readMe 332 到 346 行搬，改名字）；加 `tools/` 一節（perf_probe、call_tree 各一行用法）；加「從 cds-text-sync 升級」一段（拆舊 junction、停舊看門人、實例目錄換了、toolbar 按鈕若失效重加）；Layout 列 `skills/`；開頭那句「PLC 命令還沒做」改成現況。
+  - [x] `docs/AI_WORKFLOW.md` 兩個死錨點改指新的節。
+  - [x] SPEC：第 7 節矩陣 PLC 那列改成 6.6 的現況、「無頭 boot app 產出」那列刪；10.1 對照表跟著 A、B、C 改。
+  - [x] 驗收：`grep -rn "#-sync-pragmas\|#-type-profiles" docs/ skills/` 為零；readMe 裡每個 `[...](#...)` 錨點都存在（寫一個小腳本檢查）。——檢查器是 `tests/test_doc_links.py`，對七份給人讀的文件掃 `[...](...)`，檔案存不存在與 `#` 錨點對不對得上都查，錨點用 GitHub 的 slug 規則算。故意把一個錨點改壞驗過它會紅。`docs/history/` 不掃，那些是當天的紀錄，連結描述的是當時的 repo。
 
 - [ ] **G. 收尾**
   - [ ] `python -m pytest tests -q` 綠，WSL 那條也綠；commit；照第 6 節回報，停下來等監督者 push 並看 GitHub 兩條 job。

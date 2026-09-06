@@ -425,8 +425,7 @@ D8 的落地。
 | 無頭開得了專案、跑得了引擎 | 驗過 | 未驗 | 未驗 | 未驗 | 驗過 |
 | 無頭 build | 驗過 | 未驗 | 未驗 | 未驗 | 驗過，要修過才會真的編譯，見底下 |
 | `verify --project` 一條命令跑完 | 驗過 | 未驗 | 未驗 | 未驗 | 驗過 |
-| 無頭 boot app 產出 | 未驗 | 未驗 | 未驗 | 未驗 | 失敗，NullReferenceException |
-| PLC connect、download | 未驗 | 未驗 | 未驗 | 未驗 | 未驗 |
+| PLC connect、download | 驗過，2026-09-06 兩台 WSL soft PLC 整輪（見 6.6） | 未驗 | 未驗 | 未驗 | 未驗 |
 
 這張表的每一格都是「同一家 IDE 開它自己的專案」。9 月 5 日階段 1 驗收各驗了一輪：原廠 3.5.21.40 開 softplc 副本、Delta 1.10 開 Shm 副本，`export`、`import`、`compare`、`build` 都 exit 0，229 個物件，build 0 errors。階段 2 用 `verify --project` 對同樣兩個副本各再跑一輪，四步全過。
 

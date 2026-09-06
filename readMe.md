@@ -75,6 +75,10 @@ output and the `sync_dir` field of the report.
 
 ## Install
 
+Two things get installed and they are independent: the `cdsint` command, and
+the stubs the IDE's Scripts menu scans. A third, optional, is the skill file
+that teaches Claude Code how to drive the command.
+
 ### The command
 
 ```
@@ -83,6 +87,16 @@ cd cdsint
 python -m pip install -e .
 cdsint --help
 ```
+
+### The skill, if you use Claude Code
+
+```
+npx skills add kevin00156/cdsint
+```
+
+That reads `skills/cdsint/SKILL.md` straight out of this repo — there is no
+separate package. It is what an agent reads before it starts editing `.st`
+files: the loop, how to read a result, and what never to do.
 
 ### The IDE half
 
@@ -133,6 +147,30 @@ mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 
 Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
 `Project_export`, `Project_import`, `Project_watch`.
+
+### Coming from kevin-cds-text-sync
+
+Four things moved, and none of them migrate themselves:
+
+- **The junction.** The old one points the ScriptDir at the whole
+  `kevin-cds-text-sync` clone, which is why that IDE shows eleven menu
+  entries. Remove it before adding the new one, or the menu carries both sets
+  and you cannot tell which is running. `cdsint installs` prints each IDE's
+  ScriptDir; the junction to delete is the `cds-text-sync` folder inside it.
+- **The running watcher.** Stop it — run `Project_watch` a second time in the
+  IDE that has it — before starting the new one. The instance directory moved
+  from `%LOCALAPPDATA%\cds-text-sync\instances` to
+  `%LOCALAPPDATA%\cdsint\instances`, so `cdsint list` cannot see the old one
+  and cannot stop it for you.
+- **The command name.** `python cli/cds_ide.py` is now `cdsint`.
+- **A toolbar button, if you made one.** It is bound to a script by the name
+  the ScriptEngine registered, and the ScriptDir subfolder changed from
+  `cds-text-sync` to `cdsint`. Whether that breaks the binding has not been
+  measured either way; if the button stops doing anything, remove it and add
+  it again from the new entry.
+
+The project properties keep their `cds-sync-` prefix and are not touched, so a
+project already set up carries on working.
 
 ## The commands
 
@@ -256,6 +294,12 @@ offline changes its CRC on every compile, so it cannot serve as that answer.
 Credentials come from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment,
 never from a flag, a file or the report.
 
+Both commands are built and were run end to end on 2026-09-06, against two
+CODESYS Control soft PLCs under WSL, driven by CODESYS 3.5.21.40. No Lenze or
+Delta controller has been tried, and the two ways of switching the credential
+dialog off have only been checked on ScriptEngine 4.2.0.0 — on a version with
+neither, `connect` refuses rather than hanging.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -295,6 +339,72 @@ nothing is changed.
 button on the watcher's status window, or by hand in **Project Information >
 Properties**.
 
+## Sync pragmas in `.st` files
+
+An exported file may start with one or more `//% cds-text-sync.<key>=<value>`
+lines. They carry what the ST text alone cannot say, and import reads them back:
+
+- **`kind=<kind>`** is written only for kinds the text cannot express on its
+  own — persistent GVLs, parameter lists, actions, interface methods. Without
+  it, importing the file into a project that does not already have the object
+  would recreate it as a guessed POU instead of the right kind.
+- **`exclude_from_build`**, **`link_always`**, **`external_implementation`**
+  and **`enable_system_call`** are the IDE's build attributes, the ones under
+  an object's **Properties > Build**. They sync both ways: delete the line on
+  disk and the next import clears the flag in the IDE.
+
+Pragmas are stripped before content is compared, so a file that has none stays
+in sync with no noise. Leave them alone unless you mean to change that
+attribute.
+
+## Type profiles (`profiles/default.json`)
+
+Object-type GUIDs and per-kind policy live in this JSON file, next to the code
+rather than in it, so teaching the engine about a new IDE build is an edit
+rather than a change:
+
+- **`guid_aliases`** maps each kind (`pou`, `gvl`, `persistent_gvl`, ...) to
+  one or more GUIDs. The **first** is the primary one, used when creating an
+  object; the rest are aliases — the different GUIDs other CODESYS versions
+  emit for the same kind. When `cdsint discover` reports an unknown GUID,
+  append it to the matching kind's list and run again. The sync cache rebuilds
+  itself.
+- **`sync_direction`** is the per-kind policy: `bidirectional` (the default),
+  `export_only` (written to disk so git can see it, never read back or deleted
+  from the IDE — the Library Manager is one), `import_only`, or `disabled`
+  (invisible to sync, which is where `device` and `device_module` sit).
+
+## `tools/`
+
+Offline instruments for whoever maintains this. None of them is a cdsint
+command and none appears in the Scripts menu.
+
+**`tools/call_tree.py`** builds a cross-file call graph from an exported sync
+folder. Plain CPython, no IDE:
+
+```
+python tools/call_tree.py <sync-dir> MAIN -o call_tree.json
+```
+
+It follows calls between project functions and function-block methods across
+files, including instances declared in GVLs, tags IEC system calls from
+`tools/sys_funcs.json`, and marks whatever it could not resolve.
+
+**`tools/perf_probe.py`** wraps the real engine functions and ranks where a
+sync spends its time. It runs inside an IDE that has the project open:
+**Tools > Scripting > Execute Script File**, then pick the file. With no
+argument it profiles an export; `compare` and `import` are the other two
+modes, given in the script-arguments box. The report goes to
+`perf_probe_<mode>.txt` in the sync folder. Run the same mode twice — the
+second run is the one that says whether the cache is earning its keep.
+
+**`tools/cache_doctor.py`** answers "would the cache actually skip anything on
+the next run?" without opening the IDE, and names the reasons it would not:
+
+```
+python tools/cache_doctor.py <sync-dir>
+```
+
 ## Layout
 
 ```
@@ -308,6 +418,7 @@ stub/       the fifteen-line files the IDE's menu scans.
 cdsint/     the `cdsint` command. CPython 3.11+.
 tools/      offline diagnostics: call tree, cache doctor, perf probe.
 profiles/   object-type GUIDs and per-kind sync policy, as JSON.
+skills/     the manual an agent reads: skills/cdsint/SKILL.md.
 docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.
 ```
 
@@ -318,6 +429,8 @@ docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.
 - [`docs/WATCHER.md`](docs/WATCHER.md) — the listener and the command protocol.
 - [`docs/AI_WORKFLOW.md`](docs/AI_WORKFLOW.md) — the loop for an agent driving
   this without a screen.
+- [`skills/cdsint/SKILL.md`](skills/cdsint/SKILL.md) — the same thing packaged
+  for Claude Code; `npx skills add kevin00156/cdsint` installs it.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed and why, per release.
 - [`PRINCIPLES.md`](PRINCIPLES.md) — the rules the code is held to.
 
