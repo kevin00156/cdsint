@@ -284,6 +284,26 @@ Behaviour that was in `main` but never released:
   through it. Nothing here writes a BOM, so this only ever drops somebody
   else's.
 
+- **The documentation and the tests were gone through for things that had
+  stopped being true.** No behaviour changed here, but a good deal of what a
+  reader was being told did. The spec carried a "現況" line per decision — a
+  snapshot with no expiry date, and thirty-two of them had drifted into saying
+  the opposite of the code, down to a test count that was off by six hundred;
+  where the code stands is what this file and `git log` are for, and the spec
+  says what the thing is. The construction order it also carried went to
+  `docs/history/`. Three documents gave three different line counts for the
+  stubs, none of them right, and two said `list` takes `--target`, which it
+  has never done. The `tools/` section named three of the nine instruments.
+
+  On the test side: one stand-in per thing the IDE hands the engine, in
+  `tests/fakes.py`, replacing six copies of some of them that had begun to
+  disagree with each other; the three files that had grown past the size
+  limit are split; and two rules that stopped at a directory boundary —
+  `print_function`, and the one concurrency model — now reach the two
+  instruments in `tools/` that run inside an IDE. `profiles/default.json`
+  keyed its notes by list position, so inserting a GUID moved a note onto a
+  different one without a word.
+
 - **A running IDE can be driven from a terminal at all.** This is the feature
   the rest of the list is built on. **Project_watch** (Tools > Scripting) arms
   a timer and returns immediately, leaving a listener in the IDE, and `cdsint`

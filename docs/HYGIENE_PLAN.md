@@ -113,9 +113,10 @@
   - [x] 驗收：`python -W error::SyntaxWarning -m pytest tests -q` 綠。
   - [x] 驗收：Windows 1072 passed、WSL 1072 passed，開工前是 1043。
 
-- [ ] **階段 4：收尾**
-  - [ ] CHANGELOG Unreleased 加一句說文件與測試整理過。
-  - [ ] `%TEMP%\cdsint-work\hygiene\` 清掉。
+- [x] **階段 4：收尾**
+  - [x] CHANGELOG Unreleased 加了一段，說文件與測試整理過、改了哪些會過期的東西。
+  - [x] `%TEMP%\cdsint-work\hygiene\` 從頭到尾沒有建過，所以沒有東西要清。那個目錄底下現有的 `import-bug`、`importbug2` 不是這張工單的，沒碰。
+  - [x] 順手：`tests/test_bare_excepts.py` 表頭的「What is left, 2026-09-05」把日期拿掉了。第 3 節第 13 條說棘輪的設計不動，那沒動；拿掉的是註解裡那個會漂的日期，而 `PRINCIPLES.md` 現在指著這張表當唯一的數字來源。
 
 ---
 

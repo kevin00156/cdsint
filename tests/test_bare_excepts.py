@@ -22,7 +22,9 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 
-# What is left, 2026-09-05. Lower these; do not raise them.
+# What is left. Lower these; do not raise them. No date on purpose: the
+# numbers are the record, and a date beside them only ever says how long
+# ago somebody last looked -- git blame answers that without going stale.
 ALLOWED = {
     "engine/codesys_compare_engine.py": 6,
     "engine/codesys_managers.py": 29,
