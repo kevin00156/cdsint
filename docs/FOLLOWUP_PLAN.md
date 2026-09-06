@@ -94,8 +94,8 @@
   - [x] SPEC：第 7 節矩陣 PLC 那列改成 6.6 的現況、「無頭 boot app 產出」那列刪；10.1 對照表跟著 A、B、C 改。
   - [x] 驗收：`grep -rn "#-sync-pragmas\|#-type-profiles" docs/ skills/` 為零；readMe 裡每個 `[...](#...)` 錨點都存在（寫一個小腳本檢查）。——檢查器是 `tests/test_doc_links.py`，對七份給人讀的文件掃 `[...](...)`，檔案存不存在與 `#` 錨點對不對得上都查，錨點用 GitHub 的 slug 規則算。故意把一個錨點改壞驗過它會紅。`docs/history/` 不掃，那些是當天的紀錄，連結描述的是當時的 repo。
 
-- [ ] **G. 收尾**
-  - [ ] `python -m pytest tests -q` 綠，WSL 那條也綠；commit；照第 6 節回報，停下來等監督者 push 並看 GitHub 兩條 job。
+- [x] **G. 收尾**
+  - [x] `python -m pytest tests -q` 綠，WSL 那條也綠；commit；照第 6 節回報，停下來等監督者 push 並看 GitHub 兩條 job。——Windows `python -m pytest tests -q` 與根目錄 `python -m pytest` 各 948 passed；WSL Ubuntu-22.04（Python 3.10、pytest 6.2.5）948 passed。GitHub 兩條 job 要 push 才看得到。
 
 ---
 

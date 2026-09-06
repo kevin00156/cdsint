@@ -14,6 +14,43 @@ a fork of upstream `cds-text-sync` and does not carry over. `cds-sync-version`
 is compared as a plain string, so the first sync of an existing project warns
 about a version mismatch once and then records the new number.
 
+- **Six hundred lines nobody could reach are gone.** The compare window, the
+  side-by-side diff viewer and the `.diff/` folder they wrote to were only ever
+  opened from a Scripts-menu entry that the move removed, so no user could get
+  to any of it — while a SPEC rule and a test went on guarding that path.
+  `compare` on the command line stays; `git diff` on the exported text is the
+  side-by-side view now. `tools/Project_resources.py` and `img/` went the same
+  way: nothing reached the first and nothing referenced the second.
+- **`discover` is a command.** It was a script in `tools/` missing the three
+  lines that put the install root on `sys.path`, so **Execute Script File**
+  failed on its first import and there was no other way in. It is the one
+  diagnostic for an object that never reached the disk and said nothing about
+  it, so it now has both command forms like any other: it walks the tree, says
+  what each object was recognised as, and reports every type GUID no kind in
+  `profiles/default.json` claimed in `data.unknown`, with the run not ok. The
+  fix for an unknown GUID is a JSON edit, and the output says so.
+- **`Project_perf_probe.py` is `tools/perf_probe.py`.** The prefix is what puts
+  a name in the IDE's Scripts menu, so a maintainer's profiler wearing it looked
+  like a feature to click. Only the three stubs carry it now (PRINCIPLES 12).
+- **The sync folder can be changed again.** It was set on the first export and
+  then unreachable: `Project_directory.py` had gone and the Settings dialog had
+  no row for it. There is one now, with a Browse button, and it writes only when
+  the text actually changed — stamping the machine onto a project every time
+  somebody opened Settings would quietly claim one that was set up elsewhere.
+  `cdsint config set cds-sync-folder=...` used to write the property alone,
+  leaving `cds-sync-pc` and `cds-sync-version` unset; it now runs the same
+  engine tail the dialog does.
+- **The version number lives in one place.** `pyproject.toml` carried a copy of
+  `SCRIPT_VERSION` kept honest by a test; it reads the constant directly through
+  `[tool.setuptools.dynamic]` instead, and the readMe no longer prints a number
+  at all. A release is one line and a tag.
+- **The readMe says the things the move dropped**: the `//% cds-text-sync.*`
+  pragmas and what each one does, `profiles/default.json` and its two tables,
+  the `tools/` scripts and how to run each, how to install the skill, and what
+  to unpick when upgrading from `kevin-cds-text-sync`. Two links in
+  `docs/AI_WORKFLOW.md` had pointed at readMe sections that never came across;
+  `tests/test_doc_links.py` now walks every in-repo link and anchor in the docs.
+
 - **The IDE's Scripts menu listed eleven entries, and there was no way to hide
   them.** The menu is a recursive scan of ScriptDir for `.py`, so every module
   had to live at the top level, be named `.pyw` to stay out of the list, and be
@@ -71,9 +108,8 @@ about a version mismatch once and then records the new number.
   dialog, so `compare`, `verify`, and an `import` nobody confirmed all
   left the next export free to overwrite an unimported edit, reporting
   `ok` with nothing pending. Entries for objects this run could not
-  rewrite are now kept. The compare dialog's own export had the mirror
-  problem: it wrote the file and recorded nothing, so the next ordinary
-  export blamed the disk for a change the IDE had made and refused.
+  rewrite are now kept. (The compare dialog's own export had the mirror
+  problem, fixed the same way and then deleted with the dialog above.)
 - **A headless run could answer with the previous run's report.** The
   report path is stable across runs by design, so an IDE that hung on a
   dialog and wrote nothing left the last run's file to be read: it

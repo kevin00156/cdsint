@@ -90,9 +90,10 @@ IronPython 2.7 走這條。Windows 上 `os.rename` 碰到目標已存在會直�
 | `stop` | 無 | 無 |
 | `export` | `delete_orphans`，預設 false | 「Delete Orphaned Files?」由它回答 |
 | `import` | `yes` 必要、`force` 預設 false | 「Confirm Import」由 `yes` 回答，沒給回 `needs_input`；「Version Mismatch」與「Computer Mismatch」由 `force` 回答，預設不繼續 |
-| `compare` | 無 | 互動式挑選視窗在無人模式開不了，換成一則寫著數字的訊息；逐物件的清單本來就印在 stdout，會進 `stdout_tail` |
+| `compare` | 無 | 無。逐物件的清單印在 stdout，會進 `stdout_tail`；互動式挑選視窗已經刪了 |
+| `discover` | 無 | 無。物件樹印在 stdout，未知的型別 GUID 在 `data.unknown` |
 | `build` | 多個 application 時要 `app` | `system.ui.choose` 用 `app` 的名字對應選項，沒給回 `needs_input` |
-| `config` | `key`、`value`（`value` 是 None 就是讀） | 無 |
+| `config` | `key`、`value`（`value` 是 None 就是讀） | 無。寫 `cds-sync-folder` 這一個 key 會多按一次 `engine/settings.py` 的 `folder_was_set`，把資料夾建起來、寫 git 規則、寫 `cds-sync-pc` 與 `cds-sync-version`，跟設定對話框那條路一致 |
 | `plc connect`、`plc download` | — | 看門人一律拒絕，回一句說明理由的錯誤。理由是它跑在別人正在用的 IDE 裡，登入控制器會搶走那個人的線上狀態（SPEC D8）。這兩個命令只有 `--project` 形式有 |
 
 ## 5. 一拍做什麼
@@ -182,7 +183,7 @@ Delta 1.10 那一格後來由使用者手動補上：他在自己的真專案上
 |---|---|
 | 本體自己命名空間裡的 `system` | 本體讀的就是這個 |
 | `__main__.system` | `codesys_utils.resolve_system` 找不到模組自己的 `system` 時會走到 `__main__` |
-| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no`、`ask_yes_no_cancel`、`show_compare_dialog`、`show_sync_folder_dialog` | 這幾個自己開 WinForms 視窗，完全不經過 `system.ui` |
+| `sys.modules["engine.codesys_ui"]` 的 `ask_yes_no`、`ask_yes_no_cancel`、`show_sync_folder_dialog` | 這幾個自己開 WinForms 視窗，完全不經過 `system.ui` |
 
 四件實作上踩過的坑：
 
