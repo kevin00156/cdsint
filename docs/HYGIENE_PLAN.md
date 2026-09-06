@@ -120,6 +120,41 @@
 
 ---
 
+- [ ] **階段 5：審查後修正（監督者 2026-09-07 派回）**
+
+  一個沒看過對話的 reviewer 把 SPEC、readMe、AI_WORKFLOW、WATCHER、SKILL、CHANGELOG 從頭讀到尾，對照程式碼，找到十九處還在說假話或互相打架的地方，加上假物件沒收乾淨。監督者抽驗過。這張工單的目標就是「文件全對、一份假物件」，所以全部修。修完照第 6 節再回報一次。
+
+  **文件還在說假話的**
+  - [ ] **1.** `docs/SPEC.md` 5.1 與 6.1 兩句「現在的 `codesys_*.pyw`」：repo 沒有任何 `.pyw`。工單第 3 節第 1 條自己點名了這兩句，第 4 節說要改，沒改。改成講今天的 `engine/*.py`。
+  - [ ] **2.** `CHANGELOG.md` Unreleased 段 PLC 那條還說「the project property `cds-sync-plc` … `config set` refuses to write that one property」；同一段前面已經說 `config` 刪了、設定在文字檔。改成講設定檔的 `plc` 清單加 `-y`。
+  - [ ] **3.** `CHANGELOG.md` 另一條「`cds-sync-version` is written before the project is saved」：版本戳記已刪。這條描述的是已經不存在的機制，整條刪，或改成一句「版本戳記連同它的存檔順序問題一起刪了」。Ruling 4 的豁免是「以前叫什麼、現在叫什麼」，這兩條不是，是用舊機制描述現在。
+  - [ ] **4.** `docs/SPEC.md` 6.4 那張表的鎖檔規則還是 `f05a233` 之前的：「自己起的 IDE 留下的鎖檔由 CLI 清掉」無條件；程式是開跑前有鎖就不清。工單只對了三份使用手冊，沒對規則本文。照 `cdsint/headless.py` 和 `lock.py` 的實際行為改寫。
+  - [ ] **5.** `readMe.md` 274 到 276 行「`--project` therefore requires `--sync-dir`」：同檔前面、SKILL、AI_WORKFLOW、SPEC 都說選用。改。
+  - [ ] **6.** `docs/AI_WORKFLOW.md` exit 5 那格說「要人去 IDE 裡改屬性，見第 6 節」，第 6 節說的是設定檔的鍵。改成一致。
+  - [ ] **7.** `docs/WATCHER.md` 命令表說 compare 的逐物件清單進 `stdout_tail`，AI_WORKFLOW 和 SKILL 說在 `data.changes`，程式是後者。WATCHER 改。
+  - [ ] **8.** `docs/WATCHER.md` 命令檔例子還帶 `"force": false`，`--force` 已刪；同節「專案屬性擋下 `plc`」是屬性時代的話。兩處改。
+  - [ ] **9.** `docs/SPEC.md` 6.4 指向 `tools/codesys_probe.py`，不存在。改成講它從哪搬來、現在在哪。
+  - [ ] **10.** `docs/SPEC.md` D5 說單執行緒那條測試只 parse 三個目錄；Ruling 7 之後也掃 `tools/` 裡會載進 IDE 的。補一句。
+  - [ ] **11.** `docs/SPEC.md` 4.3 exit 4 那格補「`--install` 對不到任何 IDE」，程式、readMe、SKILL 都有。
+  - [ ] **12.** 「兩支」還是「三支」：`readMe.md` 說 tools 裡三支在 IDE 內跑，`tests/test_print_function.py` docstring 和 `CHANGELOG.md` 說兩支。以程式碼為準，三處改成一致，或不寫數字。
+  - [ ] **13.** `readMe.md` tools 那節「the underscore is what keeps it out of this list」寫在把 `_root.py` 列進去的那條裡。二選一。
+  - [ ] **14.** `tools/call_tree_parse.py` 改成 import `IMPL_MARKER` 之後，`engine/codesys_constants.py` 在 import 時就讀並驗證 `profiles/default.json`，這支原本只靠標準函式庫的離線工具現在綁死 repo 佈局。監督者裁決（第 7 節末尾）：留 import，但 readMe 那句「Import them if you want the pieces」改成講它要從 repo 的 checkout 跑，CHANGELOG 補一句。
+  - [ ] **15.** `profiles/default.json` 多了 `alias_notes_note`、`legacy_kind_names_note` 兩個頂層鍵，`PROFILE_HASH` 因此變了，每個人的 `sync_cache.json` 下一趟重建一次、第一趟 export 慢兩三倍。留著可以，但 CHANGELOG 要寫一句，不然使用者不知道為什麼慢。
+
+  **假物件與測試**
+  - [ ] **16.** 沒收乾淨的替身：`Project` 在 `tests/test_build_application.py` 頂層一份同形、`tests/test_delete_order.py` 一個叫 `Project` 的 Node 子類、`test_ide_round_trips.py` 三份巢狀；`FakeSystem` 在 `plc_fakes.py` 與 `test_silent.py`；`_StubManager` 在 `test_kind_pragma.py` 與 `test_member_creation.py` 完全相同；`Session`、`Online` 在 `plc_fakes.py` 與 `test_online_preflight.py` 各兩份。全部收進 `tests/fakes.py`（或 `plc_fakes.py`），子類別化的留子類別但不重抄本體。第 5 節階段 3 的 grep 驗收把 `Project`、`FakeSystem`、`_StubManager`、`Session`、`Online` 加進去重跑。
+  - [ ] **17.** `tests/test_call_tree.py` docstring 說 fixture 的 monkeypatch 讓 `tools/` 不會永久留在 `sys.path`，但 `call_tree_parse.py` import 時無條件 insert，第一條測試之後就永久在。改 docstring 講真的，或讓 fixture 真的做到。
+  - [ ] **18.** 五支 tools 的 bootstrap 註解「Neither is on sys.path already」在 `python tools/x.py` 下是假的，只在 IDE 裡才真；`probe_watcher_ui` 經 `headless_watch` 會 insert 兩次。註解改成講清楚兩種情況，insert 改成先查再加。
+  - [ ] **19.** 「十一個鍵」手抄五份（SPEC 兩處、AI_WORKFLOW 兩處、CHANGELOG 一處）。今天對，但跟被刪的「47 種」同一個形狀。改成不寫數字，或只留 SPEC 4.4 那張表一處。
+
+  - [ ] 驗收：`grep -n "pyw\|codesys_probe" docs/SPEC.md` 為零（第 0 節那格 `pywebview` 是別人的東西，不算）。
+  - [ ] 驗收：`grep -n "config set\|cds-sync-version\|cds-sync-plc" CHANGELOG.md` 只剩「以前叫什麼」那種句子，reviewer 點名的兩條不在。
+  - [ ] 驗收：`grep -rn "requires \`--sync-dir\`\|\"force\"" readMe.md docs/ skills/ | grep -v history` 為零。
+  - [ ] 驗收：`grep -rn "^class \(Project\|Projects\|Info\|Node\|DeafSystem\|DeafUI\|FakeTimer\|FakeSystem\|_StubManager\|Session\|Online\)\b" tests/` 只在 `tests/fakes.py` 與 `tests/plc_fakes.py`。
+  - [ ] 驗收：`python -m pytest tests -q` 與 WSL 綠，數目不少於 1072；`tests/test_doc_links.py` 綠。
+
+---
+
 ## 6. 回報格式
 
 同 `history/SETTINGS_PLAN.md` 第 6 節。這張沒有真 IDE 驗收。
@@ -174,6 +209,13 @@
 做的時候看到但不在範圍的，記在這裡給 C：
 
 - （worker 填）
+
+---
+
+監督者裁的（2026-09-07，審查後）：
+
+- Ruling: `tools/call_tree_parse.py` 留 `from engine.codesys_constants import IMPL_MARKER`，不改回字面值 — 分隔符只能有一個定義（D15），一個離線工具為了能被抄到別處而多養一份磁碟格式的定義是本末倒置；代價是它從此要從 repo 的 checkout 跑，readMe 講清楚就好 — 錯了的代價是有人把兩支檔抄走時得到一個講 profile 的 traceback。
+- Ruling: `profiles/default.json` 的兩個 `_note` 鍵留著，`PROFILE_HASH` 變一次接受 — 那是給讀 JSON 的人看的說明，沒有別的地方放；快取重建一次是一趟慢兩三倍，不是資料風險 — 錯了的代價是 CHANGELOG 要多一句，這一輪補。
 
 ---
 
