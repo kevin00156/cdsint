@@ -8,6 +8,7 @@ compare and import lost all 229 objects to a traceback. The fix is one place
 (engine/unhandled.py) and one rule: name it in `data`, and the command is
 not ok (SPEC D13).
 """
+import os
 import sys
 import types
 
@@ -353,15 +354,24 @@ def test_compare_export_names_an_object_it_could_not_write(
 
 
 def test_compare_export_names_an_orphan_it_could_not_delete(
-        compare_export, tmp_path):
-    # Windows refuses to delete a file another handle still has open, which
-    # is the everyday version of this: the .st is open in an editor.
+        compare_export, monkeypatch, tmp_path):
+    # The everyday version of this is a .st still open in an editor, which
+    # Windows refuses to unlink. The refusal is staged rather than provoked:
+    # an open handle only stops the delete on Windows, while the rule under
+    # test -- name it, do not throw -- has to hold wherever the tests run.
     doomed = tmp_path / "Somebody.st"
     doomed.write_text(u"FUNCTION_BLOCK Somebody\n", encoding="utf-8")
     selected = [{"obj": None, "file_path": str(doomed), "path": "Somebody.st"}]
 
-    with open(str(doomed)) as _holding_it_open:
-        result = compare_export.perform_export(str(tmp_path), selected)
+    real_remove = os.remove
+
+    def refuse(path):
+        if path == str(doomed):
+            raise OSError(13, "Permission denied", path)
+        real_remove(path)
+
+    monkeypatch.setattr(os, "remove", refuse)
+    result = compare_export.perform_export(str(tmp_path), selected)
 
     assert result["ok"] is False
     assert result["data"]["failed_objects"] == ["Somebody.st"]
