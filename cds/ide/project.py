@@ -2,8 +2,9 @@
 """What the IDE has open right now: the project, its sync folder, the product.
 
 Every function here takes the `projects` object the IDE injects and answers
-one question about it, returning None rather than raising when the answer is
-not available — a watcher must survive being asked while no project is open.
+one question about it. No project open is None, not an exception: a watcher
+must survive being asked between two projects. Anything worse than that is
+the caller's to decide about, and sync_dir() says where it decided.
 """
 from __future__ import print_function
 
@@ -21,13 +22,21 @@ def path_of(projects_obj):
 
 
 def sync_dir(projects_obj):
-    """Where the .st files live, absolute, or None when it is not set.
+    """Where the .st files live, absolute, or None when we cannot say.
 
     Straight from the settings file beside the project, resolved by the one
-    rule that resolves it anywhere (cds/core/settings.folder). This is what
-    the watcher puts in its registration every heartbeat, so a settings file
-    somebody is halfway through editing must not raise: an unreadable one is
-    reported by the next command that needs it, in full.
+    rule that resolves it anywhere (cds/core/settings.folder).
+
+    "Not set" and "the file is broken" deliberately give the same answer
+    here, and this is the only place in the tool where they do. Both callers
+    need one: the watcher writes this into its registration every two
+    seconds, so a file somebody is halfway through editing must not take the
+    watcher off the air, and the headless report writes it after the
+    commands, where a broken file has already failed a command and said so in
+    full. Where the difference matters — a plc command refused — nothing is
+    swallowed: cds/ide/permit.py lets settings.Invalid through and
+    cds/ide/entries.py turns it into a plain failure with the parse error in
+    it, rather than "the plc list is empty" about a file with a typo.
     """
     project_path = path_of(projects_obj)
     if project_path is None:

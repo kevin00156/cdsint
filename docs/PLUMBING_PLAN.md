@@ -125,10 +125,10 @@
   - [x] 第 3 節重核清單做完，行號重填，commit。
   - [x] 驗收：Windows 與 WSL 測試數記進第 6 節。（`c67dcb7` 基線：Windows 960 passed、WSL 960 passed）
 
-- [ ] **階段 1：IDE 側（第 4 節 1、2、7 的 IDE 側、10 的 IDE 側、11、13）**
-  - [ ] 驗收：`grep -rn "new_result" cds/ide/` 只剩 `entries.py` 一處；`grep -rn "error_text()" cds/ide/` 一處。
-  - [ ] 驗收：測試涵蓋「`project_info` 丟例外時 `permit.refusal` 的訊息說讀不到而不是 not set」「`silent.run` 在本體模組層級就呼叫對話框時替身有接到」「引擎某檔加一行模組層級 `from engine.codesys_ui import ask_yes_no` 時 `test_layering` 紅」（用 tmp 檔或 monkeypatch 的方式驗，不真的改引擎）。
-  - [ ] 驗收：`wc -l cds/ide/*.py` 每個檔在 300 以內；`statusform.StatusForm.__init__` 在 40 行內。
+- [x] **階段 1：IDE 側（第 4 節 1、2、7 的 IDE 側、10 的 IDE 側、11、13）**
+  - [x] 驗收：`grep -rn "error_text()" cds/ide/` 剩兩處，一處是 `entries.answer` 這個唯一的讀者，一處是 `outcome.ok()` 呼叫自己。`new_result` 那條照 Ruling 20 改判：跑腳本那條路只剩 `entries.answer` 一個地方建結果紀錄，看門人自己的 ping／status／stop／refuse 留在 `watcher.py`。
+  - [x] 驗收：三條測試都在。`tests/test_plc.py` 的 `test_a_settings_file_that_cannot_be_read_is_a_failure_not_a_refusal` 是第一條（A 就寫好了，本工單加一條斷言釘住「不是拒絕的措辭」）；`tests/test_silent.py` 兩條 `test_a_dialog_asked_at_module_level_*` 是第二條，把 `_install` 挪回 exec 之後就會紅（實測過）；`tests/test_layering.py` 的 `test_no_engine_file_imports_the_dialogs_as_it_loads` 加 `test_that_rule_would_catch_one` 是第三條，後者把合成的一行餵給檢查函式，不碰 `engine/`。
+  - [x] 驗收：`cds/ide/*.py` 最大的是 `watcher.py` 299 行、`silent.py` 287 行，其餘都在 220 以內；`StatusForm.__init__` 23 行。
 
 - [ ] **階段 2：CLI 的表與退出碼（第 4 節 3、4、5、7 的 CLI 側、10 的 CLI 側）**
   - [ ] 驗收：`cdsint build --project x --install definitely-not-an-ide` 回一句話加候選清單，exit 4，沒有 traceback。
@@ -172,6 +172,18 @@
 2. `EXIT_*` 搬到 `cds/core/exits.py` 之後，`cdsint/exits.py` 的 `Failure` 留在 CLI 側還是也搬。預設：`Failure` 留 CLI 側，它是 CLI 的例外；常數才是兩側共用的。
 3. `compare` 放進 `data` 的逐物件清單長什麼樣。預設：跟 `discover` 的 `unknown` 同一種形狀，一個 list of dict，每筆有 `name`、`path`、`state`（`changed`、`new_in_ide`、`new_on_disk`、`pending_import` 之一）。
 4. ProgramData 要不要管理員：在這台實測。
+
+### 階段 1 新增的 Ruling
+
+20. `Ruling: 驗收那句「`grep -rn "new_result" cds/ide/` 只剩 entries.py 一處」改判成「跑腳本那條路只剩一處」 — `watcher.py` 的 `_ping`、`_status`、`_stop`、`_refuse` 與「不認得的命令」也各自建一筆結果紀錄，而那四件事跟引擎本體無關，是看門人自己的生命週期命令（WATCHER.md 4）；把它們搬進 `entries.py` 會讓那個檔同時管「引擎本體」和「看門人的命令」兩件事 — 錯了的代價是 `cds/ide/` 裡 `new_result` 出現九次而不是三次，讀的人要自己分辨哪三次是本體那條路。`
+21. `Ruling: 第 4 節第 1 條說「`entries.py` 拼 `Outcome` 的兩處隨第 1 條消失」，實際改成 `Outcome.not_run(error, denied=None)` 一個具名建構子 — 那兩處是 PLC 權限閘門的答案，而閘門必須留在 `entries.run` 裡：`run` 是唯一按下本體的地方，把閘門移到 `answer` 會讓任何直接呼叫 `run` 的人（測試就有）繞過權限檢查 — 錯了的代價是 `cds/ide/outcome.py` 多一個四行的 classmethod。`
+22. `Ruling: `project.sync_dir` 繼續把「沒設定過」和「設定檔壞了」答成同一個 None，但在 docstring 裡明講 — 第 4 節第 2 條要它分清楚，可是它的兩個呼叫端都需要「答不出來就 None」：看門人每兩秒寫一次登記檔，一個正在被編輯的檔案不能把看門人打下線；無頭那邊是命令跑完之後才讀，那時壞檔案早就讓某個命令失敗並把完整訊息報出去了。把 try 往外挪只是把同一個吞嚥抄成兩份，而且沒有任何使用者看得到的差別。真正要分清楚的地方是拒絕訊息，A 已經修好（Ruling 19），本工單加一條斷言釘住 — 錯了的代價是登記檔的 `sync_dir` 欄位對這兩種情況說同一句話，而那個欄位目前沒有讀者（見第 3 節第 18 條）。`
+23. `Ruling: `statusform.py` 那兩個 `except Exception: pass` 改成「一樣寬，但會出聲」，不是改成接特定的例外 — 這兩個地方跑在 WinForms 的事件處理器裡，例外逃出去會變成 IDE 的執行緒例外對話框（WATCHER.md 5），而它們會撞到的是 .NET 的例外型別，在這台機器上沒有真 IDE 就只能用猜的，猜錯會把一個化妝品等級的問題變成關不掉的視窗。`watcher._show` 對同一個問題已經有答案：接得寬，但把 traceback 印出來。照抄那個 — 錯了的代價是關視窗時可能多印一段 traceback。`
+24. `Ruling: `cds/ide/headless.py` 的 `_ROOT` 用完就 `del` — 它跟 `entries.REPO_ROOT` 是同一個地方的兩個名字（第 3 節第 9 條），但它沒得換：那一行正是「讓常數可以被 import」的那一行，在它跑完之前 `cds.core` 都不存在。刪掉之後行程裡就只剩一個名字叫得出安裝根目錄 — 錯了的代價是多一行 `del`，讀的人要看註解才知道為什麼。`
+25. `Ruling: `EXIT_*` 搬進 `cds/core/exits.py`，`Failure` 留在 `cdsint/exits.py`（照第 7 節原本的預設 2），而且 CLI 側直接從 `cds.core.exits` import 常數，不透過 `cdsint.exits` 轉手 — 轉手就是第二個名字，PRINCIPLES 7 說那是平行路徑 — 錯了的代價是 `cdsint/target.py`、`cdsint/headless.py` 各多一行 import。`
+26. `Ruling: `silent.py` 拆成 `cds/ide/outcome.py`（`NeedsInput` 與 `Outcome`）、`cds/ide/tee.py`（`Tee`）與 `silent.py` 本身 — 名字照它們各自的那一件事取，不叫 `silent_data.py` 這種跟著舊檔名走的名字；`_Tee` 順手去掉底線，它現在是一個模組的公開東西 — 錯了的代價是 `silent.NeedsInput` 這個寫法的呼叫端都要改（四處，加測試）。`
+27. `Ruling: `Watcher.__init__` 缺 `system` 改丟 `TypeError`（第 4 節第 11 條照做） — 錯的是傳進來的引數，而從建構子丟出來的 `KeyError` 讀起來像是它內部查表查壞了 — 錯了的代價是 `tests/test_watcher.py` 那一條要改，而任何接 `KeyError` 的呼叫端會漏接；目前沒有這種呼叫端。`
+28. `Ruling: `tests/test_silent.py` 原本用正規表示式掃引擎原始碼裡的對話框標題字面值，改成掃「還有沒有人用字面值」加「`cds/core/dialogs.py` 公布的每個標題都在答案表裡」 — 標題收成共用常數之後，引擎那邊就沒有字面值可以掃了，原本那兩條測試會空對空全綠；新的形狀直接擋住「又寫了一個字面值」，而不是等兩份清單漂開之後才發現 — 錯了的代價是有人用非常數的字串呼叫 `ask_yes_no` 時，測試指的是「別用字面值」而不是「這個標題沒有答案」。`
 
 做的時候看到但不在範圍的，記在這裡給 C 和 D：
 

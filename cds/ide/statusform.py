@@ -41,13 +41,13 @@ class StatusForm(object):
         clr.AddReference("System.Windows.Forms")
         clr.AddReference("System.Drawing")
         from System.Windows.Forms import (
-            Application, Button, FormBorderStyle, Form, Label, FormStartPosition)
-        from System.Drawing import (
-            Color, ContentAlignment, Font, FontStyle, Point, Size)
+            Application, FormBorderStyle, Form, FormStartPosition)
+        from System.Drawing import Color, Size
 
         self._forms = Application
         self._colour = Color
         self.on_stop = on_stop
+        self._stopping = False
 
         self.form = Form()
         self.form.Text = "cdsint watcher"
@@ -55,6 +55,16 @@ class StatusForm(object):
         self.form.StartPosition = FormStartPosition.Manual
         self.form.ShowInTaskbar = False
         self.form.Size = Size(WIDTH, HEIGHT)
+        self._build_controls()
+        # Closing the window means the same as pressing Stop; anything else
+        # would leave a watcher running that the user believes they shut down.
+        self.form.FormClosing += self._closing
+
+    def _build_controls(self):
+        """The three lines of text and the button, top to bottom."""
+        from System.Windows.Forms import Button, Label
+        from System.Drawing import (
+            ContentAlignment, Font, FontStyle, Point, Size)
 
         self.headline = Label()
         self.headline.Font = Font("Segoe UI", 14, FontStyle.Bold)
@@ -77,14 +87,8 @@ class StatusForm(object):
         self.stop.Location = Point(WIDTH - 96, 78)
         self.stop.Click += self._stop_clicked
 
-        controls = [self.headline, self.who, self.detail, self.stop]
-
-        for control in controls:
+        for control in (self.headline, self.who, self.detail, self.stop):
             self.form.Controls.Add(control)
-        # Closing the window means the same as pressing Stop; anything else
-        # would leave a watcher running that the user believes they shut down.
-        self.form.FormClosing += self._closing
-        self._stopping = False
 
     # -- showing -----------------------------------------------------------
 
@@ -133,20 +137,39 @@ class StatusForm(object):
     # -- going away --------------------------------------------------------
 
     def close(self):
-        """Called when the watcher stops, from anywhere."""
-        self._remember_where()
+        """Called when the watcher stops, from anywhere.
+
+        Broad, and loud rather than silent. This runs while the watcher is
+        shutting down, sometimes because the user closed the window and this
+        is the watcher catching up, so the form may already be disposed --
+        and a window that will not tidy itself away must not stop a shutdown.
+        Naming the .NET exception would be a guess about a path only a person
+        at the machine reaches; saying what happened is not.
+        """
         self._stopping = True
         try:
+            self._remember_where()
             self.form.Close()
         except Exception:
-            pass
+            import traceback
+            print("statusform: closing the window failed\n"
+                  + traceback.format_exc())
 
     def _remember_where(self):
+        """Save where the user dragged the window to.
+
+        Same shape as close(): broad and loud. The write can fail, and so can
+        reading a coordinate off a form that is going away underneath us; a
+        window position is not worth an error path either way, but it is
+        worth a line saying it was not saved.
+        """
         try:
             ipc.write_json(placement_path(), {"x": self.form.Left,
                                               "y": self.form.Top})
         except Exception:
-            pass  # a window position is not worth an error path
+            import traceback
+            print("statusform: could not remember where the window was\n"
+                  + traceback.format_exc())
 
     def _stop_clicked(self, sender, args):
         self._ask_to_stop()

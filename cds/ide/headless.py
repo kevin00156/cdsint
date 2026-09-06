@@ -33,12 +33,17 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
     # Reached by path as a --runscript target, so nothing has put the install
-    # root on the path yet.
+    # root on the path yet. This is the one place the root cannot come from a
+    # shared constant: the line is what makes constants importable at all.
     sys.path.insert(0, _ROOT)
+# Deleted so it is not a second name for cds/ide/entries.py's REPO_ROOT. Two
+# names for one place is how one of them goes stale (PRINCIPLES.md 7).
+del _ROOT
 
 from cds.core import commands, ipc   # noqa: E402
+from cds.core.exits import EXIT_FAILED, EXIT_OK  # noqa: E402
 from cds.core.text import as_text  # noqa: E402
-from cds.ide import entries, project, silent  # noqa: E402
+from cds.ide import entries, project  # noqa: E402
 
 JOB_ENV = "CDSINT_HEADLESS_JOB"
 
@@ -49,11 +54,6 @@ JOB_ENV = "CDSINT_HEADLESS_JOB"
 BEGIN_MARK = "=== CDSINT_HEADLESS_BEGIN ==="
 END_MARK = "=== CDSINT_HEADLESS_END ==="
 
-# What the CLI compares against the exit code it actually received. If they
-# disagree the exit code cannot be used as a gate and the report is the only
-# answer (SPEC 6.4).
-EXIT_OK = 0
-EXIT_FAILED = 1
 
 def main(ide_globals, job_path=None):
     """Do one job and write its report. Returns the exit code it asked for."""
@@ -72,7 +72,12 @@ def main(ide_globals, job_path=None):
 
 
 def run_job(ide_globals, job):
-    """Open the project, run every command, and build the report record."""
+    """Open the project, run every command, and build the report record.
+
+    One exit. Every field below is in the record whichever way the run ended,
+    because an incomplete report is the one thing the launcher cannot tell
+    apart from an IDE that hung on a dialog (SPEC 6.4).
+    """
     report = {
         "ide": project.ide_name(),
         "project": job.get("project"),
@@ -83,29 +88,37 @@ def run_job(ide_globals, job):
         "intended_exit": EXIT_FAILED,
     }
     answer_prompts(ide_globals, job.get("answers"))
+    opened, report["error"] = _open(ide_globals, job)
+    if opened is not None:
+        report["opened"] = True
+        report["project"] = _text(getattr(opened, "path", job.get("project")))
+        report["results"] = run_commands(ide_globals,
+                                         job.get("commands") or [],
+                                         job.get("sync_dir"))
+        # What the engine actually read, as opposed to what the caller asked
+        # for: --sync-dir if this run carried one, otherwise whatever the
+        # settings file beside the project says (SPEC 4.2). Read after the
+        # commands, because a first run writes that file and this should
+        # report the folder it chose.
+        report["sync_dir"] = _text(
+            job.get("sync_dir")
+            or project.sync_dir(ide_globals.get("projects")))
+        if all(result["ok"] for result in report["results"]):
+            report["intended_exit"] = EXIT_OK
+    return report
+
+
+def _open(ide_globals, job):
+    """(the open project, None), or (None, why nothing opened)."""
     try:
         opened = open_project(ide_globals, job["project"])
     except Exception:
         import traceback
-        report["error"] = (_why_nothing_opened(job) + "\n\n"
-                           + traceback.format_exc())
-        return report
+        return None, (_why_nothing_opened(job) + "\n\n"
+                      + traceback.format_exc())
     if opened is None:
-        report["error"] = _why_nothing_opened(job)
-        return report
-    report["opened"] = True
-    report["project"] = _text(getattr(opened, "path", job.get("project")))
-    report["results"] = run_commands(ide_globals, job.get("commands") or [],
-                                     job.get("sync_dir"))
-    # What the engine actually read, as opposed to what the caller asked for:
-    # --sync-dir if this run carried one, otherwise whatever the settings file
-    # beside the project says (SPEC 4.2). Read after the commands, because a
-    # first run writes that file and this should report the folder it chose.
-    report["sync_dir"] = _text(job.get("sync_dir")
-                               or project.sync_dir(ide_globals.get("projects")))
-    if all(result["ok"] for result in report["results"]):
-        report["intended_exit"] = EXIT_OK
-    return report
+        return None, _why_nothing_opened(job)
+    return opened, None
 
 
 def run_commands(ide_globals, wanted, sync_dir=None):
@@ -125,34 +138,11 @@ def run_commands(ide_globals, wanted, sync_dir=None):
         args = dict(step.get("args") or {})
         if sync_dir:
             args["sync_dir"] = sync_dir
-        results.append(run_one(ide_globals, step["command"], args))
+        cmd = commands.new_command(step["command"], args)
+        results.append(entries.answer(ide_globals, cmd))
         if not results[-1]["ok"]:
             break
     return results
-
-
-def run_one(ide_globals, command, args):
-    """One command, as the same result record the watcher writes."""
-    cmd = {"id": commands.new_id(), "command": command, "args": args}
-    started = ipc.now()
-    try:
-        outcome = entries.run(ide_globals, command, args)
-    except silent.NeedsInput as need:
-        return commands.new_result(cmd, False, started_at=started,
-                                   error=need.question,
-                                   needs_input=need.as_record())
-    except Exception:
-        import traceback
-        return commands.new_result(cmd, False, started_at=started,
-                                   error=traceback.format_exc())
-    error = outcome.error_text()
-    return commands.new_result(
-        cmd, not error, started_at=started, error=error,
-        messages=outcome.messages,
-        stdout_tail=entries.tail(ide_globals, command, outcome),
-        data=outcome.data(),
-        denied=outcome.denied,
-        needs_input=None if outcome.needs is None else outcome.needs.as_record())
 
 
 def answer_prompts(ide_globals, answers=None):

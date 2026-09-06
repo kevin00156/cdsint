@@ -31,6 +31,8 @@ from __future__ import print_function
 from engine import entry, plc_crc, unhandled
 from engine.plc_trip import Trip
 
+from cds.core import dialogs
+
 # The flags this run was given, put here by cds/ide/silent.py once this
 # module's own code has run (silent.ARGS_GLOBAL). Defined so that importing
 # the module directly — a test, a REPL — reads "no flags" instead of raising.
@@ -113,7 +115,7 @@ def confirm():
     is the case handled here.
     """
     from engine.codesys_ui import ask_yes_no
-    if ask_yes_no("Confirm PLC Download", DOWNLOAD_QUESTION):
+    if ask_yes_no(dialogs.CONFIRM_PLC_DOWNLOAD, DOWNLOAD_QUESTION):
         return None
     return "PLC download cancelled: not confirmed."
 

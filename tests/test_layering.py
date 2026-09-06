@@ -44,6 +44,19 @@ LAYERS = {
 # recorded exception.
 STRING_IMPORTS_ALLOWED = {"cds/ide/silent.py": 1}
 
+# The dialog module, which no engine file may import as it loads. Every use
+# of it in the engine is a `from engine.codesys_ui import ...` inside the
+# function that asks, and that is what lets cds/ide/silent.py put stand-ins
+# in the module and take them out again around one command. A module-level
+# `from engine.codesys_ui import ask_yes_no` binds a second reference to
+# whichever function was there at import time, and the undo cannot reach it:
+# whether a body gets the stand-in then depends on two mechanisms staying in
+# step -- the swap going in first, and forget_engine() re-importing every
+# time -- instead of on one. It is zero today, and this is what keeps it
+# there. `from engine import codesys_ui` is not the same thing and is fine:
+# it binds the module, so the attribute is read when the dialog is asked.
+UI_MODULE = "engine.codesys_ui"
+
 
 def sources(folder):
     for where, _dirs, files in os.walk(os.path.join(REPO_ROOT, folder)):
@@ -59,6 +72,27 @@ def parse(rel_path):
     with io.open(os.path.join(REPO_ROOT, *rel_path.split("/")),
                  encoding="utf-8") as handle:
         return ast.parse(handle.read(), filename=rel_path)
+
+
+def module_level_imports(tree):
+    """(line, dotted name) for the imports that run when the file loads.
+
+    tree.body only. An import inside a function runs when that function is
+    called, which is the whole of the difference this file cares about.
+    """
+    found = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            found.extend((node.lineno, alias.name) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            found.append((node.lineno, node.module))
+    return found
+
+
+def loads_the_dialogs(tree):
+    """The lines where this file imports the dialog module as it loads."""
+    return [line for line, module in module_level_imports(tree)
+            if reaches(module, UI_MODULE)]
 
 
 def imported_modules(tree):
@@ -101,3 +135,26 @@ def test_only_the_registered_file_loads_a_module_by_name(rel_path):
         rel_path + " loads a module by string name. SPEC D12 records one "
         "such exception (cds/ide/silent.py swapping the dialog functions "
         "for stand-ins); a second one needs a decision, not a habit.")
+
+
+@pytest.mark.parametrize("rel_path", sorted(sources("engine")))
+def test_no_engine_file_imports_the_dialogs_as_it_loads(rel_path):
+    lines = loads_the_dialogs(parse(rel_path))
+    assert not lines, (
+        "%s imports %s at module level (line %s). Import it inside the "
+        "function that asks, so cds/ide/silent.py's stand-in is the one that "
+        "answers." % (rel_path, UI_MODULE, lines))
+
+
+def test_that_rule_would_catch_one():
+    # Zero for zero today, and a rule nothing has ever tripped is a rule
+    # nobody knows still works. No engine file is touched: the checker is
+    # handed the line it exists to object to.
+    assert loads_the_dialogs(
+        ast.parse("from engine.codesys_ui import ask_yes_no")) == [1]
+    assert loads_the_dialogs(ast.parse("import engine.codesys_ui")) == [1]
+    inside_the_function_that_asks = """
+def ask():
+    from engine.codesys_ui import ask_yes_no
+"""
+    assert loads_the_dialogs(ast.parse(inside_the_function_that_asks)) == []

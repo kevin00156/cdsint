@@ -16,8 +16,9 @@ because CODESYS will not open a project twice, so no run could want both.
 
 The work is elsewhere: cdsint/flags.py is the shape of the command line,
 cdsint/target.py and cdsint/headless.py are the two forms, cdsint/verify.py
-is the round trip, cdsint/report.py does the printing and cdsint/exits.py
-holds SPEC 4.3's exit codes. This file is what becomes of a parsed command.
+is the round trip, cdsint/report.py does the printing, cds/core/exits.py
+holds SPEC 4.3's exit codes and cdsint/exits.py the exception that carries
+one. This file is what becomes of a parsed command.
 """
 from __future__ import print_function
 
@@ -27,9 +28,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cds.core import ipc  # noqa: E402
+from cds.core.exits import (EXIT_DENIED, EXIT_FAILED, EXIT_OK,  # noqa: E402,F401
+                            EXIT_HEADLESS, EXIT_TARGET, EXIT_TIMEOUT)
 from cdsint import flags, headless, installs, report, target, verify  # noqa: E402
-from cdsint.exits import (EXIT_DENIED, EXIT_FAILED, EXIT_OK, EXIT_TARGET,  # noqa: E402,F401
-                          EXIT_TIMEOUT, EXIT_HEADLESS, Failure)
+from cdsint.exits import Failure  # noqa: E402
 
 DEFAULT_TIMEOUT_S = flags.DEFAULT_TIMEOUT_S
 

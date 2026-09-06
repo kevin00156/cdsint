@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Which engine body is behind each command, and how to press it.
+"""Which engine body is behind each command, how to press it, what comes back.
 
 Two callers press the same buttons: the watcher inside an IDE somebody is
 using, and the headless launcher inside an IDE nobody can see. They differ in
 how they are told what to do and where they put the answer, not in what
-running a command means — so that part lives here rather than in both.
+running a command means — so that part lives here rather than in both, and
+`answer` is it: one command in, one result record out, however the run ended.
 
 The bodies are engine/entry_*.py, reached by path and by sys.modules name so
 this file never imports the engine, which is the direction SPEC D12 forbids.
@@ -17,17 +18,16 @@ WATCHER_REFUSES below — sit here, in front of the press.
 from __future__ import print_function
 
 import os
-import sys
 
-from cds.core import settings
+from cds.core import commands, settings
+from cds.core.engine_modules import forget_engine
 from cds.core.text import as_text
 from cds.ide import messages, permit, silent
+from cds.ide.outcome import NeedsInput, Outcome
 
 # The install root, the directory that holds engine/ and cds/:
 # cds/ide/entries.py -> ../../
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-ENGINE_PACKAGE = "engine"
 
 # Command -> the entry body it presses, and the function that is its button.
 # These are the bodies in engine/, not the stubs the IDE menu scans. The two
@@ -64,22 +64,43 @@ COMMANDS = sorted(set(SCRIPTS) - set(WATCHER_REFUSES))
 PLC_PREFIX = "plc "
 
 
-def forget_engine():
-    """Drop the engine modules so the next command re-reads them from disk.
+def answer(ide_globals, cmd, started=None):
+    """Run one command and build the result record both callers write.
 
-    Each entry script used to do this at its own module level, and the
-    reason it did is this one: a watcher lives as long as the IDE does,
-    so without it, editing engine code means restarting the IDE to see
-    the change. Naming the package rather than importing it keeps the
-    dependency pointing the way SPEC D12 requires.
+    Every way a run can end is gathered here: the body came back, the body
+    raised, or something asked a question nobody could answer. The watcher
+    and the launcher used to hold a copy of this each, which is two places
+    for a field to be forgotten and one place for it to be noticed.
+
+    NeedsInput is caught even though cds/ide/silent.py already catches it
+    around the body: it is a BaseException precisely so that the engine's
+    broad `except Exception` blocks cannot swallow a question, and that same
+    property means nothing else on the way out would catch it either.
     """
-    for name in [n for n in sys.modules.keys()
-                 if n.split(".")[0] == ENGINE_PACKAGE]:
-        del sys.modules[name]
+    command = cmd["command"]
+    args = cmd.get("args") or {}
+    try:
+        outcome = run(ide_globals, command, args)
+    except NeedsInput as need:
+        return commands.new_result(cmd, False, started_at=started,
+                                   error=need.question,
+                                   needs_input=need.as_record())
+    except Exception:
+        import traceback
+        return commands.new_result(cmd, False, started_at=started,
+                                   error=traceback.format_exc())
+    error = outcome.error_text()
+    return commands.new_result(
+        cmd, not error, started_at=started, error=error,
+        messages=outcome.messages,
+        stdout_tail=tail(ide_globals, command, outcome),
+        data=outcome.data(),
+        denied=outcome.denied,
+        needs_input=None if outcome.needs is None else outcome.needs.as_record())
 
 
 def run(ide_globals, command, args):
-    """Run one command and hand back what it did, as a silent.Outcome.
+    """Run one command and hand back what it did, as a cds.ide.outcome.Outcome.
 
     The verdict is the body's return value (SPEC D11); its dialogs are just
     what a person would have read.
@@ -114,11 +135,10 @@ def _not_allowed(ide_globals, command):
     try:
         reason = permit.refusal(projects_obj, action)
     except settings.Invalid as bad:
-        return silent.Outcome([], "", error=as_text(bad))
+        return Outcome.not_run(as_text(bad))
     if reason is None:
         return None
-    return silent.Outcome([], "", error=reason,
-                          denied=permit.record(projects_obj, action))
+    return Outcome.not_run(reason, denied=permit.record(projects_obj, action))
 
 
 def tail(ide_globals, command, outcome):

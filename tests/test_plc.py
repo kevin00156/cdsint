@@ -31,7 +31,7 @@ from cds.core import commands
 from cds.core import settings
 from cds.ide import entries, permit, silent
 from cdsint import cli, flags
-from cdsint.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
+from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
 from engine import plc_crc as plc_crc_module
 
 ENGINE_ROOT = os.path.join(os.path.dirname(os.path.dirname(
@@ -394,6 +394,10 @@ def test_a_settings_file_that_cannot_be_read_is_a_failure_not_a_refusal():
     assert outcome.denied is None
     assert not outcome.ok()
     assert "downlaod" in outcome.error_text()
+    # And it says the real problem rather than the refusal's wording: "the
+    # plc list is empty" about a file with a typo three lines up sends the
+    # reader to add a word that changes nothing.
+    assert "does not allow" not in outcome.error_text()
     assert ide_globals["online"].session.calls == []
 
 

@@ -18,7 +18,8 @@ from cds.ide import headless as ide_side
 from cdsint import headless as cli_side
 from cdsint import installs
 from cdsint import report as report_side
-from cdsint.exits import EXIT_HEADLESS, EXIT_TIMEOUT, Failure
+from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
+from cdsint.exits import Failure
 from tests.test_watcher import FakeSystem, make_globals
 
 

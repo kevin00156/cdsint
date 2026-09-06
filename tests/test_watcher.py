@@ -501,7 +501,9 @@ def test_the_ide_field_names_the_product(root):
 
 
 def test_globals_without_system_are_refused_at_once(root):
-    with pytest.raises(KeyError):
+    # TypeError, not KeyError: what is wrong is the argument, and a KeyError
+    # out of a constructor reads as a lookup that went wrong inside it.
+    with pytest.raises(TypeError):
         watcher.Watcher({"projects": FakeProjects(None)}, root)
 
 

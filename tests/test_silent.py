@@ -2,7 +2,7 @@
 """Tests for cds.ide.silent — running a script with nobody at the keyboard.
 
 The scripts under test are stand-ins written into tmp_path, shaped like the
-real Project_*.py: they reach for `system` from their own globals, and they
+real engine/entry_*.py: they reach for `system` from their own globals, and they
 reach for ask_yes_no through sys.modules["engine.codesys_ui"] at call time. Running
 the real ones needs a real IDE, which is the hand test in the plan.
 """
@@ -15,7 +15,8 @@ import types
 
 import pytest
 
-from cds.ide import silent
+from cds.core import dialogs
+from cds.ide import silent, tee
 
 
 class FakeSystem(object):
@@ -128,7 +129,7 @@ def test_only_the_tail_is_kept(tmp_path, ide):
     path = write_script(tmp_path,
                         u"    for i in range(500): print('line %d' % i)")
     tail = silent.run(ide, path, "main", {}).stdout_tail.splitlines()
-    assert len(tail) == silent.STDOUT_TAIL_LINES
+    assert len(tail) == tee.TAIL_LINES
     assert tail[-1] == "line 499"
 
 
@@ -217,6 +218,45 @@ def test_a_body_is_not_run_at_all_when_the_dialogs_cannot_be_taken_over(
     assert "could not take over" in outcome.error
     assert outcome.stdout_tail == ""
     assert not hasattr(sys.modules["__main__"], "system")
+
+
+def test_a_dialog_asked_at_module_level_reaches_the_stand_in(tmp_path, ide):
+    """The stand-ins go in before the body's file is exec'd, not after.
+
+    A body that asks something while it loads is unusual but legal, and with
+    the swap done second that question went to the real dialog: a modal
+    window on the IDE's message loop with nobody there to close it, so the
+    IDE froze until somebody walked over to the machine. The fake codesys_ui
+    in this file raises "a real message box was opened" if that happens, so
+    what proves the order is the answer coming back as a needs_input.
+    """
+    path = tmp_path / "Project_asks_early.py"
+    path.write_text(
+        u"# -*- coding: utf-8 -*-\n"
+        u"from engine.codesys_ui import ask_yes_no\n"
+        u"ANSWER = ask_yes_no('Confirm Import', 'while loading')\n"
+        u"def main():\n"
+        u"    return {'ok': True, 'summary': 'done', 'data': {}}\n",
+        encoding="utf-8")
+
+    outcome = silent.run(ide, str(path), "main", {})
+
+    assert outcome.needs is not None
+    assert outcome.needs.arg == "yes"
+    assert "while loading" in outcome.needs.question
+
+
+def test_a_dialog_asked_at_module_level_is_answered_by_the_flag(tmp_path, ide):
+    path = tmp_path / "Project_asks_early_answered.py"
+    path.write_text(
+        u"# -*- coding: utf-8 -*-\n"
+        u"from engine.codesys_ui import ask_yes_no\n"
+        u"ANSWER = ask_yes_no('Confirm Import', 'while loading')\n"
+        u"def main():\n"
+        u"    return {'ok': ANSWER, 'summary': 'done', 'data': {}}\n",
+        encoding="utf-8")
+
+    assert silent.run(ide, str(path), "main", {"yes": True}).ok()
 
 
 # --- the shared .pyw modules reach __main__ --------------------------------
@@ -378,15 +418,22 @@ def titles_asked_for(function):
     return found
 
 
-def test_every_yes_no_dialog_has_an_answer():
-    # Nothing else keeps these two in step. Rename a title in one of those
-    # files and export or import starts failing with "unexpected dialog",
-    # while every test here stays green because they use stand-in scripts.
-    assert titles_asked_for("ask_yes_no") <= set(silent.YES_NO)
+def shared_titles():
+    """Every title cds/core/dialogs.py publishes."""
+    return set(value for name, value in vars(dialogs).items()
+               if name.isupper() and not name.startswith("_"))
 
 
-def test_the_answer_table_is_not_carrying_dead_titles():
-    assert set(silent.YES_NO) == titles_asked_for("ask_yes_no")
+def test_no_dialog_is_asked_for_by_a_bare_title():
+    # Both sides name the title through cds/core/dialogs.py now, so a literal
+    # in one of these files is a question that has walked away from the
+    # answer table. This used to be caught after the fact by comparing two
+    # lists of strings, which meant the drift had to happen first.
+    assert titles_asked_for("ask_yes_no") == set()
+
+
+def test_every_shared_title_has_an_answer_and_no_answer_is_stale():
+    assert set(silent.YES_NO) == shared_titles()
 
 
 def test_there_is_no_yes_no_cancel_dialog_left_to_answer():

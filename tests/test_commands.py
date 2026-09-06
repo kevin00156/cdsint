@@ -109,3 +109,39 @@ def test_prune_results_drops_only_the_old_ones(tmp_path):
     os.utime(old, (T0 - 7200.0, T0 - 7200.0))
     assert commands.prune_results(root, "p-1", now=T0) == ["1725453665123-a3f9c1"]
     assert commands.read_result(root, "p-1", "1725453665999-ffffff") is not None
+
+
+# --- the two other records the result carries ------------------------------
+
+def test_a_queued_command_and_a_headless_one_are_the_same_shape():
+    # The headless form never queues anything, but the result it writes is
+    # the record the watcher writes, built from this. Two shapes here would
+    # be two shapes there, with only one set of readers.
+    queued = commands.new_command("export", {"delete_orphans": True}, now=T0)
+    assert sorted(queued) == ["args", "command", "created_at", "id"]
+    assert queued["args"] == {"delete_orphans": True}
+    assert queued["command"] == "export"
+
+
+def test_a_command_keeps_its_own_copy_of_the_args():
+    given = {"yes": True}
+    cmd = commands.new_command("import", given)
+    given["yes"] = False
+    assert cmd["args"] == {"yes": True}
+
+
+def test_no_args_is_an_empty_mapping_not_none():
+    # The IDE side reads args with .get(), and a None here would be a
+    # TypeError inside the run rather than a command with no flags.
+    assert commands.new_command("ping")["args"] == {}
+
+
+def test_a_message_is_a_level_and_text():
+    assert commands.message("info", "pong") == {"level": "info",
+                                                "text": u"pong"}
+
+
+def test_a_message_converts_what_ironpython_hands_back():
+    # The same API returns bytes here and unicode there, and only one of the
+    # two survives being printed next to a Chinese project path.
+    assert commands.message("error", b"caf\xc3\xa9")["text"] == u"café"

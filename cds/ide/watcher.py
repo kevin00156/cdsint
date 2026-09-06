@@ -30,8 +30,10 @@ class Watcher(object):
 
     def __init__(self, ide_globals, root=None, version=None):
         if "system" not in ide_globals:
-            raise KeyError("the watcher needs the IDE's globals, and this "
-                           "mapping has no `system` in it")
+            # TypeError, not KeyError: the argument is wrong, and a KeyError
+            # from a constructor reads as a lookup that went wrong inside it.
+            raise TypeError("the watcher needs the IDE's globals, and this "
+                            "mapping has no `system` in it")
         self.ide = ide_globals
         self.root = root or ipc.default_root()
         self.running = True
@@ -131,8 +133,8 @@ class Watcher(object):
         """Claim, run, and answer a single command. Never raises.
 
         Answering is inside the try as well: writing the result can hit the
-        same Windows sharing violation as the heartbeat (section 12), and an
-        instance left stuck in `busy` is worse than a lost answer. Once
+        same Windows sharing violation as the heartbeat (WATCHER.md 2.1),
+        and an instance left stuck in `busy` is worse than a lost answer. Once
         busy_since goes stale the CLI stops seeing the instance, while
         prune_stale keeps sparing it because the heartbeat is fresh — nothing
         recovers from that but restarting the script by hand.
@@ -188,13 +190,14 @@ class Watcher(object):
             print("watcher: status window failed\n" + traceback.format_exc())
 
     def _answer(self, cmd, started):
-        """Turn one command into a result record, whatever it takes."""
+        """Turn one command into a result record, whatever it takes.
+
+        The script commands answer for themselves (cds/ide/entries.py), so
+        this is the net under the rest: a handler that raises still has to
+        leave the caller a record to read rather than a wait that times out.
+        """
         try:
             return self._dispatch(cmd, started)
-        except silent.NeedsInput as need:  # a dialog outside a script run
-            return commands.new_result(cmd, False, started_at=started,
-                                       error=need.question,
-                                       needs_input=need.as_record())
         except Exception:
             return commands.new_result(cmd, False, started_at=started,
                                        error=traceback.format_exc())
@@ -212,8 +215,9 @@ class Watcher(object):
     # -- the commands ------------------------------------------------------
 
     def _ping(self, cmd, started):
+        note = commands.message("info", "pong from " + self.instance_id)
         return commands.new_result(cmd, True, started_at=started,
-                                   messages=[_info("pong from " + self.instance_id)])
+                                   messages=[note])
 
     def _status(self, cmd, started):
         """Hand back the instance record. The heartbeat keeps it current."""
@@ -221,14 +225,16 @@ class Watcher(object):
         # Answering this is what makes us busy, so reporting "busy" would say
         # nothing. Report the state we go back to; `list` shows the live one.
         instances.set_state(live, instances.STATE_IDLE, started)
+        note = commands.message("info", live["project_path"]
+                                or "no project open")
         return commands.new_result(cmd, True, started_at=started, data=live,
-                                   messages=[_info(live["project_path"] or
-                                                   "no project open")])
+                                   messages=[note])
 
     def _stop(self, cmd, started):
         self.running = False
+        note = commands.message("info", "stopping " + self.instance_id)
         return commands.new_result(cmd, True, started_at=started,
-                                   messages=[_info("stopping " + self.instance_id)])
+                                   messages=[note])
 
     def _refuse(self, cmd, started):
         """A command this watcher knows and will not run (entries.py).
@@ -243,18 +249,7 @@ class Watcher(object):
 
     def _run_script(self, cmd, started):
         """Press the button on one of the commands in cds/ide/entries.py."""
-        command = cmd["command"]
-        args = cmd.get("args") or {}
-        outcome = entries.run(self.ide, command, args)
-        error = outcome.error_text()
-        return commands.new_result(
-            cmd, not error, started_at=started,
-            error=error,
-            messages=outcome.messages,
-            stdout_tail=entries.tail(self.ide, command, outcome),
-            data=outcome.data(),
-            denied=outcome.denied,
-            needs_input=None if outcome.needs is None else outcome.needs.as_record())
+        return entries.answer(self.ide, cmd, started)
 
     # -- instance record ---------------------------------------------------
 
@@ -302,7 +297,3 @@ class Watcher(object):
         self._deferring = False
         self._last_beat = now
         return True
-
-
-def _info(text):
-    return {"level": "info", "text": text}

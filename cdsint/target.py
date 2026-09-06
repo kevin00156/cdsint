@@ -13,7 +13,8 @@ from __future__ import print_function
 import time
 
 from cds.core import commands, instances
-from cdsint.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT, Failure
+from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
+from cdsint.exits import Failure
 
 DEFAULT_TIMEOUT_S = 120.0
 POLL_S = 0.05

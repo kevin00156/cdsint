@@ -11,7 +11,7 @@ with codecs.open(os.path.join(_here, "body.path"), "r", "utf-8-sig") as _f:
     _root = _f.read().strip()
 if _root not in sys.path:
     sys.path.insert(0, _root)
-for _name in [n for n in sys.modules.keys() if n.split(".")[0] == "engine"]:
-    del sys.modules[_name]
+from cds.core.engine_modules import forget_engine
+forget_engine()
 from engine import entry, entry_import
 entry.run(entry_import, globals())

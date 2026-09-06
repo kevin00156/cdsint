@@ -29,6 +29,8 @@ from engine.codesys_compare_engine import (
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
 from engine import entry, settings, unhandled
 
+from cds.core import dialogs
+
 
 
 def import_project(base_dir, values, projects_obj=None):
@@ -181,7 +183,7 @@ def import_project(base_dir, values, projects_obj=None):
     )
     if remap_lines:
         confirm_msg += "\n\n[!] Device remap (export -> IDE):\n  " + "\n  ".join(remap_lines)
-    if not timed_prompt(ask_yes_no, "Confirm Import", confirm_msg):
+    if not timed_prompt(ask_yes_no, dialogs.CONFIRM_IMPORT, confirm_msg):
         cancelled = "Import cancelled: not confirmed."
         system.ui.warning(cancelled)
         return entry.result(False, cancelled)

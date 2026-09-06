@@ -17,6 +17,7 @@ import os
 import random
 
 from cds.core import ipc
+from cds.core.text import as_text
 
 RESULT_TTL_S = 3600.0
 
@@ -32,15 +33,26 @@ def new_id(now=None, suffix=None):
     return "%013d-%s" % (int(ipc.now(now) * 1000), suffix)
 
 
-def write_command(root, instance_id, command, args=None, now=None, cmd_id=None):
-    """Queue one command for an instance. Returns the record as written."""
+def new_command(command, args=None, now=None, cmd_id=None):
+    """The record that says what to run, whether or not it is ever a file.
+
+    A headless run never queues anything — one process runs the whole list —
+    but the result it writes is the same record the watcher writes, and that
+    record is built from this one. So both callers start here, and neither
+    can end up with a command record the other's readers cannot read.
+    """
     now = ipc.now(now)
-    cmd = {
+    return {
         "id": cmd_id or new_id(now),
         "command": command,
         "args": dict(args or {}),
         "created_at": ipc.iso(now),
     }
+
+
+def write_command(root, instance_id, command, args=None, now=None, cmd_id=None):
+    """Queue one command for an instance. Returns the record as written."""
+    cmd = new_command(command, args, now, cmd_id)
     ipc.write_json(_command_path(root, instance_id, cmd["id"]), cmd)
     return cmd
 
@@ -106,6 +118,18 @@ def new_result(cmd, ok, error=None, messages=None, needs_input=None,
         "denied": denied,
         "data": data,
     }
+
+
+def message(level, text):
+    """One line of what a command had to say, as a result record carries it.
+
+    Two producers write these — the stand-in UI recording a dialog nobody saw,
+    and the watcher's own notes — and a reader of `messages` cannot tell which
+    made a given line, so they had better be the same shape. The text is
+    converted here because IronPython 2.7 hands back bytes and unicode from
+    the same API and only one of them survives being printed.
+    """
+    return {"level": level, "text": as_text(text)}
 
 
 def write_result(root, instance_id, result):

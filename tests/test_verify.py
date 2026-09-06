@@ -10,7 +10,7 @@ import json
 import pytest
 
 from cdsint import cli, flags, verify
-from cdsint.exits import EXIT_FAILED, EXIT_OK
+from cds.core.exits import EXIT_FAILED, EXIT_OK
 
 
 FROM_THE_FILE = "C:" + chr(92) + "p" + chr(92) + "from-the-file"

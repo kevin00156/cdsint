@@ -4,7 +4,8 @@
 The bodies were written for a human: they ask "Confirm Import?" and wait. The
 watcher answers those questions from the command's arguments instead, and
 refuses — loudly — to guess when the caller did not say. Whether the run
-worked comes from what the body returns (SPEC D11), not from what it said.
+worked comes from what the body returns (SPEC D11), not from what it said;
+cds/ide/outcome.py is the shape that comes back.
 
 The body is exec'd from its file rather than imported, because the stand-in
 `system` has to be in its namespace before its module-level code runs, and
@@ -20,25 +21,30 @@ Three things have to be swapped for that to hold:
     codesys_ui.ask_yes_no       a WinForms message box that never touches
                                 system.ui at all
 
+All three go in before the body's file is exec'd, not after. A body that asks
+something at module level is unusual but legal, and with the swap done second
+that question reached the real dialog: a modal window on the IDE's message
+loop with nobody there to close it.
+
 Everything is put back afterwards, whether the script finished or blew up.
 """
 from __future__ import print_function
 
 import codecs
-import collections
 import sys
 
+from cds.core import commands, dialogs
 from cds.core.text import as_text as _text
+from cds.ide.outcome import NeedsInput, Outcome
+from cds.ide.tee import Tee
 
 # Dialog title -> (the command argument that answers it, the default).
 # A default of None means the caller has to say; this will not guess.
 YES_NO = {
-    "Delete Orphaned Files?": ("delete_orphans", False),
-    "Confirm Import": ("yes", None),
-    "Confirm PLC Download": ("yes", None),
+    dialogs.DELETE_ORPHANS: ("delete_orphans", False),
+    dialogs.CONFIRM_IMPORT: ("yes", None),
+    dialogs.CONFIRM_PLC_DOWNLOAD: ("yes", None),
 }
-
-STDOUT_TAIL_LINES = 200
 
 # The name the command's flags appear under inside a body's namespace. The
 # bodies were menu scripts: CODESYS drops `system` and `projects` straight
@@ -57,70 +63,6 @@ ARGS_GLOBAL = "command_args"
 UI_MODULE = "engine.codesys_ui"
 
 
-class NeedsInput(BaseException):
-    """A dialog wanted an answer that the command did not carry.
-
-    Deliberately not an Exception. This codebase wraps IDE calls in broad
-    `except Exception` blocks — Project_Build.py 73 is one — that would
-    swallow it and let the script carry on as though someone had clicked.
-    Same reasoning as KeyboardInterrupt.
-    """
-
-    def __init__(self, question, arg=None):
-        BaseException.__init__(self, question)
-        self.question = question
-        self.arg = arg
-
-    def as_record(self):
-        return {"question": self.question, "arg": self.arg}
-
-
-class Outcome(object):
-    """What came back from a script run: its verdict, words, output and needs.
-
-    `result` is what the body returned — engine/entry.py `result()` builds it.
-    """
-
-    def __init__(self, messages, stdout_tail, needs=None, error=None,
-                 result=None, denied=None):
-        self.messages = messages
-        self.stdout_tail = stdout_tail
-        self.needs = needs
-        self.error = error
-        self.result = result
-        # Set when the project's own policy refused the command before it ran
-        # (cds/ide/permit.py). Carried separately from error because it is
-        # what earns exit 5 (SPEC 4.3).
-        self.denied = denied
-
-    def ok(self):
-        return not self.error_text()
-
-    def data(self):
-        """The command's own counts, or None if it did not hand any back."""
-        if isinstance(self.result, dict):
-            return self.result.get("data")
-        return None
-
-    def error_text(self):
-        """The reason this run failed, or None. Never a silent failure."""
-        if self.error:
-            return self.error
-        if self.needs is not None:
-            return self.needs.question
-        if not isinstance(self.result, dict) or "ok" not in self.result:
-            # Every body ends by returning a result (SPEC D11). Coming back
-            # without one means it took a give-up path that only print()s,
-            # and a caller told "ok" would go on to build code that was
-            # never imported.
-            return ("the script returned no result; see stdout_tail for what "
-                    "it printed")
-        if not self.result["ok"]:
-            return (self.result.get("summary")
-                    or "the script reported failure without saying why")
-        return None
-
-
 class SilentUI(object):
     """Stands in for system.ui: records what would have been shown."""
 
@@ -128,13 +70,13 @@ class SilentUI(object):
         self.args = args or {}
         self.messages = []
 
-    def info(self, text, *rest):
+    def info(self, text):
         self._record("info", text)
 
-    def warning(self, text, *rest):
+    def warning(self, text):
         self._record("warning", text)
 
-    def error(self, text, *rest):
+    def error(self, text):
         self._record("error", text)
 
     def choose(self, caption, options):
@@ -156,7 +98,7 @@ class SilentUI(object):
         return refuse
 
     def _record(self, level, text):
-        self.messages.append({"level": level, "text": _text(text)})
+        self.messages.append(commands.message(level, text))
 
 
 class SilentSystem(object):
@@ -203,29 +145,38 @@ def run(ide_globals, script_path, entry, args):
     namespace["system"] = silent
     _RUNNING["depth"] += 1
     try:
-        _exec_file(script_path, namespace)
-        return _call(namespace, entry, silent, ui, args)
+        return _with_stand_ins(namespace, script_path, entry, silent, ui, args)
     finally:
         _RUNNING["depth"] -= 1
 
 
-def _call(namespace, entry, silent, ui, args):
-    """Run the entry function with the stand-ins installed, then take them out."""
-    tee = _Tee(sys.stdout)
+def _with_stand_ins(namespace, script_path, entry, silent, ui, args):
+    """Take over the dialogs, run the body, put the dialogs back."""
     try:
-        undo = _install(silent, ui, args)
+        undo = _install(silent, args)
     except Exception:
         # Not running the body is the safe answer. Running it with the real
         # dialogs in place would put a modal message box on the IDE's own
         # message loop with nobody there to close it, and the IDE would be
         # frozen until someone walked over to the machine.
         import traceback
-        return Outcome(ui.messages, "", error=(
+        return Outcome.not_run(
             "the stand-in UI could not take over the engine's dialogs, so "
-            "the command was not run:\n" + traceback.format_exc()))
+            "the command was not run:\n" + traceback.format_exc())
+    tee = Tee(sys.stdout)
     sys.stdout = tee
-    namespace[ARGS_GLOBAL] = dict(args or {})
     try:
+        return _call(namespace, script_path, entry, tee, ui, args)
+    finally:
+        sys.stdout = tee.stream
+        undo()
+
+
+def _call(namespace, script_path, entry, tee, ui, args):
+    """Load the body and press its button, with everything already in place."""
+    try:
+        _exec_file(script_path, namespace)
+        namespace[ARGS_GLOBAL] = dict(args or {})
         result = namespace[entry]()
         return Outcome(ui.messages, tee.tail(), result=result)
     except NeedsInput as need:
@@ -233,20 +184,17 @@ def _call(namespace, entry, silent, ui, args):
     except Exception:
         import traceback
         return Outcome(ui.messages, tee.tail(), error=traceback.format_exc())
-    finally:
-        sys.stdout = tee.stream
-        undo()
 
 
 def _ui_module():
     """The engine's dialog module, loaded by name if it is not loaded yet.
 
     Nothing imports codesys_ui at module level -- every use of it in the
-    engine is a `from engine.codesys_ui import ...` inside a function -- and
-    entries.forget_engine() empties sys.modules of the whole engine before
-    every command. So on any real tick it is absent at this point, and the
-    old `sys.modules.get(...) or skip` left the real message boxes in place
-    without a word.
+    engine is a `from engine.codesys_ui import ...` inside a function, and
+    tests/test_layering.py holds it to that -- and forget_engine() empties
+    sys.modules of the whole engine before every command. So on any real tick
+    it is absent at this point, and the old `sys.modules.get(...) or skip`
+    left the real message boxes in place without a word.
 
     This is the one place cds/ide reaches for an engine module, and it takes
     nothing from it: the module is loaded only so its three dialog functions
@@ -260,7 +208,7 @@ def _ui_module():
     return module
 
 
-def _install(silent, ui, args):
+def _install(silent, args):
     """Swap in the stand-ins the engine modules will reach for. Returns the undo.
 
     The dialogs are taken over first: if that cannot be done there is no
@@ -337,29 +285,3 @@ def _exec_file(path, namespace):
     if source.startswith(codecs.BOM_UTF8):
         source = source[len(codecs.BOM_UTF8):]
     exec(compile(source, path, "exec"), namespace)
-
-
-class _Tee(object):
-    """Passes writes through to the real stdout and keeps the last lines."""
-
-    def __init__(self, stream, max_lines=STDOUT_TAIL_LINES):
-        self.stream = stream
-        self._lines = collections.deque(maxlen=max_lines)
-        self._partial = u""
-
-    def write(self, text):
-        if self.stream is not None:
-            self.stream.write(text)
-        parts = (self._partial + _text(text)).split(u"\n")
-        self._partial = parts.pop()
-        self._lines.extend(parts)
-
-    def flush(self):
-        if self.stream is not None:
-            self.stream.flush()
-
-    def tail(self):
-        lines = list(self._lines)
-        if self._partial:
-            lines.append(self._partial)
-        return u"\n".join(lines)

@@ -18,10 +18,11 @@ import sys
 import time
 
 from cds.core import ipc
+from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
 from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV
 from cdsint import installs, lock
+from cdsint.exits import Failure
 from cdsint.report import default_report, warn_untrusted_exit
-from cdsint.exits import EXIT_HEADLESS, EXIT_TIMEOUT, Failure
 
 # The install root: this file is <root>/cdsint/headless.py, and the IDE-side
 # script it starts is in the same tree.
@@ -31,19 +32,17 @@ IDE_SIDE = os.path.join(ROOT, "cds", "ide", "headless.py")
 KILL_GRACE_S = 5.0
 
 # --timeout bounds one step (SPEC 4.2), so the deadline for the whole process
-# has to add what the IDE spends either side of the work. Both were measured
-# on 2026-09-05 with CODESYS 3.5.21.40 and a 229-object copy of
-# softplc_refactor.project, by timing the run from the shell and subtracting
-# the step timestamps the report already carries:
+# has to add what the IDE spends either side of the work. What that costs is
+# measured, and the numbers live in SPEC section 7 rather than here, because
+# they change when a machine or an IDE version does and a copy in a comment
+# would not.
 #
-#   start   the shell's clock to the first step's started_at: 47s cold, 43s
-#           warm; the phase-2 table has both vendors at "thirty-something"
-#   finish  the last step's finished_at to the process being gone: 2s twice
-#
-# The constants are deliberately several times those: a grace that is too
-# small kills a healthy run, which is the bug this replaced, while one that
-# is too large only delays the report of a launch that hung. Delta and Lenze
-# start slower than CODESYS, and the machine may be busy.
+# These two are deliberately several times the measured cost: a grace that is
+# too small kills a healthy run, which is the bug this replaced, while one
+# that is too large only delays the report of a launch that hung. Startup
+# also swings by two to three times depending on whether the machine has run
+# an IDE recently (SPEC 7), which is the reason for the margin rather than a
+# tight fit.
 STARTUP_GRACE_S = 180.0
 SHUTDOWN_GRACE_S = 60.0
 

@@ -28,6 +28,8 @@ from engine.codesys_managers import (
 from engine.codesys_compare_engine import create_import_managers
 from engine import entry, settings, unhandled
 
+from cds.core import dialogs
+
 # Shared constants and utilities imported from modules
 
 
@@ -100,7 +102,7 @@ def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
         # buttons: Delete (Yes), Ignore (No)
         from engine.codesys_ui import ask_yes_no
         from engine.codesys_utils import timed_prompt
-        delete_them = timed_prompt(ask_yes_no, "Delete Orphaned Files?",
+        delete_them = timed_prompt(ask_yes_no, dialogs.DELETE_ORPHANS,
                                    message)
     
     removed_count = 0

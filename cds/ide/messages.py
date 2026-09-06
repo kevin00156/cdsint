@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """What the IDE has to say about the last build.
 
-Project_Build.py reports counts — "1 errors, 90 warnings" — and writes the
-table of individual errors to a log file only when the project is in debug
-mode. A caller that cannot see the IDE needs the errors themselves: which
-object, which line, what is wrong. The IDE keeps them in its own message
-store under the build category, so read them from there rather than changing
-that script.
+engine/entry_build.py reports counts — "1 errors, 90 warnings" — and writes
+the table of individual errors to a log file only when the project is in
+debug mode. A caller that cannot see the IDE needs the errors themselves:
+which object, which line, what is wrong. The IDE keeps them in its own
+message store under the build category, so read them from there rather than
+changing that body.
 
 Everything is defensive on purpose. IScriptMessage's members vary between
 ScriptEngine versions, and a build whose errors could not be formatted is
@@ -14,7 +14,9 @@ still a build worth reporting.
 """
 from __future__ import print_function
 
-# The category Project_Build.py builds under and clears before each run.
+from cds.core.text import as_text as _text
+
+# The category engine/entry_build.py builds under and clears before each run.
 BUILD_CATEGORY = "97F48D64-A2A3-4856-B640-75C046E37EA9"
 
 MAX_LINES = 200
@@ -129,11 +131,3 @@ def _first(item, names):
         if value is not None:
             return value
     return None
-
-
-def _text(value):
-    if isinstance(value, type(u"")):
-        return value
-    if isinstance(value, bytes):
-        return value.decode("utf-8", "replace")
-    return type(u"")(value)
