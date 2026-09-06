@@ -568,8 +568,9 @@ benchProbeCounter := benchProbeCounter + 1;
 `build` 仍然是 1 error，`download` 仍然失敗。用一份全新的原廠副本下載到同一台則完全正常（116.4 秒 exit 0），
 所以壞掉的是那一份被改過的副本，不是台架也不是新的判決程式碼。
 worker 沒有動任何 import／export 的程式碼——這件事不在本工單範圍內。
-重現材料留在 `%TEMP%\cdsint-work\bench\`（`sync\` 是改過的那份、`sync2\` 是改完之後 IDE 存的內容、
-`i1.json` 與 `i2.json` 是兩趟 import 的 report、`b1.json` 是 build 的 report）。
+重現材料留在 `%TEMP%\cdsint-work\import-bug\`：兩份 `PLC_PRG.st`（改過的那份、以及 IDE 事後存出來的那份）、
+兩趟 import 的 report、build 的 report，還有一張寫清楚怎麼重現的 `README.txt`。
+其餘幾百 MB 的專案副本與同步資料夾已經刪掉。
 
 階段 4 收尾（審查後）新增的：
 
