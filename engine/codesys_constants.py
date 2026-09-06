@@ -44,7 +44,7 @@ def _load_profile():
     if not os.path.exists(path):
         raise ValueError(
             "Type profile not found: %s - the profiles/ directory must be "
-            "installed next to codesys_constants.pyw" % path)
+            "installed beside the engine/ package" % path)
     f = io.open(path, "r", encoding="utf-8")
     try:
         raw = f.read()

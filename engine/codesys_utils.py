@@ -15,7 +15,6 @@ import traceback
 import time
 import tempfile
 
-from engine import unhandled
 from engine.unhandled import name_of
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
@@ -165,7 +164,11 @@ def get_quick_ide_hash(obj, is_xml):
                 # that hash matched the one the previous run had computed the
                 # same way -- so the cache said "identical" about a property
                 # nobody could read, and the export skipped it.
-                unhandled.note(obj, exc)
+                #
+                # Not registered here. classify.collect_accessors reads the
+                # same children of the same property earlier in the same pass
+                # and registers it there; noting it again put one object in
+                # the result twice ("2 object(s): P, P").
                 log_warning("No quick hash for %s: its accessors could not be "
                             "read (%s)" % (name_of(obj), safe_str(exc)))
                 return None
@@ -351,7 +354,6 @@ def ensure_git_configs(export_dir):
             log_error("Failed to create .gitattributes: " + safe_str(e))
 
 
-# Removed MetadataLock and load_metadata (metadata files no longer used)
 
 
 def format_st_content(declaration, implementation, can_have_impl=False):
@@ -518,7 +520,6 @@ def parse_property_content(content):
     return declaration, get_impl, set_impl
 
 
-# Removed save_metadata (metadata files no longer used)
 
 
 # --- Sync Pragma API ---
@@ -878,7 +879,8 @@ def find_child_transparent(parent_obj, name):
         except:
             continue
     
-    # Second pass: look through 'plc_logic' children transparently
+    # Not found directly, so look through 'plc_logic' transparently: the
+    # export skips that node in paths, so the disk never names it.
     # (the export skips this level in the path)
     for child in children:
         try:
@@ -1082,8 +1084,8 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
     """Write sync_metadata.json, in debug mode only.
 
     Used by both entry_export.py and entry_import.py. Part of the debug
-    audit trail (e179ef9 policy: a normal run produces only project
-    content). The version property is not written here -- it has to be in
+    audit trail: a normal run leaves the sync folder holding project content
+    and nothing else. The version property is not written here -- it has to be in
     the project before the save, and this runs after it; see
     engine/backup.py's finalize_sync_operation.
 

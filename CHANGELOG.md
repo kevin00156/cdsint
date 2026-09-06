@@ -79,8 +79,11 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   line further down, with a message about nothing. It raises a sentence now,
   and the second dialog path that reached into `__main__` is gone.
 
-- **Bare `except:` in the engine: 81 down to 35**, and `engine/entry_build.py`
-  and `engine/codesys_ui.py` are at zero. `tests/test_names_resolve.py` is new
+- **Bare `except:` came down in every engine file that had any**, and
+  `engine/entry_build.py` and `engine/codesys_ui.py` are at zero. The count is
+  the `ALLOWED` table in `tests/test_bare_excepts.py` and nowhere else -- a
+  number repeated here would be one more thing to keep in step, and this
+  paragraph got it wrong the first time. `tests/test_names_resolve.py` is new
   and asks pyflakes which names do not resolve, with the IDE's globals listed
   by name — two NameErrors reached a real IDE during this work because a
   filter wide enough to hide `system` was wide enough to hide a typo.

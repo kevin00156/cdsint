@@ -13,15 +13,18 @@ the menu path (engine/entry.py) has no such need. Reaching the engine by
 path and by sys.modules name keeps this file free of an engine import, which
 is the direction SPEC D12 forbids.
 
-Three things have to be swapped for that to hold:
+Two things have to be swapped for that to hold:
 
     the body's own `system`     its namespace gets a stand-in
-    `__main__.system`           the shared engine modules look there, not at
-                                the caller's globals
     codesys_ui.ask_yes_no       a WinForms message box that never touches
                                 system.ui at all
 
-All three go in before the body's file is exec'd, not after. A body that asks
+There used to be a third: the stand-in was pushed onto the module the IDE
+runs as, because the shared engine modules looked for `system` there rather
+than at the caller's globals. They are handed what they need now
+(engine/entry.py's borrowed()), so nothing reads it.
+
+Both go in before the body's file is exec'd, not after. A body that asks
 something at module level is unusual but legal, and with the swap done second
 that question reached the real dialog: a modal window on the IDE's message
 loop with nobody there to close it.
@@ -115,9 +118,9 @@ class SilentSystem(object):
 def running():
     """Is this module driving a script right now?
 
-    Two overlapping runs would fight over sys.modules["engine.codesys_ui"],
-    __main__.system and sys.stdout, and one command's arguments would end up
-    answering the other's dialogs. The flag is module-level rather than per
+    Two overlapping runs would fight over sys.modules["engine.codesys_ui"]
+    and sys.stdout, and one command's arguments would end up answering the
+    other's dialogs. The flag is module-level rather than per
     watcher so a second caller — a Watcher built elsewhere, the MCP wrapper —
     is caught too, not just a re-entrant tick.
 
@@ -209,17 +212,15 @@ def _ui_module():
 
 
 def _install(silent, args):
-    """Swap in the stand-ins the engine modules will reach for. Returns the undo.
+    """Swap in the stand-in dialogs. Returns the undo.
 
-    The dialogs are taken over first: if that cannot be done there is no
-    half-installed state to unwind, because `system` has not moved yet.
+    This used to push `silent` onto the module the IDE runs as too, because
+    the shared engine modules went looking for `system` there. None of them
+    does now -- they are handed it -- so writing into another module's
+    namespace bought nothing and left one more thing to unwind on a path
+    that already had enough.
     """
     codesys_ui = _ui_module()
-
-    main = sys.modules["__main__"]
-    had_system = hasattr(main, "system")
-    old_system = getattr(main, "system", None)
-    main.system = silent
 
     old_ui = {}
     for name, replacement in _ui_patches(args).items():
@@ -227,10 +228,6 @@ def _install(silent, args):
         setattr(codesys_ui, name, replacement)
 
     def undo():
-        if had_system:
-            main.system = old_system
-        else:
-            delattr(main, "system")
         for name, original in old_ui.items():
             setattr(codesys_ui, name, original)
     return undo

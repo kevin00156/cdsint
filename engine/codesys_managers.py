@@ -1156,7 +1156,11 @@ def _keep_alarm_group(line):
     if ('CODESYS_HMI' in line and 'HMI_Application' in line
             and 'Alarm Configuration' in line):
         return True
-    return (line.strip().startswith('<Object Guid="')
+    # A substring test, not startswith: the object element is nested and the
+    # line arrives with its indentation. The plain filter below does use
+    # startswith, deliberately -- it is throwing lines away rather than
+    # keeping them, and there a looser match drops more than it should.
+    return ('<Object Guid="' in line
             and ('Type="type_21f"' in line or 'Type="textlist"' in line))
 
 
@@ -1181,15 +1185,18 @@ _Flavour = collections.namedtuple("_Flavour",
 # chain was only ever the way it was written down.
 _XML_FLAVOURS = (
     _Flavour(lambda t: '<Single Name="Name" Type="string">GlobalTextList' in t,
-             _keep_all_but_volatile, False),
+             _keep_all_but_volatile, True),
     _Flavour(lambda t: '225bfe47-7336-4dbc-9419-4105a7c831fa' in t or '<Device' in t,
-             _keep_device, False),
+             _keep_device, True),
     _Flavour(lambda t: 'AlarmGroup' in t and 'GlobalTextList' not in t,
              _keep_alarm_group, True),
     _Flavour(lambda t: 'Alarm Configuration' in t,
              _keep_alarm_config, True),
 )
 
+# The plain filter is the one that does not fall back on the name. It throws
+# away only what CODESYS rewrites, so a document it empties really is empty,
+# and two empty documents are the same document.
 _PLAIN = _Flavour(lambda t: True, _keep_plain, False)
 
 
@@ -1285,28 +1292,34 @@ class NativeManager(ObjectManager):
         if not os.path.exists(tmp_path):
             raise RuntimeError("export_native wrote no file for " + rel_path)
 
-        new_hash = self._hash_file(tmp_path)
-        
-        # Compare hashes
-        if not is_new and old_hash and old_hash == new_hash:
-            # Content identical - remove temp, keep original
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-            return self._tracked(obj, rel_path, file_path, context, new_hash,
-                                 "identical")
-        
-        # Content changed or new - replace with temp file, unless the change
-        # is somebody's, not the IDE's (SPEC 6.1).
-        if not is_new and self._disk_moved_since_sync(rel_path, file_path,
-                                                      context):
-            os.remove(tmp_path)
-            return self._pending(rel_path, context)
+        # From here the temp file is this function's to clean up, whichever
+        # way it leaves. _hash_content raises on content it cannot hash, and
+        # without this the .xml.tmp stayed in the sync folder -- where the
+        # next orphan sweep does not recognise it and the next export writes
+        # a second one beside it.
+        try:
+            new_hash = self._hash_file(tmp_path)
 
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        os.rename(tmp_path, file_path)
+            # Content identical - keep the original, drop the temp.
+            if not is_new and old_hash and old_hash == new_hash:
+                return self._tracked(obj, rel_path, file_path, context,
+                                     new_hash, "identical")
+
+            # Content changed or new - replace with the temp file, unless the
+            # change is somebody's, not the IDE's (SPEC 6.1).
+            if not is_new and self._disk_moved_since_sync(rel_path, file_path,
+                                                          context):
+                return self._pending(rel_path, context)
+
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            os.rename(tmp_path, file_path)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
         return self._tracked(obj, rel_path, file_path, context, new_hash,
                              "new" if is_new else "updated")

@@ -148,19 +148,26 @@ def _object_text(obj_ref):
     Both halves are read once and handed down: locate_message needs them
     together, and each read crosses into .NET (PRINCIPLES 3).
     """
-    decl = ""
-    impl = ""
     if obj_ref is None:
-        return decl, impl
+        return "", ""
+    return (_half(obj_ref, "textual_declaration"),
+            _half(obj_ref, "textual_implementation"))
+
+
+def _half(obj_ref, name):
+    """One of the two texts, or "" when it will not be read.
+
+    Its own guard, so a declaration that raises does not take the
+    implementation with it -- the message may well be about the half that
+    does read, and half the text still narrows the line down.
+    """
     try:
-        if getattr(obj_ref, "textual_declaration", None):
-            decl = safe_str(obj_ref.textual_declaration.text)
-        if getattr(obj_ref, "textual_implementation", None):
-            impl = safe_str(obj_ref.textual_implementation.text)
+        holder = getattr(obj_ref, name, None)
+        return safe_str(holder.text) if holder else ""
     except Exception as exc:
-        log_warning("Could not read the text of the object a build message "
-                    "points at: " + safe_str(exc))
-    return decl, impl
+        log_warning("Could not read the %s of the object a build message "
+                    "points at: %s" % (name, safe_str(exc)))
+        return ""
 
 
 def _attr(msg, name, default):

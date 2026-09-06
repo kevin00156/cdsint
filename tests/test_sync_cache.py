@@ -8,6 +8,7 @@ on one side, os.path.getmtime() (a float) on the other -- so every entry
 written by one was rejected by the other and both ran at a 0% hit rate on real
 projects. These tests pin the shared representation down.
 """
+import io
 import json
 import os
 
@@ -312,3 +313,120 @@ class TestHashContentPerKind:
         mgr = self.mgr(managers)
         with pytest.raises(Exception):
             mgr._hash_content(None)
+
+
+class TestTheFilenameFallbackIsPinned:
+    """All four special flavours hash the name when their filter leaves
+    nothing. Only the plain one does not.
+
+    That is the historic outcome and it is what contents_are_equal() leans
+    on: it passes two deliberately different names, so an object whose whole
+    content is volatile always compares as different rather than as
+    accidentally identical. Preserved, not endorsed (ticket C ruling 3).
+
+    The refactor that turned this into a table quietly narrowed it to two
+    flavours and nothing failed, because the other two cannot be emptied by
+    their own filters -- see the last test here. "Unreachable today" is not
+    the same as "the rule says two", so the rule is pinned at four.
+    """
+
+    def flavours(self):
+        from engine.codesys_managers import _XML_FLAVOURS, _PLAIN
+        return _XML_FLAVOURS, _PLAIN
+
+    def test_every_special_flavour_is_marked_as_falling_back(self):
+        specials, _plain = self.flavours()
+        assert len(specials) == 4
+        assert all(f.name_is_the_fallback for f in specials)
+
+    def test_the_plain_filter_is_not(self):
+        """It throws away only what CODESYS rewrites, so a document it empties
+        really is empty, and two empty documents are the same document."""
+        _specials, plain = self.flavours()
+        assert plain.name_is_the_fallback is False
+
+    @pytest.mark.parametrize("content", [
+        '<AlarmGroup>\n  <Timestamp>2026-08-13</Timestamp>\n',
+        'Alarm Configuration\n  <Timestamp>2026-08-13</Timestamp>\n',
+    ], ids=["alarm_group", "alarm_config"])
+    def test_the_two_that_can_be_emptied_hash_their_name(self, managers, content):
+        mgr = managers.NativeManager()
+        assert mgr._hash_content(content, "one.xml") != \
+            mgr._hash_content(content, "two.xml")
+
+    @pytest.mark.parametrize("content", [
+        '  <Single Name="Name" Type="string">GlobalTextList</Single>\n',
+        '<Device>\n',
+    ], ids=["textlist", "device"])
+    def test_the_other_two_cannot_be_emptied_by_their_own_filter(self, content):
+        """The line that says which flavour this is survives its own filter,
+        so those two never reach the fallback. That is why narrowing the rule
+        to two showed up in no test and in no exported byte."""
+        from engine.codesys_managers import _xml_flavour
+        flavour = _xml_flavour(content)
+        assert [line for line in content.splitlines(True) if flavour.keep(line)]
+
+    def test_an_alarm_group_keeps_a_nested_object_line(self, managers):
+        """The alarm-group filter matches the object element anywhere in the
+        line, not only at its start: the element is nested and arrives with
+        its indentation. The plain filter uses startswith on purpose, because
+        there it is throwing lines away rather than keeping them."""
+        mgr = managers.NativeManager()
+        one = '<AlarmGroup>\n        <Object Guid="1" Type="textlist"/>\n'
+        two = '<AlarmGroup>\n        <Object Guid="2" Type="textlist"/>\n'
+        assert mgr._hash_content(one, "x.xml") != mgr._hash_content(two, "x.xml")
+
+
+class TestTheTempFileNeverSurvives:
+    """NativeManager.export writes a .xml.tmp, hashes it, then renames it.
+
+    _hash_content raises on content it cannot hash (that is the point of it
+    no longer answering ""), and the hash happens after the temp file exists.
+    Left behind, the .xml.tmp sits in the sync folder where the orphan sweep
+    does not recognise it -- it is not .st or .xml -- and the next export
+    writes a second one beside it.
+    """
+
+    class Node(object):
+        def __init__(self, name="Thing"):
+            self._name = name
+            self.guid = "guid-" + name
+            self.type = "t"
+            self.parent = None
+
+        def get_name(self):
+            return self._name
+
+        def get_children(self, recursive=False):
+            return []
+
+    class Project(object):
+        """Writes the temp file the way export_native does."""
+
+        def __init__(self, text=u"<Object/>\n"):
+            self.text = text
+
+        def export_native(self, objects, path, recursive=False):
+            with io.open(path, "w", encoding="utf-8") as handle:
+                handle.write(self.text)
+
+    def context(self, tmp_path):
+        return {"export_dir": str(tmp_path), "exported_paths": set(),
+                "new_cache": {}, "cache_data": {}}
+
+    def test_it_goes_when_the_hash_raises(self, managers, tmp_path, monkeypatch):
+        mgr = managers.NativeManager(self.Project())
+
+        def refuses(content_full, fallback_name=""):
+            raise ValueError("cannot hash this")
+
+        monkeypatch.setattr(mgr, "_hash_content", refuses)
+        with pytest.raises(ValueError):
+            mgr.export(self.Node(), "t", "Thing.xml", self.context(tmp_path))
+        assert list(tmp_path.glob("*.tmp")) == []
+
+    def test_it_goes_on_the_ordinary_path_too(self, managers, tmp_path):
+        mgr = managers.NativeManager(self.Project())
+        mgr.export(self.Node(), "t", "Thing.xml", self.context(tmp_path))
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert (tmp_path / "Thing.xml").exists()

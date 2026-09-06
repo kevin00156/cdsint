@@ -56,8 +56,6 @@ _NATIVE_MGR = NativeManager()
 #  COMPARISON ENGINE (2-WAY)
 # ═══════════════════════════════════════════════════════════════════
 
-# Removed local build_expected_path, now imported from codesys_managers
-
 
 def get_ide_content(obj, is_xml, property_accessors, project, can_have_impl=False):
     """Extract content and attributes from IDE object for comparison.
@@ -898,18 +896,6 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
     return updated, created, failed
 
 
-# finalize_import() used to live here and saved the project (and, with
-# backup_binary on, copied the whole .project binary) at the end of
-# perform_import_items. Every caller -- Project_import and Project_compare --
-# then called finalize_sync_operation(), which does exactly the same thing, so
-# each import saved twice on top of the pre-import safety backup's own save.
-#
-# On a 9.7 MB project that is three CODESYS saves and three full-file copies
-# for one import, and it is what made the run keep going long after the
-# completion popup. The single save now happens in finalize_sync_operation(),
-# at the one place that owns end-of-operation bookkeeping.
-
-
 def order_st_files_parents_first(items):
     """Order ST import items so a parent POU is created before its nested children.
 
@@ -935,7 +921,7 @@ def orphans_their_parent_takes(to_sync):
     orphan whose ancestor is on the same list has nothing left to remove when
     the loop reaches it: obj.remove() answers "Object reference not set", and
     the run reports a failure for an object that did exactly what was asked.
-    The supervisor hit 51 of those in one phase 2 import.
+    The supervisor hit 51 of those in a single import.
 
     Worked out before any removal happens, while the tree still answers
     questions about parents. Returns the GUIDs to leave alone; they still

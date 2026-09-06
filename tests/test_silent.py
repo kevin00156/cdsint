@@ -252,22 +252,18 @@ def test_a_dialog_asked_at_module_level_is_answered_by_the_flag(tmp_path, ide):
     assert silent.run(ide, str(path), "main", {"yes": True}).ok()
 
 
-# --- the shared .pyw modules reach __main__ --------------------------------
+# --- nothing is written into another module's namespace --------------------
 
-def test_a_module_that_looks_at_main_gets_the_stand_in(tmp_path, ide):
-    # codesys_utils:517 finds `system` through __main__, not through the
-    # calling script's globals, so __main__ has to be swapped too.
-    body = (u"    import __main__\n"
-            u"    __main__.system.ui.info('through __main__')")
-    path = write_script(tmp_path, body)
-    assert silent.run(ide, path, "main", {}).messages[0]["text"] == \
-        "through __main__"
-
-
-def test_main_is_put_back_afterwards(tmp_path, ide):
+def test_the_stand_in_is_not_pushed_onto_main(tmp_path, ide):
+    """The engine used to look for `system` on __main__, so the stand-in had
+    to be put there too and taken away again afterwards. Every engine module
+    is handed what it needs now (engine/entry.py's borrowed()), so writing to
+    another module's namespace bought nothing and left one more thing to
+    unwind on a path that already had enough."""
     before = getattr(sys.modules["__main__"], "system", "absent")
     path = write_script(tmp_path, u"    system.ui.info('x')")
-    silent.run(ide, path, "main", {})
+    outcome = silent.run(ide, path, "main", {})
+    assert outcome.messages[0]["text"] == "x"
     assert getattr(sys.modules["__main__"], "system", "absent") == before
 
 

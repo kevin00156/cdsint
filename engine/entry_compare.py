@@ -186,7 +186,10 @@ def main():
 
                 sys.stdout = Tee(original_stdout, log_file_obj)
                 sys.stderr = Tee(original_stderr, log_file_obj)
-            except Exception as e:
+            except Exception:
+                # Teeing stdout to a file is a convenience for reading the run
+                # afterwards; the run itself is what matters, so a log file
+                # that cannot be opened must not stop it.
                 pass
 
     try:

@@ -202,7 +202,7 @@
 - [x] **階段 5：邊界已浮現的拆分與收尾**
   - [x] 拆了 `engine/backup.py` 與 `engine/sync_cache.py`，各一個 commit。第 4 節第五層列的候選裡，`st_text.py` 與 `log.py` 沒拆，理由在第 7 節第 28 條。
   - [x] 驗收：`engine/codesys_utils.py` 從 1637 行降到 1113 行。這張工單新增的七個檔都在 400 行以內：`import_items.py` 322、`classify.py` 205、`backup.py` 192、`build_log.py` 175、`sync_cache.py` 163、`ide_read.py` 115、`sync_dir.py` 76。
-  - [x] 驗收：棘輪每個數字都比開工前低（`compare` 6→3、`managers` 29→18、`utils` 33→11、`build` 6→0、`ui` 5→0、`entry_compare` 2→2），總數 81 降到 35。第 3 節 18 條的三個具體傷害各有測試：PouType 那個 NameError 由 `tests/test_names_resolve.py` 這一整類守著，`get_quick_ide_hash` 由 `tests/test_ide_read.py` 的 `TestQuickHashRefusesToGuess`，`_hash_content` 由 `tests/test_sync_cache.py` 的 `test_content_that_cannot_be_hashed_raises`。
+  - [x] 驗收：棘輪每個數字都比開工前低（`compare` 6→3、`managers` 29→18、`utils` 33→11、`build` 6→0、`ui` 5→0、`entry_compare` 2→2）。總數不寫在這裡：`tests/test_bare_excepts.py` 的 `ALLOWED` 表就是計數（PRINCIPLES 6），而這一行第一次寫的總數是錯的。第 3 節 18 條的三個具體傷害各有測試：PouType 那個 NameError 由 `tests/test_names_resolve.py` 這一整類守著，`get_quick_ide_hash` 由 `tests/test_ide_read.py` 的 `TestQuickHashRefusesToGuess`，`_hash_content` 由 `tests/test_sync_cache.py` 的 `test_content_that_cannot_be_hashed_raises`。
   - [x] 驗收：儀器四項全過。兩份副本 hash diff 各 0 行、discover 前後相同、verify exit 0；熱機中位數見第 6 節那張表，compare 的判定見第 7 節第 19 條。數字寫進 SPEC 第 7 節。
   - [x] CHANGELOG Unreleased 加一段。
   - [x] 沒有殘留的 IDE 行程；`%TEMP%\cdsint-work\engine\` 清掉。

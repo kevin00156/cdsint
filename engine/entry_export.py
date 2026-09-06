@@ -211,7 +211,7 @@ def export_project(export_dir, values, projects_obj=None):
         'new_types': {}
     }
 
-    # Second pass: export all objects
+    # Every object, in the order the tree gave them
     for obj in all_objects:
         try:
             obj_guid = safe_str(obj.guid)
