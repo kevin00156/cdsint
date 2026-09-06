@@ -17,6 +17,8 @@ import sys
 
 import pytest
 
+from tests.fakes import Node
+
 from engine import codesys_compare_engine
 
 
@@ -25,28 +27,6 @@ def env():
     constants = sys.modules["engine.codesys_constants"]
     engine = codesys_compare_engine
     return engine, constants.TYPE_GUIDS
-
-
-class Node(object):
-    """Minimal stand-in for a CODESYS script object."""
-
-    def __init__(self, name, type_guid, children=None):
-        self._name = name
-        self.type = type_guid
-        self._children = children or []
-        self.parent = None
-        for child in self._children:
-            child.parent = self
-
-    def get_name(self):
-        return self._name
-
-    def get_children(self, recursive=False):
-        return list(self._children)
-
-    @property
-    def guid(self):
-        return "guid-" + self._name
 
 
 def _project(devices_and_folders):

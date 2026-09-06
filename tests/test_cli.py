@@ -15,7 +15,7 @@ from cds.core.exits import (EXIT_FAILED, EXIT_OK, EXIT_TARGET,
                             EXIT_TIMEOUT)
 from cds.ide import watcher
 from cdsint import cli, flags, target
-from tests.test_watcher import make_globals
+from tests.fakes import make_globals
 
 
 @pytest.fixture

@@ -24,6 +24,7 @@ from cds.core import settings
 DEFAULTS = settings.resolve({})
 
 from engine import unhandled
+from tests.fakes import DeafSystem, Project, Projects
 
 
 class Missing(object):
@@ -122,46 +123,6 @@ def test_classify_object_still_works_on_an_object_it_can_read(managers):
 
 
 # --- what the three commands do with one ------------------------------------
-
-class Info(object):
-    def __init__(self, values):
-        self.values = values
-
-
-class Project(object):
-    """A project holding exactly one object the IDE will not describe."""
-
-    def __init__(self, values, children, path):
-        self._values = values
-        self._children = children
-        self.path = path
-
-    def get_project_info(self):
-        return Info(self._values)
-
-    def get_children(self, recursive=False):
-        return list(self._children)
-
-    def get_name(self):
-        return "FakeProject"
-
-    def save(self):
-        pass
-
-
-class Projects(object):
-    def __init__(self, primary):
-        self.primary = primary
-
-
-class DeafUI(object):
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None
-
-
-class DeafSystem(object):
-    ui = DeafUI()
-
 
 @pytest.fixture
 def one_bad_object(monkeypatch, tmp_path):

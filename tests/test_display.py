@@ -7,7 +7,7 @@ made here, which is the point of the split.
 from cds.core import ipc
 from cds.ide import display, watcher
 
-from tests.test_watcher import make_globals
+from tests.fakes import make_globals
 
 T0 = 1725453665.0
 

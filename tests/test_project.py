@@ -13,22 +13,13 @@ import pytest
 
 from cds.core import settings
 from cds.ide import project
-
-
-class Primary(object):
-    def __init__(self, path=None):
-        self.path = path
-
-
-class Projects(object):
-    def __init__(self, primary=None):
-        self.primary = primary
+from tests.fakes import Project, Projects
 
 
 @pytest.fixture
 def opened(tmp_path):
     """A project open at a real path, so its settings file has somewhere to be."""
-    return Projects(Primary(os.path.join(str(tmp_path), "x.project")))
+    return Projects(Project(path=os.path.join(str(tmp_path), "x.project")))
 
 
 def write(opened, text):

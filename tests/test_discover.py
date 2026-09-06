@@ -11,20 +11,9 @@ import sys
 
 import pytest
 
+from tests.fakes import DeafSystem, Node, Project, Projects
+
 from engine import entry_discover
-
-
-class Node(object):
-    """One object in the tree, with the four attributes discover reads."""
-
-    def __init__(self, name, type_guid, parent=None):
-        self._name = name
-        self.type = type_guid
-        self.guid = "guid-" + name
-        self.parent = parent
-
-    def get_name(self):
-        return self._name
 
 
 class Refusing(Node):
@@ -38,41 +27,6 @@ class Refusing(Node):
     @type.setter
     def type(self, value):
         pass
-
-
-class Info(object):
-    def __init__(self, values):
-        self.values = values
-
-
-class Project(object):
-    def __init__(self, values, objects):
-        self._values = values
-        self._objects = objects
-        self.path = "Fake.project"
-
-    def get_project_info(self):
-        return Info(self._values)
-
-    def get_children(self, recursive=False):
-        return list(self._objects)
-
-    def get_name(self):
-        return "FakeProject"
-
-
-class Projects(object):
-    def __init__(self, primary):
-        self.primary = primary
-
-
-class DeafUI(object):
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None
-
-
-class DeafSystem(object):
-    ui = DeafUI()
 
 
 @pytest.fixture

@@ -14,6 +14,7 @@ import pytest
 from engine import entry_export, entry_import
 
 from cds.core import settings
+from tests.fakes import DeafSystem, Project, Projects
 
 # Every setting at its default: these tests are about the engine's
 # behaviour, not about what somebody wrote in a settings file.
@@ -45,44 +46,6 @@ class Pou(object):
 
     def get_children(self, recursive=False):
         return []
-
-
-class Info(object):
-    def __init__(self, values):
-        self.values = values
-
-
-class Project(object):
-    def __init__(self, values, children, path):
-        self._values = values
-        self._children = children
-        self.path = path
-
-    def get_project_info(self):
-        return Info(self._values)
-
-    def get_children(self, recursive=False):
-        return list(self._children)
-
-    def get_name(self):
-        return "FakeProject"
-
-    def save(self):
-        pass
-
-
-class Projects(object):
-    def __init__(self, primary):
-        self.primary = primary
-
-
-class DeafUI(object):
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None
-
-
-class DeafSystem(object):
-    ui = DeafUI()
 
 
 class Synced(object):

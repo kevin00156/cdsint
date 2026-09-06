@@ -31,13 +31,17 @@ def clean_caches(env):
     managers.clear_path_caches()
 
 
-class Node(object):
+class ReadCountingNode(object):
     """Stand-in for a CODESYS script object that counts IDE-side accesses.
 
     EVERY property a real script object exposes counts -- .type, .parent,
     .guid and get_name() are all round trips into .NET. Leaving any of them
     uncounted would make the read-budget test below pass while the code
     quietly re-fetched it.
+
+    Written out rather than subclassed from tests/fakes.py Node: the counting
+    has to happen in the property, and a base class that stores those four as
+    plain attributes has no property left to count in.
     """
 
     reads = 0
@@ -52,12 +56,12 @@ class Node(object):
 
     @property
     def type(self):
-        Node.reads += 1
+        ReadCountingNode.reads += 1
         return self._type
 
     @property
     def parent(self):
-        Node.reads += 1
+        ReadCountingNode.reads += 1
         return self._parent
 
     @parent.setter
@@ -66,11 +70,11 @@ class Node(object):
 
     @property
     def guid(self):
-        Node.reads += 1
+        ReadCountingNode.reads += 1
         return "guid-" + self._name
 
     def get_name(self):
-        Node.reads += 1
+        ReadCountingNode.reads += 1
         return self._name
 
     def get_children(self, recursive=False):
@@ -134,47 +138,47 @@ def _trees(g):
     trees = {}
 
     # Device > Plc Logic > Application > Folder > Folder > POU
-    pou = Node("Main", g["pou"])
-    inner = Node("Inner", g["folder"], [pou])
-    outer = Node("POUs", g["folder"], [inner])
-    app = Node("Application", g["application"], [outer])
-    plc = Node("Plc Logic", g["plc_logic"], [app])
-    dev = Node("Device", g["device"], [plc])
-    trees["nested_under_app"] = (Node("Project", "proj", [dev]), {"leaf": pou})
+    pou = ReadCountingNode("Main", g["pou"])
+    inner = ReadCountingNode("Inner", g["folder"], [pou])
+    outer = ReadCountingNode("POUs", g["folder"], [inner])
+    app = ReadCountingNode("Application", g["application"], [outer])
+    plc = ReadCountingNode("Plc Logic", g["plc_logic"], [app])
+    dev = ReadCountingNode("Device", g["device"], [plc])
+    trees["nested_under_app"] = (ReadCountingNode("Project", "proj", [dev]), {"leaf": pou})
 
     # POU directly under the Application
-    pou2 = Node("PLC_PRG", g["pou"])
-    app2 = Node("App", g["application"], [pou2])
-    dev2 = Node("PLC", g["device"], [app2])
-    trees["direct_under_app"] = (Node("Project", "proj", [dev2]), {"leaf": pou2})
+    pou2 = ReadCountingNode("PLC_PRG", g["pou"])
+    app2 = ReadCountingNode("App", g["application"], [pou2])
+    dev2 = ReadCountingNode("PLC", g["device"], [app2])
+    trees["direct_under_app"] = (ReadCountingNode("Project", "proj", [dev2]), {"leaf": pou2})
 
     # Project-global object: no device, no application
-    gvl = Node("GlobalGVL", g["gvl"])
-    folder = Node("Global", g["folder"], [gvl])
-    trees["project_global"] = (Node("Project", "proj", [folder]), {"leaf": gvl})
+    gvl = ReadCountingNode("GlobalGVL", g["gvl"])
+    folder = ReadCountingNode("Global", g["folder"], [gvl])
+    trees["project_global"] = (ReadCountingNode("Project", "proj", [folder]), {"leaf": gvl})
 
     # Child of a Task, under Task Configuration
-    child = Node("TaskChild", g["pou"])
-    task = Node("MainTask", g["task"], [child])
-    cfg = Node("Task Configuration", g["task_config"], [task])
-    app3 = Node("App", g["application"], [cfg])
-    dev3 = Node("PLC", g["device"], [app3])
-    trees["under_task"] = (Node("Project", "proj", [dev3]), {"leaf": child})
+    child = ReadCountingNode("TaskChild", g["pou"])
+    task = ReadCountingNode("MainTask", g["task"], [child])
+    cfg = ReadCountingNode("Task Configuration", g["task_config"], [task])
+    app3 = ReadCountingNode("App", g["application"], [cfg])
+    dev3 = ReadCountingNode("PLC", g["device"], [app3])
+    trees["under_task"] = (ReadCountingNode("Project", "proj", [dev3]), {"leaf": child})
 
     # Nested devices: the OUTERMOST one must win
-    deep = Node("Deep", g["pou"])
-    app4 = Node("App", g["application"], [deep])
-    innerdev = Node("InnerDevice", g["device"], [app4])
-    outerdev = Node("OuterDevice", g["device"], [innerdev])
-    trees["nested_devices"] = (Node("Project", "proj", [outerdev]), {"leaf": deep})
+    deep = ReadCountingNode("Deep", g["pou"])
+    app4 = ReadCountingNode("App", g["application"], [deep])
+    innerdev = ReadCountingNode("InnerDevice", g["device"], [app4])
+    outerdev = ReadCountingNode("OuterDevice", g["device"], [innerdev])
+    trees["nested_devices"] = (ReadCountingNode("Project", "proj", [outerdev]), {"leaf": deep})
 
     # Method on a POU under a folder
-    method = Node("DoWork", g["method"])
-    parent_pou = Node("FB_Thing", g["pou"], [method])
-    fbfolder = Node("FunctionBlocks", g["folder"], [parent_pou])
-    app5 = Node("App", g["application"], [fbfolder])
-    dev5 = Node("PLC", g["device"], [app5])
-    trees["method_on_pou"] = (Node("Project", "proj", [dev5]), {"leaf": method})
+    method = ReadCountingNode("DoWork", g["method"])
+    parent_pou = ReadCountingNode("FB_Thing", g["pou"], [method])
+    fbfolder = ReadCountingNode("FunctionBlocks", g["folder"], [parent_pou])
+    app5 = ReadCountingNode("App", g["application"], [fbfolder])
+    dev5 = ReadCountingNode("PLC", g["device"], [app5])
+    trees["method_on_pou"] = (ReadCountingNode("Project", "proj", [dev5]), {"leaf": method})
 
     return trees
 
@@ -220,22 +224,22 @@ class TestCachingBehaviour:
         """The point of the cache: the second object in a folder must not walk
         the tree again."""
         managers, guids = env
-        a = Node("A", guids["pou"])
-        b = Node("B", guids["pou"])
-        folder = Node("POUs", guids["folder"], [a, b])
-        app = Node("Application", guids["application"], [folder])
-        dev = Node("PLC", guids["device"], [app])
-        Node("Project", "proj", [dev])
+        a = ReadCountingNode("A", guids["pou"])
+        b = ReadCountingNode("B", guids["pou"])
+        folder = ReadCountingNode("POUs", guids["folder"], [a, b])
+        app = ReadCountingNode("Application", guids["application"], [folder])
+        dev = ReadCountingNode("PLC", guids["device"], [app])
+        ReadCountingNode("Project", "proj", [dev])
 
-        Node.reads = 0
+        ReadCountingNode.reads = 0
         managers.get_object_path(a)
         managers.get_container_prefix(a)
-        first = Node.reads
+        first = ReadCountingNode.reads
 
-        Node.reads = 0
+        ReadCountingNode.reads = 0
         managers.get_object_path(b)
         managers.get_container_prefix(b)
-        second = Node.reads
+        second = ReadCountingNode.reads
 
         assert second < first
         assert managers.get_object_path(b) == ["POUs"]
@@ -255,12 +259,12 @@ class TestCachingBehaviour:
         """A move keeps the object's GUID, so a stale cache would keep
         reporting the old location."""
         managers, guids = env
-        pou = Node("Main", guids["pou"])
-        old = Node("OldFolder", guids["folder"], [pou])
-        new = Node("NewFolder", guids["folder"])
-        app = Node("Application", guids["application"], [old, new])
-        dev = Node("PLC", guids["device"], [app])
-        Node("Project", "proj", [dev])
+        pou = ReadCountingNode("Main", guids["pou"])
+        old = ReadCountingNode("OldFolder", guids["folder"], [pou])
+        new = ReadCountingNode("NewFolder", guids["folder"])
+        app = ReadCountingNode("Application", guids["application"], [old, new])
+        dev = ReadCountingNode("PLC", guids["device"], [app])
+        ReadCountingNode("Project", "proj", [dev])
 
         assert managers.get_object_path(pou) == ["OldFolder"]
 
@@ -282,22 +286,22 @@ class TestCachingBehaviour:
         case at scale. Raise the bound only with a reason.
         """
         managers, guids = env
-        first = Node("MethodA", guids["method"])
-        second = Node("MethodB", guids["method"])
-        pou = Node("FB_Thing", guids["pou"], [first, second])
-        folder = Node("FunctionBlocks", guids["folder"], [pou])
-        app = Node("Application", guids["application"], [folder])
-        dev = Node("PLC", guids["device"], [app])
-        Node("Project", "proj", [dev])
+        first = ReadCountingNode("MethodA", guids["method"])
+        second = ReadCountingNode("MethodB", guids["method"])
+        pou = ReadCountingNode("FB_Thing", guids["pou"], [first, second])
+        folder = ReadCountingNode("FunctionBlocks", guids["folder"], [pou])
+        app = ReadCountingNode("Application", guids["application"], [folder])
+        dev = ReadCountingNode("PLC", guids["device"], [app])
+        ReadCountingNode("Project", "proj", [dev])
 
         managers.build_expected_path(first, guids["method"], False)  # warm
 
-        Node.reads = 0
+        ReadCountingNode.reads = 0
         path = managers.build_expected_path(second, guids["method"], False)
         assert path == "PLC/Application/FunctionBlocks/FB_Thing.MethodB.st"
-        assert Node.reads <= 9, (
+        assert ReadCountingNode.reads <= 9, (
             "build_expected_path made %d IDE reads; it should need at most 9 "
-            "once a sibling has warmed the ancestor caches" % Node.reads)
+            "once a sibling has warmed the ancestor caches" % ReadCountingNode.reads)
 
     def test_returns_a_fresh_list_each_time(self, env):
         """Callers mutate the result (build_expected_path strips the last

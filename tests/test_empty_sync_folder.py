@@ -24,7 +24,7 @@ from cds.core import settings
 # behaviour, not about what somebody wrote in a settings file.
 DEFAULTS = settings.resolve({})
 
-from tests.test_unhandled_objects import DeafSystem, Project, Projects
+from tests.fakes import DeafSystem, Project, Projects
 
 
 @pytest.fixture

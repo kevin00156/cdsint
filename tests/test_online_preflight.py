@@ -16,7 +16,9 @@ import sys
 
 import pytest
 
-from engine import codesys_online
+from tests.fakes import Node as BaseNode
+
+from engine import codesys_managers, codesys_online
 
 
 @pytest.fixture(scope="module")
@@ -26,24 +28,33 @@ def env():
     return module, constants.TYPE_GUIDS, constants.KIND_GUIDS
 
 
-class Node(object):
-    """Minimal stand-in for a CODESYS script object."""
+@pytest.fixture(autouse=True)
+def clean_caches():
+    """The container-prefix cache is keyed by object GUID and lives in the
+    module, so a device named PLC in one test answers for a device named PLC
+    in the next. Real objects have unique GUIDs; these fakes derive theirs
+    from the name, which is exactly the collision the cache is built to
+    exploit. Same fixture as tests/test_path_cache.py.
+    """
+    codesys_managers.clear_path_caches()
+    yield
+    codesys_managers.clear_path_caches()
+
+
+class WalkCountingNode(BaseNode):
+    """The plain node, counting how often the tree was walked from it.
+
+    online preflight is the one caller that must not walk twice
+    (PRINCIPLES 3), so the count is the assertion, not a diagnostic.
+    """
 
     def __init__(self, name, type_guid, children=None):
-        self._name = name
-        self.type = type_guid
-        self._children = children or []
-        self.parent = None
+        BaseNode.__init__(self, name, type_guid, children=children)
         self.get_children_calls = 0
-        for child in self._children:
-            child.parent = self
-
-    def get_name(self):
-        return self._name
 
     def get_children(self, recursive=False):
         self.get_children_calls += 1
-        return list(self._children)
+        return BaseNode.get_children(self, recursive)
 
 
 class Session(object):
@@ -75,16 +86,16 @@ class Online(object):
 
 
 def _project(children):
-    return Node("Project", "project-type", children)
+    return WalkCountingNode("Project", "project-type", children)
 
 
 def _device(name, guids, app_name="Application", under_plc_logic=False,
             app_guid=None):
-    app = Node(app_name, app_guid or guids["application"])
+    app = WalkCountingNode(app_name, app_guid or guids["application"])
     if under_plc_logic:
-        return Node(name, guids["device"],
-                    [Node("Plc Logic", guids["plc_logic"], [app])])
-    return Node(name, guids["device"], [app])
+        return WalkCountingNode(name, guids["device"],
+                    [WalkCountingNode("Plc Logic", guids["plc_logic"], [app])])
+    return WalkCountingNode(name, guids["device"], [app])
 
 
 def _find(module, project, online, caller_globals=None):
@@ -149,7 +160,7 @@ def test_alias_application_guid_is_detected(env):
 
 def test_device_inside_a_folder_is_found(env):
     module, guids, _ = env
-    project = _project([Node("Line1", guids["folder"],
+    project = _project([WalkCountingNode("Line1", guids["folder"],
                              [_device("PLC", guids)])])
     online = Online(logged_in=["Application"])
     assert _find(module, project, online) == ["PLC/Application"]
@@ -173,7 +184,7 @@ def test_unanswerable_online_api_reports_nothing(env):
 def test_unlistable_container_does_not_crash_the_walk(env):
     module, guids, _ = env
 
-    class Deaf(Node):
+    class Deaf(WalkCountingNode):
         def get_children(self, recursive=False):
             raise RuntimeError("object is being edited")
 
@@ -201,9 +212,9 @@ def test_every_session_is_disposed(env):
 
 def test_walk_stops_at_the_application(env):
     module, guids, _ = env
-    pou = Node("MainProgram", guids["pou"])
-    app = Node("Application", guids["application"], [pou])
-    project = _project([Node("PLC", guids["device"], [app])])
+    pou = WalkCountingNode("MainProgram", guids["pou"])
+    app = WalkCountingNode("Application", guids["application"], [pou])
+    project = _project([WalkCountingNode("PLC", guids["device"], [app])])
     _find(module, project, Online())
     # Nothing below an application can be an application.
     assert app.get_children_calls == 0
@@ -212,8 +223,8 @@ def test_walk_stops_at_the_application(env):
 
 def test_pou_pool_is_not_swept(env):
     module, guids, _ = env
-    pous = [Node("POU%d" % i, guids["pou"]) for i in range(5)]
-    pool = Node("Pool", guids["folder"], pous)
+    pous = [WalkCountingNode("POU%d" % i, guids["pou"]) for i in range(5)]
+    pool = WalkCountingNode("Pool", guids["folder"], pous)
     project = _project([pool, _device("PLC", guids)])
     _find(module, project, Online())
     assert pool.get_children_calls == 1          # folders may hold devices

@@ -15,6 +15,8 @@ import types
 
 import pytest
 
+from tests.fakes import DeafUI
+
 from cds.core import dialogs
 from cds.ide import silent, tee
 
@@ -452,13 +454,6 @@ def test_there_is_no_yes_no_cancel_dialog_left_to_answer():
     assert not hasattr(silent, "YES_NO_CANCEL")
     assert titles_asked_for("ask_yes_no_cancel") == set()
 
-
-
-class DeafUI(object):
-    """Swallows every popup, so what is left is the return value."""
-
-    def __getattr__(self, name):
-        return lambda *args, **kwargs: None
 
 
 class NoProjectSystem(object):

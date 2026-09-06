@@ -21,7 +21,7 @@ from cdsint import installs
 from cdsint import report as report_side
 from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
 from cdsint.exits import Failure
-from tests.test_watcher import FakeSystem, make_globals
+from tests.fakes import DeafSystem, make_globals
 
 
 # --- fake CODESYS globals --------------------------------------------------
@@ -47,7 +47,7 @@ class FakePromptResult(object):
     No = "PromptResult.No"
 
 
-class PromptSystem(FakeSystem):
+class PromptSystem(DeafSystem):
     def __init__(self):
         self.prompt_handling = None
         self.prompt_answers = {}
@@ -207,12 +207,12 @@ def test_the_report_names_the_folder_the_engine_read(machine, monkeypatch):
     # is the only one that knows, so the report is where the answer comes
     # from (SPEC 4.2).
     launching(monkeypatch, code=0)
-    written_report(monkeypatch, dict(OK_REPORT, sync_dir="D:\what-ran"))
-    started = make(machine, monkeypatch, sync_dir="D:\what-was-asked")
+    written_report(monkeypatch, dict(OK_REPORT, sync_dir=r"D:\what-ran"))
+    started = make(machine, monkeypatch, sync_dir=r"D:\what-was-asked")
 
     started.run([("export", {})])
 
-    assert ipc.read_json(started.report_path)["sync_dir"] == "D:\what-ran"
+    assert ipc.read_json(started.report_path)["sync_dir"] == r"D:\what-ran"
 
 
 def test_the_report_is_written_where_the_job_asked(ide, tmp_path, monkeypatch):

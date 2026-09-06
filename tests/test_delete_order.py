@@ -13,6 +13,8 @@ import sys
 
 import pytest
 
+from tests.fakes import Node as BaseNode
+
 from engine import codesys_compare_engine
 
 
@@ -21,30 +23,19 @@ def engine():
     return codesys_compare_engine
 
 
-class Node(object):
-    """An IDE object that records whether anybody removed it."""
+class RemovableNode(BaseNode):
+    """An IDE object that records whether anybody removed it.
+
+    Wired the other way round from the shared fake — a child is handed its
+    parent and adds itself — because that is the order the tree is built in
+    here, and the removal test needs a parent that already knows its children.
+    """
 
     def __init__(self, name, type_guid, parent=None):
-        self._name = name
-        self.type = type_guid
-        self.parent = parent
-        self.guid = "guid-" + name
+        BaseNode.__init__(self, name, type_guid, parent=parent)
         self.removed = False
-        self.children = []
         if parent is not None:
-            parent.children.append(self)
-
-    def get_name(self):
-        return self._name
-
-    def get_children(self, recursive=False):
-        if not recursive:
-            return list(self.children)
-        out = []
-        for child in self.children:
-            out.append(child)
-            out.extend(child.get_children(recursive=True))
-        return out
+            parent._children.append(self)
 
     def remove(self):
         if self.removed or (self.parent is not None and self.parent.removed):
@@ -55,9 +46,9 @@ class Node(object):
             child.removed = True
 
 
-class Project(Node):
+class Project(RemovableNode):
     def __init__(self):
-        Node.__init__(self, "Project", "project-guid")
+        RemovableNode.__init__(self, "Project", "project-guid")
 
 
 @pytest.fixture
@@ -65,8 +56,8 @@ def a_pou_and_its_method(engine, tmp_path):
     """A POU with one method, both of them orphans this import will remove."""
     guids = sys.modules["engine.codesys_constants"].TYPE_GUIDS
     project = Project()
-    pou = Node("MC_BasicControl", guids["pou"], project)
-    method = Node("Main", guids["method"], pou)
+    pou = RemovableNode("MC_BasicControl", guids["pou"], project)
+    method = RemovableNode("Main", guids["method"], pou)
 
     def orphan(obj, path):
         return {"path": path, "name": obj.get_name(), "type_guid": obj.type,

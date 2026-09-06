@@ -16,28 +16,7 @@ import types
 
 import pytest
 
-
-class FakeTimer(object):
-    def __init__(self):
-        self.Interval = None
-        self.started = False
-        self.stopped = False
-        self.disposed = False
-        self.Tick = self
-
-    # `timer.Tick += handler` on a .NET event; here it just records it.
-    def __iadd__(self, handler):
-        self.handler = handler
-        return self
-
-    def Start(self):
-        self.started = True
-
-    def Stop(self):
-        self.stopped = True
-
-    def Dispose(self):
-        self.disposed = True
+from tests.fakes import FakeTimer
 
 
 class SulkingIcon(object):

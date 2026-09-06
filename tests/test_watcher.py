@@ -14,58 +14,7 @@ import pytest
 
 from cds.core import commands, instances, ipc
 from cds.ide import session, watcher
-
-
-class FakeSystem(object):
-    """Stands in for CODESYS's `system`."""
-
-    def delay(self, milliseconds):
-        pass
-
-
-class FakeProjectInfo(object):
-    """Shaped like CODESYS's project info: a .values mapping of properties."""
-
-    def __init__(self, values):
-        self.values = values
-
-
-class FakeProject(object):
-    def __init__(self, path):
-        self.path = path
-        self.props = {}
-        self.saves = 0
-
-    def get_project_info(self):
-        return FakeProjectInfo(self.props)
-
-    def save(self):
-        self.saves += 1
-
-
-class FakeProjects(object):
-    def __init__(self, path):
-        self.primary = FakeProject(path) if path else None
-
-
-class FakeTimer(object):
-    """Stands in for System.Windows.Forms.Timer; ticks only when told to."""
-
-    def __init__(self, interval_ms, handler):
-        self.interval_ms = interval_ms
-        self.handler = handler
-        self.started = True
-        self.disposed = False
-
-    def Stop(self):
-        self.started = False
-
-    def Dispose(self):
-        self.disposed = True
-
-
-def make_globals(path="C:\\p\\softplc.project"):
-    return {"system": FakeSystem(), "projects": FakeProjects(path)}
+from tests.fakes import FakeTimer, Project, Projects, make_globals
 
 
 @pytest.fixture
@@ -208,7 +157,7 @@ def test_status_reports_the_project_that_is_open_now(root):
     ide = make_globals()
     watch = watcher.Watcher(ide, root)
     watch.start()
-    ide["projects"].primary = FakeProject("C:\\p\\boiler.project")
+    ide["projects"].primary = Project(path="C:\\p\\boiler.project")
     result = run(watch, "status")
     assert result["data"]["project_name"] == "boiler"
     assert result["data"]["instance_id"] == watch.instance_id
@@ -446,7 +395,7 @@ def test_the_registration_follows_a_project_swap(root):
     ide = make_globals()
     watch = watcher.Watcher(ide, root)
     watch.start()
-    ide["projects"].primary = FakeProject(r"C:\p\boiler.project")
+    ide["projects"].primary = Project(path=r"C:\p\boiler.project")
     watch.beat_if_due(ipc.now() + instances.HEARTBEAT_INTERVAL_S + 1.0)
     reg = instances.read(root, watch.instance_id)
     assert reg["project_name"] == "boiler"
@@ -504,7 +453,7 @@ def test_globals_without_system_are_refused_at_once(root):
     # TypeError, not KeyError: what is wrong is the argument, and a KeyError
     # out of a constructor reads as a lookup that went wrong inside it.
     with pytest.raises(TypeError):
-        watcher.Watcher({"projects": FakeProjects(None)}, root)
+        watcher.Watcher({"projects": Projects(None)}, root)
 
 
 # --- feeding the status window ---------------------------------------------

@@ -18,47 +18,15 @@ import os
 import pytest
 
 from cds.core import settings as schema
+from tests.fakes import DeafSystem, Project, Projects
 from engine import entry_build, entry_discover
 
 
-class Info(object):
-    def __init__(self, values):
-        self.values = values
+class Primary(Project):
+    """A project whose properties are empty, whatever it is asked for."""
 
-
-class Primary(object):
     def __init__(self, path):
-        self.path = path
-        self.active_application = None
-
-    def get_project_info(self):
-        return Info({})
-
-    def get_children(self, recursive=False):
-        return []
-
-    def get_name(self):
-        return "FakeProject"
-
-
-class Projects(object):
-    def __init__(self, primary):
-        self.primary = primary
-
-
-class DeafUI(object):
-    def __init__(self):
-        self.said = []
-
-    def __getattr__(self, level):
-        def show(text, *rest):
-            self.said.append((level, text))
-        return show
-
-
-class DeafSystem(object):
-    def __init__(self):
-        self.ui = DeafUI()
+        Project.__init__(self, values={}, path=path)
 
 
 @pytest.fixture
