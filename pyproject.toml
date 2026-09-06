@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cdsint"
-version = "0.0.1"
+# Read off engine/codesys_constants.py rather than copied here. Two names
+# for one constant is a parallel path, and this one drifted the moment a
+# release needed three files edited by hand (SPEC 8, PRINCIPLES 7).
+dynamic = ["version"]
 description = "Drive CODESYS-family IDEs from outside: sync .st text, build, verify"
 readme = "readMe.md"
 requires-python = ">=3.11"
@@ -16,6 +19,9 @@ cdsint = "cdsint.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/kevin00156/cdsint"
+
+[tool.setuptools.dynamic]
+version = {attr = "engine.codesys_constants.SCRIPT_VERSION"}
 
 # engine/ and cds/ are shipped because the IDE-side code has to sit next to the
 # CLI in one install root (SPEC 5.3): the stubs put that root on sys.path and

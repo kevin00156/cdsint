@@ -17,8 +17,9 @@ import json
 import os
 import zlib
 
-# Script version - single source of truth for version tracking (SPEC 8).
-# pyproject.toml carries the same string; tests/test_version.py keeps them equal.
+# Script version - the single source of truth (SPEC 8). pyproject.toml reads
+# this line through [tool.setuptools.dynamic], so a release changes it here
+# and nowhere else; the tag is the only other place the number appears.
 # The k1.x line ended with the move out of kevin-cds-text-sync; cdsint counts
 # from zero, and the .project property cds-sync-version is compared as a plain
 # string, so the change costs one version-mismatch prompt per project.

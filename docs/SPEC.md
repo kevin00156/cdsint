@@ -491,7 +491,7 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 
 **CI** 在 push 到任何分支都跑，不只 `main` 與 `claude/**`。
 
-**版本只有一個來源**：`codesys_constants.pyw` 的 `SCRIPT_VERSION`。readMe、`pyproject.toml`、看門人登記檔都從它讀或由 release 腳本同步。每個 release 打 tag。
+**版本只有一個來源**：`engine/codesys_constants.py` 的 `SCRIPT_VERSION`。`pyproject.toml` 用 `[tool.setuptools.dynamic]` 的 `version = {attr = "engine.codesys_constants.SCRIPT_VERSION"}` 直接讀那一行，看門人登記檔由 `stub/Project_watch.py` 傳進去，readMe 不寫版本號。沒有 release 腳本也不需要：一個 release 就是改那一行加打一個 tag。
 
 ---
 

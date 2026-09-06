@@ -84,9 +84,9 @@
   - [x] 驗收：測試用假 IDE 物件涵蓋「改了資料夾就寫三個屬性並建目錄」「沒改就什麼都不寫」；`config set cds-sync-folder` 之後 `cds-sync-pc`、`cds-sync-version` 都有值。
   - [ ] 驗收（還需要人）：在有畫面的 IDE 跑 `Project_watch`，按狀態視窗的 Settings，看得到資料夾那列，Browse 選一個資料夾後 Properties 裡的值變了。
 
-- [ ] **E. 版本單一來源**
-  - [ ] pyproject 改 dynamic version 讀 `SCRIPT_VERSION`；刪 `tests/test_version.py`；readMe 拿掉手寫的版本號。
-  - [ ] 驗收：`pip install -e .` 之後 `pip show cdsint` 的 Version 等於 `SCRIPT_VERSION`；`grep -n "0\.0\.1" readMe.md pyproject.toml` 為零。
+- [x] **E. 版本單一來源**
+  - [x] pyproject 改 dynamic version 讀 `SCRIPT_VERSION`；刪 `tests/test_version.py`；readMe 拿掉手寫的版本號。
+  - [x] 驗收：`pip install -e .` 之後 `pip show cdsint` 的 Version 等於 `SCRIPT_VERSION`；`grep -n "0\.0\.1" readMe.md pyproject.toml` 為零。——兩條都過。兩邊都是 0.0.1 證明不了什麼，所以另外把 `SCRIPT_VERSION` 暫時改成 `0.9.99` 重裝一次，`pip show` 跟著變成 0.9.99，再改回來重裝確認回到 0.0.1。
 
 - [ ] **F. 文件**
   - [ ] readMe：Install 寫成兩步（`pip install -e .` 裝命令、`npx skills add kevin00156/cdsint` 裝 skill）；加 pragma 與 `profiles/default.json` 兩節（從來源 readMe 332 到 346 行搬，改名字）；加 `tools/` 一節（perf_probe、call_tree 各一行用法）；加「從 cds-text-sync 升級」一段（拆舊 junction、停舊看門人、實例目錄換了、toolbar 按鈕若失效重加）；Layout 列 `skills/`；開頭那句「PLC 命令還沒做」改成現況。

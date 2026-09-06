@@ -14,9 +14,10 @@ The code came out of
 itself a fork of [ArthurkaX/cds-text-sync](https://github.com/ArthurkaX/cds-text-sync);
 that repo holds the history up to the move.
 
-> **Early days.** Version 0.0.1, no published release yet, so the one-line
-> installer has nothing to download — clone the repo and point the installer at
-> it, below. The PLC commands (`plc connect`, `plc download`) are not built yet.
+> **Early days.** No published release yet, so the one-line installer has
+> nothing to download — clone the repo and point the installer at it, below.
+> The version number lives in one place, `engine/codesys_constants.py`;
+> `pip show cdsint` reads it from there.
 
 ---
 
