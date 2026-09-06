@@ -2,7 +2,7 @@
 
 > 建立日期 2026-09-06。分支 `ticket/engine`，worktree `C:\Users\qazsskevin\Documents\repo\cdsint-engine`。
 > 鐵律在 `docs/WORKER_RULES.md`，先讀它。使用者不在也不會回答，卡住寫進最後回報。
-> 這是四張工單的最後一張，在 `history/HYGIENE_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號以 2026-09-06 晚上的 `631259b` 為準，前三張做完會漂很多，開工先重核。
+> 這是四張工單的最後一張，在 `history/HYGIENE_PLAN.md` 合進 `main` 之後才開工。第 3 節的行號原本以 2026-09-06 晚上的 `631259b` 為準，2026-09-07 已經照 `0461006` 重核並重填。
 > 這張最重，也是唯一一張每一層都要用真 IDE 驗的。驗收儀器在 `WORKER_RULES.md` 的「儀器」節，hash 清單 diff 為空是硬條件。
 
 ---
@@ -19,11 +19,11 @@
 
 ## 1. 目標與範圍
 
-引擎的知識是真的，每個怪異分支旁邊都有一段被現場打出來的 WHY。但知識被塞進三個一千多行的檔案和四個兩三百行的函式裡，同一條規則平均寫兩到三份、靠註解提醒人肉同步，81 個 bare except 和一百多個吞噬體讓「大聲失敗」在這層不成立，還有一段從沒執行過的死碼被 bare except 蓋著。
+引擎的知識是真的，每個怪異分支旁邊都有一段被現場打出來的 WHY。但知識被塞進三個一千多行的檔案和四個兩三百行的函式裡，同一條規則平均寫兩到三份、靠註解提醒人肉同步，70 個 bare except 和 90 個吞噬體讓「大聲失敗」在這層不成立，還有一段從沒執行過的死碼被 bare except 蓋著。
 
 做完之後：一條規則一份；沒有函式超過三層縮排；IDE 的全域物件由入口一次解析往下傳，引擎裡沒有 `import __main__`；替身 UI 變成「傳一個不同的 system」。
 
-明確不做：拆 `codesys_utils.py` 成十個檔（只拆做完前四層之後邊界已經浮現的部分）；把 81 個 bare except 一次清完（維持棘輪，碰到的函式順手清）；換速度引擎（SPEC 11.1）；任何 `.st` 輸出的改變。
+明確不做：拆 `codesys_utils.py` 成十個檔（只拆做完前四層之後邊界已經浮現的部分）；把剩下的 bare except 一次清完（維持棘輪，碰到的函式順手清）；換速度引擎（SPEC 11.1）；任何 `.st` 輸出的改變。
 
 ---
 
@@ -31,7 +31,7 @@
 
 | # | 決策 | 選擇 | 理由 |
 |---|---|---|---|
-| 1 | 做到哪一層 | 刪死碼、消平行路徑、拆 `perform_import_items`、IDE 全域物件顯式傳遞，四層照順序。`codesys_utils.py` 只拆邊界已浮現的；bare except 維持棘輪 | 先猜邊界再拆檔是猜，做完前四層邊界會自己浮現；81 個 except 一次清完等於重寫，每個後面都可能藏著真專案撞出來的理由 |
+| 1 | 做到哪一層 | 刪死碼、消平行路徑、拆 `perform_import_items`、IDE 全域物件顯式傳遞，四層照順序。`codesys_utils.py` 只拆邊界已浮現的；bare except 維持棘輪 | 先猜邊界再拆檔是猜，做完前四層邊界會自己浮現；七十個 except 一次清完等於重寫，每個後面都可能藏著真專案撞出來的理由 |
 | 2 | 驗收儀器 | 兩份副本匯出的 `.st` 逐檔 hash 相同是硬條件；`discover` 數字相同、`verify` exit 0、熱機速度不慢超過一成，紅了要寫 Ruling | 只跑 `verify` 證明 round trip 一致，證明不了跟重構前寫出的檔案一樣 |
 | 3 | 替身 UI 的結構修法 | 歸這張：`system`、`projects`、`online` 顯式傳遞之後，`silent.py` 換函式的機制刪掉 | B 只做最小修法，這裡做完它就沒必要了 |
 
@@ -39,53 +39,102 @@
 
 ## 3. 接手前必須知道的現況事實
 
-以 `631259b` 為準。A 會刪掉設定相關的一大塊，B 會改對話框標題常數，重核。
+**2026-09-07 以 `0461006` 重核過。**A、B、D 三張工單都已經合進 `main`，所以行號跟 `631259b`
+那一版差很多，事實也有幾條不成立了。底下每一條寫的是重核之後的樣子；重核改掉或推翻的地方
+標「重核」。
 
 **死碼（零呼叫者，全 repo 含 `cds/`、`cdsint/`、`tools/`、`tests/` 都 grep 過）**
 
-1. 函式：`codesys_managers.get_task_for_write`（34 到 78 行）、`codesys_utils.find_object_by_guid`（1450 行）、`find_application_recursive`（1260 到 1280 行，只剩自遞迴和 `codesys_online.py` 26 行一條註解引用）、`collect_property_accessors`（`managers` 524 到 586 行，import 了兩次沒人呼叫）、`build_object_cache`（`utils` 1215 行）、`DEFAULT_TIMEOUT_MS`、`PROFILE_NAME`、`DirectoryChoiceForm._on_cancel`（`ui` 378 行）。A 會刪 `DirectoryChoiceForm` 整個。
-2. 死參數：`log_error(critical=)`、`perform_import_items(globals_ref=)`（1246 到 1249 行自己承認 unused）、`ObjectManager.update(obj_info)`（`compare` 664 行永遠傳 `{}`）。死分支：`FolderManager.export` 840 到 844 行兩邊都 return "identical"；`ConfigManager.create/update` 1487 到 1491 行純 `super()` 轉發。死 import：`entry_export.py` 22 個（含五個 manager class、`is_nvl`、`is_graphical_pou`、`get_object_path`），`entry_import.py` 4 個，`managers` 的 `time`、`XML_TYPES_CONST`，`utils` 的 `csv`。
-3. 從沒執行過的：`codesys_managers.py` 984 到 1014 行找 `PouType` 的第四招掃 `sys.modules`，但這個檔沒有 import `sys`（imports 在 7 到 26 行：`os`、`codecs`、`tempfile`、`zlib`、`time`），NameError 被 1012 行的 `except: pass` 吞掉。`codesys_utils.py` 的 `Logger._initialize` 52 到 66 行用 `projects` 這個在模組裡未定義的名字，同病（A 會改這段）。
+1. 函式與常數：`codesys_managers.get_task_for_write`（34 到 78 行）、`codesys_utils.find_object_by_guid`（1192 到 1194 行）、`codesys_utils.find_application_recursive`（1002 到 1022 行，只剩自遞迴，加上 `codesys_online.py` 26 行一條引用它的註解）、`codesys_managers.collect_property_accessors`（524 到 586 行，`codesys_compare_engine.py` 44 行與 `entry_export.py` 25 行各 import 一次，兩邊都沒呼叫）、`codesys_utils.build_object_cache`（957 到 999 行，`compare` 30 行 import 了沒呼叫）、`codesys_constants.DEFAULT_TIMEOUT_MS`（307 行）、`codesys_constants.PROFILE_NAME`（101 行）、`DirectoryChoiceForm._on_cancel`（`ui` 164 到 167 行，沒有任何按鈕接這個事件）。
+
+   重核：`DirectoryChoiceForm` 這個類別本身是活的，A 並沒有刪它。`show_directory_choice_dialog`（`ui` 169 行）建它，而 `show_sync_folder_dialog`（240 行）呼叫那一個。這一條只刪 `_on_cancel` 一個方法。
+
+2. 死參數：`log_error(critical=)`（`utils` 106 行，全 repo 沒有一個呼叫端傳過它）、`perform_import_items(globals_ref=)`（`compare` 1236 行，1247 到 1249 行的 docstring 自己寫著 unused）、`ObjectManager.update(obj_info)`（`compare` 664 行永遠傳 `{}`，是唯一的呼叫端）。
+
+   死分支：`FolderManager.export`（`managers` 840 到 844 行）兩邊都 `return "identical"`；`ConfigManager.create`（1487 到 1488 行）與 `ConfigManager.update`（1490 到 1491 行）純 `super()` 轉發。
+
+   死 import 用 `python -m pyflakes engine/` 數，現在 38 個：`entry_export.py` 22 個（含五個 manager 類別、`is_nvl`、`is_graphical_pou`、`get_object_path`）、`codesys_compare_engine.py` 7 個、`entry_import.py` 4 個、`codesys_managers.py` 3 個（模組層的 `time` 與 `XML_TYPES_CONST`，加上 90 行一個函式內的 `re`）、`codesys_utils.py` 1 個（`csv`）、`entry_build.py` 1 個（`sys`）。
+
+   重核：原本只列了四個檔，`compare_engine` 那七個與 `entry_build` 那一個是這次數出來的。
+
+3. 從沒執行過的：`codesys_managers.py` 1005 到 1013 行是找 `PouType` 的第四招，掃 `sys.modules`，但這個檔沒有 import `sys`（imports 在 7 到 26 行），NameError 被 1012 行的 `except: pass` 吞掉。`python -m pyflakes engine/` 直接把它報出來：`codesys_managers.py:1008: undefined name 'sys'`。
+
+   重核：`codesys_utils.Logger._initialize` 的同一個病 A 已經修掉了。它現在什麼都不查，log 路徑由 `init_logging(base_dir, debug)`（`utils` 94 行）一次給。這一條剩 `managers` 一處。
 
 **平行路徑（同一條規則寫兩份以上）**
 
-4. 分類加路徑快取的快速路徑：`entry_export.py` 251 到 281 行與 `codesys_compare_engine.py` 249 到 280 行是同一個演算法（diff 過，差別只有變數名、計數器、註解措辭）。同組的 XML gate（export 334 到 339 行、compare 291 到 295 行）、property accessor 掃描（export 297 到 312 行、compare 307 到 325 行、`managers.collect_property_accessors` 第三份沒人呼叫）。compare 284 到 290 行的註解自己說「CRITICAL: honor the same export_xml gate that export uses」。
-5. Manager 派發兩套且規則不同：`entry_export.py` 342 到 347 行（is_xml 就 native 除非有專屬；否則按 GUID；否則 default）與 `codesys_compare_engine.resolve_manager` 644 到 653 行（`.xml` 副檔名就 native；按 GUID；XML_TYPES 就 native；default）。圖形化 POU 兩邊答案碰巧一樣，靠的是副檔名。
-6. `POUManager.export`（`managers` 885 到 950 行）與 `PropertyManager.export`（1098 到 1172 行）尾段約 30 行逐行相同：identical 檢查、`_disk_moved_since_sync`、寫檔、exported_paths、cache 更新。`if 'exported_paths' in context: context['exported_paths'].add(rel_path)` 在 managers 出現 8 次。
-7. 「export_native 到暫存檔、讀回、刪除」寫了四次：`get_task_for_write` 42 到 54 行（死的）、`is_nvl` 96 到 108 行、`export_interface_declaration` 432 到 443 行、`get_ide_content` 81 到 98 行，各有各的暫存檔命名和 bare except。
-8. 三個磁碟走訪、三套略過規則：`cleanup_orphaned_files`（export 46 到 68 行：跳 dot-dir、dot-file、只看 `.st`、`.xml`，不跳 `__pycache__` 也不看 RESERVED_FILES）、`scan_new_disk_files`（compare 589 到 614 行：跳 dot-dir 加 `__pycache__`、RESERVED_FILES、dot-file）、`has_st_files`（562 到 575 行）。今天沒出事是因為 RESERVED_FILES 裡剛好沒有 `.st`。
-9. 微型平行路徑：讀名字有 `unhandled.name_of`、`utils._obj_label`、`codesys_online._name`、`plc_link.device_name` 四份；讀 kind 有 `codesys_online._kind`、`plc_link._kind_of`、`compare._is_pou_or_itf`；`managers._parent_of` 等於 `compare._parent_or_none`；`managers._cache_key` 等於 `compare._guid_or_none`；`codesys_online._children` 等於 `plc_link._children`（差別只在有沒有 `unhandled.note`）。`compare_engine` 跨模組 import 私有名 `_find_child_transparent`。
-10. `context['effective_type']` 是透過共享 dict 偷傳的隱藏參數：`entry_export.py` 349 行每個物件寫一次，managers 在 888、916、1107、1359 行用 `context.get('effective_type', safe_str(obj.type))` 讀回，fallback 還會再打一次 .NET。
-11. type cache 的 `(eff_type, is_xml, rel_path)` 是位置 tuple，三處用 `cached_info[2] if (cached_info and len(cached_info) > 2) else None` 防身（compare 254、351 行；export 253 行）。
-12. 相對路徑解析（A 會收成一份）；Application GUID 字面值三處兩個值（A 會收）。
+4. 分類加路徑快取的快速路徑：`entry_export.py` 242 到 271 行與 `codesys_compare_engine.py` 253 到 280 行是同一個演算法（diff 過，差別只有變數名、計數器、註解措辭）。同組的 XML gate（export 318 到 324 行、compare 284 到 295 行）、property accessor 掃描（export 281 到 297 行、compare 306 到 325 行、`managers.collect_property_accessors` 是第三份而且沒人呼叫）。compare 284 行的註解自己說「CRITICAL: honor the same export_xml gate that export uses」。
+
+5. Manager 派發兩套而且規則不同：`entry_export.py` 326 到 332 行（is_xml 就 native 除非有專屬的；否則按 GUID；否則 default）與 `codesys_compare_engine.resolve_manager`（644 到 653 行：`.xml` 副檔名就 native；按 GUID；XML_TYPES 就 native；default）。圖形化 POU 兩邊答案碰巧一樣，靠的是副檔名。
+
+6. `POUManager.export`（`managers` 885 到 950 行）與 `PropertyManager.export`（1098 到 1172 行）尾段逐行相同，各 25 行（926 到 950 對 1148 到 1172）：identical 檢查、`_disk_moved_since_sync`、寫檔、`exported_paths`、cache 更新。`if 'exported_paths' in context:` 在 `managers` 出現 9 次（758、797、834、933、947、1155、1169、1407、1423 行）。
+
+   重核：原本說 8 次，現在數到 9 次。
+
+7. 「export_native 到暫存檔、讀回、刪除」寫了四次：`get_task_for_write`（`managers` 42 到 54 行，死的）、`is_nvl`（`managers` 80 到 118 行）、`export_interface_declaration`（`managers` 424 到 450 行）、`get_ide_content`（`compare` 67 到 124 行），各有各的暫存檔命名和 bare except。`NativeManager.export`（`managers` 1357 到 1427 行）是第五處，但它是正經的匯出路徑，不是「讀回來看一眼」，性質不同。
+
+8. 三個磁碟走訪、三套略過規則：`cleanup_orphaned_files`（`entry_export` 51 到 71 行：跳 dot-dir、dot-file、只看 `.st` 與 `.xml`，不跳 `__pycache__` 也不看 RESERVED_FILES）、`scan_new_disk_files`（`compare` 588 到 615 行：跳 dot-dir 加 `__pycache__`、RESERVED_FILES、dot-file）、`has_st_files`（`compare` 570 到 575 行）。今天沒出事是因為 RESERVED_FILES 裡剛好沒有 `.st`。`entry_export.py` 126 行還有第四個走訪，那個是刪空資料夾用的，問的不是同一個問題。
+
+9. 微型平行路徑：讀名字有 `unhandled.name_of`（68 行）、`utils._obj_label`（746 行）、`codesys_online._name`（162 行）、`plc_link.device_name`（217 行）四份；讀 kind 有 `codesys_online._kind`（143 行）、`plc_link._kind_of`（232 行）、`compare._is_pou_or_itf`（667 行）；`managers._parent_of`（180 行）等於 `compare._parent_or_none`（1094 行）；`managers._cache_key`（172 行）等於 `compare._guid_or_none`（1101 行）；`codesys_online._children`（133 行）等於 `plc_link._children`（224 行），差別只在有沒有 `unhandled.note`。`compare_engine` 35 行跨模組 import 私有名 `_find_child_transparent`，`tools/perf_probe.py` 197 行也認得這個名字。
+
+10. `context['effective_type']` 是透過共享 dict 偷傳的隱藏參數：`entry_export.py` 334 行每個物件寫一次，`managers` 在 888、916、1107、1359 行用 `context.get('effective_type', safe_str(obj.type))` 讀回，fallback 還會再打一次 .NET。
+
+11. type cache 的 `(eff_type, is_xml, rel_path)` 是位置 tuple，三處用 `len(...) > 2` 防身：`compare` 254 與 351 行、`entry_export` 243 行。
+
+12. 相對路徑解析與 Application GUID 字面值，A 已經收乾淨了。剩下唯一一個 GUID 字面值在 `utils` 1158 行，`TYPE_GUIDS.get("folder", "738bea1e-…")` 拿字面值當 profile 的備胎。
+
+    重核：這一條原本寫「A 會收」，現在確認收完了，只剩上面那一處。
 
 **深巢與長函式**
 
-13. `codesys_compare_engine.perform_import_items`（1236 到 1494 行）259 行、巢狀深度 10，四趟 pass 內嵌 device remap、孤兒刪除、XML 批次、POU 子物件保存還原、ST 建立。move 處理 XML 版（1337 到 1352 行）和 ST 版（1456 到 1470 行）逐字相同；「在 container 裡用小寫名字找 child」寫了四次（970 到 973、986 到 989、1393 到 1394、1419 到 1420 行）。
-14. `codesys_managers._hash_content`（1262 到 1355 行）深度 9，四個從子字串嗅出來的布林旗標接一串 if/elif；timestamp 與 guid 過濾上下兩半各寫一遍（1291 到 1292、1340 到 1344 行）；fallback 拿檔名算 hash，註解自己說「preserved here, not endorsed」。
-15. `entry_build.build_project`（95 到 488 行）394 行、深度 7：三段「Attempt」定位邏輯（263 到 406 行）內嵌、表格排版、寫 log 檔、UI 全在一個函式；10 個 bare 或 broad except；411 到 420 行是註解掉的程式碼；182 行往 log 塞假的 phase 訊息；`main` 491 到 493 行 `if error: pass`。A 會改 112 到 160 行。
-16. `codesys_utils.load_base_dir`（543 到 641 行）深度 8（A 會大砍）；`ensure_folder_path`（1352 到 1447 行）深度 7，1380 到 1406 行是 debug trace，`src/` 前綴剝除在 1366 到 1367 行與 `find_object_by_path` 1496 行各一份，`TYPE_GUIDS.get("folder", "738bea1e-…")` 用字面值當 profile 的備胎，建資料夾四次嘗試做一件事。
+13. `codesys_compare_engine.perform_import_items`（1236 到 1494 行）259 行、巢狀深度 9，四趟 pass 內嵌 device remap、孤兒刪除、XML 批次、POU 子物件保存還原、ST 建立。move 處理 XML 版（1338 到 1352 行）和 ST 版（1456 到 1470 行）逐字相同，只有 log 訊息差一個字；「在 container 裡用小寫名字找 child」寫了四次（`compare` 971、987、1394、1420 行）。
+
+14. `codesys_managers._hash_content`（1262 到 1355 行）94 行、深度 9，四個從子字串嗅出來的布林旗標接一串 if/elif；timestamp 與 guid 過濾上下兩半各寫一遍；fallback 拿檔名算 hash，註解自己說「preserved here, not endorsed」；1354 到 1355 行的 `except: return ""` 是第 18 條那個具體傷害的來源。
+
+15. `entry_build.build_project`（144 到 486 行）343 行、深度 7：三段「Attempt」定位邏輯（263 到 405 行）內嵌、表格排版、寫 log 檔、UI 全在一個函式；415 行是註解掉的程式碼；182 行往 log 塞一句假的 phase 訊息（`"Typify code..."`，註解自己標了 Aesthetic phase marker）。
+
+    重核：原本 394 行，A 改完剩 343 行。`main` 的 `if error: pass` B 已經修掉了，現在（488 到 498 行）錯誤會回一個 `entry.result(False, error)`。
+
+16. `codesys_utils.ensure_folder_path`（1094 到 1189 行）96 行、深度 6，1113 到 1147 行是 debug trace，`src/` 前綴剝除在 1108 到 1109 行與 `find_object_by_path` 1238 行各一份，建資料夾四次嘗試做一件事（`create_folder`、`create_child`、回傳 falsy 之後重掃、丟例外之後再重掃）。
+
+    重核：`load_base_dir` 已經被 A 刪掉了，全 repo 只剩 `tests/test_discover.py` 97 行一條註解提到它。這一條剩 `ensure_folder_path`。
 
 **全域物件與例外**
 
-17. 找 IDE 全域物件的解析器四套：`resolve_projects`（`utils` 138 到 180 行，第三招掃全部 `sys.modules`）、`resolve_system`（195 到 224 行）、`_resolve_primary_project`（500 到 510 行）、`codesys_online.resolve_online`（59 到 75 行）。`entry.lend()` 已經是「顯式借出」的正確答案，這些是它的平行路徑。每個呼叫 `get_project_prop()` 的函式都隱性依賴「誰 exec 了我」（A 會刪 `get_project_prop`）。
-18. bare `except:` 81 個（棘輪表 `tests/test_bare_excepts.py`：utils 33、managers 29、compare 6、build 6、ui 5、entry_compare 2）。「整個 body 只有 pass、continue、回預設值」的 handler 105 個（AST 數的：utils 34、managers 33、compare 11、plc_link 5、build 4）。具體傷害三例：`managers` 1012 行藏了第 3 條的 NameError；`utils` 277 行 `except: pass` 在 `get_quick_ide_hash` 裡，property 的子物件讀失敗就當 GET/SET 是空的算 hash，cache 說「identical」；`managers` 1354 行 `_hash_content` 出錯回 `""`，`NativeManager.export` 1401 行 `old_hash and old_hash == new_hash` 遇到空字串永遠 False，那個檔每次 export 都被「updated」。
-19. `codesys_ui.py` 8 到 19 行模組層 `try: clr.AddReference... except: pass` 是假容錯，122 行 `class SettingsForm(Form)` 在 import 失敗時照樣 NameError（A 刪 SettingsForm，其他 Form 子類別同病）。`ask_yes_no` 89 到 95 行、`ask_yes_no_cancel` 112 到 119 行各帶一條摸 `__main__.PromptChoice` 的備用對話路徑。
-20. `codesys_utils.py` 1084 到 1097 行把狀態存在函式物件上（`read_ide_attrs._bp_dumped`），是一次性的探針躺在每個物件都經過的熱路徑裡。
+17. 找 IDE 全域物件的解析器剩三套：`resolve_projects`（`utils` 130 到 172 行，第三招掃全部 `sys.modules`）、`resolve_system`（`utils` 187 到 216 行）、`codesys_online.resolve_online`（59 到 75 行）。`entry.lend()` 已經是「顯式借出」的正確答案，這三個是它的平行路徑。
+
+    重核：`_resolve_primary_project` 與 `get_project_prop` 都被 A 刪了，所以第四層要收的從四個縮成三個。
+
+18. bare `except:` 現在 70 個，棘輪表在 `tests/test_bare_excepts.py`：`managers` 29、`utils` 26、`compare` 6、`build` 5、`ui` 2、`entry_compare` 2。「整個 handler 只有 pass、continue、break 或回一個常數」的吞噬體，`engine/` 底下 AST 數到 90 個：`managers` 34、`utils` 25、`compare` 12、`build` 4、`entry_compare` 3、`plc_link` 3、`unhandled` 3、`codesys_online` 2、`codesys_ui` 2、`entry_export` 2。
+
+    重核：開工時是 81 個 bare except，A、B、D 清掉 11 個（`utils` 33 到 26、`build` 6 到 5、`ui` 5 到 2）。吞噬體原本記 105 個，這次用同一支腳本重數是 90 個。
+
+    具體傷害三例，全部還在。第一，`managers` 1012 行藏著第 3 條那個 NameError。第二，`utils` 267 行 `except: pass` 在 `get_quick_ide_hash`（234 到 288 行）裡，property 的子物件讀失敗就當 GET 與 SET 是空的去算 hash，快取於是說「identical」。第三，`managers` 1355 行 `_hash_content` 出錯回 `""`，而 `NativeManager.export` 1401 行寫的是 `old_hash and old_hash == new_hash`，空字串永遠讓這個條件為 False，那個檔每次 export 都被算成「updated」。
+
+19. `codesys_ui.py` 7 到 21 行模組層 `try: clr.AddReference(...) except: pass` 是假容錯：import 失敗的話 100 行的 `class DirectoryChoiceForm(Form)` 照樣 NameError，另一個 Form 子類別同病。`ask_yes_no`（78 到 98 行）的 88 到 97 行帶一條摸 `__main__.PromptChoice` 的備用對話路徑。
+
+    重核：`SettingsForm` 與 `ask_yes_no_cancel` 都被前面的工單刪了。剩 `DirectoryChoiceForm`（100 行）與 `SyncFolderPathForm`（181 行）兩個 Form 子類別，備用對話路徑只剩 `ask_yes_no` 一條。
+
+20. `codesys_utils.py` 826 到 827 行把狀態存在函式物件上（`read_ide_attrs._bp_dumped`），是一次性的探針躺在每個物件都經過的熱路徑裡。
 
 **過期註解（會主動騙人的）**
 
-21. `constants` 46 行「installed next to codesys_constants.pyw」；`settings` 5 行「run Project_directory.py」；`utils` 1365 行「handled by Project_export migration now」；`compare` 1026 行「Project_import and Project_compare」；`export` 189 行「only Project_Build reads」；`compare` 模組 docstring 8 到 14 行列了 `update_object_metadata()`，656 行說它被移除了；墓碑註解 `# Removed X` 在 `utils` 710、877、`compare` 64、656 行；`utils` 33 到 34 行標題貼兩次；`export` 32、182、224、248 行「Second pass」但沒有 first pass；`compare` 1024 到 1033 行十行悼念 `finalize_import`；`compare` 1061 行「phase 2 import」；`utils` 1855 行「e179ef9 policy」；`codesys_online` 25 到 26 行引一個死函式當深度守衛的依據。
+21. `constants` 47 行「installed next to codesys_constants.pyw」；`utils` 1107 行「handled by Project_export migration now」；`compare` 1026 行「Project_import and Project_compare」；`compare` 模組 docstring 14 行列了 `update_object_metadata()`，656 行說它被移除了；墓碑註解 `# Removed X` 在 `utils` 452、619 行與 `compare` 64、656 行；`utils` 32 到 33 行標題貼兩次；`entry_export` 238 行與 `utils` 1076 行寫「Second pass」但沒有 first pass；`compare` 1024 到 1033 行十行悼念 `finalize_import`；`compare` 1061 行「phase 2 import」；`utils` 1572 行「e179ef9 policy」；`codesys_online` 25 到 26 行引一個死函式當深度守衛的依據。
 
-**`codesys_utils.py` 的十七個職責（做完前四層再看要拆哪些）**
+    重核：`settings` 5 行「run Project_directory.py」與 `export` 189 行「only Project_Build reads」都已經不在了。`engine/` 底下現在只剩兩處提到 `Project_` 前綴的舊腳本名，就是上面列的那兩條。
 
-22. logging（35 到 121 行）、IDE 全域物件解析（125 到 224）、hash（299 到 307、981 到 992）、ST 型別嗅探與格式化（324 到 371、713 到 874）、pragma（880 到 992）、build_properties 讀寫（995 到 1160）、專案屬性（382 到 464，A 刪）、Application 計數（465 到 541，A 刪）、sync 資料夾解析（543 到 641，A 大砍）、git 設定檔（644 到 707）、XML 合併（775 到 824）、IDE 樹導航（1215 到 1523）、備份（1526 到 1661）、互動計時器（1664 到 1703）、sync cache（1706 到 1821）、版本檢查與 metadata 與 finalize（1823 到 1928，A 砍一半）。
+**`codesys_utils.py` 的十五個職責（做完前四層再看要拆哪些）**
+
+22. 檔案現在 1637 行。現況：logging（32 到 113）、IDE 全域物件解析（117 到 216）、IDE 屬性旗標與快速 hash（219 到 288）、hash 與字串轉換（291 到 313）、ST 型別嗅探與格式化（316 到 383、455 到 515、569 到 620）、git 設定檔（386 到 452）、XML 合併（517 到 566）、pragma（622 到 743）、build_properties 讀寫（746 到 902）、讀檔與解析 `.st`（905 到 954）、IDE 樹導航（957 到 1265）、備份（1268 到 1406）、互動計時器（1409 到 1448）、sync cache（1451 到 1565）、metadata 與 finalize（1568 到 1637）。
+
+    重核：專案屬性、Application 計數、sync 資料夾解析這三塊已經被 A 刪光或搬走，所以從十七個職責變成十五個。
 
 **開工前重核清單**
 
-- 每一條用名字 grep，行號重填，A、B、D 已經動過的劃掉或更新。
-- 重跑 `tests/test_bare_excepts.py` 的數字，重數 AST 的吞噬體。
-- 儀器基線：兩份副本各 export 一次存 hash 清單、`discover --json` 存起來、`verify` exit 0、熱機三次 export、compare、build 的中位數。全部存在 `%TEMP%\cdsint-work\engine\baseline\`，而且 commit 一份摘要（不含路徑）進本工單第 6 節。
+- [x] 每一條用名字 grep，行號重填，A、B、D 已經動過的標「重核」。
+- [x] 重跑 `tests/test_bare_excepts.py` 的數字（81 降到 70），重數 AST 的吞噬體（105 降到 90）。
+- [x] Windows 與 WSL 兩邊測試各 1072 個全綠。
+- [ ] 儀器基線：兩份副本各 export 一次存 hash 清單、`discover --json` 存起來、`verify` exit 0、熱機三次 export、compare、build 的中位數。全部存在 `%TEMP%\cdsint-work\engine\baseline\`，而且 commit 一份摘要（不含路徑）進本工單第 6 節。
 
 ---
 
@@ -109,7 +158,7 @@
 
 **第三層：拆 `perform_import_items`。** 一個 `child_named(container, name)`，一個 `move_if_needed(item, obj)`，四趟 pass 各自成函式，主體剩順序表（像 `entry_plc.in_order` 那樣）。每個新函式守 40 行、3 層。`build_project` 同法：`locate_message(msg, decl, impl)` 純函式（能在 CI 測），主體剩 build、collect、verdict；註解掉的程式碼與假 phase 訊息刪。`ensure_folder_path` 的 debug trace 搬去 `tools/`，建資料夾一次、失敗就 raise 進 D13。`read_ide_attrs._bp_dumped` 那段搬去 `tools/`。
 
-**第四層：IDE 全域物件顯式傳遞。** `projects`、`system`、`online` 由每個 entry body 的 `main` 從自己的 namespace 拿一次（stub 與 `silent.run` 注入的那個），往下傳給需要的函式；`resolve_projects`、`resolve_system`、`_resolve_primary_project`、`resolve_online` 刪；引擎裡 `grep "import __main__"` 為零，`grep "sys.modules"` 為零。`Logger` 的 log 路徑由 `init_logging(base_dir)` 一次給。做完之後 `cds/ide/silent.py` 換函式的機制刪掉：替身就是把一個 `system` 替身放進 body 的 namespace，`codesys_ui.ask_yes_no` 收 `system` 當參數而不是自己找。`_ui_patches`、`_install`、`UI_MODULE`、`tests/test_layering.py` 那個登記的 `__import__` 一起消失。
+**第四層：IDE 全域物件顯式傳遞。** `projects`、`system`、`online` 由每個 entry body 的 `main` 從自己的 namespace 拿一次（stub 與 `silent.run` 注入的那個），往下傳給需要的函式；`resolve_projects`、`resolve_system`、`resolve_online` 刪（`_resolve_primary_project` A 已經刪了）；引擎裡 `grep "import __main__"` 為零，`grep "sys.modules"` 為零。`Logger` 的 log 路徑 A 已經改成由 `init_logging(base_dir, debug)` 一次給，這一項不用再做。做完之後 `cds/ide/silent.py` 換函式的機制刪掉：替身就是把一個 `system` 替身放進 body 的 namespace，`codesys_ui.ask_yes_no` 收 `system` 當參數而不是自己找。`_ui_patches`、`_install`、`UI_MODULE`、`tests/test_layering.py` 那個登記的 `__import__` 一起消失。
 
 **第五層（只做邊界已浮現的）。** 做完前四層，`codesys_utils.py` 剩下的職責裡，凡是「已經有自己的一組函式、互相只呼叫彼此、外面只有兩三個進入點」的，各自成檔：候選是 `st_text.py`（格式、解析、pragma）、`sync_cache.py`、`backup.py`、`log.py`。不確定的留著。沒有 `utils`。
 
