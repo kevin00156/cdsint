@@ -22,6 +22,7 @@ from __future__ import print_function
 import os
 import sys
 
+from cds.core import props
 from cds.ide import config, messages, permit, silent
 
 # The install root, the directory that holds engine/ and cds/:
@@ -86,7 +87,8 @@ def run(ide_globals, command, args):
     what a person would have read.
     """
     if command == "config":
-        return silent.Outcome([], "", result=config.run(ide_globals, args))
+        answer = silent.Outcome([], "", result=config.run(ide_globals, args))
+        return _folder_follow_up(ide_globals, args, answer)
     refused = _not_allowed(ide_globals, command)
     if refused is not None:
         return refused
@@ -94,6 +96,29 @@ def run(ide_globals, command, args):
     forget_engine()
     return silent.run(ide_globals, os.path.join(REPO_ROOT, "engine", script),
                       entry, args)
+
+
+def _folder_follow_up(ide_globals, args, answer):
+    """Setting the sync folder from here does what the dialog does after it.
+
+    `config set` writes the property and stops, because this side may not
+    import the engine (SPEC D12) and the rest is engine work: create the
+    folder, give it its git rules, stamp the machine and the tool version on
+    the project. A project set up this way used to come out missing
+    cds-sync-pc and cds-sync-version, which is the pair load_base_dir and
+    check_version_compatibility read. engine/settings.py already does all of
+    it for the dialog, so it is pressed here the way every other body is,
+    by path and entry name.
+    """
+    if (args or {}).get("key") != props.FOLDER or not answer.ok():
+        return answer
+    forget_engine()
+    tail = silent.run(ide_globals,
+                      os.path.join(REPO_ROOT, "engine", "settings.py"),
+                      "folder_was_set", args)
+    # The property is written either way; a failure here means the folder is
+    # not usable yet, and saying so beats reporting a clean success.
+    return answer if tail.ok() else tail
 
 
 def _not_allowed(ide_globals, command):

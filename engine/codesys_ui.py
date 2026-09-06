@@ -120,9 +120,10 @@ def ask_yes_no_cancel(title, message):
         return "cancel"
 
 class SettingsForm(Form):
-    def __init__(self, current_settings, version=None):
+    def __init__(self, current_settings, version=None, system=None):
         self.Text = "CODESYS Sync Settings"
-        self.Size = Size(420, 430) # Height fits retention + diagnostics group
+        self.Size = Size(420, 480) # Height fits the folder row as well
+        self._system = system
         self.FormBorderStyle = FormBorderStyle.FixedDialog
         self.StartPosition = FormStartPosition.CenterScreen
         self.MaximizeBox = False
@@ -146,8 +147,31 @@ class SettingsForm(Form):
             lbl_version.ForeColor = Color.Gray
             self.Controls.Add(lbl_version)
         
+        # The sync folder. First row because everything below it is about
+        # what happens to that folder, and because a project whose folder is
+        # wrong has nothing else worth changing.
+        y = 58
+        lbl_folder = Label()
+        lbl_folder.Text = "Sync Folder:"
+        lbl_folder.Location = Point(30, y + 3)
+        lbl_folder.AutoSize = True
+        self.Controls.Add(lbl_folder)
+
+        self.txt_folder = TextBox()
+        self.txt_folder.Location = Point(110, y)
+        self.txt_folder.Size = Size(200, 20)
+        self.txt_folder.Text = current_settings.get("sync_folder", "")
+        self.Controls.Add(self.txt_folder)
+
+        btn_browse = Button()
+        btn_browse.Text = "Browse..."
+        btn_browse.Location = Point(318, y - 1)
+        btn_browse.Size = Size(72, 23)
+        btn_browse.Click += self._on_browse_folder
+        self.Controls.Add(btn_browse)
+
         # Group 1: Export Settings
-        y = 60
+        y += 40
         self.chk_xml = CheckBox()
         self.chk_xml.Text = "Export Native XML (Visu/Alarms)"
         self.chk_xml.Location = Point(30, y)
@@ -229,17 +253,31 @@ class SettingsForm(Form):
         btn_cancel = Button()
         btn_cancel.Text = "Cancel"
         btn_cancel.DialogResult = DialogResult.Cancel
-        btn_cancel.Location = Point(290, 350)
+        btn_cancel.Location = Point(290, 400)
         self.Controls.Add(btn_cancel)
 
         btn_save = Button()
         btn_save.Text = "Save Settings"
         btn_save.DialogResult = DialogResult.OK
-        btn_save.Location = Point(160, 350)
+        btn_save.Location = Point(160, 400)
         btn_save.Size = Size(120, 23)
         self.Controls.Add(btn_save)
         self.AcceptButton = btn_save
         self.CancelButton = btn_cancel
+
+    def _on_browse_folder(self, sender, event):
+        """The one door to picking a folder, so the stand-in UI can shut it.
+
+        cds/ide/silent.py patches show_sync_folder_dialog by name to refuse
+        when nobody is at the keyboard; calling browse_directory_dialog
+        straight from here would be a second door onto the same modal window
+        with no one to close it.
+        """
+        if self._system is None:
+            return
+        chosen = show_sync_folder_dialog(self._system, self.txt_folder.Text)
+        if chosen:
+            self.txt_folder.Text = chosen
 
     def get_results(self):
         try:
@@ -250,6 +288,7 @@ class SettingsForm(Form):
             retention = 10
         
         return {
+            "sync_folder": self.txt_folder.Text.strip(),
             "export_xml": self.chk_xml.Checked,
             "backup_binary": self.chk_bin.Checked,
             "backup_name": self.txt_backup_name.Text.strip(),
@@ -260,9 +299,10 @@ class SettingsForm(Form):
             "debug": self.chk_debug.Checked
         }
 
-def show_settings_dialog(current_settings, version=None):
+def show_settings_dialog(current_settings, version=None, system=None):
+    """`system` is only needed by the folder row's Browse button."""
     try:
-        form = SettingsForm(current_settings, version)
+        form = SettingsForm(current_settings, version, system)
         result = form.ShowDialog()
         if result == DialogResult.OK:
             return form.get_results()

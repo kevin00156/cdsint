@@ -99,15 +99,71 @@ def edit(caller_globals=None):
     current = {}
     for prop, key, default in SETTINGS:
         current[key] = get_project_prop(prop, default)
+    folder_before = get_project_prop(props.FOLDER, "")
+    current["sync_folder"] = folder_before
 
-    chosen = show_settings_dialog(current, version=SCRIPT_VERSION)
+    chosen = show_settings_dialog(current, version=SCRIPT_VERSION,
+                                  system=system)
     if not chosen:
         print("Settings cancelled.")
         return False
     for prop, key, _default in SETTINGS:
         set_project_prop(prop, chosen[key])
+    projects_obj = resolve_projects(None, caller_globals)
+    _apply_folder(system, chosen.get("sync_folder", ""), folder_before,
+                  projects_obj.primary if projects_obj else None)
     print("Settings saved.")
     return True
+
+
+def _apply_folder(system, typed, before, project):
+    """Move the sync folder, but only when the text actually changed.
+
+    Comparing the raw text rather than what _as_written makes of it is
+    deliberate. An untouched box must write nothing at all: _prepare creates
+    the folder and _remember_who_and_what stamps this machine and this tool
+    version onto the project, and doing either on every visit to the dialog
+    would let opening Settings quietly claim a project somebody else set up.
+    """
+    if typed == before:
+        return False
+    if not typed:
+        system.ui.warning("The sync folder was left blank, so it was not "
+                          "changed. Type a path, or use Browse.")
+        return False
+    folder = _as_written(typed, project)
+    if not set_project_prop(props.FOLDER, folder):
+        system.ui.error("Could not write cds-sync-folder to Project "
+                        "Information > Properties.")
+        return False
+    _remember_who_and_what()
+    _prepare(folder, project)
+    print("Sync folder set to: " + folder)
+    return True
+
+
+def folder_was_set(caller_globals=None):
+    """Finish what `cdsint config set cds-sync-folder=...` started.
+
+    That command writes the property and nothing else, because cds/ide may
+    not import the engine (SPEC D12) and everything below this line is engine
+    work. Without it a project set up from the CLI came out missing
+    cds-sync-pc and cds-sync-version, and with no folder on disk and no git
+    rules in it — the same project set up from the dialog has all four. One
+    way to do a thing, so this is the dialog's own tail, pressed by name.
+    """
+    from engine import entry
+    # globals() is the namespace cds/ide/silent.py exec'd this file into, and
+    # `projects` is in it -- the same way every other entry body finds it.
+    projects_obj = resolve_projects(None, caller_globals or globals())
+    project = projects_obj.primary if projects_obj else None
+    folder = get_project_prop(props.FOLDER, "")
+    if not folder:
+        return entry.result(False, "cds-sync-folder is not set, so there is "
+                                   "nothing to prepare")
+    _remember_who_and_what()
+    _prepare(folder, project)
+    return entry.result(True, "sync folder ready: " + folder, folder=folder)
 
 
 def _as_written(chosen, project):

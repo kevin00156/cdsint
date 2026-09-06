@@ -79,9 +79,9 @@
   - [x] `tools/Project_perf_probe.py` → `tools/perf_probe.py`，檔頭寫 Execute Script File 的用法與參數；PRINCIPLES 加 `Project_` 前綴那一條。
   - [x] 驗收：`ls tools/ | grep Project_` 為空。
 
-- [ ] **D. Settings 加同步資料夾列**
-  - [ ] 照第 4 節。`cds/ide/config.py` 的 `_set` 對 `cds-sync-folder` 也跑 `_prepare` 與 `_remember_who_and_what`，兩條路寫出來的屬性一樣。
-  - [ ] 驗收：測試用假 IDE 物件涵蓋「改了資料夾就寫三個屬性並建目錄」「沒改就什麼都不寫」；`config set cds-sync-folder` 之後 `cds-sync-pc`、`cds-sync-version` 都有值。
+- [x] **D. Settings 加同步資料夾列**
+  - [x] 照第 4 節。`cds/ide/config.py` 的 `_set` 對 `cds-sync-folder` 也跑 `_prepare` 與 `_remember_who_and_what`，兩條路寫出來的屬性一樣。
+  - [x] 驗收：測試用假 IDE 物件涵蓋「改了資料夾就寫三個屬性並建目錄」「沒改就什麼都不寫」；`config set cds-sync-folder` 之後 `cds-sync-pc`、`cds-sync-version` 都有值。
   - [ ] 驗收（還需要人）：在有畫面的 IDE 跑 `Project_watch`，按狀態視窗的 Settings，看得到資料夾那列，Browse 選一個資料夾後 Properties 裡的值變了。
 
 - [ ] **E. 版本單一來源**
@@ -114,6 +114,8 @@
 - Ruling: `discover` 的 `data` 是 `total`（樹上全部節點）、`by_kind`（kind → 幾個，dict）、`unknown`（`[{"name", "guid"}]`）、`failed_objects`（跟其他命令同名同形） — `unknown` 用結構化的兩個欄位而不是一句字串，因為讀它的人下一步是把那個 GUID 貼進 `profiles/default.json`，agent 不該去剖析人話；`by_kind` 用 dict 因為 `--json` 那邊要的是可查表的東西 — 錯了的代價是 `cdsint/report.py` 的 `_show_data` 多了一段處理 dict 與 dict 清單的分支。
 - Ruling: `total` 數的是樹上每一個節點，不是 export 會寫出去的那些 — 工單驗收寫「回 `total` 229」，實際量到 407；229 是 export 寫出的檔案數（空同步資料夾跑 `compare --project` 的 `new_in_ide` 就是 229），兩個數字量的是不同的東西。export 故意跳過的那些（property accessor 60、task 3、device 44、device_module 38，以及被單體容器擁有的子物件）正是「物件靜默消失」的藏身處，不數它們就等於把答案拿掉。要讓兩個數字對齊只有兩條路，都比數字不好看更糟：對每個物件呼叫 `classify_object` 會把 survey 已經讀過的 `.type` 與 `.parent` 再讀一次（PRINCIPLES 3），自己重寫一份跳過規則則是同一套規則的第二份拷貝（PRINCIPLES 7）— 錯了的代價是監督者重現驗收時會看到 407 而不是 229，所以這件事寫進了 `entry_discover.py` 的檔頭與 readMe。
 - Ruling: `entry_compare.py` 留著當一支獨立模組，不並進 `codesys_compare_engine` — 它剩下的 181 行是 `entries.SCRIPTS` 裡 `compare` 那一列的本體，而 SPEC D12 要求每一個命令名字對到一支 `entry_*`；`codesys_compare_engine` 是算差異的引擎，把「載設定、印報告、回 result」塞進去就是兩個職責掉進同一支檔（PRINCIPLES 1）— 錯了的代價是多一支小檔案。
+- Ruling: `config set cds-sync-folder=X` 的收尾走 `cds/ide/entries.py` 去按 `engine/settings.py` 的 `folder_was_set`，不在 `cds/ide/config.py` 裡自己寫一份 — `_prepare`（建目錄、寫 git 規則、數 application）與 `_remember_who_and_what`（寫 `cds-sync-pc`、`cds-sync-version`）都是引擎的事，而 `cds/ide` 不准 import 引擎（SPEC D12、PRINCIPLES 4）；entries.py 本來就有「照路徑與入口名字按一支引擎本體」這個門，走它就沒有第二份跳過規則，也不用把 `SCRIPT_VERSION` 搬家 — 錯了的代價是 `config set cds-sync-folder` 從此需要 `engine/codesys_ui` 載得起來（`silent.run` 會去接管它的對話框），而在真 IDE 裡那本來就是每個命令的前提。
+- Ruling: `config set` 寫進去的值一字不改，不套 `_as_written` — 對話框會把瀏覽出來的絕對路徑改寫成 `./sync`，因為那個路徑不是人打的；`config set KEY=VALUE` 是人打的，而一個會偷改你給的值的 CLI 會讓 `config get` 回傳跟你設的不一樣的東西 — 錯了的代價是同一個資料夾從兩條路設進去，屬性值一個是絕對路徑一個是 `./sync`，兩者 `load_base_dir` 都解得開，差別只在專案搬家時相對的那個還能用。
 
 監督者已裁的：
 
