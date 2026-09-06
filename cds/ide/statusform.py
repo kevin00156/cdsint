@@ -36,7 +36,7 @@ def placement_path():
 class StatusForm(object):
     """A borderless-ish tool window pinned to the IDE's bottom-right corner."""
 
-    def __init__(self, on_stop, on_settings=None):
+    def __init__(self, on_stop):
         import clr
         clr.AddReference("System.Windows.Forms")
         clr.AddReference("System.Drawing")
@@ -48,7 +48,6 @@ class StatusForm(object):
         self._forms = Application
         self._colour = Color
         self.on_stop = on_stop
-        self.on_settings = on_settings
 
         self.form = Form()
         self.form.Text = "cdsint watcher"
@@ -79,18 +78,6 @@ class StatusForm(object):
         self.stop.Click += self._stop_clicked
 
         controls = [self.headline, self.who, self.detail, self.stop]
-
-        # Settings is how someone with no terminal reaches the cds-sync-*
-        # properties (SPEC 6.7). It is absent, not greyed out, when the
-        # caller had nothing to open — a button that does nothing is worse
-        # than no button.
-        if on_settings is not None:
-            self.settings = Button()
-            self.settings.Text = "Settings"
-            self.settings.Size = Size(70, 24)
-            self.settings.Location = Point(WIDTH - 172, 78)
-            self.settings.Click += self._settings_clicked
-            controls.append(self.settings)
 
         for control in controls:
             self.form.Controls.Add(control)
@@ -163,14 +150,6 @@ class StatusForm(object):
 
     def _stop_clicked(self, sender, args):
         self._ask_to_stop()
-
-    def _settings_clicked(self, sender, args):
-        """Open the settings dialog. A failure there must not kill the watcher."""
-        try:
-            self.on_settings()
-        except Exception:
-            import traceback
-            print("statusform: settings failed\n" + traceback.format_exc())
 
     def _closing(self, sender, args):
         if not self._stopping:

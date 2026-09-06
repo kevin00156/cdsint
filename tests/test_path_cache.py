@@ -310,34 +310,25 @@ class TestCachingBehaviour:
         assert managers.get_object_path(leaf) == ["POUs", "Inner"]
 
 
-class TestDebugFlagCache:
-    def test_reads_the_property_once(self, env, monkeypatch):
-        """is_debug() is consulted per object inside read_ide_attrs, and each
-        uncached read is a get_project_info() round trip."""
+class TestDebugFlag:
+    def test_is_debug_is_what_init_logging_was_told(self, env):
+        """is_debug() is consulted per object inside read_ide_attrs.
+
+        It used to fetch a project property and keep a cache of its own in
+        front of it, because each uncached read was a get_project_info()
+        round trip. The value now arrives from the settings this run read,
+        handed to init_logging() once, so there is nothing left to cache.
+        """
         utils = sys.modules["engine.codesys_utils"]
-        utils.reset_debug_cache()
-        calls = []
-
-        def fake_prop(key, default=None):
-            calls.append(key)
-            return True
-
-        monkeypatch.setattr(utils, "get_project_prop", fake_prop)
+        utils.init_logging(None, True)
         assert utils.is_debug() is True
-        for _ in range(50):
-            utils.is_debug()
-        assert calls == ["cds-sync-debug"]
-        utils.reset_debug_cache()
-
-    def test_reset_picks_up_a_new_value(self, env, monkeypatch):
-        utils = sys.modules["engine.codesys_utils"]
-        utils.reset_debug_cache()
-        value = {"v": False}
-        monkeypatch.setattr(utils, "get_project_prop",
-                            lambda key, default=None: value["v"])
+        utils.init_logging(None, False)
         assert utils.is_debug() is False
-        value["v"] = True
-        assert utils.is_debug() is False  # still cached
-        utils.reset_debug_cache()
+
+    def test_anything_truthy_becomes_a_real_boolean(self, env):
+        utils = sys.modules["engine.codesys_utils"]
+        utils.init_logging(None, 1)
         assert utils.is_debug() is True
-        utils.reset_debug_cache()
+        utils.init_logging(None, None)
+        assert utils.is_debug() is False
+

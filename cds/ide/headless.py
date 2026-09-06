@@ -13,7 +13,9 @@ file also keeps the two sides from growing a dozen variables between them.
 
 The commands themselves run exactly as they do for the watcher — same bodies,
 same stand-in UI answering the dialogs from the same flags — because that is
-cds/ide/entries.py's job and this file only decides when to call it.
+cds/ide/entries.py's job and this file only decides when to call it. The
+job's sync_dir rides in as one more such flag, so the engine reads it the way
+it reads -y and never writes it anywhere (SPEC 4.2).
 
 Nothing here waits: no sleep, no system.delay(), no timer (SPEC D5). The
 script opens, runs, writes the report and returns, and the process ends
@@ -34,7 +36,7 @@ if _ROOT not in sys.path:
     # root on the path yet.
     sys.path.insert(0, _ROOT)
 
-from cds.core import commands, ipc, props   # noqa: E402
+from cds.core import commands, ipc   # noqa: E402
 from cds.core.text import as_text  # noqa: E402
 from cds.ide import entries, project, silent  # noqa: E402
 
@@ -93,41 +95,37 @@ def run_job(ide_globals, job):
         return report
     report["opened"] = True
     report["project"] = _text(getattr(opened, "path", job.get("project")))
-    if job.get("sync_dir"):
-        # --sync-dir is the whole reason a --project run is safe to point at
-        # a project it did not make: without it the commands read whatever
-        # cds-sync-folder the file carries, which SPEC 4.2 says is an
-        # absolute path into somebody's git working copy. set_prop turns
-        # every failure into a False -- a read-only project, user management,
-        # a project_info that throws -- so a False here means the run would
-        # be against the wrong folder, and there is no safe way to continue.
-        if not point_sync_folder(ide_globals.get("projects"),
-                                 job["sync_dir"]):
-            report["error"] = ("could not point cds-sync-folder at "
-                               + _text(job["sync_dir"]) + ". Nothing ran: "
-                               "the commands would have used the folder the "
-                               "project already carries.")
-            return report
-        # What the engine will actually read, as opposed to what the caller
-        # asked for. The CLI used to fill this field in from its own flag, so
-        # the report said "--sync-dir" no matter which folder the run used.
-        report["sync_dir"] = _text(job["sync_dir"])
-    report["results"] = run_commands(ide_globals, job.get("commands") or [])
+    report["results"] = run_commands(ide_globals, job.get("commands") or [],
+                                     job.get("sync_dir"))
+    # What the engine actually read, as opposed to what the caller asked for:
+    # --sync-dir if this run carried one, otherwise whatever the settings file
+    # beside the project says (SPEC 4.2). Read after the commands, because a
+    # first run writes that file and this should report the folder it chose.
+    report["sync_dir"] = _text(job.get("sync_dir")
+                               or project.sync_dir(ide_globals.get("projects")))
     if all(result["ok"] for result in report["results"]):
         report["intended_exit"] = EXIT_OK
     return report
 
 
-def run_commands(ide_globals, wanted):
+def run_commands(ide_globals, wanted, sync_dir=None):
     """Run each command in turn, stopping at the first one that fails.
 
     Carrying on after a failed import would export whatever half-imported
     state the project is in and call the round trip clean.
+
+    sync_dir is given to every step rather than to the run, because that is
+    how it reaches the engine: as one of the command's own arguments, which
+    cds/ide/silent.py already puts into the body's namespace (SPEC 4.2). Only
+    one place fans it out, so `verify`'s four steps cannot end up disagreeing
+    about which folder this run means.
     """
     results = []
     for step in wanted:
-        results.append(run_one(ide_globals, step["command"],
-                               step.get("args") or {}))
+        args = dict(step.get("args") or {})
+        if sync_dir:
+            args["sync_dir"] = sync_dir
+        results.append(run_one(ide_globals, step["command"], args))
         if not results[-1]["ok"]:
             break
     return results
@@ -147,8 +145,7 @@ def run_one(ide_globals, command, args):
         import traceback
         return commands.new_result(cmd, False, started_at=started,
                                    error=traceback.format_exc())
-    error = (outcome.error_text()
-             or entries.wrong_application(command, args, outcome))
+    error = outcome.error_text()
     return commands.new_result(
         cmd, not error, started_at=started, error=error,
         messages=outcome.messages,
@@ -196,22 +193,6 @@ def open_project(ide_globals, path):
     """
     ide_globals["projects"].open(path)
     return ide_globals["projects"].primary
-
-
-def point_sync_folder(projects_obj, sync_dir):
-    """Set cds-sync-folder for this run. Absolute, so nothing is ambiguous.
-
-    Not saved here -- but do not read that as "the project on disk is left
-    alone". Every export and import that follows ends in
-    finalize_sync_operation, and save-after-export/import default to true, so
-    this value does reach the .project file for any run that gets that far.
-    Harmless for the copy this form is meant for; on a real project it is a
-    property change the caller did not ask for. `cdsint config set` is how
-    you change it deliberately.
-
-    False means the write did not stick; run_job refuses to go on.
-    """
-    return project.set_prop(projects_obj, props.FOLDER, sync_dir)
 
 
 def _why_nothing_opened(job):

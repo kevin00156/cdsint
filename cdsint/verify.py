@@ -31,7 +31,7 @@ from __future__ import print_function
 DIFFERENCE_COUNTS = ("different", "new_in_ide", "new_on_disk", "moved")
 
 
-def steps(force=None):
+def steps():
     """The four commands, with the answers the caller's flags already gave.
 
     `yes` here is not a guess on anyone's behalf: run() only builds these
@@ -39,7 +39,7 @@ def steps(force=None):
     would be asking a question that has already been answered.
     """
     return [
-        ("import", {"yes": True, "force": force}),
+        ("import", {"yes": True}),
         ("export", {"delete_orphans": None}),
         ("compare", {}),
         ("build", {"app": None}),
@@ -53,7 +53,7 @@ PLAN = (("modified", "different"), ("new_on_disk", "new_on_disk"),
         ("delete", "new_in_ide"))
 
 
-def run(runner, force=None, yes=None):
+def run(runner, yes=None):
     """Run the round trip, or refuse it. Returns (results, problems).
 
     Empty problems is a pass. Without -y there is always a problem, because
@@ -61,7 +61,7 @@ def run(runner, force=None, yes=None):
     """
     if not yes:
         return look(runner)
-    results = runner.run(steps(force))
+    results = runner.run(steps())
     return results, problems(results)
 
 

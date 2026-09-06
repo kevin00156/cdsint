@@ -12,9 +12,7 @@ because CODESYS will not open a project twice, so no run could want both.
     cdsint export  --target softplc
     cdsint verify  -y --project C:\\p\\line.project --install 3.5.21.40 \\
                    --sync-dir C:\\p\\exported
-    cdsint config set cds-sync-debug=true --target softplc
-    cdsint plc connect --project C:\\p\\line.project --install 3.5.21.40 \\
-                   --sync-dir C:\\p\\exported
+    cdsint plc connect --project C:\\p\\line.project --install 3.5.21.40
 
 The work is elsewhere: cdsint/flags.py is the shape of the command line,
 cdsint/target.py and cdsint/headless.py are the two forms, cdsint/verify.py
@@ -84,8 +82,7 @@ def run_list(ns):
 
 
 def run_verify(ns, runner):
-    results, problems = verify.run(runner, getattr(ns, "force", None),
-                                   getattr(ns, "yes", None))
+    results, problems = verify.run(runner, getattr(ns, "yes", None))
     report.show_steps(results, ns.json)
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
@@ -105,8 +102,8 @@ def exit_code(result):
     """What one result is worth as an exit code (SPEC 4.3).
 
     A refusal is not a failure and earns a code of its own: the reader's next
-    move is a person editing a project property, not another flag, and only
-    exit 5 says that without the caller having to parse prose.
+    move is a person editing the project's settings file, not another flag,
+    and only exit 5 says that without the caller having to parse prose.
     """
     if result.get("ok"):
         return EXIT_OK

@@ -3,23 +3,21 @@
 
 The happy paths are covered through the watcher; what matters here is that
 every question answers None instead of raising when the IDE is not in a state
-to answer it. A watcher that dies because nobody has a project open is useless.
+to answer it. A watcher that dies because nobody has a project open, or
+because somebody is halfway through editing a settings file, is useless.
 """
+import io
+import os
+
+import pytest
+
+from cds.core import settings
 from cds.ide import project
 
 
-class Info(object):
-    def __init__(self, values):
-        self.values = values
-
-
 class Primary(object):
-    def __init__(self, path=None, values=None, info=True):
+    def __init__(self, path=None):
         self.path = path
-        self._info = Info(values if values is not None else {}) if info else None
-
-    def get_project_info(self):
-        return self._info
 
 
 class Projects(object):
@@ -27,49 +25,58 @@ class Projects(object):
         self.primary = primary
 
 
-class Hostile(object):
-    """A property collection that raises on lookup, as .NET ones can."""
+@pytest.fixture
+def opened(tmp_path):
+    """A project open at a real path, so its settings file has somewhere to be."""
+    return Projects(Primary(os.path.join(str(tmp_path), "x.project")))
 
-    values = property(lambda self: (_ for _ in ()).throw(RuntimeError("nope")))
+
+def write(opened, text):
+    path = settings.path_for(project.path_of(opened))
+    with io.open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return path
 
 
 def test_no_project_open_answers_nothing():
     empty = Projects()
     assert project.path_of(empty) is None
-    assert project.prop(empty, "cds-sync-folder") is None
     assert project.sync_dir(empty) is None
 
 
-def test_a_project_object_that_has_no_info_answers_nothing():
-    projects = Projects(Primary(r"C:\p\x.project", info=False))
-    assert project.prop(projects, "cds-sync-folder") is None
+def test_a_project_with_no_settings_file_has_no_sync_folder(opened):
+    assert project.sync_dir(opened) is None
 
 
-def test_a_property_lookup_that_blows_up_answers_nothing():
-    projects = Projects(Hostile())
-    assert project.prop(projects, "cds-sync-folder") is None
+def test_a_settings_file_with_no_sync_folder_answers_nothing(opened):
+    write(opened, u'{"debug": true}')
+    assert project.sync_dir(opened) is None
 
 
-def test_a_missing_property_answers_nothing():
-    projects = Projects(Primary(r"C:\p\x.project", {}))
-    assert project.prop(projects, "cds-sync-folder") is None
+def test_an_absolute_sync_folder_comes_back_as_written(opened):
+    settings.write(settings.path_for(project.path_of(opened)),
+                   {"sync_folder": r"D:\work\sync"})
+    assert project.sync_dir(opened) == r"D:\work\sync"
 
 
-def test_a_property_set_to_nothing_answers_nothing():
-    projects = Projects(Primary(r"C:\p\x.project", {"cds-sync-folder": None}))
-    assert project.sync_dir(projects) is None
+def test_a_relative_sync_folder_resolves_against_the_project(opened, tmp_path):
+    write(opened, u'{"sync_folder": "./out/sync"}')
+    answer = project.sync_dir(opened)
+    assert answer.endswith("sync")
+    assert answer.startswith(str(tmp_path))
 
 
-def test_a_relative_sync_folder_needs_a_project_to_resolve_against():
-    projects = Projects(Primary(None, {"cds-sync-folder": "./sync"}))
-    assert project.sync_dir(projects) is None
+def test_a_settings_file_nobody_can_parse_answers_nothing(opened):
+    # The watcher asks this on every heartbeat. A half-saved file must not
+    # take it down; the next command that needs the file reports the problem
+    # in full (SPEC 4.4).
+    write(opened, u'{"sync_folder": ')
+    assert project.sync_dir(opened) is None
 
 
-def test_forward_slashes_in_a_relative_folder_still_resolve():
-    projects = Projects(Primary(r"C:\p\x.project",
-                                {"cds-sync-folder": "./out/sync"}))
-    assert project.sync_dir(projects).endswith("sync")
-    assert project.sync_dir(projects).startswith("C:")
+def test_a_setting_nobody_recognises_answers_nothing(opened):
+    write(opened, u'{"sync_folder": "./sync", "debgu": true}')
+    assert project.sync_dir(opened) is None
 
 
 def test_the_ide_name_leads_with_the_executable():

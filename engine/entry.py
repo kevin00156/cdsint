@@ -12,7 +12,8 @@ cds/ide/silent.py does not come through here — it has to install a stand-in
 `system` before the body's module-level code runs, so it still execs the file
 into a namespace it built itself.
 
-`result` is what a body hands back, and both callers read it the same way.
+`result` is what a body hands back, and both callers read it the same way,
+and `flags` is how a body reaches the arguments the command carried.
 """
 from __future__ import print_function
 
@@ -31,6 +32,18 @@ def result(ok, summary, **data):
     prints one line per key.
     """
     return {"ok": bool(ok), "summary": summary, "data": data}
+
+
+def flags(caller_globals):
+    """This run's command arguments, or an empty dict when there are none.
+
+    cds/ide/silent.py injects them into the body's own namespace under
+    `command_args`, after the body has been exec'd, so they are read from
+    there rather than imported (silent.ARGS_GLOBAL). Run from the Scripts
+    menu there is no such global at all, and no flags to find, which is why
+    a missing one is empty rather than an error.
+    """
+    return caller_globals.get("command_args") or {}
 
 
 def run(module, ide_globals, entry="main"):

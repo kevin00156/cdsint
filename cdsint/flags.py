@@ -34,14 +34,12 @@ _HELP = {
     "build": "build the application and report the error count",
     "verify": "import (-y), export, compare and build, and pass only if all "
               "agree",
-    "config": "read or write the project's cds-sync-* properties",
     "plc": "talk to the controller: read what it runs, or download to it",
     "stop": "tell a watcher to shut down",
 }
 
 # Commands that need an IDE with the project open, in either form.
-BOTH_FORMS = ("export", "import", "compare", "discover", "build",
-              "verify", "config")
+BOTH_FORMS = ("export", "import", "compare", "discover", "build", "verify")
 # Commands about a watcher's life, which only the --target form has.
 WATCHER_ONLY = ("ping", "status", "stop")
 # The one command with only the --project form. It gets --target anyway, so
@@ -53,12 +51,10 @@ PROJECT_ONLY_COMMAND = "plc"
 # out arrives as None so the watcher can tell "not said" from "said no".
 FLAGS = {
     "export": [("--delete-orphans", "delete the sync files with no object behind them")],
-    "import": [("--yes", "confirm the import; without it the watcher asks"),
-               ("--force", "go ahead despite a version or computer mismatch")],
+    "import": [("--yes", "confirm the import; without it the watcher asks")],
     "build": [("--app", "which application to build, when there are several")],
     "verify": [("--yes", "confirm the import step; without it verify only "
-                         "looks and says what the import would have done"),
-               ("--force", "go ahead despite a version or computer mismatch")],
+                         "looks and says what the import would have done")],
     "plc": [("--yes", "confirm the download; connect never needs it")],
 }
 
@@ -69,10 +65,25 @@ PROJECT_ONLY = ("install", "profile", "report", "force_lock", "sync_dir",
                 "answer")
 
 
+class Parser(argparse.ArgumentParser):
+    """argparse, minus the abbreviations.
+
+    `--force` was a flag until the version and computer stamps went (SPEC
+    6.7). With abbreviations on, a script that still passes it does not get
+    an error -- argparse reads it as `--force-lock` and the run goes ahead
+    against a project another IDE may have open. A flag that was deleted has
+    to be refused by name.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("allow_abbrev", False)
+        argparse.ArgumentParser.__init__(self, *args, **kwargs)
+
+
 def build_parser():
-    parser = argparse.ArgumentParser(
-        prog="cdsint", description="Drive a CODESYS-family IDE.")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = Parser(prog="cdsint", description="Drive a CODESYS-family IDE.")
+    sub = parser.add_subparsers(dest="command", required=True,
+                                parser_class=Parser)
     _shared(sub.add_parser("installs", help=_HELP["installs"]))
     _shared(sub.add_parser("list", help=_HELP["list"]))
     for name in WATCHER_ONLY:
@@ -81,7 +92,6 @@ def build_parser():
         command = _both_forms(_shared(sub.add_parser(name, help=_HELP[name])))
         for flag, help_text in FLAGS.get(name, []):
             _add_flag(command, flag, help_text)
-    _config_arguments(sub.choices["config"])
     _plc_arguments(sub.choices[PROJECT_ONLY_COMMAND])
     return parser
 
@@ -117,7 +127,10 @@ def _both_forms(parser):
     parser.add_argument("--report", help="where to write the run's report")
     parser.add_argument("--force-lock", action="store_true",
                         help="start even though the project looks open elsewhere")
-    parser.add_argument("--sync-dir", help="use this sync folder for the run")
+    parser.add_argument("--sync-dir",
+                        help="use this folder for this run instead of the "
+                             "sync_folder in the project's settings file; "
+                             "nothing is written back")
     parser.add_argument("--answer", action="append", default=[],
                         metavar="KEY=VALUE",
                         help="answer one of the IDE's own prompts; repeatable")
@@ -148,18 +161,8 @@ def _plc_arguments(parser):
                              "standard CODESYS device port is used")
 
 
-def _config_arguments(parser):
-    parser.add_argument("action", choices=("get", "set"),
-                        help="read a property, or write one")
-    parser.add_argument("setting", nargs="?", metavar="KEY[=VALUE]",
-                        help="the property; get takes a name and set takes "
-                             "KEY=VALUE. get with no name lists them all")
-
-
 def command_args(ns):
     """Turn the parsed flags back into the args the IDE side reads."""
-    if ns.command == "config":
-        return _config_args(ns)
     args = dict((flag.lstrip("-").replace("-", "_"),
                  getattr(ns, flag.lstrip("-").replace("-", "_")))
                 for flag, _ in FLAGS.get(ns.command, []))
@@ -179,13 +182,6 @@ def wire_name(ns):
     if ns.command == PROJECT_ONLY_COMMAND:
         return "%s %s" % (ns.command, ns.action)
     return ns.command
-
-
-def _config_args(ns):
-    if ns.action == "get":
-        return {"key": ns.setting, "value": None}
-    key, _, value = (ns.setting or "").partition("=")
-    return {"key": key or None, "value": value}
 
 
 def _only_the_project_form(parser, ns):
@@ -212,24 +208,6 @@ def _only_the_project_form(parser, ns):
             "from them (SPEC D8).")
 
 
-def _needs_sync_dir(parser, ns):
-    """The --project form has to name the folder it will treat as the truth.
-
-    A copy of a project carries the original's cds-sync-folder, and on this
-    machine those are absolute paths into the folder the original exports to
-    — somebody's git working tree. Left to the property, a headless export
-    writes there and a headless import reads from there, neither of which is
-    what "verify this copy" meant. The caller knows both paths already, so it
-    says which one it means (SPEC 4.2).
-    """
-    if getattr(ns, "project", None) and not ns.sync_dir:
-        parser.error(
-            "--project needs --sync-dir. The copy's own cds-sync-folder may "
-            "point anywhere, including the folder the original project "
-            "exports to, so a headless run says which folder holds its .st "
-            "files instead of trusting whatever the copy carried.")
-
-
 def refuse_project_flags(ns):
     """A --project flag with no --project is a caller who thinks it is headless.
 
@@ -245,9 +223,14 @@ def refuse_project_flags(ns):
 def check(parser, ns):
     """Every refusal that belongs to the parser, in one call.
 
-    Both of these are exit 2 rather than a Failure's exit 1: they say the
-    flags do not go together, which is what argparse's own errors mean, and
-    exit 1 is reserved for a command that ran and did not work.
+    Exit 2 rather than a Failure's exit 1: it says the flags do not go
+    together, which is what argparse's own errors mean, and exit 1 is
+    reserved for a command that ran and did not work.
+
+    --sync-dir used to be refused here when it was missing, because a copy of
+    a project carried the original's sync folder inside the .project. The
+    settings now live in a file beside it, so a copy of the .project alone
+    carries nothing and there is nothing to protect the caller from (SPEC
+    4.2).
     """
     _only_the_project_form(parser, ns)
-    _needs_sync_dir(parser, ns)

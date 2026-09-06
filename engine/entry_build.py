@@ -10,9 +10,11 @@ import os
 import time
 import sys
 
-from cds.core import props
-from engine.codesys_utils import safe_str, init_logging, load_base_dir, resolve_projects, update_application_count_flag
-from engine import entry
+from engine.codesys_constants import kind_of
+from engine.codesys_utils import (
+    safe_str, init_logging, is_debug, resolve_projects
+)
+from engine import entry, settings
 
 # Every severity a build message can carry, ORed into one flags value.
 SEVERITY_NAMES = ("FatalError", "Error", "Warning", "Information")
@@ -92,7 +94,54 @@ def every_severity(severity_enum):
     return wanted
 
 
-def build_project(projects_obj=None):
+def applications(project):
+    """Every Application object in the project, in tree order.
+
+    Counted here, every build, rather than read from a flag the last export
+    left in the project. The flag was a cache that went stale in the one
+    direction that mattered: the first build after somebody added a second
+    application still said "one", so the chooser was skipped, --app did
+    nothing and the active application was built instead. A recursive walk
+    costs a few hundred reads next to a compile.
+    """
+    found = []
+    for obj in project.get_children(recursive=True):
+        if kind_of(safe_str(getattr(obj, "type", ""))) == "application":
+            found.append(obj)
+    return found
+
+
+def choose_application(project, system, wanted):
+    """Which application to build: (app, refusal). Exactly one of them is None.
+
+    --app names it. Without a name, several applications is a question for a
+    person (the stand-in UI turns that into needs_input), and one application
+    is not a question at all.
+    """
+    found = applications(project)
+    names = [safe_str(app.get_name()) for app in found]
+    if wanted is not None:
+        if wanted not in names:
+            return None, ("no application called %r in this project; it has %s"
+                          % (wanted, ", ".join(names) if names else "none"))
+        return found[names.index(wanted)], None
+    if not found:
+        return None, "Error: No application found to build."
+    if len(found) == 1:
+        return found[0], None
+    chosen = system.ui.choose(
+        "Multiple applications detected. Select application to build:", names)
+    try:
+        index = chosen[0]
+    except TypeError:
+        # Some versions hand back a bare index, others (index, label).
+        index = chosen
+    if index is None or index < 0:
+        return None, "Build cancelled by user."
+    return found[index], None
+
+
+def build_project(base_dir, values, projects_obj=None):
     """Build the active application in CODESYS and generate build.log"""
     from System import Guid
 
@@ -109,65 +158,16 @@ def build_project(projects_obj=None):
         system.ui.error(msg)
         return entry.result(False, msg)
 
-    # Find application to build
-    from engine.codesys_utils import get_project_prop
-    has_multiple_apps = get_project_prop(props.MULTIPLE_APPS, False)
-    
-    app = None
-    if has_multiple_apps:
-        # Check if we should prompt for application
-        try:
-            APP_GUID = "639b491f-5557-464c-af91-1471bac9f549"
-            apps = []
-            for obj in projects_obj.primary.get_children(recursive=True):
-                if hasattr(obj, 'type') and str(obj.type).lower() == APP_GUID:
-                    apps.append(obj)
-            
-            if len(apps) > 1:
-                options = [safe_str(a.get_name()) for a in apps]
-                # Add "Active Application" as first option? No, better just list them.
-                res = system.ui.choose("Multiple applications detected. Select application to build:", options)
-                # res is usually index but in some environments/versions it's a tuple (index, label)
-                try:
-                    choice_idx = res[0]
-                except:
-                    choice_idx = res
-                
-                if choice_idx is not None and choice_idx >= 0:
-                    app = apps[choice_idx]
-                else:
-                    cancelled = "Build cancelled by user."
-                    print(cancelled)
-                    return entry.result(False, cancelled)
-        except Exception as e:
-            print("Selection error: " + safe_str(e))
-            
-    if not app:
-        # Fallback to active application
-        app = projects_obj.primary.active_application
-        
-    if not app:
-        # Fallback: find first application in project
-        def find_app(obj):
-            for child in obj.get_children():
-                if str(child.type).lower() == "6394ad93-46a4-4927-8819-c1ca8654c6ad": # Application GUID
-                    return child
-                res = find_app(child)
-                if res: return res
-            return None
-        
-        app = find_app(projects_obj.primary)
-        
-    if not app:
-        msg = "Error: No active application found to build."
-        system.ui.error(msg)
-        return entry.result(False, msg)
+    app, refused = choose_application(projects_obj.primary, system,
+                                      entry.flags(globals()).get("app"))
+    if refused:
+        system.ui.error(refused)
+        return entry.result(False, refused)
 
     # CODESYS Build GUID Category
     BUILD_CATEGORY = Guid("97F48D64-A2A3-4856-B640-75C046E37EA9")
     
     print("=== Starting Project Build ===")
-    update_application_count_flag()
     print("Application: " + safe_str(app.get_name()))
     
     # Clear previous build messages
@@ -437,8 +437,6 @@ def build_project(projects_obj=None):
         log_lines.append(footer)
         
         # Write to build_[AppName].log in base directory (debug mode only)
-        from engine.codesys_utils import is_debug
-        base_dir, _ = load_base_dir()
         if base_dir and os.path.exists(base_dir) and is_debug():
             # Sanitize app name for filename
             clean_app_name = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in app_name])
@@ -488,11 +486,11 @@ def build_project(projects_obj=None):
         return entry.result(False, failure)
 
 def main():
-    base_dir, error = load_base_dir()
-    if error:
-        pass
-
-    return build_project()
+    # A build does not need the sync folder to work, so a project with no
+    # settings file still builds; what it loses is the debug log.
+    values, base_dir, _error = settings.prepare(globals())
+    init_logging(base_dir, values["debug"] if values else False)
+    return build_project(base_dir, values or {})
 
 if __name__ == "__main__":
     main()

@@ -14,6 +14,12 @@ import types
 
 import pytest
 
+from cds.core import settings
+
+# Every setting at its default: these tests are about the engine's
+# behaviour, not about what somebody wrote in a settings file.
+DEFAULTS = settings.resolve({})
+
 from engine import unhandled
 
 
@@ -188,9 +194,9 @@ def one_bad_object(load_engine, monkeypatch, tmp_path):
     # confirmation dialog for it lives in codesys_ui, which needs clr.
     monkeypatch.setattr(imp, "has_st_files", lambda base_dir: True)
     return {
-        "export": lambda: export.export_project(sync, projects),
-        "compare": lambda: compare.compare_project(projects),
-        "import": lambda: imp.import_project(projects),
+        "export": lambda: export.export_project(sync, DEFAULTS, projects),
+        "compare": lambda: compare.compare_project(sync, DEFAULTS, projects),
+        "import": lambda: imp.import_project(sync, DEFAULTS, projects),
     }
 
 
@@ -297,8 +303,7 @@ def export_onto_a_disk_that_refuses(load_engine, monkeypatch, tmp_path):
 
     sync = str(tmp_path)
     version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
-    project = Project({"cds-sync-folder": sync, "cds-sync-version": version},
-                      [Pou()], str(tmp_path / "Fake.project"))
+    project = Project({}, [Pou()], str(tmp_path / "Fake.project"))
     projects = Projects(project)
     monkeypatch.setattr(export, "projects", projects, raising=False)
     monkeypatch.setattr(export, "system", DeafSystem(), raising=False)
@@ -306,7 +311,7 @@ def export_onto_a_disk_that_refuses(load_engine, monkeypatch, tmp_path):
     # and the sync cache through other modules, and those are not what this
     # test is about.
     monkeypatch.setattr(managers, "codecs", RefusingCodecs(codecs))
-    return lambda: export.export_project(sync, projects)
+    return lambda: export.export_project(sync, DEFAULTS, projects)
 
 
 def test_a_file_that_could_not_be_written_is_named_and_the_export_is_not_ok(

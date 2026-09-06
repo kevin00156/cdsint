@@ -26,9 +26,9 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 ALLOWED = {
     "engine/codesys_compare_engine.py": 6,
     "engine/codesys_managers.py": 29,
-    "engine/codesys_ui.py": 5,
-    "engine/codesys_utils.py": 33,
-    "engine/entry_build.py": 6,
+    "engine/codesys_ui.py": 2,
+    "engine/codesys_utils.py": 26,
+    "engine/entry_build.py": 5,
     "engine/entry_compare.py": 2,
 }
 

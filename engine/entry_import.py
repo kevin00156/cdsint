@@ -16,11 +16,9 @@ import time
 import codecs
 import json
 
-from cds.core import props
 from engine.codesys_utils import (
-    safe_str, load_base_dir, init_logging, log_info, log_warning,
-    resolve_projects, get_project_prop,
-    check_version_compatibility, finalize_sync_operation, create_safety_backup,
+    safe_str, init_logging, log_info, log_warning,
+    resolve_projects, finalize_sync_operation, create_safety_backup,
     reset_interaction_timer, get_interaction_seconds, format_elapsed,
     timed_prompt
 )
@@ -29,11 +27,11 @@ from engine.codesys_compare_engine import (
     summarize_device_remap, has_st_files
 )
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
-from engine import entry, unhandled
+from engine import entry, settings, unhandled
 
 
 
-def import_project(projects_obj=None):
+def import_project(base_dir, values, projects_obj=None):
     """
     Main import entry point.
     Compares disk with IDE and imports all differences automatically.
@@ -45,11 +43,6 @@ def import_project(projects_obj=None):
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
         return entry.result(False, msg)
-
-    base_dir, error = load_base_dir()
-    if error:
-        system.ui.warning(error)
-        return entry.result(False, error)
 
     # Disk wins, so this folder is the answer to "what should the project
     # contain". A folder with no .st in it is not the answer "nothing": it is
@@ -69,23 +62,6 @@ def import_project(projects_obj=None):
         system.ui.error(refused)
         return entry.result(False, refused)
 
-    # Check version compatibility
-    version_ok, version_msg = check_version_compatibility(base_dir)
-    if not version_ok:
-        msg = "Version Mismatch Warning!\n\n" + version_msg + "\n\n"
-        msg += "The export was created with a different version of the sync script.\n"
-        msg += "This may cause unexpected behavior during import.\n\n"
-        msg += "Recommendation: Re-export the project with the current script version.\n\n"
-        msg += "Continue anyway?"
-        
-        from engine.codesys_ui import ask_yes_no
-        if not ask_yes_no("Version Mismatch Warning", msg):
-            # Warn, do not just print: a caller driving this headlessly reads
-            # system.ui as its only success/failure signal.
-            cancelled = "Import cancelled due to version mismatch."
-            system.ui.warning(cancelled)
-            return entry.result(False, cancelled)
-    
     # A live PLC login makes every create/move/delete fail inside the IDE, so
     # check before spending a full compare on an import that cannot land.
     online_apps = find_logged_in_applications(projects_obj.primary, globals())
@@ -102,7 +78,7 @@ def import_project(projects_obj=None):
     start_time = time.time()
     reset_interaction_timer()
     
-    export_xml = get_project_prop(props.EXPORT_XML, False)
+    export_xml = values["export_xml"]
     
     # ── Phase 1: Find all changes ──
     print("Comparing IDE with disk...")
@@ -212,7 +188,8 @@ def import_project(projects_obj=None):
 
 
     # ── Create timestamped safety backup if enabled ──
-    backup_filename = create_safety_backup(base_dir, projects_obj, to_import)
+    backup_filename = create_safety_backup(base_dir, projects_obj,
+                                           to_import, values)
     
     # ── Phase 2: Import all changes ──
     updated, created, failed, deleted, moved = perform_import_items(
@@ -222,7 +199,8 @@ def import_project(projects_obj=None):
     # Save and back up BEFORE stopping the clock and announcing completion,
     # so the reported figure covers the whole wait rather than ending at the
     # popup and leaving a project save running behind it.
-    finalize_sync_operation(base_dir, projects_obj, is_import=True)
+    finalize_sync_operation(base_dir, projects_obj, values,
+                            is_import=True)
 
     interaction = get_interaction_seconds()
     elapsed = time.time() - start_time - interaction
@@ -277,18 +255,13 @@ def import_project(projects_obj=None):
 
 def main():
     # Same first-run setup as export (SPEC 6.7); see entry_export.main.
-    if not get_project_prop(props.FOLDER):
-        from engine.settings import choose_sync_folder
-        _folder, setup_error = choose_sync_folder(globals())
-        if setup_error:
-            return entry.result(False, setup_error)
+    values, base_dir, error = settings.prepare_asking(globals())
+    if error:
+        system.ui.warning(error)
+        return entry.result(False, error)
 
-    base_dir, error = load_base_dir()
-
-    if base_dir:
-        init_logging(base_dir)
-
-    return import_project()
+    init_logging(base_dir, values["debug"])
+    return import_project(base_dir, values)
 
 
 if __name__ == "__main__":

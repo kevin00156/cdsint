@@ -16,9 +16,9 @@ Three things have to be swapped for that to hold:
 
     the body's own `system`     its namespace gets a stand-in
     `__main__.system`           the shared engine modules look there, not at
-                                the caller's globals (codesys_utils 517)
-    codesys_ui.ask_yes_no       WinForms message boxes that never touch
-                                system.ui at all (codesys_ui 48-90)
+                                the caller's globals
+    codesys_ui.ask_yes_no       a WinForms message box that never touches
+                                system.ui at all
 
 Everything is put back afterwards, whether the script finished or blew up.
 """
@@ -34,15 +34,8 @@ from cds.core.text import as_text as _text
 # A default of None means the caller has to say; this will not guess.
 YES_NO = {
     "Delete Orphaned Files?": ("delete_orphans", False),
-    "Version Mismatch Warning": ("force", False),
     "Confirm Import": ("yes", None),
     "Confirm PLC Download": ("yes", None),
-}
-
-# Answering "yes" here would open the sync-folder dialog, which needs a
-# person, so carrying on means "no": keep the folder already configured.
-YES_NO_CANCEL = {
-    "Computer Mismatch Detected": "force",
 }
 
 STDOUT_TAIL_LINES = 200
@@ -54,9 +47,9 @@ STDOUT_TAIL_LINES = 200
 # convention. It goes in after the body's module-level code has run, so a
 # body that defines a default cannot end up reading its own placeholder.
 #
-# Only engine/entry_plc.py needs it: every other flag this codebase has is
-# the answer to a dialog, and those arrive through YES_NO above. A gateway
-# address is not a question anybody was asked.
+# Not every flag comes this way: the ones that answer a dialog arrive through
+# YES_NO above. These are the ones that were never a question — a gateway
+# address, and the sync folder this run is to use (SPEC 4.2).
 ARGS_GLOBAL = "command_args"
 
 # The engine package, by name only. Importing it here would point cds/ide at
@@ -299,22 +292,24 @@ def _ui_patches(args):
     """The codesys_ui functions that open windows of their own."""
     return {
         "ask_yes_no": _yes_no(args),
-        "ask_yes_no_cancel": _yes_no_cancel(args),
         "show_sync_folder_dialog": _no_folder_dialog,
     }
 
 
-def _no_folder_dialog(*args, **kwargs):
+def _no_folder_dialog(system=None, settings_path=None):
     """The first-run setup has no flag that can answer it (SPEC 6.7).
 
     It is a modal window on the IDE's own message loop, so opening it here
     would freeze the IDE until someone walked over to the machine. Refuse
-    instead, and say what to go and do.
+    instead, and say what to go and do -- naming the file the dialog would
+    have written, because writing that file by hand is the only other way
+    past this point.
     """
-    raise NeedsInput("this project has no sync folder yet; run `cdsint config "
-                     "set cds-sync-folder=<path>`, or set that property in "
-                     "Project Information > Properties, or run export once "
-                     "from the Scripts menu")
+    raise NeedsInput(
+        "this project has no sync folder yet. Write %s with "
+        "{\"sync_folder\": \"./sync\"}, pass --sync-dir to use one just for "
+        "this run, or run export once from the Scripts menu and it will ask."
+        % (settings_path or "<project name>.cdsint.json beside the project",))
 
 
 def _yes_no(args):
@@ -329,15 +324,6 @@ def _yes_no(args):
             raise NeedsInput("%s: %s" % (title, message), name)
         return default
     return ask_yes_no
-
-
-def _yes_no_cancel(args):
-    def ask_yes_no_cancel(title, message):
-        name = YES_NO_CANCEL.get(title)
-        if name is None:
-            raise NeedsInput("unexpected dialog %r: %s" % (title, message))
-        return "no" if args.get(name) else "cancel"
-    return ask_yes_no_cancel
 
 
 def _exec_file(path, namespace):

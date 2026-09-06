@@ -16,6 +16,12 @@ import sys
 
 import pytest
 
+from cds.core import settings
+
+# Every setting at its default: these tests are about the engine's
+# behaviour, not about what somebody wrote in a settings file.
+DEFAULTS = settings.resolve({})
+
 from tests.test_unhandled_objects import DeafSystem, Project, Projects
 
 
@@ -41,14 +47,11 @@ def importer(load_engine, monkeypatch, tmp_path):
     monkeypatch.setattr(body, "find_all_changes", spy)
 
     def run(sync_dir):
-        version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
-        project = Project({"cds-sync-folder": str(sync_dir),
-                           "cds-sync-version": version},
-                          [], str(tmp_path / "Fake.project"))
+        project = Project({}, [], str(tmp_path / "Fake.project"))
         projects = Projects(project)
         monkeypatch.setattr(body, "projects", projects, raising=False)
         monkeypatch.setattr(body, "system", DeafSystem(), raising=False)
-        return body.import_project(projects)
+        return body.import_project(str(sync_dir), DEFAULTS, projects)
 
     return {"run": run, "compared": compared, "sync": tmp_path / "sync"}
 

@@ -141,46 +141,50 @@ def test_a_failed_step_stops_the_ones_after_it(ide, tmp_path, monkeypatch):
     assert report["intended_exit"] == ide_side.EXIT_FAILED
 
 
-def test_the_sync_folder_is_pointed_where_the_caller_said(ide, tmp_path,
-                                                          monkeypatch):
-    monkeypatch.setattr(entries, "run", one_step())
-    ide_side.run_job(ide, job(tmp_path, sync_dir="D:\\sync",
-                              commands=[{"command": "export", "args": {}}]))
-    assert ide["projects"].primary.props["cds-sync-folder"] == "D:\\sync"
-
-
-def test_a_sync_folder_that_would_not_stick_stops_the_run(ide, tmp_path,
-                                                          monkeypatch):
-    # --sync-dir is what stops a --project run from writing into whatever
-    # folder the copy happens to carry (SPEC 4.2). set_prop swallows its
-    # failures into a False, and that False used to be dropped: the commands
-    # ran anyway, against the project's own cds-sync-folder, while the report
-    # still claimed the run used --sync-dir.
-    ran = []
+def test_the_sync_folder_reaches_every_command_as_an_argument(ide, tmp_path,
+                                                              monkeypatch):
+    # It is an override the engine reads, not something written into the
+    # project (SPEC 4.2), so it travels the way -y does: in each command's
+    # own arguments, which cds/ide/silent.py puts in the body's namespace.
+    seen = []
     step = one_step()
 
     def record(ide_globals, name, args):
-        ran.append(name)
+        seen.append(args)
         return step(ide_globals, name, args)
 
     monkeypatch.setattr(entries, "run", record)
-    monkeypatch.setattr(ide_side, "point_sync_folder",
-                        lambda projects_obj, sync_dir: False)
+    ide_side.run_job(ide, job(tmp_path, sync_dir="D:" + os.sep + "sync",
+                              commands=[{"command": "import", "args": {"yes": True}},
+                                        {"command": "export", "args": {}}]))
 
-    report = ide_side.run_job(ide, job(tmp_path, sync_dir="D:\sync",
-                                       commands=[{"command": "export",
-                                                  "args": {}}]))
+    assert [a["sync_dir"] for a in seen] == ["D:" + os.sep + "sync"] * 2
+    assert seen[0]["yes"] is True     # the step's own flags are still there
 
-    assert ran == []
-    assert report["intended_exit"] == ide_side.EXIT_FAILED
-    assert "D:\sync" in report["error"]
+
+def test_no_sync_dir_leaves_the_commands_to_read_the_settings_file(ide,
+                                                                   tmp_path,
+                                                                   monkeypatch):
+    seen = []
+    step = one_step()
+
+    def record(ide_globals, name, args):
+        seen.append(args)
+        return step(ide_globals, name, args)
+
+    monkeypatch.setattr(entries, "run", record)
+    ide_side.run_job(ide, job(tmp_path,
+                              commands=[{"command": "export", "args": {}}]))
+
+    assert "sync_dir" not in seen[0]
+
 
 
 def test_the_report_names_the_folder_the_engine_read(machine, monkeypatch):
-    # Suggestion 8: this run does change the project's cds-sync-folder, and
-    # the following export saves it. The CLI used to write its own flag into
-    # this field, so the report said --sync-dir whichever folder the engine
-    # had actually been left with.
+    # The CLI used to write its own flag into this field, so the report said
+    # --sync-dir whichever folder the engine had actually read. The IDE side
+    # is the only one that knows, so the report is where the answer comes
+    # from (SPEC 4.2).
     launching(monkeypatch, code=0)
     written_report(monkeypatch, dict(OK_REPORT, sync_dir="D:\what-ran"))
     started = make(machine, monkeypatch, sync_dir="D:\what-was-asked")

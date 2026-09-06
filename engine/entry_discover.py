@@ -17,16 +17,15 @@ project that is 407 against export's 229.
 
 Read-only. It changes nothing in the IDE and writes nothing to the sync
 folder except through log_info, which only reaches sync_debug.log when
-cds-sync-debug is on.
+the settings file turns debug on.
 """
 from __future__ import print_function
 
 from engine.codesys_constants import kind_of
 from engine.codesys_utils import (
-    safe_str, load_base_dir, init_logging, log_info, log_warning,
-    resolve_projects
+    safe_str, init_logging, log_info, log_warning, resolve_projects
 )
-from engine import entry, unhandled
+from engine import entry, settings, unhandled
 
 
 def discover_project(projects_obj=None):
@@ -37,11 +36,11 @@ def discover_project(projects_obj=None):
         system.ui.error(msg)
         return entry.result(False, msg)
 
-    base_dir, _error = load_base_dir()
+    values, base_dir, _error = settings.prepare(globals())
     # No sync folder yet is not a reason to refuse: discover is what somebody
     # runs *because* the export did not work. Without one the log has nowhere
     # to go, and the tree on stdout is the whole answer.
-    init_logging(base_dir)
+    init_logging(base_dir, values["debug"] if values else False)
 
     unhandled.start()
     survey = _survey(projects_obj.primary)

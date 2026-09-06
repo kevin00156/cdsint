@@ -17,17 +17,15 @@ import sys
 import codecs
 import time
 
-from cds.core import props
 from engine.codesys_utils import (
-    load_base_dir, init_logging, log_info, resolve_projects,
-    get_project_prop, check_version_compatibility
+    init_logging, log_info, resolve_projects, is_debug
 )
 from engine.codesys_compare_engine import find_all_changes
-from engine import entry, unhandled
+from engine import entry, settings, unhandled
 
 
 
-def compare_project(projects_obj=None):
+def compare_project(base_dir, values, projects_obj=None):
     """Compare CODESYS project objects with disk files"""
     
     projects_obj = resolve_projects(projects_obj, globals())
@@ -37,25 +35,12 @@ def compare_project(projects_obj=None):
         system.ui.error(msg)
         return entry.result(False, msg)
 
-    base_dir, error = load_base_dir()
-    if error:
-        system.ui.warning(error)
-        return entry.result(False, error)
-
-
-    # Check version compatibility
-    version_ok, version_msg = check_version_compatibility(base_dir)
-    if not version_ok:
-        print("WARNING: " + version_msg)
-        print("The export was created with a different version of the sync script.")
-        print("Comparison results may be unreliable.\n")
-    
     unhandled.start()
     print("=== Starting Project Comparison ===")
     print("Comparing: CODESYS IDE <-> " + base_dir)
     start_time = time.time()
     
-    export_xml = get_project_prop(props.EXPORT_XML, False)
+    export_xml = values["export_xml"]
     
     # ── Run comparison engine ──
     print("Comparing IDE objects with disk...")
@@ -130,17 +115,19 @@ def compare_project(projects_obj=None):
 
 
 def main():
-    base_dir, error = load_base_dir()
-    
+    values, base_dir, error = settings.prepare(globals())
+    if error:
+        system.ui.warning(error)
+        return entry.result(False, error)
+
     log_file_obj = None
     original_stdout = sys.stdout
     original_stderr = sys.stderr
-    
+
     if base_dir:
-        init_logging(base_dir)
+        init_logging(base_dir, values["debug"])
 
         # compare.log mirrors console output; debug-only so a normal run is clean.
-        from engine.codesys_utils import is_debug
         if is_debug():
             try:
                 log_path = os.path.join(base_dir, "compare.log")
@@ -169,7 +156,7 @@ def main():
                 pass
 
     try:
-        return compare_project()
+        return compare_project(base_dir, values)
     finally:
         if log_file_obj:
             sys.stdout = original_stdout

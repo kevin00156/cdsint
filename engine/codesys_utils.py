@@ -17,7 +17,6 @@ import time
 import tempfile
 import shutil
 
-from cds.core import props
 from engine.codesys_constants import IMPL_MARKER, FORBIDDEN_CHARS, TYPE_GUIDS, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER, IMPLEMENTATION_TYPES
 
 # Cache version - bump when the cache format or hash semantics change to
@@ -36,7 +35,7 @@ class Logger:
     def __init__(self):
         self.log_file = None
         self.is_final = False
-        self.debug = False  # Set by init_logging from cds-sync-debug property.
+        self.debug = False  # Set by init_logging from the settings file.
         
     def _initialize(self, base_dir=None):
         # If explicitly providing base_dir, override everything
@@ -49,23 +48,12 @@ class Logger:
         if self.is_final:
             return
 
-        # Try to find current project base_dir from properties
-        # This can "upgrade" a non-final path to a final one
-        try:
-            # In CODESYS, 'projects' is a global object provided by the environment
-            if projects.primary:
-                info = projects.primary.get_project_info()
-                values = info.values if hasattr(info, "values") else info
-                if props.FOLDER in values:
-                    folder = values[props.FOLDER]
-                    if folder and os.path.exists(folder):
-                        self.log_file = os.path.join(folder, "sync_debug.log")
-                        self.is_final = True # We found the real path
-                        return
-        except:
-            pass
-
-        # Fallback to local dir if we still don't have a path
+        # No project of its own to consult: init_logging() is handed the
+        # folder the settings resolved to, and every entry body calls it
+        # before anything worth logging happens. This used to read the sync
+        # folder property itself, through a `projects` name that does not
+        # exist in this module -- the NameError went into the bare except
+        # below and the log quietly stayed in TEMP.
         if not self.log_file:
             try:
                 # Use temp directory to avoid cluttering ScriptDir
@@ -105,11 +93,17 @@ def log_info(message):
 def log_warning(message):
     _logger.log("WARNING", message)
 
-def init_logging(base_dir):
-    """Explicitly set the logging directory and read the debug flag."""
+def init_logging(base_dir, debug=False):
+    """Point the log at the sync folder, and say whether to write one at all.
+
+    Both come from the settings this run read (engine/settings.py). The debug
+    flag used to be fetched from here, which meant the logger reached back
+    into the project through two more modules to answer a question its caller
+    already had the answer to.
+    """
     if base_dir and os.path.exists(base_dir):
         _logger._initialize(base_dir)
-    _logger.debug = is_debug()
+    _logger.debug = bool(debug)
 
 def log_error(message, critical=False):
     _logger.log("ERROR", message, include_traceback=True)
@@ -379,266 +373,16 @@ def clean_filename(name):
     return clean_name
 
 
-def get_project_prop(key, default=None):
-    """Safely get a project property using the appropriate API for this CODESYS version."""
-    try:
-        projects_obj = resolve_projects()
-        if not projects_obj or not projects_obj.primary:
-            return default
-            
-        proj = projects_obj.primary
-        
-        info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
-        if not info: return default
-        
-        values = info.values if hasattr(info, "values") else info
-        try:
-            val = values[key]
-            if val is None: return default
-            # Auto-convert types if they look like numbers or booleans
-            s_val = str(val)
-            if s_val.lower() == "true": return True
-            if s_val.lower() == "false": return False
-            if s_val.isdigit(): return int(s_val)
-            return s_val
-        except:
-            return default
-    except:
-        return default
-
-def set_project_prop(key, value):
-    """Write one project property. True when it landed.
-
-    Says why when it does not. This used to swallow the reason and hand back
-    a bare False, which is how a shadowed name in this very function went
-    unnoticed: every write in the product failed and the only trace was
-    callers politely reporting "could not write".
-    """
-    try:
-        projects_obj = resolve_projects()
-        if not projects_obj or not projects_obj.primary:
-            return False
-            
-        proj = projects_obj.primary
-        
-        info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
-        if not info: return False
-        
-        values = info.values if hasattr(info, "values") else info
-        values[key] = str(value)
-        if key == props.DEBUG:
-            reset_debug_cache()
-        return True
-    except Exception as e:
-        log_error("Could not write project property %s: %s"
-                  % (key, safe_str(e)))
-        return False
-
-_debug_flag = []  # empty until first read; holds one bool afterwards
-
-
 def is_debug():
-    """True when debug mode (cds-sync-debug project property) is enabled.
+    """True when the settings file turned debug on (SPEC 4.4).
 
-    Off by default: a normal run produces only project content, no metadata
-    or log files. Turn it on from the watcher's Settings button, or with
-    `cdsint config set cds-sync-debug=true`, to get the audit trail
-    (sync_metadata.json) and the logs back.
-
-    Cached, because reading it is not cheap: get_project_prop() goes through
-    resolve_projects() and proj.get_project_info(), a real IDE round trip.
-    read_ide_attrs() consults this flag on every object it inspects -- and it
-    is called once per object in Pass 1 and again in the Pass 2 slow path --
-    so an uncached read cost thousands of round trips per run purely to
-    decide whether to log. set_project_prop() clears the cache, so toggling
-    the flag from the Settings dialog still takes effect.
+    The flag reaches here through init_logging(), which every entry body
+    calls once with the settings this run read. It used to be a project
+    property with a cache of its own in front of it, because reading it
+    crossed into .NET and read_ide_attrs() consults it once per object; a
+    value handed in needs no cache to be cheap.
     """
-    if not _debug_flag:
-        _debug_flag.append(bool(get_project_prop(props.DEBUG, False)))
-    return _debug_flag[0]
-
-
-def reset_debug_cache():
-    """Forget the cached cds-sync-debug value (see is_debug)."""
-    del _debug_flag[:]
-
-APPLICATION_GUID = "639b491f-5557-464c-af91-1471bac9f549"
-
-
-def set_application_count_flag(app_count):
-    """Record whether the project holds more than one Application.
-
-    Separate from the counting so a caller that already knows the answer --
-    export classifies every object anyway -- can set the flag without walking
-    the tree a second time.
-    """
-    try:
-        proj = _resolve_primary_project()
-        if not proj:
-            return False
-
-        has_multiple_apps = (app_count > 1)
-        log_info("Application count summary: Found %d applications. "
-                 "Setting %s to %s"
-                 % (app_count, props.MULTIPLE_APPS, str(has_multiple_apps)))
-
-        # Cleanup old 'boolean' flag if it exists (prevents clutter)
-        try:
-            info = proj.get_project_info() if hasattr(proj, "get_project_info") else getattr(proj, "project_info", None)
-            values = info.values if hasattr(info, "values") else info
-            if "boolean" in values:
-                del values["boolean"]
-        except:
-            pass
-
-        return set_project_prop(props.MULTIPLE_APPS, has_multiple_apps)
-    except Exception as e:
-        log_error("Failed to update application count flag: " + safe_str(e))
-        return False
-
-
-def _resolve_primary_project():
-    try:
-        import __main__
-        if hasattr(__main__, 'projects'):
-            return __main__.projects.primary
-    except:
-        pass
-    try:
-        return projects.primary
-    except:
-        return None
-
-
-def count_applications(all_objs):
-    """Number of Application objects in an already-fetched object list."""
-    app_count = 0
-    for obj in all_objs:
-        # One read, not two. The guarded `hasattr(obj,'type') and str(obj.type)`
-        # form crossed into .NET twice for every object in the project, which
-        # made counting applications cost more than a whole cached export pass.
-        obj_type = getattr(obj, 'type', None)
-        if obj_type is not None and str(obj_type).lower() == APPLICATION_GUID:
-            app_count += 1
-    return app_count
-
-
-def update_application_count_flag(all_objs=None):
-    """Count internal 'Application' objects and set the multipleApps flag.
-
-    Pass all_objs when the caller has already fetched the project tree; this
-    used to fetch its own copy and read a property off every object in it.
-    """
-    try:
-        proj = _resolve_primary_project()
-        if not proj:
-            return False
-        if all_objs is None:
-            all_objs = proj.get_children(recursive=True)
-        return set_application_count_flag(count_applications(all_objs))
-    except Exception as e:
-        log_error("Failed to update application count flag: " + safe_str(e))
-        return False
-
-def load_base_dir():
-    """Load base directory from the project's sync-folder property.
-    
-    Supports both absolute and relative paths:
-    - Absolute paths: Used as-is (e.g., C:\\MySync\\)
-    - Relative paths: Resolved relative to project file location (e.g., ./ or ./folderName/)
-    
-    If the directory doesn't exist, it will be created automatically.
-    """
-    base_dir = get_project_prop(props.FOLDER)
-    if not base_dir:
-        return None, "Project sync directory not set!\nRun `cdsint config set cds-sync-folder=<path>`, or run export or import from the Scripts menu and it will ask, or add the property yourself in Project Information > Properties."
-    
-    # Check if path is relative
-    is_relative = base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.'
-    
-    # Resolve relative paths against project file location
-    if is_relative:
-        try:
-            projects_obj = resolve_projects()
-            proj = projects_obj.primary if projects_obj else None
-            
-            if not proj or not hasattr(proj, 'path'):
-                return None, "Cannot resolve relative path: project path not available.\n\nRelative path: " + base_dir
-            
-            # Get directory containing the project file
-            project_file_path = safe_str(proj.path)
-            project_dir = os.path.dirname(project_file_path)
-            
-            # Resolve relative path
-            # Normalize the base_dir first (convert / to os.sep)
-            normalized_base = base_dir.replace('/', os.sep).replace('\\', os.sep)
-            
-            # Join and normalize
-            base_dir = os.path.normpath(os.path.join(project_dir, normalized_base))
-            
-            log_info("Resolved relative path '%s' to '%s' (project dir: '%s')" % (normalized_base, base_dir, project_dir))
-        except Exception as e:
-            log_error("Error resolving relative path: " + safe_str(e))
-            return None, "Failed to resolve relative path: " + base_dir + "\n\nError: " + safe_str(e)
-    
-    # Check for PC mismatch only for ABSOLUTE paths
-    # For relative paths, we skip this check to facilitate teamwork and portability
-    if not is_relative:
-        sync_pc = get_project_prop(props.PC)
-        try:
-            import socket
-            current_pc = socket.gethostname()
-            log_info("PC Check: Current PC='%s', Sync PC='%s'" % (safe_str(current_pc), safe_str(sync_pc)))
-            
-            if sync_pc and current_pc and safe_str(sync_pc) != safe_str(current_pc):
-                message = "Computer Mismatch Detected!\n\n"
-                message += "This project was last synced on: " + safe_str(sync_pc) + "\n"
-                message += "Current computer: " + safe_str(current_pc) + "\n\n"
-                message += "The saved sync path may be invalid for this machine:\n"
-                message += safe_str(base_dir) + "\n\n"
-                message += "Would you like to re-configure the sync folder for this PC?"
-                
-                if resolve_system() is not None:
-                    from engine.codesys_ui import ask_yes_no_cancel
-                    ans = ask_yes_no_cancel("Computer Mismatch Detected", message)
-
-                    if ans == "yes":
-                        from engine.settings import choose_sync_folder
-                        base_dir, setup_error = choose_sync_folder()
-                        if setup_error:
-                            return None, setup_error
-                        # Re-resolve if it's still relative after reconfiguration
-                        if base_dir.startswith('.' + os.sep) or base_dir.startswith('./') or base_dir.startswith('.\\') or base_dir == '.':
-                            try:
-                                projects_obj = resolve_projects()
-                                proj = projects_obj.primary if projects_obj else None
-                                if proj and hasattr(proj, 'path'):
-                                    project_dir = os.path.dirname(safe_str(proj.path))
-                                    normalized_base = base_dir.replace('/', os.sep).replace('\\', os.sep)
-                                    base_dir = os.path.normpath(os.path.join(project_dir, normalized_base))
-                            except Exception as e:
-                                log_warning("Could not resolve the new relative path: " + safe_str(e))
-                    elif ans == "cancel":
-                        return None, "Operation cancelled by user."
-                else:
-                    log_warning("Computer mismatch detected ('%s' vs '%s') but UI (system.ui) is not available." % (safe_str(sync_pc), safe_str(current_pc)))
-        except Exception as e:
-            log_warning("Error during PC mismatch check: " + safe_str(e))
-
-    # Create directory if it doesn't exist
-    if base_dir:
-        if not os.path.exists(base_dir):
-            try:
-                os.makedirs(base_dir)
-                log_info("Created sync directory: " + base_dir)
-                print("Created sync directory: " + base_dir)
-            except Exception as e:
-                log_error("Failed to create sync directory: " + safe_str(e))
-                return None, "Could not create sync directory: " + base_dir + "\n\nError: " + safe_str(e)
-        
-        return base_dir, None
-    
-    return None, "Project sync directory not found: " + str(base_dir) + "\nFix it with `cdsint config set cds-sync-folder=<path>`, or in Project Information > Properties, or clear it and run export again."
+    return _logger.debug
 
 
 def ensure_git_configs(export_dir):
@@ -1576,7 +1320,8 @@ def cleanup_old_backups(project_folder, retention_count):
         print("Warning: Error during backup cleanup: " + safe_str(e))
 
 
-def backup_project_binary(export_dir, projects_obj=None, timestamped=False, retention_count=None):
+def backup_project_binary(export_dir, projects_obj=None, backup_name="",
+                          timestamped=False, retention_count=None):
     """
     Copy the current project binary to /project folder.
     Forces a project save before copying to ensure the backup is current.
@@ -1585,6 +1330,8 @@ def backup_project_binary(export_dir, projects_obj=None, timestamped=False, rete
     Args:
         export_dir: Directory where .project folder will be created
         projects_obj: CODESYS projects object
+        backup_name: What to call the non-timestamped copy; "" means the
+                     project's own filename
         timestamped: If True, create timestamped backup with date and time
         retention_count: Optional. If provided, clean up old timestamped backups
                          keeping only this many (only applies to timestamped backups)
@@ -1633,7 +1380,7 @@ def backup_project_binary(export_dir, projects_obj=None, timestamped=False, rete
             # Format: YYYYMMDD_HHMMSS_ProjectName.project.bak
             file_name = "{}_{}.bak".format(timestamp, base_name)
         else:
-            custom_name = get_project_prop(props.BACKUP_NAME, "")
+            custom_name = backup_name
             if custom_name:
                 # Ensure it ends with .project
                 if not custom_name.lower().endswith(".project"):
@@ -1820,34 +1567,6 @@ def save_sync_cache(base_dir, objects_cache, folder_hashes=None, type_cache=None
         log_warning("Could not save sync cache: " + safe_str(e))
 
 
-def check_version_compatibility(base_dir):
-    """Check if export was done with compatible script version"""
-    from engine.codesys_constants import SCRIPT_VERSION
-    
-    proj_version = get_project_prop(props.VERSION)
-    if proj_version is None:
-        proj_version = "not set"
-    
-    metadata_path = os.path.join(base_dir, "sync_metadata.json")
-    
-    if proj_version != SCRIPT_VERSION:
-        msg = "Version mismatch: Project (v{}) vs Current (v{})".format(proj_version, SCRIPT_VERSION)
-        return False, msg
-    
-    if os.path.exists(metadata_path):
-        try:
-            with codecs.open(metadata_path, "r", "utf-8") as f:
-                data = json.load(f)
-            export_version = data.get("script_version")
-            if export_version and export_version != SCRIPT_VERSION:
-                msg = "Version mismatch: Export (v{}) vs Current (v{})".format(export_version, SCRIPT_VERSION)
-                return False, msg
-        except:
-            pass
-    
-    return True, None
-
-
 def save_sync_metadata(base_dir, action, stats, elapsed):
     """Write sync_metadata.json, in debug mode only.
 
@@ -1883,32 +1602,24 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
         log_warning("Failed to save %s metadata: %s" % (action, safe_str(e)))
 
 
-def finalize_sync_operation(base_dir, projects_obj, is_import=False):
-    """Stamp the sync version, then save or back up as the settings say.
+def finalize_sync_operation(base_dir, projects_obj, values, is_import=False):
+    """Save the project, or back it up, as the settings say.
 
-    The version goes first because it is a project property: the save below
-    is the only thing that makes it outlive the run. Written after it, as it
-    used to be, it never survived at all -- a headless process ends and takes
-    it with it -- so check_version_compatibility found a mismatch on every
-    run and every run had to be told to ignore the warning.
+    One or the other, not both: the binary backup saves the project itself
+    before copying it, so doing the save as well would be two full writes of
+    the same file.
     """
-    from engine.codesys_constants import SCRIPT_VERSION
-    try:
-        set_project_prop(props.VERSION, SCRIPT_VERSION)
-    except Exception as e:
-        log_warning("Failed to save version to project property: " + safe_str(e))
+    save_after_op = values["save_after_import" if is_import
+                           else "save_after_export"]
 
-    save_prop = props.SAVE_AFTER_IMPORT if is_import else props.SAVE_AFTER_EXPORT
-    save_after_op = get_project_prop(save_prop, True)
-    backup_binary = get_project_prop(props.BACKUP_BINARY, False)
-
-    if backup_binary and projects_obj and getattr(projects_obj, 'primary', None):
+    if values["backup_binary"] and getattr(projects_obj, 'primary', None):
         try:
             print("Action: Updating binary backup...")
-            backup_project_binary(base_dir, projects_obj)
+            backup_project_binary(base_dir, projects_obj,
+                                  values["backup_name"])
         except Exception as e:
             print("Warning: Could not update binary backup: " + safe_str(e))
-    elif save_after_op and projects_obj and getattr(projects_obj, 'primary', None):
+    elif save_after_op and getattr(projects_obj, 'primary', None):
         try:
             print("Action: Saving project...")
             projects_obj.primary.save()
@@ -1918,12 +1629,11 @@ def finalize_sync_operation(base_dir, projects_obj, is_import=False):
             print("Warning: Could not save project after " + op_str + ": " + safe_str(e))
 
 
-def create_safety_backup(base_dir, projects_obj, items_to_import):
+def create_safety_backup(base_dir, projects_obj, items_to_import, values):
     """Create a timestamped safety backup of the project before importing changes."""
-    backup_filename = None
-    safety_backup = get_project_prop(props.SAFETY_BACKUP, True)
-    if safety_backup and items_to_import:
-        retention = get_project_prop(props.BACKUP_RETENTION_COUNT, 10)
-        backup_filename = backup_project_binary(base_dir, projects_obj, timestamped=True, retention_count=retention)
-    return backup_filename
+    if not values["safety_backup"] or not items_to_import:
+        return None
+    return backup_project_binary(
+        base_dir, projects_obj, values["backup_name"], timestamped=True,
+        retention_count=values["backup_retention_count"])
 

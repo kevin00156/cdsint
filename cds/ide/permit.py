@@ -2,74 +2,87 @@
 """Which PLC commands this project allows, and the refusal when it does not.
 
 Only the commands that touch a controller are gated, and they are gated in
-two layers (SPEC D8): the project property `cds-sync-plc` says whether this
-project allows the action at all, and `-y` says the caller means this
-particular call. This file is the first layer.
+two layers (SPEC D8): the `plc` list in the project's settings file says
+whether this project allows the action at all, and `-y` says the caller means
+this particular call. This file is the first layer.
 
-The property is read here rather than in the engine for the same reason
-cds/ide/config.py reads the others: a named property is plumbing, not
-object-tree work, and the gate has to close before any engine module is
-loaded — a permission check that runs inside the body it is guarding is a
-check that already let the body start.
+The file is read here rather than in the engine because the gate has to close
+before any engine module is loaded — a permission check that runs inside the
+body it is guarding is a check that already let the body start — and reading
+a JSON file next to the project is plumbing, not object-tree work (SPEC D12).
 
-It is a policy, not a wall. Headless mode runs arbitrary IronPython inside
-the IDE, so anyone determined can get past it. What it protects is the
-meaning of the property: "a person sat in this IDE and decided", which is
-why cds/ide/config.py refuses to write it.
+It is a policy, not a wall, and it no longer claims to be more. While the
+list lived in the .project it meant "a person sat in this IDE and decided";
+now it is a line in a text file, so whoever can write the file can write it,
+and the real gate is `-y` (SPEC 6.5).
 """
 from __future__ import print_function
 
-from cds.core import props
+from cds.core import settings
 from cds.ide import project
 
-# The only two values the property recognises (SPEC 6.5). A word that is not
-# one of these allows nothing; it is left visible in the refusal instead of
-# being corrected, because a typo the reader can see is a typo they can fix.
-ACTIONS = ("connect", "download")
+# The only two values the list recognises (SPEC 6.5). A word that is not one
+# of these is refused by cds/core/settings.py when the file is read, so
+# nothing here has to guess what somebody meant.
+ACTIONS = settings.PLC_ACTIONS
+
+KEY = "plc"
 
 
 def granted(projects_obj):
     """The actions this project allows, in the order SPEC 6.5 lists them."""
-    return [action for action in ACTIONS if action in _written(projects_obj)]
+    written = _written(projects_obj)
+    return [action for action in ACTIONS if action in written]
 
 
 def refusal(projects_obj, action):
     """None when the action is allowed, otherwise why it is not.
 
-    The sentence names the property, the value it currently holds and where
-    to change it, because the reader's next move is to go and edit it in the
-    IDE — there is no flag that answers this one.
+    The sentence names the file, what is in it now and what to add, because
+    the reader's next move is to open that file in an editor — there is no
+    flag that answers this one.
     """
     allowed = granted(projects_obj)
     if action in allowed:
         return None
-    raw = project.prop(projects_obj, props.PLC)
-    wanted = ",".join([a for a in ACTIONS if a in allowed or a == action])
-    return ("this project does not allow plc %s. Its %s property is %s. Only "
-            "a person in the IDE can change that: Project Information > "
-            "Properties, set %s to %s. cdsint will not write it for you "
-            "(SPEC 6.5)."
-            % (action, props.PLC, "not set" if raw is None else repr(raw),
-               props.PLC, wanted))
+    wanted = [a for a in ACTIONS if a in allowed or a == action]
+    return ("this project does not allow plc %s. Its %s list is %s in %s. "
+            "Add %s to that list: \"%s\": %s."
+            % (action, KEY, allowed or "empty", _path(projects_obj), action,
+               KEY, "[" + ", ".join('"%s"' % a for a in wanted) + "]"))
 
 
-def record(action):
+def record(projects_obj, action):
     """What the result record carries so the CLI can answer with exit 5.
 
     Separate from the sentence because the exit code is a decision and the
     sentence is prose: a caller must not have to match on wording to tell a
-    refusal from a failure.
+    refusal from a failure. The three fields are SPEC 4.3's `denied`.
     """
-    return {"property": props.PLC, "action": action}
+    return {"file": _path(projects_obj), "key": KEY, "action": action}
+
+
+def _path(projects_obj):
+    """The settings file this project's answer would be written in."""
+    project_path = project.path_of(projects_obj)
+    if project_path is None:
+        return "the project's settings file"
+    return settings.path_for(project_path)
 
 
 def _written(projects_obj):
-    """The property split into words, lower-cased and stripped.
+    """The `plc` list, or an empty one when nothing has been written.
 
-    Comma-separated because that is what SPEC 4.4 says a person types.
-    Nothing is inferred from an unrecognised word: `granted` intersects with
-    ACTIONS, so "download " and "DOWNLOAD" work and "downlaod" allows
-    nothing.
+    A settings file that cannot be parsed allows nothing. It is not this
+    file's job to explain why — the command itself reads the same file a
+    moment later and reports the refusal in full (SPEC 4.4) — but a gate that
+    opened because a file was unreadable would be no gate at all.
     """
-    raw = project.prop(projects_obj, props.PLC) or ""
-    return set(word.strip().lower() for word in raw.split(",") if word.strip())
+    project_path = project.path_of(projects_obj)
+    if project_path is None:
+        return []
+    try:
+        written = settings.read(settings.path_for(project_path))
+    except (settings.Invalid, IOError, OSError):
+        return []
+    return (written or {}).get(KEY) or []

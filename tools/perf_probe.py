@@ -51,8 +51,6 @@ _INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _INSTALL_ROOT not in sys.path:
     sys.path.insert(0, _INSTALL_ROOT)
 
-from cds.core import props  # noqa: E402
-
 # High-resolution timer. On Python 2 / Windows time.clock() is
 # QueryPerformanceCounter; time.time() only has ~15 ms granularity there, which
 # is far too coarse for per-object calls.
@@ -169,9 +167,6 @@ def _patch_method(module_name, class_name, method_name, label=None, bucket_of=No
 # than an undifferentiated list.
 
 _FUNCTIONS = [
-    # project-property round trips (each one is a get_project_info() call)
-    ("get_project_prop", "IDE:get_project_prop"),
-    ("is_debug", "IDE:is_debug"),
     # per-object IDE attribute reads
     ("read_ide_attrs", "IDE:read_ide_attrs"),
     ("write_ide_attrs", "IDE:write_ide_attrs"),
@@ -231,8 +226,6 @@ _FUNCTIONS = [
     ("save_sync_metadata", "final:save_sync_metadata"),
     ("cleanup_orphaned_files", "final:cleanup_orphaned_files"),
     ("ensure_git_configs", "setup:ensure_git_configs"),
-    ("update_application_count_flag", "setup:update_application_count_flag"),
-    ("load_base_dir", "setup:load_base_dir"),
     ("resolve_projects", "setup:resolve_projects"),
     # logging (unconditional print() to the CODESYS console)
     ("log_info", "log:log_info"),
@@ -439,11 +432,12 @@ def main():
         print("Error: no project open.")
         return
 
-    base_dir, error = utils.load_base_dir()
+    settings = __import__("engine.settings", {}, {}, ["settings"])
+    values, base_dir, error = settings.prepare(globals())
     if error:
         print("Error: " + utils.safe_str(error))
         return
-    utils.init_logging(base_dir)
+    utils.init_logging(base_dir, values["debug"])
 
     functions, sites = install_probes()
     print("Perf probe armed: %d functions, %d bound names. Mode=%s" % (functions, sites, mode))
@@ -469,16 +463,16 @@ def main():
 
     start = _timer()
     if mode == "compare":
-        export_xml = utils.get_project_prop(props.EXPORT_XML, False)
-        results = engine.find_all_changes(base_dir, projects_obj, export_xml=export_xml)
+        results = engine.find_all_changes(base_dir, projects_obj,
+                                          export_xml=values["export_xml"])
         print("")
         print("different=%d  new_in_ide=%d  new_on_disk=%d  unchanged=%d"
               % (len(results["different"]), len(results["new_in_ide"]),
                  len(results["new_on_disk"]), results["unchanged_count"]))
     elif mode == "import":
-        entry.import_project(projects_obj)
+        entry.import_project(base_dir, values, projects_obj)
     else:
-        entry.export_project(base_dir, projects_obj)
+        entry.export_project(base_dir, values, projects_obj)
     wall = _timer() - start
 
     # The operation resets this at its own start, so what is left is the dialog

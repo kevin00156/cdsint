@@ -11,6 +11,12 @@ import types
 
 import pytest
 
+from cds.core import settings
+
+# Every setting at its default: these tests are about the engine's
+# behaviour, not about what somebody wrote in a settings file.
+DEFAULTS = settings.resolve({})
+
 
 class Text(object):
     def __init__(self, text):
@@ -103,14 +109,12 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
     sync.mkdir()
     version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
     pou = Pou()
-    project = Project({"cds-sync-folder": str(sync),
-                       "cds-sync-version": version},
-                      [pou], str(tmp_path / "Fake.project"))
+    project = Project({}, [pou], str(tmp_path / "Fake.project"))
     projects = Projects(project)
     monkeypatch.setattr(export, "projects", projects, raising=False)
     monkeypatch.setattr(export, "system", DeafSystem(), raising=False)
 
-    run = lambda: export.export_project(str(sync), projects)
+    run = lambda: export.export_project(str(sync), DEFAULTS, projects)
     first = run()
     assert first["ok"] is True, first["summary"]
     written = [p for p in sync.rglob("*.st")]
@@ -127,7 +131,7 @@ def a_synced_project(load_engine, monkeypatch, tmp_path):
     said_no.ask_yes_no = lambda title, message: False
     said_no.ask_yes_no_cancel = lambda title, message: False
     monkeypatch.setitem(sys.modules, "engine.codesys_ui", said_no)
-    refuse = lambda: importer.import_project(projects)
+    refuse = lambda: importer.import_project(str(sync), DEFAULTS, projects)
 
     return Synced(pou, written[0], sync, run, look, refuse,
                   engine_module)

@@ -4,17 +4,13 @@
 Every function here takes the `projects` object the IDE injects and answers
 one question about it, returning None rather than raising when the answer is
 not available — a watcher must survive being asked while no project is open.
-
-Reading the sync folder straight off the project property is deliberate.
-codesys_utils.load_base_dir() does more: it can stop to ask about a computer
-name mismatch, which is not something to do from a timer tick.
 """
 from __future__ import print_function
 
 import ntpath
 import sys
 
-from cds.core import props
+from cds.core import settings
 
 
 def path_of(projects_obj):
@@ -24,91 +20,24 @@ def path_of(projects_obj):
     return None if path is None else str(path)
 
 
-def prop(projects_obj, name):
-    """One project property as text, or None. Never raises."""
-    values = _values(projects_obj)
-    if values is None:
-        return None
-    try:
-        value = values[name]
-    except Exception:
-        # An unset property is a missing key, and the collection raises
-        # rather than returning None. Nothing to report either way.
-        return None
-    return None if value is None else str(value)
-
-
-def set_prop(projects_obj, name, value):
-    """Write one project property. False when there was nowhere to write it.
-
-    The value goes in as text, which is what the property store holds. The
-    engine reads "true"/"false" and digits back out as booleans and numbers,
-    so the spelling matters to it — this only promises to store what it was
-    given.
-    """
-    values = _values(projects_obj)
-    if values is None:
-        return False
-    try:
-        values[name] = value
-    except Exception:
-        return False
-    return True
-
-
-def save(projects_obj):
-    """Write the project to disk. False when the IDE would not.
-
-    DIADesigner-AX 1.10 throws NullReferenceException from save() after it
-    has upgraded a project's storage format headless. That is a persistence
-    failure, and reporting it beats letting it end a run that has already
-    done its real work.
-    """
-    primary = getattr(projects_obj, "primary", None)
-    if primary is None:
-        return False
-    try:
-        primary.save()
-    except Exception:
-        return False
-    return True
-
-
-def _values(projects_obj):
-    """The project's property collection, or None. Never raises."""
-    primary = getattr(projects_obj, "primary", None)
-    if primary is None:
-        return None
-    try:
-        getter = getattr(primary, "get_project_info", None)
-        info = getter() if getter else getattr(primary, "project_info", None)
-        if info is None:
-            return None
-        return getattr(info, "values", info)
-    except Exception:
-        # Older versions expose the collection differently, and a project
-        # with none at all is a project with nothing to report.
-        return None
-
-
 def sync_dir(projects_obj):
     """Where the .st files live, absolute, or None when it is not set.
 
-    A relative value resolves against the project file, the same rule
-    load_base_dir uses.
+    Straight from the settings file beside the project, resolved by the one
+    rule that resolves it anywhere (cds/core/settings.folder). This is what
+    the watcher puts in its registration every heartbeat, so a settings file
+    somebody is halfway through editing must not raise: an unreadable one is
+    reported by the next command that needs it, in full.
     """
-    raw = prop(projects_obj, props.FOLDER)
-    if not raw:
+    project_path = path_of(projects_obj)
+    if project_path is None:
         return None
-    # ntpath throughout: both the property and the project path come from the
-    # IDE, which only runs on Windows. ntpath also splits on forward slashes,
-    # so a folder written "out/sync" resolves without a separator swap.
-    if ntpath.isabs(raw):
-        return ntpath.normpath(raw)
-    project = path_of(projects_obj)
-    if project is None:
+    try:
+        written = settings.read(settings.path_for(project_path))
+    except (settings.Invalid, IOError, OSError):
         return None
-    return ntpath.normpath(ntpath.join(ntpath.dirname(project), raw))
+    return settings.folder((written or {}).get("sync_folder"),
+                           ntpath.dirname(project_path))
 
 
 def ide_name():

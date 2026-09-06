@@ -57,8 +57,8 @@ class Headless(object):
         self.profile = installs.profile_of(self.install, profile)
         self.report_path = os.path.abspath(report or default_report(self.project))
         self.answers = answers or {}
-        # Absolute from here on: the IDE side writes this into the project's
-        # cds-sync-folder, and the IDE's working directory is not the shell's.
+        # Absolute from here on: the IDE side hands it to every command as an
+        # override, and the IDE's working directory is not the shell's.
         self._sync_dir = os.path.abspath(sync_dir) if sync_dir else None
         self.timeout = timeout
         # Remembered before anything of ours could have made one, because
@@ -72,7 +72,12 @@ class Headless(object):
         return "%s (%s)" % (self.install["name"], self.profile)
 
     def sync_dir(self):
-        """Only what the caller said. What the project holds needs the IDE."""
+        """Only what the caller said. Reading the settings file needs the IDE.
+
+        Printed as the run's first line, before the IDE has started, so None
+        here means "whatever the project's settings file says" rather than
+        "nowhere" -- the report carries the folder the engine actually read.
+        """
         return self._sync_dir
 
     def run(self, steps):
@@ -269,7 +274,10 @@ class Headless(object):
             # story is.
             result["ide"] = report.get("ide")
             result["report_path"] = self.report_path
-            result["sync_dir"] = self._sync_dir
+            # The report is the IDE side's account of the folder the engine
+            # actually read; the flag only says what was asked for, and there
+            # may not have been one.
+            result["sync_dir"] = report.get("sync_dir")
         return report["results"]
 
     def _timed_out(self, pid, deadline):

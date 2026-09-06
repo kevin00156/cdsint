@@ -63,10 +63,6 @@ def test_the_import_step_carries_the_confirmation_the_caller_already_gave():
     assert dict(verify.steps())["import"]["yes"] is True
 
 
-def test_force_reaches_the_import(monkeypatch):
-    assert dict(verify.steps(force=True))["import"]["force"] is True
-
-
 # --- the verdict -----------------------------------------------------------
 
 def test_all_four_clean_is_a_pass():
@@ -167,17 +163,24 @@ def test_an_answer_without_an_equals_sign_is_refused(capsys):
     ["compare", "--project", "P", "--install", "I"],
     ["build", "--project", "P", "--install", "I"],
     ["verify", "-y", "--project", "P", "--install", "I"],
-    ["config", "get", "--project", "P", "--install", "I"],
 ])
-def test_the_project_form_has_to_say_where_the_st_files_are(argv, capsys):
-    # A copy carries the original's cds-sync-folder, and that is often an
-    # absolute path into the folder the original exports to — somebody's git
-    # working tree. The caller of a headless run knows both paths already, so
-    # it says which one it means rather than letting the copy decide.
+def test_the_project_form_no_longer_has_to_say_where_the_st_files_are(argv):
+    # It was compulsory while a copy of a .project carried the original's
+    # sync folder inside it, which on this machine is an absolute path into
+    # somebody's git working tree. The settings live beside the project now
+    # (SPEC D10), so a copy of the .project alone carries nothing and the
+    # parser has nothing to protect the caller from.
+    assert flags.build_parser().parse_args(argv).sync_dir is None
+
+
+def test_a_deleted_flag_is_refused_by_name(capsys):
+    # --force went with the version and computer stamps (SPEC 6.7). With
+    # argparse abbreviations on it would have been read as --force-lock, and
+    # a stale script would quietly start opening projects another IDE holds.
     with pytest.raises(SystemExit) as raised:
-        cli.main(argv)
+        cli.main(["import", "-y", "--force", "--target", "X"])
     assert raised.value.code == 2
-    assert "--sync-dir" in capsys.readouterr().err
+    assert "unrecognized arguments: --force" in capsys.readouterr().err
 
 
 def test_the_target_form_asks_the_watcher_where_its_files_are(monkeypatch):
@@ -206,25 +209,14 @@ def test_json_output_stays_json(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["command"] == "compare"
 
 
-def test_config_get_with_no_name_asks_for_everything():
-    assert flags.command_args(parse(["config", "get"])) == {"key": None,
-                                                          "value": None}
-
-
-def test_config_get_names_one_property():
-    assert flags.command_args(parse(["config", "get", "cds-sync-debug"])) == {
-        "key": "cds-sync-debug", "value": None}
-
-
-def test_config_set_splits_the_assignment():
-    assert flags.command_args(parse(["config", "set", "cds-sync-debug=true"])) == {
-        "key": "cds-sync-debug", "value": "true"}
-
-
-def test_config_set_with_an_empty_value_is_still_a_write():
-    # "" and "leave it alone" are different, and only one of them is a set.
-    assert flags.command_args(parse(["config", "set", "cds-sync-backup-name="])) \
-        == {"key": "cds-sync-backup-name", "value": ""}
+def test_there_is_no_config_command(capsys):
+    # The file is the interface (SPEC 4.2). A command that edited it would be
+    # a second editor for the same eleven keys, and the validation would have
+    # to exist twice.
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["config", "get"])
+    assert raised.value.code == 2
+    assert "invalid choice: 'config'" in capsys.readouterr().err
 
 
 def test_verify_passes_and_says_so(monkeypatch, capsys):

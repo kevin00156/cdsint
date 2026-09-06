@@ -157,8 +157,8 @@ def test_a_question_with_no_flag_behind_it_does_not_invent_one(watch,
                                                                monkeypatch,
                                                                capsys):
     # The sync-folder setup has no flag in the --target form; the question
-    # itself says to run `cdsint config set` instead.
-    question = "no sync folder; set cds-sync-folder first"
+    # itself says which file to write instead.
+    question = "no sync folder; write Line.cdsint.json beside the project"
     watch.handlers["ping"] = lambda cmd, started: commands.new_result(
         cmd, False, error=question, started_at=started,
         needs_input={"question": question, "arg": None})
@@ -182,13 +182,12 @@ def test_a_flag_left_out_arrives_as_not_said():
     assert parse(["export"]) == {"delete_orphans": None}
 
 
-def test_import_carries_yes_and_force():
-    assert parse(["import", "--yes"]) == {"yes": True, "force": None}
-    assert parse(["import", "--yes", "--force"]) == {"yes": True, "force": True}
+def test_import_carries_yes():
+    assert parse(["import", "--yes"]) == {"yes": True}
 
 
 def test_import_without_yes_leaves_the_watcher_to_ask():
-    assert parse(["import"]) == {"yes": None, "force": None}
+    assert parse(["import"]) == {"yes": None}
 
 
 def test_build_carries_the_application_name():
@@ -339,21 +338,3 @@ def test_a_successful_export_stays_quiet(watch, monkeypatch, capsys):
     cli.main(["export"])
     assert "nobody asked for" not in capsys.readouterr().err
 
-
-# --- config, end to end through the watcher --------------------------------
-
-def test_config_set_reaches_the_project_and_comes_back(watch, monkeypatch,
-                                                       capsys):
-    answering(watch, monkeypatch)
-    assert cli.main(["config", "set", "cds-sync-debug=true"]) == cli.EXIT_OK
-    assert watch.ide["projects"].primary.props["cds-sync-debug"] == "true"
-    assert "cds-sync-debug" in capsys.readouterr().out
-
-
-def test_config_refuses_the_plc_permission_and_exits_one(watch, monkeypatch,
-                                                         capsys):
-    answering(watch, monkeypatch)
-    assert cli.main(["config", "set", "cds-sync-plc=download"]) == \
-        cli.EXIT_FAILED
-    assert "cds-sync-plc" not in watch.ide["projects"].primary.props
-    assert "SPEC 6.5" in capsys.readouterr().err

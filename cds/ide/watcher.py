@@ -246,8 +246,7 @@ class Watcher(object):
         command = cmd["command"]
         args = cmd.get("args") or {}
         outcome = entries.run(self.ide, command, args)
-        error = (outcome.error_text()
-                 or entries.wrong_application(command, args, outcome))
+        error = outcome.error_text()
         return commands.new_result(
             cmd, not error, started_at=started,
             error=error,

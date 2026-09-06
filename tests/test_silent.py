@@ -179,28 +179,22 @@ def test_an_unknown_dialog_is_refused_rather_than_guessed(tmp_path, ide,
     assert "Some New Question" in outcome.needs.question
 
 
-def test_the_computer_mismatch_cancels_unless_forced(tmp_path, ide,
-                                                     fake_codesys_ui):
-    body = (u"    from engine.codesys_ui import ask_yes_no_cancel\n"
-            u"    system.ui.info(ask_yes_no_cancel("
-            u"'Computer Mismatch Detected', 'm'))")
-    path = write_script(tmp_path, body)
-    assert silent.run(ide, path, "main", {}).messages[0]["text"] == "cancel"
-    assert silent.run(ide, path, "main", {"force": True}
-                      ).messages[0]["text"] == "no"
-
-
 def test_the_sync_folder_dialog_is_refused_rather_than_opened(tmp_path, ide,
                                                               fake_codesys_ui):
     # It is a modal WinForms window on the IDE's own message loop. Opened
     # from a command, it would freeze the IDE until someone walked over to
-    # the machine — the exact hang the stand-in UI exists to prevent.
+    # the machine - the exact hang the stand-in UI exists to prevent.
     body = (u"    from engine.codesys_ui import show_sync_folder_dialog\n"
-            u"    show_sync_folder_dialog(system, '')")
+            u"    show_sync_folder_dialog(system, 'C:/p/Line.cdsint.json')")
     outcome = silent.run(ide, write_script(tmp_path, body), "main", {})
     assert outcome.needs is not None
-    assert "cds-sync-folder" in outcome.needs.question
+    # The sentence names the file the dialog would have written, because
+    # writing that file by hand is the only other way past this point and no
+    # flag answers this one (SPEC 6.7).
+    assert "C:/p/Line.cdsint.json" in outcome.needs.question
+    assert "sync_folder" in outcome.needs.question
     assert not outcome.ok()
+
 
 
 def test_codesys_ui_is_put_back_afterwards(tmp_path, ide, fake_codesys_ui):
@@ -391,24 +385,18 @@ def test_every_yes_no_dialog_has_an_answer():
     assert titles_asked_for("ask_yes_no") <= set(silent.YES_NO)
 
 
-def test_every_yes_no_cancel_dialog_has_an_answer():
-    assert titles_asked_for("ask_yes_no_cancel") <= set(silent.YES_NO_CANCEL)
-
-
-def test_the_answer_tables_are_not_carrying_dead_titles():
+def test_the_answer_table_is_not_carrying_dead_titles():
     assert set(silent.YES_NO) == titles_asked_for("ask_yes_no")
-    assert set(silent.YES_NO_CANCEL) == titles_asked_for("ask_yes_no_cancel")
 
 
-def test_an_unknown_yes_no_cancel_dialog_is_refused(tmp_path, ide,
-                                                    fake_codesys_ui):
-    body = (u"    from engine.codesys_ui import ask_yes_no_cancel\n"
-            u"    ask_yes_no_cancel('Brand New Question', 'm')")
-    outcome = silent.run(ide, write_script(tmp_path, body), "main", {})
-    assert "Brand New Question" in outcome.needs.question
+def test_there_is_no_yes_no_cancel_dialog_left_to_answer():
+    # ask_yes_no_cancel had one real caller, the computer-name mismatch, and
+    # that went with the computer stamp (SPEC 6.7). An answer table with
+    # nothing in it would be a rule nobody could break and nobody could read.
+    assert not hasattr(silent, "YES_NO_CANCEL")
+    assert titles_asked_for("ask_yes_no_cancel") == set()
 
 
-# --- the real bodies keep the contract -------------------------------------
 
 class DeafUI(object):
     """Swallows every popup, so what is left is the return value."""

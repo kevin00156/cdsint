@@ -453,21 +453,36 @@ def test_the_registration_follows_a_project_swap(root):
     assert reg["instance_id"] == watch.instance_id  # the directory keeps its name
 
 
-def test_the_sync_folder_is_reported(root):
-    ide = make_globals()
-    ide["projects"].primary.props["cds-sync-folder"] = r"D:\work\sync"
-    watch = watcher.Watcher(ide, root)
-    watch.start()
-    assert instances.read(root, watch.instance_id)["sync_dir"] == r"D:\work\sync"
+def watching_a_project_with(tmp_path, values):
+    """An IDE with a project open, and a settings file written beside it.
+
+    Its own directory, not the instances root the `root` fixture hands out:
+    a stray .json in there is a registration as far as prune_stale is
+    concerned.
+    """
+    from cds.core import settings
+    home = os.path.join(str(tmp_path), "proj")
+    os.makedirs(home)
+    path = os.path.join(home, "softplc.project")
+    settings.write(settings.path_for(path), values)
+    return make_globals(path), home
 
 
-def test_a_relative_sync_folder_resolves_against_the_project(root):
-    ide = make_globals()
-    ide["projects"].primary.props["cds-sync-folder"] = "./export"
+def test_the_sync_folder_is_reported(root, tmp_path):
+    absolute = "D:" + os.sep + "work" + os.sep + "sync"
+    ide, _home = watching_a_project_with(tmp_path, {"sync_folder": absolute})
     watch = watcher.Watcher(ide, root)
     watch.start()
-    assert instances.read(root, watch.instance_id)["sync_dir"] == \
-        os.path.normpath(r"C:\p\export")
+    assert instances.read(root, watch.instance_id)["sync_dir"] == absolute
+
+
+def test_a_relative_sync_folder_resolves_against_the_project(root, tmp_path):
+    ide, home = watching_a_project_with(tmp_path, {"sync_folder": "./export"})
+    watch = watcher.Watcher(ide, root)
+    watch.start()
+    reg = instances.read(root, watch.instance_id)
+    assert reg["sync_dir"] == os.path.join(home, "export")
+
 
 
 def test_an_unset_sync_folder_reads_as_nothing(root):
@@ -488,42 +503,6 @@ def test_the_ide_field_names_the_product(root):
 def test_globals_without_system_are_refused_at_once(root):
     with pytest.raises(KeyError):
         watcher.Watcher({"projects": FakeProjects(None)}, root)
-
-
-# --- build compiled something else -----------------------------------------
-
-def test_build_says_so_when_app_was_ignored(root):
-    # entry_build.py only offers the chooser once the project's
-    # multiple-application flag is set, and it refreshes that flag afterwards,
-    # so the first build after a second application appears ignores --app.
-    watch = watcher.Watcher(make_globals(), root)
-    watch.start()
-    watch.handlers["build"] = _fake_build("Application")
-    result = run(watch, "build", {"app": "AppB"})
-    assert result["ok"] is False and "AppB" in result["error"]
-
-
-def test_build_is_happy_when_the_named_app_comes_back(root):
-    watch = watcher.Watcher(make_globals(), root)
-    watch.start()
-    watch.handlers["build"] = _fake_build("AppB")
-    assert run(watch, "build", {"app": "AppB"})["ok"] is True
-
-
-def _fake_build(app_name):
-    """Stand in for the real script: report which application it compiled."""
-    from cds.ide import entries, silent
-
-    def handler(cmd, started):
-        outcome = silent.Outcome(
-            [{"level": "info", "text": "%s\nErrors: 0" % app_name}], "",
-            result={"ok": True, "summary": "Build Success",
-                    "data": {"application": app_name, "errors": 0}})
-        error = outcome.error_text() or entries.wrong_application(
-            cmd["command"], cmd.get("args") or {}, outcome)
-        return commands.new_result(cmd, not error, started_at=started,
-                                   error=error, messages=outcome.messages)
-    return handler
 
 
 # --- feeding the status window ---------------------------------------------

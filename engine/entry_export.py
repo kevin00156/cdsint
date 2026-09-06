@@ -6,17 +6,16 @@ import time
 import codecs
 import json
 
-from cds.core import props
 from engine.codesys_constants import (
     IMPL_MARKER, TYPE_GUIDS, EXPORTABLE_TYPES, XML_TYPES, FORBIDDEN_CHARS, RESERVED_FILES,
     SCRIPT_VERSION, kind_allows_export, sync_direction_of
 )
 from engine.codesys_utils import (
-    safe_str, clean_filename, load_base_dir,
+    safe_str, clean_filename,
     calculate_hash, format_st_content,
     log_info, log_warning, log_error,
     init_logging, format_property_content,
-    resolve_projects, set_application_count_flag, ensure_git_configs,
+    resolve_projects, ensure_git_configs,
     get_quick_ide_hash, load_sync_cache, save_sync_cache, build_folder_hashes,
     normalize_path, finalize_sync_operation, reset_interaction_timer,
     get_interaction_seconds, format_elapsed
@@ -27,18 +26,22 @@ from engine.codesys_managers import (
     classify_object, build_expected_path, clear_path_caches
 )
 from engine.codesys_compare_engine import create_import_managers
-from engine import entry, unhandled
+from engine import entry, settings, unhandled
 
 # Shared constants and utilities imported from modules
 
 
-def cleanup_orphaned_files(export_dir, current_objects):
+def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
     """Delete the files in export_dir no object claims. Returns how many.
 
     The dialog has two buttons, so there are two answers and both are a
     number. It used to carry a third branch for a Cancel button that no
     version of this dialog has ever had, and export read the None it
     would have returned as "cancelled" -- a state nothing could reach.
+
+    auto_delete is the settings file's answer to the same question, so it is
+    passed in rather than read here: one read of the settings per command,
+    and the caller already did it.
     """
     orphaned_items = []
     
@@ -80,15 +83,6 @@ def cleanup_orphaned_files(export_dir, current_objects):
                     "every object, so some of them may belong to one of those."
                     % len(orphaned_items))
         return 0
-
-    # Check for auto-delete property
-    try:
-        from engine.codesys_utils import get_project_prop
-        auto_delete = get_project_prop(props.AUTO_DELETE_ORPHANS, False)
-    except Exception:
-        # Reading a project property is an IDE call and can raise anything.
-        # Not knowing means not deleting.
-        auto_delete = False
 
     if auto_delete:
         delete_them = True
@@ -158,7 +152,7 @@ def cleanup_orphaned_files(export_dir, current_objects):
 
 
 
-def export_project(export_dir, projects_obj=None):
+def export_project(export_dir, values, projects_obj=None):
     """Export all project objects to folder structure with metadata"""
     
     # Resolving projects object
@@ -183,18 +177,13 @@ def export_project(export_dir, projects_obj=None):
     
     unhandled.start()
     print("=== Starting Project Export ===")
-    # The multipleApps flag is set after the main loop, from the classification
-    # that loop already performs. Doing it up front meant a second recursive
-    # walk reading a property off every object -- 13% of a cached export, for a
-    # flag only Project_Build reads (and refreshes itself).
     start_time = time.time()
     reset_interaction_timer()
     print("Export directory: " + export_dir)
     
     # Flags and tracking
-    from engine.codesys_utils import get_project_prop
-    export_xml = get_project_prop(props.EXPORT_XML, False)
-    backup_binary = get_project_prop(props.BACKUP_BINARY, False)
+    export_xml = values["export_xml"]
+    backup_binary = values["backup_binary"]
     exported_paths = set()  # For orphan tracking
     
     # The binary backup runs once, at the end, from finalize_sync_operation().
@@ -219,7 +208,6 @@ def export_project(export_dir, projects_obj=None):
     exported_identical = 0
     exported_failed = 0
     pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
-    app_count = 0
     
     # Metadata migration - no longer used
     
@@ -283,11 +271,6 @@ def export_project(export_dir, projects_obj=None):
             # Store for next cache save (always)
             context['new_types'][obj_guid] = (effective_type, is_xml, rel_path)
 
-            # Free: the type is already resolved, so the multipleApps flag no
-            # longer needs its own pass over the project.
-            if effective_type == TYPE_GUIDS["application"]:
-                app_count += 1
-            
             if rel_path:
                 norm_path = normalize_path(rel_path)
             else:
@@ -369,10 +352,9 @@ def export_project(export_dir, projects_obj=None):
             unhandled.note(obj, e)
             log_error("Error exporting " + unhandled.name_of(obj) + ": " + safe_str(e))
 
-    set_application_count_flag(app_count)
-
     # Orphan cleanup now uses exported_paths set directly
-    removed_count = cleanup_orphaned_files(export_dir, exported_paths)
+    removed_count = cleanup_orphaned_files(export_dir, exported_paths,
+                                           values["auto_delete_orphans"])
 
     # Calculate folder hashes (Merkle Tree) and save the updated cache
     if new_cache:
@@ -387,7 +369,8 @@ def export_project(export_dir, projects_obj=None):
     # This step saves the project and, when enabled, copies the whole .project
     # binary; running it after the timer meant the reported figure excluded
     # the part of the wait that came after the popup said "complete".
-    finalize_sync_operation(export_dir, projects_obj, is_import=False)
+    finalize_sync_operation(export_dir, projects_obj, values,
+                            is_import=False)
 
     print("=== Export Complete ===")
     interaction_time = get_interaction_seconds()
@@ -445,14 +428,7 @@ def main():
     # rather than being told to go and run a menu entry that no longer
     # exists (SPEC 6.7). With nobody at the keyboard the dialog is refused,
     # not guessed at: cds/ide/silent.py turns it into needs_input.
-    from engine.codesys_utils import get_project_prop
-    if not get_project_prop(props.FOLDER):
-        from engine.settings import choose_sync_folder
-        _folder, setup_error = choose_sync_folder(globals())
-        if setup_error:
-            return entry.result(False, setup_error)
-
-    base_dir, error = load_base_dir()
+    values, base_dir, error = settings.prepare_asking(globals())
     if error:
         try:
             system.ui.warning(error)
@@ -460,8 +436,8 @@ def main():
             print("Error:", error)
         return entry.result(False, error)
 
-    init_logging(base_dir)
-    return export_project(base_dir)
+    init_logging(base_dir, values["debug"])
+    return export_project(base_dir, values)
 
 
 if __name__ == "__main__":

@@ -9,11 +9,13 @@ try:
     clr.AddReference("System.Windows.Forms")
     clr.AddReference("System.Drawing")
     from System.Windows.Forms import (
-        Form, Label, CheckBox, Button, FormBorderStyle,
+        Form, Label, Button, FormBorderStyle,
         DialogResult, FormStartPosition, NotifyIcon, ToolTipIcon, TextBox,
-        MessageBox, MessageBoxButtons, MessageBoxIcon, FlatStyle, Timer
+        FlatStyle, Timer
     )
-    from System.Drawing import Size, Point, Font, FontStyle, SystemIcons, Color, ContentAlignment
+    from System.Drawing import (
+        Size, Point, Font, FontStyle, SystemIcons, Color, ContentAlignment
+    )
 except:
     # Fallback if forms not available (e.g. Linux/Headless)
     pass
@@ -95,222 +97,6 @@ def ask_yes_no(title, message):
             pass
         return False
 
-def ask_yes_no_cancel(title, message):
-    """
-    Shows a Windows Yes/No/Cancel dialog.
-    Returns "yes", "no", or "cancel".
-    """
-    try:
-        from System.Windows.Forms import MessageBox, MessageBoxButtons, MessageBoxIcon, DialogResult
-        result = MessageBox.Show(message, title, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
-        if result == DialogResult.Yes: return "yes"
-        if result == DialogResult.No: return "no"
-        return "cancel"
-    except Exception as e:
-        print("ask_yes_no_cancel error: " + str(e))
-        # Fallback to pure CODESYS prompt
-        try:
-            import __main__
-            if hasattr(__main__, "system"):
-                res = __main__.system.ui.prompt(message, __main__.PromptChoice.YesNoCancel, __main__.PromptResult.Cancel)
-                if res == __main__.PromptResult.Yes: return "yes"
-                if res == __main__.PromptResult.No: return "no"
-        except:
-            pass
-        return "cancel"
-
-class SettingsForm(Form):
-    def __init__(self, current_settings, version=None, system=None):
-        self.Text = "CODESYS Sync Settings"
-        self.Size = Size(420, 480) # Height fits the folder row as well
-        self._system = system
-        self.FormBorderStyle = FormBorderStyle.FixedDialog
-        self.StartPosition = FormStartPosition.CenterScreen
-        self.MaximizeBox = False
-        self.MinimizeBox = False
-        
-        # Heading
-        lbl = Label()
-        lbl.Text = "Configure Sync Behavior"
-        lbl.Location = Point(20, 20)
-        lbl.AutoSize = True
-        lbl.Font = Font("Segoe UI", 12, FontStyle.Bold)
-        self.Controls.Add(lbl)
-        
-        # Version label (top-right corner)
-        if version:
-            lbl_version = Label()
-            lbl_version.Text = "v" + str(version)
-            lbl_version.Location = Point(320, 24)
-            lbl_version.AutoSize = True
-            lbl_version.Font = Font("Segoe UI", 8)
-            lbl_version.ForeColor = Color.Gray
-            self.Controls.Add(lbl_version)
-        
-        # The sync folder. First row because everything below it is about
-        # what happens to that folder, and because a project whose folder is
-        # wrong has nothing else worth changing.
-        y = 58
-        lbl_folder = Label()
-        lbl_folder.Text = "Sync Folder:"
-        lbl_folder.Location = Point(30, y + 3)
-        lbl_folder.AutoSize = True
-        self.Controls.Add(lbl_folder)
-
-        self.txt_folder = TextBox()
-        self.txt_folder.Location = Point(110, y)
-        self.txt_folder.Size = Size(200, 20)
-        self.txt_folder.Text = current_settings.get("sync_folder", "")
-        self.Controls.Add(self.txt_folder)
-
-        btn_browse = Button()
-        btn_browse.Text = "Browse..."
-        btn_browse.Location = Point(318, y - 1)
-        btn_browse.Size = Size(72, 23)
-        btn_browse.Click += self._on_browse_folder
-        self.Controls.Add(btn_browse)
-
-        # Group 1: Export Settings
-        y += 40
-        self.chk_xml = CheckBox()
-        self.chk_xml.Text = "Export Native XML (Visu/Alarms)"
-        self.chk_xml.Location = Point(30, y)
-        self.chk_xml.Size = Size(350, 24)
-        self.chk_xml.Checked = current_settings.get("export_xml", False)
-        self.Controls.Add(self.chk_xml)
-        
-        y += 30
-        self.chk_bin = CheckBox()
-        self.chk_bin.Text = "Backup .project Binary (Git LFS)"
-        self.chk_bin.Location = Point(30, y)
-        self.chk_bin.Size = Size(350, 24)
-        self.chk_bin.Checked = current_settings.get("backup_binary", False)
-        self.Controls.Add(self.chk_bin)
-
-        # Subsection: Backup Name
-        y += 30
-        lbl_name = Label()
-        lbl_name.Text = "Backup Name (Optional):"
-        lbl_name.Location = Point(50, y+3)
-        lbl_name.AutoSize = True
-        self.Controls.Add(lbl_name)
-        
-        self.txt_backup_name = TextBox()
-        self.txt_backup_name.Location = Point(200, y)
-        self.txt_backup_name.Size = Size(150, 20)
-        self.txt_backup_name.Text = current_settings.get("backup_name", "")
-        self.Controls.Add(self.txt_backup_name)
-
-        y += 30
-        self.chk_save_exp = CheckBox()
-        self.chk_save_exp.Text = "Save Project after Export"
-        self.chk_save_exp.Location = Point(30, y)
-        self.chk_save_exp.Size = Size(350, 24)
-        self.chk_save_exp.Checked = current_settings.get("save_after_export", True)
-        self.Controls.Add(self.chk_save_exp)
-
-        # Group 2: Import Settings
-        y += 40
-        self.chk_save = CheckBox()
-        self.chk_save.Text = "Save Project after Import"
-        self.chk_save.Location = Point(30, y)
-        self.chk_save.Size = Size(350, 24)
-        self.chk_save.Checked = current_settings.get("save_after_import", True)
-        self.Controls.Add(self.chk_save)
-
-        y += 30
-        self.chk_safety = CheckBox()
-        self.chk_safety.Text = "Timestamped Backup before Import"
-        self.chk_safety.Location = Point(30, y)
-        self.chk_safety.Size = Size(350, 24)
-        self.chk_safety.Checked = current_settings.get("safety_backup", True)
-        self.Controls.Add(self.chk_safety)
-
-        # Subsection: Backup Retention
-        y += 30
-        lbl_retention = Label()
-        lbl_retention.Text = "Max Backups to Keep (Optional):"
-        lbl_retention.Location = Point(50, y+3)
-        lbl_retention.AutoSize = True
-        self.Controls.Add(lbl_retention)
-        
-        self.txt_retention = TextBox()
-        self.txt_retention.Location = Point(250, y)
-        self.txt_retention.Size = Size(60, 20)
-        self.txt_retention.Text = str(current_settings.get("retention_count", 10))
-        self.Controls.Add(self.txt_retention)
-
-        # Group 3: Diagnostics
-        y += 40
-        self.chk_debug = CheckBox()
-        self.chk_debug.Text = "Debug mode (write metadata + logs)"
-        self.chk_debug.Location = Point(30, y)
-        self.chk_debug.Size = Size(350, 24)
-        self.chk_debug.Checked = current_settings.get("debug", False)
-        self.Controls.Add(self.chk_debug)
-
-        # Buttons
-        btn_cancel = Button()
-        btn_cancel.Text = "Cancel"
-        btn_cancel.DialogResult = DialogResult.Cancel
-        btn_cancel.Location = Point(290, 400)
-        self.Controls.Add(btn_cancel)
-
-        btn_save = Button()
-        btn_save.Text = "Save Settings"
-        btn_save.DialogResult = DialogResult.OK
-        btn_save.Location = Point(160, 400)
-        btn_save.Size = Size(120, 23)
-        self.Controls.Add(btn_save)
-        self.AcceptButton = btn_save
-        self.CancelButton = btn_cancel
-
-    def _on_browse_folder(self, sender, event):
-        """The one door to picking a folder, so the stand-in UI can shut it.
-
-        cds/ide/silent.py patches show_sync_folder_dialog by name to refuse
-        when nobody is at the keyboard; calling browse_directory_dialog
-        straight from here would be a second door onto the same modal window
-        with no one to close it.
-        """
-        if self._system is None:
-            return
-        chosen = show_sync_folder_dialog(self._system, self.txt_folder.Text)
-        if chosen:
-            self.txt_folder.Text = chosen
-
-    def get_results(self):
-        try:
-            retention = int(self.txt_retention.Text.strip())
-            if retention < 1:
-                retention = 10
-        except:
-            retention = 10
-        
-        return {
-            "sync_folder": self.txt_folder.Text.strip(),
-            "export_xml": self.chk_xml.Checked,
-            "backup_binary": self.chk_bin.Checked,
-            "backup_name": self.txt_backup_name.Text.strip(),
-            "save_after_import": self.chk_save.Checked,
-            "save_after_export": self.chk_save_exp.Checked,
-            "safety_backup": self.chk_safety.Checked,
-            "retention_count": retention,
-            "debug": self.chk_debug.Checked
-        }
-
-def show_settings_dialog(current_settings, version=None, system=None):
-    """`system` is only needed by the folder row's Browse button."""
-    try:
-        form = SettingsForm(current_settings, version, system)
-        result = form.ShowDialog()
-        if result == DialogResult.OK:
-            return form.get_results()
-    except Exception as e:
-        print("Error showing settings dialog: " + str(e))
-    return None
-
-
 class DirectoryChoiceForm(Form):
     """Modern choice dialog for setting the sync directory"""
     def __init__(self, title, message):
@@ -381,14 +167,15 @@ class DirectoryChoiceForm(Form):
         self.Close()
 
 def show_directory_choice_dialog(title, message):
-    try:
-        form = DirectoryChoiceForm(title, message)
-        form.ShowDialog()
-        return form.choice
-    except:
-        # Fallback to standard if custom fails
-        from engine.codesys_ui import ask_yes_no_cancel
-        return ask_yes_no_cancel(title, message)
+    """Browse or type? Returns "yes" to browse, "no" to type, "cancel" to stop.
+
+    Only ever reached with a person at the keyboard: cds/ide/silent.py
+    replaces show_sync_folder_dialog above this, so a headless run never gets
+    here to open a window nobody could close.
+    """
+    form = DirectoryChoiceForm(title, message)
+    form.ShowDialog()
+    return form.choice
 
 
 class SyncFolderPathForm(Form):
@@ -397,8 +184,12 @@ class SyncFolderPathForm(Form):
     Browsing cannot express "./", and a relative path is the one that
     survives the project being opened on another machine, so the manual
     route is not a fallback -- it is the only way to ask for one.
+
+    The answer is written to `settings_path` and the window says so, because
+    that file is where every later change to it is made: there is no dialog
+    to come back to (SPEC 6.7).
     """
-    def __init__(self, initial):
+    def __init__(self, settings_path):
         self.Text = "Enter Sync Directory Path"
         self.Size = Size(500, 220)
         self.FormBorderStyle = FormBorderStyle.FixedDialog
@@ -411,7 +202,8 @@ class SyncFolderPathForm(Form):
                                 "  ./                    - Project directory\n" + \
                                 "  ./folderName/         - 'folderName' beside the project file\n" + \
                                 "  C:\\MySync\\            - Absolute path\n\n" + \
-                                "Relative paths (starting with ./) are resolved against the project file."
+                                "Relative paths (starting with ./) are resolved against the project file.\n" + \
+                                "Saved to: " + str(settings_path)
         lbl_instructions.Location = Point(20, 15)
         lbl_instructions.Size = Size(460, 100)
         self.Controls.Add(lbl_instructions)
@@ -425,7 +217,7 @@ class SyncFolderPathForm(Form):
         self.txt_path = TextBox()
         self.txt_path.Location = Point(70, 122)
         self.txt_path.Size = Size(400, 20)
-        self.txt_path.Text = initial if initial else "./"
+        self.txt_path.Text = "./"
         self.Controls.Add(self.txt_path)
 
         btn_ok = Button()
@@ -445,13 +237,17 @@ class SyncFolderPathForm(Form):
         self.CancelButton = btn_cancel
 
 
-def show_sync_folder_dialog(system, initial=""):
+def show_sync_folder_dialog(system, settings_path):
     """Ask a person where the sync folder is. Returns a path, or None.
 
     The one door to the whole thing, browse and type alike, because
     cds/ide/silent.py patches this name to refuse when nobody is there
     (SPEC 6.1). A second door would open a modal window inside the IDE's
     message loop with no one to close it.
+
+    `settings_path` is the file the answer goes into. The window shows it,
+    and the stand-in names it in its refusal, which is how a headless caller
+    finds out which file to write by hand.
     """
     ans = show_directory_choice_dialog(
         "Project Sync Configuration",
@@ -460,8 +256,8 @@ def show_sync_folder_dialog(system, initial=""):
         return None
     if ans == "yes":
         return system.ui.browse_directory_dialog(
-            "Select Sync Directory for this Project", initial)
-    form = SyncFolderPathForm(initial)
+            "Select Sync Directory for this Project", "")
+    form = SyncFolderPathForm(settings_path)
     if form.ShowDialog() != DialogResult.OK:
         return None
     return form.txt_path.Text.strip()

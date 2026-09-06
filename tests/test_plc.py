@@ -20,6 +20,7 @@ still running what I put there" from "it might be running anything".
 Everything here runs against stand-in IDE objects. The controller itself is
 a bench test and needs a person (the plan's phase 3).
 """
+import io
 import os
 import sys
 import types
@@ -27,7 +28,7 @@ import types
 import pytest
 
 from cds.core import commands
-from cds.core import props
+from cds.core import settings
 from cds.ide import entries, permit, silent
 from cdsint import cli, flags
 from cdsint.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
@@ -322,10 +323,17 @@ def workspace(tmp_path, monkeypatch):
     return tmp_path
 
 
-def ide(allowed="connect,download", device=None, application=None,
+def ide(allowed=("connect", "download"), device=None, application=None,
         children=None, gateways=()):
-    """The IDE globals a plc body reads, with the property already written."""
-    values = {} if allowed is None else {props.PLC: allowed}
+    """The IDE globals a plc body reads, with the settings file written.
+
+    The list goes on disk rather than into the fake project, because that is
+    where cds/ide/permit.py reads it from now: the file beside the .project
+    (SPEC D10). `allowed=None` is a project nobody has set up at all.
+    """
+    if allowed is not None:
+        settings.write(settings.path_for(PROJECT_PATH), {"plc": list(allowed)})
+    values = {}
     application = application if application is not None else Application()
     children = children if children is not None else [Node("Device",
                                                            DEVICE_GUID)]
@@ -354,36 +362,38 @@ def press(ide_globals, entry, args):
 # The property: what a person wrote in the IDE
 # --------------------------------------------------------------------------
 
-def test_an_unset_property_allows_nothing():
+def test_no_settings_file_allows_nothing():
     assert permit.granted(ide(allowed=None)["projects"]) == []
 
 
 def test_one_word_allows_one_action():
-    assert permit.granted(ide(allowed="connect")["projects"]) == ["connect"]
+    assert permit.granted(ide(allowed=["connect"])["projects"]) == ["connect"]
 
 
 def test_both_words_allow_both_in_the_order_spec_lists_them():
-    assert permit.granted(ide(allowed="download, connect")["projects"]) == \
-        ["connect", "download"]
+    assert permit.granted(ide(allowed=["download", "connect"])["projects"])         == ["connect", "download"]
 
 
-def test_spacing_and_case_are_a_persons_typing_not_a_decision():
-    assert permit.granted(ide(allowed="  DOWNLOAD ")["projects"]) == ["download"]
+def test_case_is_a_persons_typing_not_a_decision():
+    assert permit.granted(ide(allowed=["DOWNLOAD"])["projects"]) == ["download"]
 
 
-def test_a_misspelt_word_allows_nothing_and_stays_visible():
-    # Correcting it here would be a guess about which action was meant, and
-    # the refusal quotes the value so the typo is in front of the reader.
-    projects = ide(allowed="downlaod")["projects"]
+def test_a_settings_file_that_cannot_be_read_allows_nothing():
+    # The command itself reads the same file a moment later and reports the
+    # typo in full (SPEC 4.4); what must not happen here is the gate opening
+    # because the file could not be parsed.
+    projects = ide(allowed=None)["projects"]
+    with io.open(settings.path_for(PROJECT_PATH), "w",
+                 encoding="utf-8") as handle:
+        handle.write(u'{"plc": ["downlaod"]}')
     assert permit.granted(projects) == []
-    assert "downlaod" in permit.refusal(projects, "download")
 
 
-def test_the_refusal_says_where_to_go_and_what_to_write():
-    said = permit.refusal(ide(allowed="connect")["projects"], "download")
-    assert props.PLC in said
-    assert "connect,download" in said        # what to set it to
-    assert "Project Information" in said     # where
+def test_the_refusal_says_which_file_and_what_to_write():
+    said = permit.refusal(ide(allowed=["connect"])["projects"], "download")
+    assert "plc" in said
+    assert '["connect", "download"]' in said          # what to set it to
+    assert settings.path_for(PROJECT_PATH) in said    # where
 
 
 # --------------------------------------------------------------------------
@@ -393,8 +403,8 @@ def test_the_refusal_says_where_to_go_and_what_to_write():
 def test_a_project_that_allows_nothing_refuses_download_before_any_login():
     ide_globals = ide(allowed=None)
     outcome = press(ide_globals, "download", {"yes": True})
-    assert outcome.denied == {"property": props.PLC,
-                              "action": "download"}
+    assert outcome.denied == {"file": settings.path_for(PROJECT_PATH),
+                              "key": "plc", "action": "download"}
     assert not outcome.ok()
     assert ide_globals["online"].session.calls == []
 
@@ -412,7 +422,7 @@ def test_the_refused_command_does_not_even_load_the_engine(monkeypatch):
 def test_allowing_download_does_not_allow_connect():
     # Two names, two decisions. Reading a controller and writing to one are
     # not the same permission, whichever way round somebody expects.
-    outcome = press(ide(allowed="download"), "connect", {})
+    outcome = press(ide(allowed=["download"]), "connect", {})
     assert outcome.denied["action"] == "connect"
 
 
@@ -420,7 +430,7 @@ def test_an_allowed_command_gets_through_to_the_engine(monkeypatch):
     ran = []
     monkeypatch.setattr(silent, "run",
                         lambda *args, **kwargs: ran.append(args[2]))
-    press(ide(allowed="connect"), "connect", {})
+    press(ide(allowed=["connect"]), "connect", {})
     assert ran == ["connect"]
 
 
@@ -433,7 +443,7 @@ def test_the_other_commands_are_not_gated(monkeypatch):
 
 
 def test_a_refusal_is_exit_5_and_a_failure_is_exit_1():
-    denied = {"ok": False, "denied": permit.record("download")}
+    denied = {"ok": False, "denied": permit.record(None, "download")}
     assert cli.exit_code(denied) == EXIT_DENIED
     assert cli.exit_code({"ok": False, "error": "it broke"}) == EXIT_FAILED
     assert cli.exit_code({"ok": True}) == EXIT_OK
@@ -464,17 +474,18 @@ def drive(monkeypatch, record):
 
 
 def test_a_project_that_forbids_it_comes_back_as_exit_5(monkeypatch, capsys):
-    said = permit.refusal(ide(allowed=None)["projects"], "download")
+    projects = ide(allowed=None)["projects"]
+    said = permit.refusal(projects, "download")
     drive(monkeypatch, {"ok": False, "error": said,
-                        "denied": permit.record("download")})
+                        "denied": permit.record(projects, "download")})
     code = cli.main(["plc", "download", "-y", "--project", "P", "--install",
                      "I", "--sync-dir", "S"])
     assert code == EXIT_DENIED
-    assert props.PLC in capsys.readouterr().err
+    assert "plc" in capsys.readouterr().err
 
 
 def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
-    # Not 5: the property allows it and a flag would fix this, which is a
+    # Not 5: the settings file allows it and a flag would fix this, which is a
     # different next move for whoever is reading the code.
     question = "Confirm PLC Download: ..."
     drive(monkeypatch, {"ok": False, "error": question, "denied": None,
@@ -498,7 +509,7 @@ def test_the_refusal_survives_the_trip_through_a_result_record():
     # to be in it — both forms write results through this one function.
     record = commands.new_result({"id": "1", "command": "plc download"},
                                  False, error="nope",
-                                 denied=permit.record("download"))
+                                 denied=permit.record(None, "download"))
     assert cli.exit_code(record) == EXIT_DENIED
 
 
@@ -507,14 +518,14 @@ def test_the_refusal_survives_the_trip_through_a_result_record():
 # --------------------------------------------------------------------------
 
 def test_without_yes_the_download_asks_and_nothing_logs_in():
-    ide_globals = ide(allowed="download")
+    ide_globals = ide(allowed=["download"])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {})
     assert outcome.needs is not None and outcome.needs.arg == "yes"
     assert ide_globals["online"].session.calls == []
 
 
 def test_the_question_says_what_the_download_will_do():
-    outcome = silent.run(ide(allowed="download"), PLC_BODY, "download", {})
+    outcome = silent.run(ide(allowed=["download"]), PLC_BODY, "download", {})
     asked = outcome.needs.question.lower()
     for promised in ("stop", "boot application", "start"):
         assert promised in asked
@@ -523,12 +534,12 @@ def test_the_question_says_what_the_download_will_do():
 def test_connect_never_asks_for_yes():
     # Reading a controller changes nothing, so a confirmation would be a
     # question with one useful answer.
-    outcome = silent.run(ide(allowed="connect"), PLC_BODY, "connect", {})
+    outcome = silent.run(ide(allowed=["connect"]), PLC_BODY, "connect", {})
     assert outcome.needs is None
 
 
 def test_with_yes_the_download_is_a_full_one_and_writes_a_boot_application():
-    ide_globals = ide(allowed="download")
+    ide_globals = ide(allowed=["download"])
     silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     calls = ide_globals["online"].session.calls
     assert [name for name, _rest in [(c[0], c[1:]) for c in calls]] == [
@@ -539,7 +550,7 @@ def test_with_yes_the_download_is_a_full_one_and_writes_a_boot_application():
 
 
 def test_saying_no_outright_is_not_the_same_as_not_being_asked():
-    ide_globals = ide(allowed="download")
+    ide_globals = ide(allowed=["download"])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": False})
     assert outcome.needs is None and not outcome.ok()
     assert "cancelled" in outcome.error_text().lower()
@@ -569,11 +580,14 @@ def test_neither_form_named_is_refused_the_same_way(capsys):
     assert "--project" in capsys.readouterr().err
 
 
-def test_the_project_form_still_has_to_say_where_the_st_files_are(capsys):
-    with pytest.raises(SystemExit) as raised:
-        cli.main(["plc", "connect", "--project", "P", "--install", "I"])
-    assert raised.value.code == 2
-    assert "--sync-dir" in capsys.readouterr().err
+def test_the_project_form_no_longer_has_to_say_where_the_st_files_are():
+    # --sync-dir was compulsory while a copy of a .project carried the
+    # original's sync folder inside it. The settings live beside the project
+    # now, so a copy of the .project alone carries nothing (SPEC 4.2), and
+    # the parser lets the command through to look for a settings file.
+    parsed = flags.build_parser().parse_args(
+        ["plc", "connect", "--project", "P", "--install", "I"])
+    assert parsed.sync_dir is None
 
 
 def test_the_watcher_will_not_run_a_plc_command():
@@ -621,7 +635,7 @@ def crc_of(outcome):
 
 def test_a_controller_still_holding_what_was_downloaded_is_a_match():
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "MATCH"
     assert outcome.ok()
@@ -632,7 +646,7 @@ def test_a_connect_with_nothing_ever_downloaded_is_unknown_not_a_match():
     # boot application and held it against the controller's, and those are
     # different artefacts, so the answer was DIFFERENT every time and carried
     # no information. Having nothing to compare against must say so.
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
     assert not outcome.ok()
@@ -643,7 +657,7 @@ def test_a_controller_somebody_else_loaded_is_different_and_fails():
     # The finding is the point of the command, and nothing wraps these two
     # the way verify wraps compare — so the exit code has to be the verdict.
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_C))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_C))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "DIFFERENT"
     assert not outcome.ok()
@@ -658,7 +672,7 @@ def test_editing_the_project_does_not_move_this_verdict():
     # object; answering it from here would mean guessing from a number that
     # moves on its own (engine/plc_crc.py).
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "MATCH" and outcome.ok()
 
@@ -666,7 +680,7 @@ def test_editing_the_project_does_not_move_this_verdict():
 def test_the_record_the_verdict_used_is_in_the_report():
     # A verdict a reader cannot audit is a verdict they have to trust.
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
     data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
     assert data["recorded"]["plc_crc"] == "11223344"
     assert data["recorded"]["downloaded_at"] == "2026-09-06T10:00:00"
@@ -676,7 +690,7 @@ def test_the_record_the_verdict_used_is_in_the_report():
 def test_a_record_for_another_controller_is_not_this_controllers():
     # Same working copy, two benches: the record for A must not answer for B.
     recorded(plc_crc="11223344", controller="127.0.0.1:11740")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B),
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B),
                       gateways=[Gateway()])
     outcome = silent.run(ide_globals, PLC_BODY, "connect",
                          {"gateway": "127.0.0.1", "port": 11741})
@@ -688,7 +702,7 @@ def test_only_the_identity_bytes_are_read():
     # same, and that is the whole reason the first four bytes are skipped.
     assert CRC_A[:4] == CRC_B[:4]
     recorded(plc_crc="DEADBEEF")
-    ide_globals = ide(allowed="connect", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert outcome.result["data"]["plc_crc"] == "11223344"
     assert crc_of(outcome) == "DIFFERENT"
@@ -697,7 +711,7 @@ def test_only_the_identity_bytes_are_read():
 def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
     # "cannot tell" reading the same as "matches" is the silent failure this
     # whole codebase exists to keep out (SPEC goal 6).
-    ide_globals = ide(allowed="connect", device=Device(crc=None))
+    ide_globals = ide(allowed=["connect"], device=Device(crc=None))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
     assert not outcome.ok()
@@ -705,7 +719,7 @@ def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
 
 
 def test_a_download_reports_the_crc_it_checked_afterwards():
-    ide_globals = ide(allowed="download", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     assert crc_of(outcome) == "MATCH" and outcome.ok()
     assert outcome.result["data"]["plc_crc"] == "55667788"
@@ -715,7 +729,7 @@ def test_a_download_writes_down_what_it_left_there():
     # This is the whole basis of a later connect's answer: nothing built
     # locally reproduces what the controller holds, so what cdsint itself put
     # there, recorded at the moment it put it, is the only reference.
-    ide_globals = ide(allowed="download", device=Device(crc=CRC_B))
+    ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
     silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     written = plc_crc_module.read_records(
         plc_crc_module.record_path(PROJECT_PATH))["project"]
@@ -725,9 +739,9 @@ def test_a_download_writes_down_what_it_left_there():
 
 def test_a_download_then_a_connect_is_a_match():
     # The pair the bench runs, in one test: nothing is set up by hand.
-    silent.run(ide(allowed="connect,download", device=Device(crc=CRC_B)),
+    silent.run(ide(allowed=["connect", "download"], device=Device(crc=CRC_B)),
                PLC_BODY, "download", {"yes": True})
-    after = ide(allowed="connect,download", device=Device(crc=CRC_C))
+    after = ide(allowed=["connect", "download"], device=Device(crc=CRC_C))
     outcome = silent.run(after, PLC_BODY, "connect", {})
     assert crc_of(outcome) == "MATCH" and outcome.ok()
 
@@ -738,7 +752,7 @@ def test_a_download_that_did_not_take_is_a_failure_not_a_success():
     # what that check is for; it is caught by the controller's CRC not having
     # moved, which on a real controller it does on every download.
     device = Device(crc=CRC_B)
-    ide_globals = ide(allowed="download", device=device)
+    ide_globals = ide(allowed=["download"], device=device)
     ide_globals["online"].session = Session(device=device, writes=[])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     assert not outcome.ok()
@@ -753,21 +767,21 @@ def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
             self.crc = None if self.uploaded else self.crc
             Device.upload_file(self, remote, local, overwrite)
 
-    ide_globals = ide(allowed="download", device=Wiped(crc=CRC_B))
+    ide_globals = ide(allowed=["download"], device=Wiped(crc=CRC_B))
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     assert not outcome.ok() and "nothing to show it landed" in \
         outcome.error_text()
 
 
 def test_the_source_archive_comes_back_when_the_controller_has_one():
-    ide_globals = ide(allowed="connect", device=Device(archive=True))
+    ide_globals = ide(allowed=["connect"], device=Device(archive=True))
     data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
     assert data["source_archive"].endswith(".projectarchive")
 
 
 def test_no_source_archive_is_an_answer_not_a_failure():
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed="connect", device=Device(archive=False))
+    ide_globals = ide(allowed=["connect"], device=Device(archive=False))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert outcome.result["data"]["source_archive"] is None
     assert outcome.ok()
@@ -776,7 +790,7 @@ def test_no_source_archive_is_an_answer_not_a_failure():
 def test_the_missing_archive_is_said_in_words_before_the_ides_own():
     # The IDE's words for it are "Value cannot be null. Parameter name: path",
     # which tells a reader nothing at all about what happened.
-    ide_globals = ide(allowed="connect", device=Device(archive=False))
+    ide_globals = ide(allowed=["connect"], device=Device(archive=False))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     note = [n for n in outcome.result["data"]["notes"] if "archive" in n][0]
     assert note.startswith("no source archive to fetch: nothing has been "
@@ -784,14 +798,14 @@ def test_the_missing_archive_is_said_in_words_before_the_ides_own():
 
 
 def test_the_files_the_controller_holds_are_named_not_counted():
-    ide_globals = ide(allowed="connect")
+    ide_globals = ide(allowed=["connect"])
     data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
     assert any("Application.crc" in line for line in data["plc_files"])
 
 
 def test_the_connection_is_closed_even_when_the_comparison_fails():
     device = Device(crc=None)
-    ide_globals = ide(allowed="connect", device=device)
+    ide_globals = ide(allowed=["connect"], device=device)
     silent.run(ide_globals, PLC_BODY, "connect", {})
     assert device.connected is False
 
@@ -803,7 +817,7 @@ def test_a_controller_that_does_not_answer_is_a_sentence_not_a_traceback():
         def connect(self):
             raise RuntimeError("No connection to device. (Device unplugged?)")
 
-    outcome = silent.run(ide(allowed="connect", device=Unplugged()),
+    outcome = silent.run(ide(allowed=["connect"], device=Unplugged()),
                          PLC_BODY, "connect", {})
     said = outcome.error_text()
     assert "did not answer" in said and "Traceback" not in said
@@ -815,7 +829,7 @@ def test_a_download_that_throws_is_named_and_still_logs_out():
             Session.login(self, option, delete_foreign_apps)
             raise RuntimeError("the controller refused the login")
 
-    ide_globals = ide(allowed="download")
+    ide_globals = ide(allowed=["download"])
     ide_globals["online"].session = Refusing()
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     said = outcome.error_text()
@@ -838,7 +852,7 @@ def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
     with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
         handle.write(CRC_B)
     recorded(plc_crc="11223344")
-    outcome = silent.run(ide(allowed="connect", device=Silent()),
+    outcome = silent.run(ide(allowed=["connect"], device=Silent()),
                          PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
 
@@ -848,7 +862,7 @@ def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
 # --------------------------------------------------------------------------
 
 def test_a_project_with_no_device_says_so_rather_than_connecting():
-    ide_globals = ide(allowed="connect", children=[Node("Application")])
+    ide_globals = ide(allowed=["connect"], children=[Node("Application")])
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert not outcome.ok() and "no device node" in outcome.error_text()
 
@@ -856,7 +870,7 @@ def test_a_project_with_no_device_says_so_rather_than_connecting():
 def test_two_devices_are_named_and_nothing_is_picked():
     # Which controller to download to has no safe default and no flag to
     # answer it with, so the honest answer is to stop (SPEC D7).
-    ide_globals = ide(allowed="download",
+    ide_globals = ide(allowed=["download"],
                       children=[Node("Left", DEVICE_GUID),
                                 Node("Right", DEVICE_GUID)])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
@@ -869,7 +883,7 @@ def test_without_the_gateway_flag_the_projects_own_settings_are_left_alone():
     # A read-only command that rewrote the project's gateway on its way past
     # would be changing the project to answer a question about it.
     device_node = Node("Device", DEVICE_GUID)
-    ide_globals = ide(allowed="connect", children=[device_node])
+    ide_globals = ide(allowed=["connect"], children=[device_node])
     silent.run(ide_globals, PLC_BODY, "connect", {})
     assert device_node.gateway_set_to is None
 
@@ -877,7 +891,7 @@ def test_without_the_gateway_flag_the_projects_own_settings_are_left_alone():
 def test_the_gateway_flag_aims_the_device_and_says_where():
     gateway = Gateway()
     device_node = Node("Device", DEVICE_GUID)
-    ide_globals = ide(allowed="connect", children=[device_node],
+    ide_globals = ide(allowed=["connect"], children=[device_node],
                       gateways=[gateway])
     outcome = silent.run(ide_globals, PLC_BODY, "connect",
                          {"gateway": "192.168.1.5", "port": 1217})
@@ -900,7 +914,7 @@ def test_a_note_is_on_stdout_before_the_step_after_it_runs(capsys):
         def connect(self):
             raise Killed("the process went away")
 
-    ide_globals = ide(allowed="connect", device=Unreachable(),
+    ide_globals = ide(allowed=["connect"], device=Unreachable(),
                       children=[Node("Device", DEVICE_GUID)],
                       gateways=[Gateway()])
     with pytest.raises(Killed):
@@ -912,14 +926,14 @@ def test_a_note_is_on_stdout_before_the_step_after_it_runs(capsys):
 def test_a_gateway_with_no_port_uses_the_standard_device_port():
     gateway = Gateway()
     device_node = Node("Device", DEVICE_GUID)
-    ide_globals = ide(allowed="connect", children=[device_node],
+    ide_globals = ide(allowed=["connect"], children=[device_node],
                       gateways=[gateway])
     silent.run(ide_globals, PLC_BODY, "connect", {"gateway": "127.0.0.1"})
     assert gateway.asked == [("127.0.0.1", 11740)]
 
 
 def test_asking_for_a_gateway_this_profile_does_not_have_stops_the_run():
-    ide_globals = ide(allowed="connect", gateways=[])
+    ide_globals = ide(allowed=["connect"], gateways=[])
     outcome = silent.run(ide_globals, PLC_BODY, "connect",
                          {"gateway": "192.168.1.5"})
     assert not outcome.ok() and "no gateway defined" in outcome.error_text()
@@ -979,7 +993,7 @@ def test_an_ide_that_cannot_switch_the_dialog_off_never_connects():
     # must not be reached at all. Not a refusal in the permission sense
     # either: the project allowed this, the IDE cannot carry it out.
     device = Device()
-    ide_globals = ide(allowed="connect", device=device)
+    ide_globals = ide(allowed=["connect"], device=device)
     ide_globals["online"] = NoSwitch(device=device)
     outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
     assert not outcome.ok()
@@ -1015,7 +1029,7 @@ def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
     plc = engine_module("plc_link")
     monkeypatch.setenv(plc.USER_ENV, "dev")
     monkeypatch.setenv(plc.PASS_ENV, "s3cret-do-not-print")
-    ide_globals = ide(allowed="download")
+    ide_globals = ide(allowed=["download"])
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     written = repr(outcome.result) + outcome.stdout_tail + repr(
         outcome.messages)

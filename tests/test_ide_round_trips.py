@@ -246,44 +246,66 @@ class TestGraphicalPouDetection:
         assert obj.reads["has_textual_implementation"] == 1
 
 
-class TestApplicationCount:
-    """Counting applications used to cost a second recursive walk plus two
-    property reads per object -- 13% of a fully-cached export, for a flag only
-    Project_Build reads."""
+class TestFindingApplications:
+    """Build finds its applications by walking the tree, every time.
 
-    def _objects(self, guids, app_names):
+    It used to read a project property the last export had written, and that
+    flag went stale in the one direction that mattered: the first build after
+    a second application appeared still said "one". The walk is affordable
+    only if it reads each object's type once, which is what this pins.
+    """
+
+    def _project(self, guids, app_names):
         objs = [CountingObj("Device", guids["device"]),
                 CountingObj("Folder", guids["folder"])]
         objs.extend(CountingObj(n, guids["application"]) for n in app_names)
-        return objs
 
-    def test_counts_applications(self, env):
-        utils, _, guids = env
-        assert utils.count_applications(self._objects(guids, ["App1", "App2"])) == 2
+        class Project(object):
+            def get_children(self, recursive=False):
+                return objs
 
-    def test_counts_zero(self, env):
-        utils, _, guids = env
-        assert utils.count_applications(self._objects(guids, [])) == 0
+        return Project(), objs
 
-    def test_reads_type_once_per_object(self, env):
-        utils, _, guids = env
-        objs = self._objects(guids, ["App1"])
-        utils.count_applications(objs)
+    def _applications(self, load_engine, project):
+        build = load_engine("entry_build")
+        return build.applications(project)
+
+    def test_finds_every_application(self, env, load_engine):
+        project, _ = self._project(env[2], ["App1", "App2"])
+        found = self._applications(load_engine, project)
+        assert [a.get_name() for a in found] == ["App1", "App2"]
+
+    def test_a_project_with_none_finds_none(self, env, load_engine):
+        project, _ = self._project(env[2], [])
+        assert self._applications(load_engine, project) == []
+
+    def test_reads_type_once_per_object(self, env, load_engine):
+        project, objs = self._project(env[2], ["App1"])
+        self._applications(load_engine, project)
         assert all(o.reads.get("type") == 1 for o in objs)
 
-    def test_object_without_a_type_is_ignored(self, env):
-        utils, _, guids = env
-
+    def test_an_object_without_a_type_is_not_an_application(self, env,
+                                                            load_engine):
         class NoType(object):
             def get_name(self):
                 return "Odd"
 
-        assert utils.count_applications([NoType()]) == 0
+        class Project(object):
+            def get_children(self, recursive=False):
+                return [NoType()]
 
-    def test_matches_the_application_guid_case_insensitively(self, env):
-        utils, _, guids = env
-        upper = CountingObj("App", guids["application"].upper())
-        assert utils.count_applications([upper]) == 1
+        assert self._applications(load_engine, Project()) == []
+
+    def test_matches_the_application_guid_case_insensitively(self, env,
+                                                             load_engine):
+        upper = CountingObj("App", env[2]["application"].upper())
+
+        class Project(object):
+            def get_children(self, recursive=False):
+                return [upper]
+
+        assert self._applications(load_engine, Project()) == [upper]
+
 
 
 class TestCompactCache:
