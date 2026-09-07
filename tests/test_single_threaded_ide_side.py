@@ -96,8 +96,20 @@ def ide_side_sources():
             yield path
 
 
-def offences(path):
-    """(line, what) for every banned call or import in one file."""
+def repo_relative(path):
+    """The key ALLOWED is written in. Only meaningful inside the repo."""
+    return os.path.relpath(path, REPO_ROOT).replace("\\", "/")
+
+
+def offences(path, allowed=()):
+    """(line, what) for every banned call or import in one file.
+
+    The caller hands in the file's D5 allowance instead of this function
+    looking it up, because looking it up needs a repo-relative key and the
+    file need not be in the repo: the self-test below writes one into
+    tmp_path, which on the CI runner is a different drive from the checkout,
+    and os.path.relpath refuses to relate two drives.
+    """
     with io.open(path, encoding="utf-8") as handle:
         tree = ast.parse(handle.read(), filename=path)
     found = []
@@ -114,8 +126,7 @@ def offences(path):
         elif isinstance(node, ast.ImportFrom):
             if node.module in BANNED_IMPORTS:
                 found.append((node.lineno, node.module))
-    allowed = list(ALLOWED.get(
-        os.path.relpath(path, REPO_ROOT).replace("\\", "/"), []))
+    allowed = list(allowed)
     kept = []
     for line, what in found:
         if what in allowed:
@@ -126,11 +137,11 @@ def offences(path):
 
 
 @pytest.mark.parametrize("path", sorted(ide_side_sources()),
-                         ids=lambda p: os.path.relpath(p, REPO_ROOT))
+                         ids=repo_relative)
 def test_no_sleeping_and_no_threads(path):
-    found = offences(path)
+    found = offences(path, ALLOWED.get(repo_relative(path), []))
     assert not found, "%s: %s" % (
-        os.path.relpath(path, REPO_ROOT),
+        repo_relative(path),
         "; ".join("line %d uses %s (%s)" % (line, what, BANNED_CALLS.get(
             what, "SPEC D5 bans it")) for line, what in found))
 
