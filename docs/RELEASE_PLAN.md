@@ -246,8 +246,8 @@ if error:
   - [x] 在 worktree 裡從乾淨狀態跑一次 `python -m pytest -q`，把最後一行貼進回報
   - [x] `git log --oneline 4b4ad14..HEAD` 貼進回報
   - [x] 第 7 節的裁決全部寫回本工單並 commit
-  - [ ] 驗收（還需要人）：在一個註解裡有中文的真實專案上跑 `cdsint verify --project`，確認 compare 不炸。這張工單不開 IDE，所以留給人。
-  - [ ] 驗收（還需要人）：把 `.project` 資料夾設成唯讀之後跑一次匯入，看到 `ok: false` 且 summary 講備份失敗、沒有物件被改。同上，留給人。
+  - [x] 驗收（還需要人）：在一個註解裡有中文的真實專案上跑 `cdsint verify --project`，確認 compare 不炸。2026-09-15 由監督者在真 IDE 上做完，證據在第 9 節。
+  - [x] 驗收（還需要人）：把 `.project` 資料夾設成唯讀之後跑一次匯入，看到 `ok: false` 且 summary 講備份失敗、沒有物件被改。同上，證據在第 9 節。
 
 ## 6. 回報格式
 
@@ -340,23 +340,51 @@ traceback，那比印一行話再 return 有用（PRINCIPLES 6）。順帶好處
 每一處都只改寫法：WHY 全部留著，只是從「以前是怎樣」改成「為什麼不那樣」。錯了的代價：
 動到三個不在原始範圍內的 docstring；行為零改動，`git diff` 一看就知道只有文字。
 
-## 9. 還需要人做的兩件驗收
+## 9. 真 IDE 上的兩件驗收：做完了
 
-兩件都要一台開著 IDE、手上有真實專案的機器。這張工單的鐵律說不開 IDE、不對真實專案跑
-`cdsint verify --project`，所以兩件都沒做，留在這裡。
+Worker 依鐵律沒開 IDE，這兩件由監督者在 2026-09-15 用分紙機專案做完。專案是
+`P:\Shared\Acme\Site\SheetSplitter\PLC\.softplc\softplc_refactor.project`（223 個物件，
+198 個 `.st` 含中文），IDE 是 CODESYS 3.5.21.40，每次都用新複製的副本，原檔沒動。
+所有 log 與 `--report` 在 `%TEMP%\cdsint-work\release-audit\`。
 
-**一、帶中文註解的專案跑一次 `cdsint verify --project`。** 確認 compare 不會炸。
-機器做不了的原因：`calculate_hash` 在 CPython 上的那半邊已經有 `tests/test_hash.py`
-在守，但 IronPython 2.7 上 `str` 和 `unicode` 是同一個型別，這裡沒有 IronPython 可跑，
-所以另外半邊只能靠讀碼和真的跑一次。
+**一、中文內容過 IronPython 的雜湊。** 分支程式碼跑 `verify -y`：匯入處理 223 個物件
+（27 更新、196 相同、1 失敗），沒有任何編碼錯誤；同一副本第二次匯入 `Identical: 223`。
+再各跑一次 `export`（223 相同、`Project saved.`）、`compare`（1 個差異）、`build`
+（0 errors、101 warnings）。第一輪審查說「一個中文字就 UnicodeEncodeError」的那條，在真
+IDE 上是假的：IronPython 的 `str` 就是 `unicode`，`isinstance(content, str)` 為真，
+encode 那行有跑。
 
-**二、把 `.project` 資料夾設成唯讀，跑一次匯入。** 要看到 `ok: false`、summary 講
-備份為什麼失敗，而且專案裡一個物件都沒被改。機器做不了的原因：這條路徑要一個真的會
-拒絕寫入的檔案系統加上一個真的 CODESYS 專案。假物件版本已經有
-`tests/test_backup.py::test_a_failed_safety_backup_stops_the_import` 在守，它證明的是
-`entry_import` 在拿到錯誤時不會進 `perform_import_items`；它證明不了真實的
-`shutil.copy2` 在唯讀資料夾上丟的是什麼、`copy_project` 的 `except (OSError, IOError)`
-接不接得住。
+那 1 個失敗是 `Task configuration`，用 `main`（`4b4ad14`）的程式碼跑同一份副本結果
+一模一樣，所以是原本就有的，見下面 backlog 第 1 條。
+
+**二、備份寫不進去時匯入拒絕。** 在副本的 sync 資料夾放一個叫 `.project` 的**檔案**
+（不是資料夾），跑 `import -y`。結果：`copy_project` 的 `except (OSError, IOError)`
+接住 IronPython 丟的 `[Errno 2] Could not find a part of the path`；命令回 `ok: false`、
+exit 1，訊息「Safety backup failed, nothing was imported: could not copy the project
+to .project/...」；stdout 裡物件層級的 `Updated`／`Created`／`Deleted` 行數為 0；拒絕之後
+對同一副本跑 `compare` 看到 28 個差異，跟一份沒匯入過的副本相同。`.project` 檔的 SHA
+前後不同，因為安全備份在複製前先存檔（第 7 節第一條裁決），這是預期的。
+
+**跑真 IDE 時撿到的、跟本分支無關的問題，留給下一張工單：**
+
+1. `--answer` 對帶選項的 prompt 答不了。`cds/ide/headless.py:168` 塞進
+   `system.prompt_answers` 的是裸的 `PromptResult`，但 `PromptImportConflict` 這種帶
+   `options` 清單的 prompt，ScriptEngine 要的是 `(PromptResult, PromptChoiceFilter)`
+   tuple，IDE 回「entry for the key 'PromptImportConflict' is invalid」。後果：分紙機專案
+   的 `Task configuration.task_config.xml` 兩邊不同，每次匯入都在這裡失敗，每次匯出都因為
+   `pending_import` 回 `ok: false`。`docs/history` 裡 2026-09-14 的 `sync_debug.log`
+   已經是這個錯。
+2. 真實專案的 `softplc_refactor.cdsint.json` 裡 `sync_folder` 指向
+   `...\sample_slitter_dev\machines\slitter\codesys_export`，那個路徑不存在；活著的是
+   `...\sample_slitter_dev\codesys_export`（今天的 `sync_cache.json` 在那裡）。這次用
+   `--sync-dir` 蓋過去，設定檔沒動。
+3. 匯入時每個有 `external_implementation` pragma 的物件都印
+   `Cannot write attr 'external_implementation': 'ScriptBuildProperties' object has no
+   attribute`。這個 IDE 版本沒有那個屬性；寫不進去只是警告，物件還是更新了，第二次匯入
+   `Identical: 223` 證明沒有反覆更新。是噪音，不是 bug，但一次匯入印二十幾行。
+4. stdout 有一行 `[INFO] Content match: IDE hash=284974544, Disk hash=3231018127`——
+   說相同，數字卻不同。來自 `NativeManager` 那條路（十進位 CRC），要嘛比的不是那兩個數字，
+   要嘛訊息寫錯。沒追。
 
 ## 10. 審查回饋（第二輪）
 
