@@ -231,16 +231,16 @@ if error:
   - [x] 驗收：`python -m pytest -q tests/test_doc_links.py` 綠
   - [x] commit（文件修正可以不進 CHANGELOG）
 
-- [ ] **階段 5：讓問題不再長回來**
-  - [ ] `tests/test_size_limits.py` 新增，`ALLOWED` 兩張表從程式碼算出來填
-  - [ ] `PRINCIPLES.md` 兩處補句
-  - [ ] `tests/test_hash.py` 新增（或併進既有測試檔，說明放哪、為什麼）
-  - [ ] 驗收：`tests/test_size_limits.py` 在現況上綠；把任何一個表上的數字調高一格時紅、調低一格時紅（自己試，不留在 commit 裡）
-  - [ ] 驗收：`ALLOWED_FUNCTION_LINES` 裡沒有 `engine/backup.py`（階段 1 已經把它修到上限內）
-  - [ ] 驗收：`python -m pytest -q` 全綠
-  - [ ] 驗收：`python -m pytest -q tests/test_doc_links.py` 綠（`PRINCIPLES.md` 改了）
-  - [ ] CHANGELOG 加一條
-  - [ ] commit
+- [x] **階段 5：讓問題不再長回來**
+  - [x] `tests/test_size_limits.py` 新增，`ALLOWED` 兩張表從程式碼算出來填
+  - [x] `PRINCIPLES.md` 兩處補句
+  - [x] `tests/test_hash.py` 新增（或併進既有測試檔，說明放哪、為什麼）
+  - [x] 驗收：`tests/test_size_limits.py` 在現況上綠；把任何一個表上的數字調高一格時紅、調低一格時紅（自己試，不留在 commit 裡）
+  - [x] 驗收：`ALLOWED_FUNCTION_LINES` 裡沒有 `engine/backup.py`（階段 1 已經把它修到上限內）
+  - [x] 驗收：`python -m pytest -q` 全綠
+  - [x] 驗收：`python -m pytest -q tests/test_doc_links.py` 綠（`PRINCIPLES.md` 改了）
+  - [x] CHANGELOG 加一條
+  - [x] commit
 
 - [ ] **收尾**
   - [ ] 在 worktree 裡從乾淨狀態跑一次 `python -m pytest -q`，把最後一行貼進回報
@@ -305,6 +305,23 @@ CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而�
 `ALLOWED["engine/codesys_compare_engine.py"]` 維持 3。錯了的代價：如果將來有人把那圈
 `try/except:` 縮小成只接特定例外，方法不存在的情況就會炸出來；縮小的人要記得自己補
 判斷。
+
+**Ruling（階段 5）：`ALLOWED_FUNCTION_LINES` 裡的方法用 `Class.method` 當 key，不用
+裸名字。** 第 4 節的例子只舉了模組層級的函式（`classify_object`），沒講方法怎麼記。
+`engine/codesys_managers.py` 有六個類別，每個都有 `export`；用裸名字當 key 的話，
+今天只有 `NativeManager.export` 超過 60 行所以看不出問題，但哪天第二個 `export` 也
+超過，表裡只會留下一個，另一個無聲消失——正是這張表要防的事。巢狀在函式裡的函式不另外
+記一筆，因為它的行數已經算在外層那一筆裡了，分開記等於讓長函式躲在 closure 後面。
+錯了的代價：key 比較長；讀表的人要知道點號前面是類別名。
+
+**Ruling（階段 5）：`tests/` 不在掃描範圍內。** 第 4 節寫「`SCANNED` 五個目錄」，
+而 `tests/test_bare_excepts.py` 掃六個（多一個 `tests`），所以這裡是照工單的五個：
+`engine`、`cds`、`cdsint`、`stub`、`tools`。理由寫進測試的 docstring 了：尺寸上限
+管的是有人要一邊改行為一邊讀完的程式碼，測試檔是一次讀一條，變長的方式是多一個彼此
+獨立的案例。錯了的代價：`tests/` 底下現在有四個檔超過 400 行
+（`test_call_tree.py` 712、`test_watcher.py` 513、`test_silent.py` 501、
+`test_sync_cache.py` 433），沒有東西在擋它們繼續長。要納管的話把 `"tests"` 加進
+`SCANNED`，再把這四個填進 `ALLOWED_FILE_LINES`。
 
 ## 8. 接手 prompt
 

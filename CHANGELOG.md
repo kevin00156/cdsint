@@ -341,6 +341,17 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   branch are gone, and `ALLOWED["engine/codesys_utils.py"]` in
   `tests/test_bare_excepts.py` drops from 11 to 10 with the bare `except:`
   that lived in it.
+- **The size limits have a test now, and the hash has one at all.**
+  PRINCIPLES 2 said what hard means — no new file starts over 400 lines, no
+  file already over it gets longer — and nothing enforced it, so the sentence
+  sat there while three engine files went past 1000 lines.
+  `tests/test_size_limits.py` is the ratchet, in the shape
+  `test_bare_excepts.py` proved: one table of the files over the limit and
+  one of the functions over it, each at the length it is today, and an entry
+  that goes either way fails. The tables are the count; no other file carries
+  a copy. `tests/test_hash.py` covers `calculate_hash`, which decides whether
+  a `.st` changed and had no direct test — the case it pins is a comment with
+  Chinese in it, which is where the two runtimes could have parted company.
 
 Behaviour that was in `main` but never released:
 

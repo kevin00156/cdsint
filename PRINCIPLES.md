@@ -16,6 +16,16 @@ moved ones all arrive in `5c96d4e`, the commit that brought the code across.
 Everything written since, including a new file added under `engine/`, is in
 the strict tier.
 
+Splitting a moved file does not launder it. The functions that come out of
+it stay in the moved tier until somebody rewrites them; functions added to
+the new file afterwards are strict, like anything else written here.
+`git log --follow` cannot see content move between files, so the commit that
+does the splitting has to say in words that it is a move — otherwise the new
+file reads as written here and the rule tightens on code nobody has read.
+Without that, rule 2 has no way out: a file past the limit must be split
+before the next thing goes in, and if splitting means rewriting, nobody
+splits.
+
 A rule the code does not follow is worse than no rule, so where a tier is
 looser, it says so out loud rather than being quietly ignored.
 
@@ -48,6 +58,15 @@ there being false.
 - Moved here: exempt as it stands, and there are files well past 400. What is
   not exempt: a function you touch may not come out longer than it went in,
   and a function or file you add obeys the limits like anything else.
+
+`tests/test_size_limits.py` is the ratchet for the two hard numbers, in the
+shape `test_bare_excepts.py` proved: one table of the files over 400 and one
+of the functions over 60, each entry the length it is today. Over and the
+test says so; under and it tells you to lower the entry. Those tables are
+the count — the numbers in them are a record, not a target, and no other
+file carries a copy that has to be kept in step. The soft limits stay out of
+it: they are a note to somebody reading their own diff, and a test that
+fires on them is one everybody learns to ignore.
 
 ## 3. The expensive boundary gets crossed once.
 
