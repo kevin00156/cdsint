@@ -4,7 +4,7 @@
 Two halves. `lend`/`run` give a body the IDE globals it expects: the bodies
 were menu scripts, and CODESYS runs a script by putting `system`, `projects`
 and the enum types straight into its namespace, so they read those as plain
-globals and pass `globals()` to resolve_projects(). As modules they have no
+globals and hand their own `globals()` to borrowed(). As modules they have no
 such namespace of their own, so whoever calls them hands theirs over. A name
 the body already defines wins, which is what the old `dict(ide_globals)` +
 exec did: the script's own definitions landed on top of the IDE's.

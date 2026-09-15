@@ -180,8 +180,8 @@ if error:
 
 ## 5. 分階段與驗收
 
-- [ ] **階段 1：`engine/backup.py` 重寫，備份失敗擋下匯入、存檔失敗回報失敗**
-  - [ ] `tests/test_backup.py` 新增，用 `tests/fakes.py` 的假物件，先寫測試再改實作：
+- [x] **階段 1：`engine/backup.py` 重寫，備份失敗擋下匯入、存檔失敗回報失敗**
+  - [x] `tests/test_backup.py` 新增，用 `tests/fakes.py` 的假物件，先寫測試再改實作：
     - 複製失敗（`shutil.copy2` 丟 `OSError`）時 `create_safety_backup` 回 `(None, error)` 且 `error` 含原因
     - `safety_backup` 關著時回 `(None, None)`
     - 專案沒有 `path` 時回 `(None, error)`
@@ -189,28 +189,28 @@ if error:
     - `backup_binary` 開著時 `save()` 恰好被呼叫一次，然後 `copy_project` 被呼叫
     - `save_after_import` 開著、`backup_binary` 關著時 `save()` 被呼叫一次，不複製
     - `target_name` 三種情況：時間戳、自訂名（有無 `.project` 副檔名）、專案原名
-  - [ ] `engine/backup.py` 照第 4 節重寫
-  - [ ] `engine/entry_import.py` 在備份失敗時回 `entry.result(False, ...)`，不進 `perform_import_items`；`finalize_sync_operation` 有錯誤時回 `entry.result(False, ...)`
-  - [ ] `engine/entry_export.py` 在 `finalize_sync_operation` 有錯誤時回 `entry.result(False, ...)`
-  - [ ] `tools/perf_probe.py` 的 `_FUNCTIONS` 表跟著改名（`backup_project_binary` 那列換成新名字）
-  - [ ] 驗收：`python -m pytest -q` 全綠，數量 ≥ 1306 加新測試數
-  - [ ] 驗收：`engine/backup.py` 每個函式 ≤ 60 行（用 `ast` 算），檔案 ≤ 400 行
-  - [ ] 驗收：`git grep -n 'except Exception' -- engine/backup.py` 每一個命中的 handler 都把例外變成回傳的錯誤字串，沒有 `pass` 或 `return None`
-  - [ ] 驗收：`git grep backup_project_binary` 除了 `CHANGELOG.md` 和 `docs/history/` 之外沒有命中
-  - [ ] CHANGELOG `### Unreleased` 加一條
-  - [ ] commit
+  - [x] `engine/backup.py` 照第 4 節重寫
+  - [x] `engine/entry_import.py` 在備份失敗時回 `entry.result(False, ...)`，不進 `perform_import_items`；`finalize_sync_operation` 有錯誤時回 `entry.result(False, ...)`
+  - [x] `engine/entry_export.py` 在 `finalize_sync_operation` 有錯誤時回 `entry.result(False, ...)`
+  - [x] `tools/perf_probe.py` 的 `_FUNCTIONS` 表跟著改名（`backup_project_binary` 那列換成新名字）
+  - [x] 驗收：`python -m pytest -q` 全綠，數量 ≥ 1306 加新測試數
+  - [x] 驗收：`engine/backup.py` 每個函式 ≤ 60 行（用 `ast` 算），檔案 ≤ 400 行
+  - [x] 驗收：`git grep -n 'except Exception' -- engine/backup.py` 每一個命中的 handler 都把例外變成回傳的錯誤字串，沒有 `pass` 或 `return None`
+  - [x] 驗收：`git grep backup_project_binary` 除了 `CHANGELOG.md` 和 `docs/history/` 之外沒有命中
+  - [x] CHANGELOG `### Unreleased` 加一條
+  - [x] commit
 
-- [ ] **階段 2：`perf_probe` 能啟動，探針表解析不到就大聲說**
-  - [ ] `:436` 改用 `entry.borrowed`
-  - [ ] 刪三列過期的表項
-  - [ ] `install_probes` 收集解析不到的名字並印出
-  - [ ] `tests/test_perf_probe.py` 新增：一條測試對 `_FUNCTIONS` 每一列 `name` 斷言 `engine/` 底下某個模組有這個頂層名字（用 `ast` 或 `importlib`，不要真的 import IDE 側模組後呼叫 `.NET`），一條對 `methods` 每一列斷言該 class 的 `__dict__` 有該方法。這兩條就是讓表不再過期的機制
-  - [ ] `engine/entry.py:7` 那句 docstring 改掉
-  - [ ] 驗收：`git grep -n resolve_projects -- '*.py'` 為零
-  - [ ] 驗收：新測試在現況上綠，把 `_FUNCTIONS` 塞一個假名字進去時紅（自己試一次，不留在 commit 裡）
-  - [ ] 驗收：`python -m pytest -q` 全綠
-  - [ ] CHANGELOG 加一條
-  - [ ] commit
+- [x] **階段 2：`perf_probe` 能啟動，探針表解析不到就大聲說**
+  - [x] `:436` 改用 `entry.borrowed`
+  - [x] 刪三列過期的表項
+  - [x] `install_probes` 收集解析不到的名字並印出
+  - [x] `tests/test_perf_probe.py` 新增：一條測試對 `_FUNCTIONS` 每一列 `name` 斷言 `engine/` 底下某個模組有這個頂層名字（用 `ast` 或 `importlib`，不要真的 import IDE 側模組後呼叫 `.NET`），一條對 `methods` 每一列斷言該 class 的 `__dict__` 有該方法。這兩條就是讓表不再過期的機制
+  - [x] `engine/entry.py:7` 那句 docstring 改掉
+  - [x] 驗收：`git grep -n resolve_projects -- '*.py'` 為零
+  - [x] 驗收：新測試在現況上綠，把 `_FUNCTIONS` 塞一個假名字進去時紅（自己試一次，不留在 commit 裡）
+  - [x] 驗收：`python -m pytest -q` 全綠
+  - [x] CHANGELOG 加一條
+  - [x] commit
 
 - [ ] **階段 3：`hasattr` 換 `ide_flag`，死分支刪掉**
   - [ ] `engine/codesys_managers.py:430`、`:442` 換成 `ide_flag`
@@ -262,9 +262,38 @@ if error:
 
 ## 7. 未決事項與裁決
 
-目前沒有未決事項。實作時遇到工單沒講到的決定，寫在這裡再做：
+工單沒講到、實作時必須決定的事，決定之後寫在這裡：
 
 `Ruling: 決定 — 理由 — 錯了的代價`
+
+**Ruling（階段 1）：安全備份在複製之前先存檔，存檔失敗就是備份失敗。** 第 4 節的
+表只說 `save_project` 是 `finalize_sync_operation` 的一步，沒說安全備份要不要存。
+理由是安全備份的用途是留住匯入前的狀態；不先存檔，複製到的是上次存檔的 `.project`，
+少掉的正是這次匯入要覆蓋的那些改動。一份不是當下狀態的備份，看起來有、實際上沒有，
+就是 PRINCIPLES 6 說的換頂帽子的靜默跳過。錯了的代價：專案存不了檔（例如檔案被鎖）
+的時候匯入會被擋下來，就算舊的 `.project` 其實還可以當備份用。要改的話改
+`create_safety_backup` 裡 `save_project` 那三行，讓它只記錄不中止。
+
+**Ruling（階段 1）：`import_project` 和 `export_project` 多出來的錯誤處理，用同一個
+函式裡的註解噪音抵掉，兩個函式的行數都沒有變長。** 這兩個函式各 229 行和 214 行，
+都在移入層而且遠超過 60 行硬上限，PRINCIPLES 2 說「碰到的函式不准比原來長」。刪掉的
+是只把下一行程式碼翻譯一遍的橫幅註解（`# ── Phase 1: Find all changes ──` 這類）、
+描述已經不存在的程式碼的註解（`# Create project binary backup (moved down)`、
+`# Metadata migration - no longer used`），以及夾在中間的多餘空行。這些都是
+CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而砍。錯了的代價：如果有人覺得
+那些橫幅註解幫助閱讀，他失去的是分段的視覺提示；程式碼一行都沒改。
+
+**Ruling（階段 2）：把 `tools/perf_probe.py` 的兩張探針表搬到新檔
+`tools/perf_tables.py`。** 那個檔案 511 行，超過 400 行硬上限，PRINCIPLES 2 對這種
+檔案的規定是「下一樣東西進去之前先拆」，而階段 2 正是要放東西進去。拆出來的是純資料，
+沒有行為，而且正好是新測試要讀的那一塊，所以縫接在這裡。搬過去的內容一個字沒改，只有
+三列過期的列被刪掉、兩個 bucket 函式跟著搬並去掉底線前綴。依第 2 節的決策，搬過去的
+東西維持移入層，commit 訊息寫明這是搬運。`perf_probe.py` 從 511 降到 444，仍然超過
+400，但比原來短，所以規則的兩句都沒有被違反。`readMe.md` 跟著加一條，因為
+`tests/test_tools_are_documented.py` 要求 `tools/` 底下每個檔案都要有說明。
+錯了的代價：多一個檔案要看；想知道探針量什麼的人要多開一個檔案。要合回去的話，
+把 `perf_tables.py` 的兩張表貼回 `perf_probe.py` 並改回 `_FUNCTIONS`／`_METHODS` 即可，
+但那樣 `perf_probe.py` 會回到 500 行以上。
 
 ## 8. 接手 prompt
 

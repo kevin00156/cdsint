@@ -58,6 +58,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import _root  # noqa: E402,F401
+from perf_tables import FUNCTIONS, METHODS  # noqa: E402
 
 # High-resolution timer. On Python 2 / Windows time.clock() is
 # QueryPerformanceCounter; time.time() only has ~15 ms granularity there, which
@@ -114,15 +115,14 @@ def _make_wrapper(label, func, bucket_of=None):
     return wrapper
 
 
-def _patch_function(name, label=None, bucket_of=None):
-    """Rebind a module-level function in EVERY namespace that imported it.
+def _find_function(name):
+    """The engine's own copy of `name`, or None when nothing under engine/
+    has one.
 
-    `from codesys_utils import read_ide_attrs` copies the function object into
-    the importing module, so patching only the defining module would miss most
-    call sites. Identity comparison finds them all.
+    Anything under engine/, which is both the codesys_* modules and the entry
+    bodies: cleanup_orphaned_files lives in entry_export. What identifies the
+    engine's own is not where the name is found but who it says it belongs to.
     """
-    label = label or name
-    original = None
     for module in list(sys.modules.values()):
         if module is None:
             continue
@@ -130,16 +130,30 @@ def _patch_function(name, label=None, bucket_of=None):
             candidate = getattr(module, name, None)
         except Exception:
             continue
-        # Anything under engine/, which is both the codesys_* modules and the
-        # entry bodies: cleanup_orphaned_files lives in entry_export.
         owner = getattr(candidate, "__module__", None) if candidate is not None else None
         if owner and owner.startswith("engine."):
-            original = candidate
-            break
+            return candidate
+    return None
+
+
+def _find_class(module_name, class_name):
+    """The class a methods-table row names, or None if it is not there."""
+    module = sys.modules.get(module_name)
+    return getattr(module, class_name, None) if module is not None else None
+
+
+def _patch_function(name, label=None, bucket_of=None):
+    """Rebind a module-level function in EVERY namespace that imported it.
+
+    `from codesys_utils import read_ide_attrs` copies the function object into
+    the importing module, so patching only the defining module would miss most
+    call sites. Identity comparison finds them all.
+    """
+    original = _find_function(name)
     if original is None:
         return 0
 
-    wrapper = _make_wrapper(label, original, bucket_of)
+    wrapper = _make_wrapper(label or name, original, bucket_of)
     patched = 0
     for module in list(sys.modules.values()):
         if module is None:
@@ -156,139 +170,57 @@ def _patch_function(name, label=None, bucket_of=None):
 def _patch_method(module_name, class_name, method_name, label=None, bucket_of=None):
     """Wrap a method on a class. Subclasses that do not override it inherit
     the wrapper automatically."""
-    label = label or ("%s.%s" % (class_name, method_name))
-    module = sys.modules.get(module_name)
-    if module is None:
-        return 0
-    cls = getattr(module, class_name, None)
-    if cls is None:
-        return 0
-    original = cls.__dict__.get(method_name)
+    cls = _find_class(module_name, class_name)
+    original = cls.__dict__.get(method_name) if cls is not None else None
     if original is None:
         return 0
+    label = label or ("%s.%s" % (class_name, method_name))
     setattr(cls, method_name, _make_wrapper(label, original, bucket_of))
     return 1
 
 
-# ── what to measure ──────────────────────────────────────────────────
-# (name, label) pairs. Grouped so the report reads as an argument rather
-# than an undifferentiated list.
+def unresolved_probes():
+    """Probe-table rows that name nothing the engine has any more.
 
-_FUNCTIONS = [
-    # per-object IDE attribute reads
-    ("read_ide_attrs", "IDE:read_ide_attrs"),
-    ("write_ide_attrs", "IDE:write_ide_attrs"),
-    # parent-chain walks
-    ("build_expected_path", "path:build_expected_path"),
-    ("get_container_prefix", "path:get_container_prefix"),
-    ("get_object_path", "path:get_object_path"),
-    ("get_parent_pou_name", "path:get_parent_pou_name"),
-    # classification (is_nvl does a native export per GVL)
-    ("classify_object", "classify:classify_object"),
-    ("is_nvl", "classify:is_nvl"),
-    ("is_graphical_pou", "classify:is_graphical_pou"),
-    # textual content extraction
-    ("export_object_content", "content:export_object_content"),
-    ("export_interface_declaration", "content:export_interface_declaration"),
-    ("get_quick_ide_hash", "content:get_quick_ide_hash"),
-    ("format_st_content", "content:format_st_content"),
-    ("calculate_hash", "content:calculate_hash"),
-    # tree lookups (import side)
-    ("find_child_transparent", "tree:find_child_transparent"),
-    ("find_object_by_path", "tree:find_object_by_path"),
-    ("ensure_folder_path", "tree:ensure_folder_path"),
-    # compare engine
-    ("get_ide_content", "compare:get_ide_content"),
-    ("contents_are_equal", "compare:contents_are_equal"),
-    ("read_file", "compare:read_file"),
-    ("scan_new_disk_files", "compare:scan_new_disk_files"),
-    ("find_all_changes", "compare:find_all_changes"),
-    ("detect_moved_files", "compare:detect_moved_files"),
-    # import engine -- these only fire in import mode, and their cost scales
-    # with how many files actually changed rather than with project size
-    ("perform_import_items", "import:perform_import_items"),
-    ("update_existing_object", "import:update_existing_object"),
-    ("create_new_object", "import:create_new_object"),
-    ("update_object_code", "import:update_object_code"),
-    ("batch_import_native_xmls_with_children", "import:batch_native_xmls"),
-    ("merge_native_xmls", "import:merge_native_xmls"),
-    ("save_pou_children", "import:save_pou_children"),
-    ("restore_pou_children", "import:restore_pou_children"),
-    ("build_device_remap", "import:build_device_remap"),
-    ("order_st_files_parents_first", "import:order_st_files"),
-    ("find_parent_pou", "import:find_parent_pou"),
-    ("determine_object_type", "import:determine_object_type"),
-    ("find_logged_in_applications", "import:find_logged_in_applications"),
-    # disk + cache
-    ("parse_st_file", "disk:parse_st_file"),
-    ("load_sync_cache", "cache:load_sync_cache"),
-    ("save_sync_cache", "cache:save_sync_cache"),
-    ("build_folder_hashes", "cache:build_folder_hashes"),
-    ("file_signature", "disk:file_signature"),
-    # end-of-run bookkeeping, none of which used to be measured
-    ("finalize_sync_operation", "final:finalize_sync_operation"),
-    ("save_project", "final:save_project"),
-    ("copy_project", "final:copy_project"),
-    ("create_safety_backup", "final:create_safety_backup"),
-    ("save_sync_metadata", "final:save_sync_metadata"),
-    ("cleanup_orphaned_files", "final:cleanup_orphaned_files"),
-    ("ensure_git_configs", "setup:ensure_git_configs"),
-    ("resolve_projects", "setup:resolve_projects"),
-    # logging (unconditional print() to the CODESYS console)
-    ("log_info", "log:log_info"),
-    ("log_warning", "log:log_warning"),
-]
-
-
-def _skip_bucket(result):
-    return "SKIPPED (cache hit)" if result else "worked"
-
-
-def _export_bucket(result):
-    return str(result)
+    A stale row does not fail. It measures nothing, prints nothing, and the
+    report reads as though that function cost nothing -- which is the silent
+    skip PRINCIPLES 6 is about, wearing a diagnostic's hat.
+    """
+    missing = [name for name, _label in FUNCTIONS
+               if _find_function(name) is None]
+    for module_name, class_name, method, _label, _bucket in METHODS:
+        cls = _find_class(module_name, class_name)
+        if cls is None or method not in cls.__dict__:
+            missing.append("%s.%s" % (class_name, method))
+    return missing
 
 
 def install_probes():
-    """Wrap everything. Returns (functions_patched, sites_rebound)."""
+    """Wrap everything. Returns (functions_patched, sites_rebound).
+
+    A stale table stops the run instead of shrinking the report: a report
+    three rows short misleads worse than no report, because the rows it is
+    missing are the ones nobody thinks to look for.
+    """
+    missing = unresolved_probes()
+    if missing:
+        print("perf_probe: the probe table names nothing in the engine: "
+              + ", ".join(missing))
+        print("No probes were installed. Fix the tables in perf_tables.py.")
+        return 0, 0
+
     functions = 0
     sites = 0
-    for entry in _FUNCTIONS:
-        name, label = entry
+    for name, label in FUNCTIONS:
         n = _patch_function(name, label)
         if n:
             functions += 1
             sites += n
-
-    methods = [
-        ("engine.codesys_managers", "ObjectManager", "_try_cache_skip",
-         "mgr:_try_cache_skip", _skip_bucket),
-        ("engine.codesys_managers", "ObjectManager", "_update_cache_entry",
-         "mgr:_update_cache_entry", None),
-        ("engine.codesys_managers", "POUManager", "export", "mgr:POUManager.export", _export_bucket),
-        ("engine.codesys_managers", "PropertyManager", "export", "mgr:PropertyManager.export", _export_bucket),
-        ("engine.codesys_managers", "NativeManager", "export", "mgr:NativeManager.export", _export_bucket),
-        ("engine.codesys_managers", "ConfigManager", "export", "mgr:ConfigManager.export", _export_bucket),
-        ("engine.codesys_managers", "FolderManager", "export", "mgr:FolderManager.export", None),
-        ("engine.codesys_managers", "NativeManager", "_hash_file", "mgr:_hash_file", None),
-        ("engine.codesys_managers", "NativeManager", "_hash_content", "mgr:_hash_content", None),
-        # import side
-        ("engine.codesys_managers", "POUManager", "update", "mgr:POUManager.update", None),
-        ("engine.codesys_managers", "POUManager", "create", "mgr:POUManager.create", None),
-        ("engine.codesys_managers", "PropertyManager", "update", "mgr:PropertyManager.update", None),
-        ("engine.codesys_managers", "PropertyManager", "create", "mgr:PropertyManager.create", None),
-        ("engine.codesys_managers", "NativeManager", "update", "mgr:NativeManager.update", None),
-        ("engine.codesys_managers", "NativeManager", "create", "mgr:NativeManager.create", None),
-        ("engine.codesys_managers", "ConfigManager", "update", "mgr:ConfigManager.update", None),
-        ("engine.codesys_managers", "ConfigManager", "create", "mgr:ConfigManager.create", None),
-        ("engine.codesys_managers", "FolderManager", "update", "mgr:FolderManager.update", None),
-        ("engine.codesys_managers", "FolderManager", "create", "mgr:FolderManager.create", None),
-    ]
-    for module_name, class_name, method_name, label, bucket in methods:
-        n = _patch_method(module_name, class_name, method_name, label, bucket)
+    for module_name, class_name, method, label, bucket in METHODS:
+        n = _patch_method(module_name, class_name, method, label, bucket)
         if n:
             functions += 1
             sites += n
-
     return functions, sites
 
 
@@ -433,7 +365,7 @@ def main():
         print("Could not load the engine modules.")
         return
 
-    projects_obj = utils.resolve_projects(None, globals())
+    projects_obj = sys.modules["engine.entry"].borrowed(globals(), "projects")
     if projects_obj is None or not projects_obj.primary:
         print("Error: no project open.")
         return

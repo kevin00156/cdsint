@@ -498,6 +498,13 @@ box. The report goes to `perf_probe_<mode>.txt` in the sync folder. Run the
 same mode twice — the second run is the one that says whether the cache is
 earning its keep.
 
+**`tools/perf_tables.py`** is that probe's two tables: the engine functions it
+measures, and the manager methods it measures. Not something you run. It is a
+file of its own because a row that names something the engine has renamed
+measures nothing and prints nothing, so the report comes out a row short
+without saying so — `tests/test_perf_probe.py` reads these tables against the
+real engine, and `install_probes()` refuses to run on a stale one.
+
 **`tools/headless_watch.py`** opens a project in a headless IDE and arms the
 watcher in it, so that `--target` has something to talk to without a person
 opening the IDE. Runs inside the IDE it starts:

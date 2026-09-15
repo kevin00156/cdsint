@@ -315,6 +315,19 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   `finalize_sync_operation()` returns the reason either one did not happen —
   which both import and export report, export saying that the files on disk
   are complete and only the IDE project went unsaved.
+- **The performance probe could not start, and its table had gone stale.**
+  `tools/perf_probe.py` called `resolve_projects()`, a function the engine
+  deleted when `engine/entry.py`'s `borrowed()` replaced the four resolvers,
+  so the probe stopped at a `NameError` before it measured anything. Three
+  more rows named things that are not there: `resolve_projects` itself, and
+  `ConfigManager.update` and `ConfigManager.create`, methods that class has
+  never defined. A row that matches nothing does not fail — it measures
+  nothing and prints nothing, and a cost ranking that does not mention a
+  function reads as a function that cost nothing. `install_probes()` now
+  names every unresolved row and installs no probes at all rather than
+  producing a report with holes in it, and the tables live in
+  `tools/perf_tables.py` where `tests/test_perf_probe.py` reads them against
+  the real engine, so the next rename fails in CI instead of in a report.
 
 Behaviour that was in `main` but never released:
 
