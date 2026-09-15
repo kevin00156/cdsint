@@ -427,7 +427,7 @@ def update_object_code(obj, declaration, implementation):
     """
     updated = False
     try:
-        if declaration is not None and hasattr(obj, "has_textual_declaration") and obj.has_textual_declaration:
+        if declaration is not None and ide_flag(obj, "has_textual_declaration"):
             doc = obj.textual_declaration
             if doc.text != declaration:
                 try:
@@ -439,7 +439,7 @@ def update_object_code(obj, declaration, implementation):
                     doc.replace(declaration)
                     updated = True
 
-        if implementation is not None and hasattr(obj, "has_textual_implementation") and obj.has_textual_implementation:
+        if implementation is not None and ide_flag(obj, "has_textual_implementation"):
             doc = obj.textual_implementation
             if doc.text != implementation:
                 try:

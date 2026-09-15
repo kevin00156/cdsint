@@ -328,6 +328,19 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   producing a report with holes in it, and the tables live in
   `tools/perf_tables.py` where `tests/test_perf_probe.py` reads them against
   the real engine, so the next rename fails in CI instead of in a report.
+- **The last three flag reads that behaved differently on the two runtimes.**
+  `hasattr(obj, name) and obj.name` swallows every exception on IronPython 2.7
+  and only `AttributeError` on CPython 3, so a property that raises reads as
+  False inside the IDE and crashes the import outside it — and it costs two
+  crossings into .NET where one would do (PRINCIPLES 3). The two in
+  `update_object_code` are `ide_flag()` now, which is the function written for
+  exactly this. The third was inside a branch that could never run:
+  `find_object_by_name` took a `parent_name` to break a tie between objects
+  sharing a name, and its one caller passed its own local `parent_name` as the
+  *first* argument, so the tie-break never ran once. The parameter and the
+  branch are gone, and `ALLOWED["engine/codesys_utils.py"]` in
+  `tests/test_bare_excepts.py` drops from 11 to 10 with the bare `except:`
+  that lived in it.
 
 Behaviour that was in `main` but never released:
 

@@ -212,14 +212,14 @@ if error:
   - [x] CHANGELOG 加一條
   - [x] commit
 
-- [ ] **階段 3：`hasattr` 換 `ide_flag`，死分支刪掉**
-  - [ ] `engine/codesys_managers.py:430`、`:442` 換成 `ide_flag`
-  - [ ] `engine/codesys_utils.py` 的 `find_object_by_name` 刪 `parent_name` 參數與分支，改註解與 docstring
-  - [ ] `tests/test_bare_excepts.py` 的 `ALLOWED["engine/codesys_utils.py"]` 從 11 降到 10
-  - [ ] 驗收：`git grep -nE 'hasattr\([a-z_]+, "[a-z_]+"\) and [a-z_]+\.' -- engine/ cds/` 為零
-  - [ ] 驗收：`python -m pytest -q` 全綠
-  - [ ] CHANGELOG 加一條
-  - [ ] commit
+- [x] **階段 3：`hasattr` 換 `ide_flag`，死分支刪掉**
+  - [x] `engine/codesys_managers.py:430`、`:442` 換成 `ide_flag`
+  - [x] `engine/codesys_utils.py` 的 `find_object_by_name` 刪 `parent_name` 參數與分支，改註解與 docstring
+  - [x] `tests/test_bare_excepts.py` 的 `ALLOWED["engine/codesys_utils.py"]` 從 11 降到 10
+  - [x] 驗收：`git grep -nE 'hasattr\([a-z_]+, "[a-z_]+"\) and [a-z_]+\.' -- engine/ cds/` 為零
+  - [x] 驗收：`python -m pytest -q` 全綠
+  - [x] CHANGELOG 加一條
+  - [x] commit
 
 - [ ] **階段 4：四處騙人的文字改正**
   - [ ] `engine/entry_build.py:5` 與 `:288`
@@ -294,6 +294,17 @@ CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而�
 錯了的代價：多一個檔案要看；想知道探針量什麼的人要多開一個檔案。要合回去的話，
 把 `perf_tables.py` 的兩張表貼回 `perf_probe.py` 並改回 `_FUNCTIONS`／`_METHODS` 即可，
 但那樣 `perf_probe.py` 會回到 500 行以上。
+
+**Ruling（階段 3）：`codesys_compare_engine.py:675` 那個 `hasattr` 只刪掉，不換成
+`ide_flag`。** 第 3 節只列了三處，但階段 3 的驗收 grep 會多抓到這一行：
+`hasattr(container, "get_name") and container.get_name() == parent_name`。它跟另外三處
+不是同一件事——它檢查的是有沒有那個方法，然後把方法叫起來，不是讀一個布林屬性。
+`ide_flag` 會把任何一個 bound method 當成 True，用在這裡是錯的。真正多餘的是 `hasattr`
+本身：外面那圈 `try/except:` 本來就會接住方法不存在時的 `AttributeError`，所以刪掉它
+行為完全不變，還少一次進 .NET 的往返（PRINCIPLES 3）。裸 `except:` 沒有動，
+`ALLOWED["engine/codesys_compare_engine.py"]` 維持 3。錯了的代價：如果將來有人把那圈
+`try/except:` 縮小成只接特定例外，方法不存在的情況就會炸出來；縮小的人要記得自己補
+判斷。
 
 ## 8. 接手 prompt
 

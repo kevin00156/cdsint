@@ -672,7 +672,7 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
 
         if not pou_parent and _is_pou_or_itf(container):
             try:
-                if hasattr(container, "get_name") and container.get_name() == parent_name:
+                if container.get_name() == parent_name:
                     pou_parent = container
             except:
                 pass

@@ -969,31 +969,19 @@ def ensure_folder_path(path_str, project):
     return current
 
 
-def find_object_by_name(name, name_map, parent_name=None):
+def find_object_by_name(name, name_map):
     """
     Find a CODESYS object by name using cache.
     Returns first match or None.
+
+    Several objects can share a name, and this answers with the first of
+    them. It used to take a parent_name to break the tie, but the one caller
+    never passed one -- it passed its own local named parent_name as the
+    first argument -- so the tie-break never ran once.
     """
     found = name_map.get(name)
     if not found:
         return None
-    
-    if len(found) == 1:
-        return found[0]
-    
-    # Multiple matches - filter by parent if provided
-    if parent_name:
-        for obj in found:
-            try:
-                if hasattr(obj, "parent") and obj.parent:
-                    if obj.parent.get_name() == parent_name:
-                        return obj
-            except:
-                continue
-        # Strict matching: if parent_name was provided but not found, return None
-        return None
-    
-    # Return first match ONLY if no parent filter was requested
     return found[0]
 
 
