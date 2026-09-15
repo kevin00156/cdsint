@@ -1,32 +1,44 @@
 ---
 name: Bug report
-about: Create a report to help us improve
-title: '[BUG] '
+about: It did not do what it says it does
+title: ''
 labels: bug
 assignees: ''
 
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**What you ran**
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Run script '...'
-2. Open file '...'
-3. Click on '....'
-4. See error
+The exact command, or the menu entry if this was the IDE half.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+```
+cdsint ...
+```
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**What it did**
 
-**Environment (please complete the following information):**
- - CODESYS Version: [e.g. 3.5 SP18]
- - Script Version: [e.g. 0.9.0]
- - OS: [e.g. Windows 10]
+Paste the output, and the exit code with it — `echo $LASTEXITCODE` in
+PowerShell. If a log was written, the last twenty lines beat a summary of them.
 
-**Additional context**
-Add any other context about the problem here.
+**What you expected instead**
+
+**Which IDE**
+
+Run `cdsint installs` and paste the row for the IDE you used. If `installs` is
+itself what is broken, name the product and version by hand: CODESYS 3.5 SP19,
+DIADesigner-AX 1.10, PLC Designer 4.0.
+
+- The IDE was: open in front of me / not open, headless / does not matter
+- `pip show cdsint` version:
+- Windows version:
+- `python -V`:
+
+**If an object failed to export or import**
+
+Run `cdsint discover` and paste the lines for the objects involved. It names
+every object and the kind it counted as, which is what tells us whether the kind
+is unknown or the GUID is.
+
+**Anything else**
+
+A `.st` file that reproduces it, if you can share one.

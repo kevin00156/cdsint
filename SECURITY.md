@@ -1,22 +1,43 @@
 # Security Policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-Currently, the following versions of `cdsint` are supported with security updates:
+Do not open a public issue. Use GitHub's private vulnerability reporting: the
+**Security** tab of this repository, then **Report a vulnerability**.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.0.x   | :white_check_mark: |
+Say what an attacker can do with it, not only what looks wrong. One line that
+reproduces the problem is worth more than a page of theory. You will get an
+acknowledgement; if a fix ships, the changelog credits you under whatever name
+you give, or nobody at all if you would rather.
 
-## Reporting a Vulnerability
+## Which versions get fixes
 
-We take the security of this project seriously. If you find a security vulnerability, please do NOT open a public issue. Instead, please report it via GitHub's **Private Vulnerability Reporting** feature:
+There is no published release yet, so there is nothing to backport to. Fixes go
+on `main`, and `main` is the only place to get them. When releases start, this
+section will say which ones are still supported.
 
-1. Navigate to the **Security** tab of this repository.
-2. Select **Vulnerability reporting** from the left sidebar.
-3. Click **Report a vulnerability**.
+## What this tool can reach
 
-We will acknowledge your report and work on a fix as soon as possible. Once the fix is released, we will give you credit for the discovery (unless you prefer to remain anonymous).
+Worth knowing before deciding whether something is a vulnerability here.
 
-## Warning on Third-Party Scripts
-As stated in the README, this is a third-party tool. Always review scripts before running them in a production PLC environment, as scripts have significant access to your CODESYS project data.
+`cdsint` runs on your machine with your permissions, and its other half runs
+inside the IDE as the IDE. Between them they read and write the whole PLC
+project, write files wherever the project's sync folder points, start and stop
+the IDE, and — when the project's settings allow it — connect to a controller
+and download to it.
+
+That last one is deliberately gated. A `plc` command is refused unless the
+project's `.cdsint.json` settings file lists it, and the refusal is exit code 5.
+Anything that makes `plc download` run against a project whose settings do not
+allow it is a vulnerability. So is anything that makes an export or import write
+outside the configured sync folder.
+
+Feeding this tool a `.project`, `.st` or settings file from someone you do not
+trust is not a supported use. It parses all three assuming they came from you.
+
+## Not a vendor product
+
+This is a third-party tool. It is not endorsed by CODESYS, Lenze or Delta, and
+it drives their IDEs through the scripting API those IDEs publish. A script with
+this much access to a project belongs to the person who read it first — review
+it before you point it at a machine that is running.
