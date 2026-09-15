@@ -13,11 +13,14 @@ the menu path (engine/entry.py) has no such need. Reaching the engine by
 path and by sys.modules name keeps this file free of an engine import, which
 is the direction SPEC D12 forbids.
 
-Two things have to be swapped for that to hold:
+Three things have to be swapped for that to hold:
 
-    the body's own `system`     its namespace gets a stand-in
-    codesys_ui.ask_yes_no       a WinForms message box that never touches
-                                system.ui at all
+    the body's own `system`
+        its namespace gets a stand-in
+    codesys_ui.ask_yes_no
+        a WinForms message box that never touches system.ui at all
+    codesys_ui.show_sync_folder_dialog
+        the first-run folder picker, which no flag can answer (SPEC 6.7)
 
 There used to be a third: the stand-in was pushed onto the module the IDE
 runs as, because the shared engine modules looked for `system` there rather
@@ -200,7 +203,7 @@ def _ui_module():
     left the real message boxes in place without a word.
 
     This is the one place cds/ide reaches for an engine module, and it takes
-    nothing from it: the module is loaded only so its three dialog functions
+    nothing from it: the module is loaded only so its two dialog functions
     can be swapped out and put back. The alternative is a hang inside the
     IDE, which is a worse answer to SPEC D12 than this line is.
     """

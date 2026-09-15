@@ -99,7 +99,7 @@
 理由：四支 `main()` 本來不管成功失敗都回 `None`，替身 UI 只能看 `system.ui.warning` 和 `error` 有沒有被呼叫來推。這讓「warning 只准在中止點呼叫」變成所有未來作者都得記住的規則，違反的後果離現場很遠：有人在匯出中途寫一句無害的 warning，一次成功的匯出就變成 exit 1。回傳的形狀是 `engine/entry.py` 的 `result(ok, summary, **data)`，替身 UI 讀 `ok`；回傳 `None` 算失敗。`ok` 的意思是「這個命令把該做的每個物件都做完了」：任何一個物件分類不出來、建不出來、匯不出去，`ok` 就是 False，名字列在 `data` 裡（D13）；命令仍然把其他物件做完，不中途放棄。
 
 **D12 三條分層規則，由解析後的 import 驗。** `cds/core` 不准 import `system`、`projects`、`online`、`clr`。`cds/ide` 不准 import `online`，不准 import 引擎模組。引擎不准 import `cds/ide`。
-理由：`cds/core` 要在 CI 上被完整測。`cds/ide` 只做管線，也就是協定端點、計時器、替身 UI、prompt 答案、狀態視窗、無頭模式的 `projects.open`。走物件樹和碰 PLC 的事全在引擎。依賴方向是 `cds/ide` 用入口名字驅動引擎，不反過來。守門的是 `tests/test_layering.py`，讀 AST 不讀文字：grep 會把 `cds/ide/silent.py` 那段說明「這裡不 import 引擎」的註解算成一筆命中，而被假命中騙過一次的人，下一次真的命中也不會信。唯一例外是 `silent.py` 以字串名字載入 `engine.codesys_ui`，只為了把三個對話框函式換成替身再換回去，不呼叫它任何東西；那個 `__import__` 在測試裡登記成一筆，第二筆出現就紅。
+理由：`cds/core` 要在 CI 上被完整測。`cds/ide` 只做管線，也就是協定端點、計時器、替身 UI、prompt 答案、狀態視窗、無頭模式的 `projects.open`。走物件樹和碰 PLC 的事全在引擎。依賴方向是 `cds/ide` 用入口名字驅動引擎，不反過來。守門的是 `tests/test_layering.py`，讀 AST 不讀文字：grep 會把 `cds/ide/silent.py` 那段說明「這裡不 import 引擎」的註解算成一筆命中，而被假命中騙過一次的人，下一次真的命中也不會信。唯一例外是 `silent.py` 以字串名字載入 `engine.codesys_ui`，只為了把兩個對話框函式換成替身再換回去，不呼叫它任何東西；那個 `__import__` 在測試裡登記成一筆，第二筆出現就紅。
 
 **D13 不准靜默跳過物件。** 分類不出來、建不出來、匯不進去都要以名字報出來。這一輪有物件處理不了，匯出就不刪孤兒檔，因為分不出哪個檔屬於它們。
 理由：目標 6。`engine/unhandled.py` 是一次命令的登記簿，處理不了的物件以名字記在那裡，`export`、`compare`、`import` 三個命令把它寫進回傳結果的 `data.failed_objects` 並讓 `ok` 是 False（D11）。攔的地方是每個迴圈的「處理這一個物件」那一步，所以一個物件壞掉不會把整趟拖下去。搬過來的程式碼裡還有一批空白 `except:`，數目與棘輪在 `tests/test_bare_excepts.py`，見 6.1。
@@ -306,7 +306,7 @@ ScriptDir 的位置三家不同，這是安裝時最容易踩的坑，安裝器�
 - **每次操作只存檔備份一次**。
 - **等待人按鈕的時間不算進耗時**。
 - **新寫的程式碼不准空白 `except:`**。搬過來的那些不要求一次清完，但每次碰到的函式順手改。`tests/test_bare_excepts.py` 是棘輪，新寫的地方釘在零，搬過來的每個檔各記一個數字，只准往下。
-- **對話框只透過 `codesys_ui.ask_yes_no`、`system.ui.choose`**，因為替身 UI 只攔這兩個。新的對話框要先登記在替身 UI 的答案表裡，`test_every_yes_no_dialog_has_an_answer` 會擋沒登記的。那條測試問 `engine/` 目錄現在有哪些檔，只維護一張排除清單，所以加一支新的引擎模組不會漏掉。
+- **對話框只透過 `codesys_ui.ask_yes_no`、`system.ui.choose`**，因為替身 UI 只攔這兩個。新的對話框要先登記在替身 UI 的答案表裡，`tests/test_silent.py` 的 `test_every_shared_title_has_an_answer_and_no_answer_is_stale` 會擋沒登記的，兩個方向都擋：答案表少一個標題是紅的，多一個沒人問的標題也是紅的。標題本身兩邊都從 `cds/core/dialogs.py` 拿，所以測試比對的是那張表，不是一份手抄的清單。
 - **成功失敗的訊號**走回傳值（D11）。每一條 `return` 都要回一個 `result()`，訊息等級不再影響判決。
 
 ### 6.2 看門人

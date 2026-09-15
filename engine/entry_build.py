@@ -2,7 +2,8 @@
 """
 entry_build.py - Trigger build in CODESYS IDE
 
-Compiles the active application and reports errors/warnings.
+Compiles the application named by --app, the only one in the project, or the
+one a person picks, and reports errors/warnings.
 """
 from __future__ import print_function
 
@@ -285,7 +286,7 @@ def _nothing_was_built(app_name, elapsed):
 
 
 def build_project(base_dir, projects_obj=None):
-    """Build the active application, write its log, and report the counts.
+    """Build the chosen application, write its log, and report the counts.
 
     Three steps and nothing else: build, collect what the IDE said, hand back
     a verdict. Working out which line each message points at is

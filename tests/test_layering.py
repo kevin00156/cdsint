@@ -17,7 +17,7 @@ who has been shown one false hit stops trusting the next real one. This
 reads the imports instead.
 
 The one real exception is silent.py loading engine.codesys_ui by string name
-to swap three dialog functions for stand-ins and put them back. Registering
+to swap two dialog functions for stand-ins and put them back. Registering
 it here is the point: an exception a test knows about is one nobody has to
 remember, and a second one cannot appear quietly.
 """

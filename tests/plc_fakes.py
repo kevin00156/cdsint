@@ -224,7 +224,7 @@ class OnlineChangeOption(object):
 def fake_codesys_ui():
     """The dialog module, which needs clr and so cannot be the real one.
 
-    cds/ide/silent.py swaps its three dialog functions for stand-ins that
+    cds/ide/silent.py swaps its two dialog functions for stand-ins that
     answer from the command's flags, and refuses to run a body it cannot do
     that to — so a fake has to be here for the download confirmation to
     behave the way it does inside an IDE.

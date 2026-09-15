@@ -221,15 +221,15 @@ if error:
   - [x] CHANGELOG 加一條
   - [x] commit
 
-- [ ] **階段 4：四處騙人的文字改正**
-  - [ ] `engine/entry_build.py:5` 與 `:288`
-  - [ ] `cds/ide/silent.py:16-21` 與 `:203-205`、`tests/test_layering.py:20`、`docs/SPEC.md` D12
-  - [ ] `docs/SPEC.md:309` 的測試名字
-  - [ ] 驗收：`git grep -n 'active application' -- engine/entry_build.py` 只剩 `applications()` docstring 裡講 bug 歷史的那一處
-  - [ ] 驗收：`git grep -n 'three dialog\|三個對話框' -- . ':!docs/history' ':!CHANGELOG.md'` 為零
-  - [ ] 驗收：`git grep -n test_every_yes_no_dialog_has_an_answer -- . ':!docs/history'` 為零
-  - [ ] 驗收：`python -m pytest -q tests/test_doc_links.py` 綠
-  - [ ] commit（文件修正可以不進 CHANGELOG）
+- [x] **階段 4：四處騙人的文字改正**
+  - [x] `engine/entry_build.py:5` 與 `:288`
+  - [x] `cds/ide/silent.py:16-21` 與 `:203-205`、`tests/test_layering.py:20`、`docs/SPEC.md` D12
+  - [x] `docs/SPEC.md:309` 的測試名字
+  - [x] 驗收：`git grep -n 'active application' -- engine/entry_build.py` 只剩 `applications()` docstring 裡講 bug 歷史的那一處
+  - [x] 驗收：`git grep -n 'three dialog\|三個對話框' -- . ':!docs/history' ':!CHANGELOG.md'` 為零
+  - [x] 驗收：`git grep -n test_every_yes_no_dialog_has_an_answer -- . ':!docs/history'` 為零
+  - [x] 驗收：`python -m pytest -q tests/test_doc_links.py` 綠
+  - [x] commit（文件修正可以不進 CHANGELOG）
 
 - [ ] **階段 5：讓問題不再長回來**
   - [ ] `tests/test_size_limits.py` 新增，`ALLOWED` 兩張表從程式碼算出來填
