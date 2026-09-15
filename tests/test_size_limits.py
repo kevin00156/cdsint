@@ -3,16 +3,18 @@
 
 PRINCIPLES 2 sets 400 lines for a file and 60 for a function, and says what
 hard means: no new file starts over it, and no file already over it gets
-longer. Nothing enforced that, so the sentence sat there while three engine
-files went past 1000 lines and one export function reached 213.
+longer. Nothing enforced that, so the sentence sat there while several engine
+files went past a thousand lines and one export function grew to several
+times the limit.
 
 Same shape as tests/test_bare_excepts.py, for the same reason: a ratchet
 beats a target. The tables below record what is over the limit today.
 Anything not in a table must be inside the limit. Anything in one must be at
 exactly its number -- go over and the test says so, come under and the test
-tells you to lower the entry, which is how the number in a commit message
-stays true. These tables are the count; no other file carries a number that
-has to be kept in step with them.
+tells you what to do about it: lower the entry, or, once the thing is inside
+the limit, take the entry out so the table stops holding it to a number
+stricter than the rule. These tables are the count; no other file carries a
+number that has to be kept in step with them.
 
 Only the hard limits are here. The soft ones (300 and 40) are a note to a
 person reading their own diff, and a test that fires on them would be a test
@@ -134,10 +136,21 @@ def function_lines(rel_path):
 
 
 def complain(what, found, allowed, limit):
+    """What to say about a length against its table entry, or None if it fits.
+
+    Coming under the entry has two different answers, and telling somebody to
+    lower the number when the thing is finally inside the limit would leave
+    that file pinned to a number stricter than the rule for ever -- a ratchet
+    with no way off it.
+    """
     if found > allowed:
         return ("%s is %d lines (allowed %d, the hard limit is %d). Split it "
                 "before the next thing goes in." % (what, found, allowed,
                                                     limit))
+    if found < allowed and found <= limit:
+        return ("%s is down to %d lines, inside the %d-line limit. Remove its "
+                "entry from tests/test_size_limits.py -- it does not need one "
+                "any more." % (what, found, limit))
     if found < allowed:
         return ("%s is down to %d lines from %d. Lower its number in "
                 "tests/test_size_limits.py so the ratchet holds."
@@ -185,3 +198,25 @@ def test_the_function_table_has_no_entries_for_functions_that_are_gone(rel_path)
 
 def test_the_file_table_has_no_entries_for_files_that_are_gone():
     assert set(ALLOWED_FILE_LINES) <= set(sources())
+
+
+def test_something_over_its_entry_is_told_to_split():
+    said = complain("a.py", 500, 450, FILE_LIMIT)
+    assert "Split it" in said and "500" in said
+
+
+def test_something_still_over_the_limit_is_told_to_lower_its_entry():
+    said = complain("a.py", 450, 500, FILE_LIMIT)
+    assert "Lower its number" in said and "450" in said
+
+
+def test_something_back_inside_the_limit_is_told_to_drop_its_entry():
+    # Not "lower it to 380": that would hold the file at 380 for ever, which
+    # is stricter than the rule and is a ratchet with no way off it.
+    said = complain("a.py", 380, 500, FILE_LIMIT)
+    assert "Remove its entry" in said
+    assert "Lower its number" not in said
+
+
+def test_something_at_its_entry_has_nothing_said_about_it():
+    assert complain("a.py", 500, 500, FILE_LIMIT) is None

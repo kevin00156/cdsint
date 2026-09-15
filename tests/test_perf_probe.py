@@ -7,10 +7,10 @@ returns 0, `install_probes` adds 0 to its total, and the report comes out one
 row shorter than it should be. Nobody sees a hole; they see a ranking that
 does not mention the function, which reads as a function that cost nothing.
 
-Three rows had gone stale that way: `resolve_projects` was deleted from the
-engine outright, and `ConfigManager.update` and `ConfigManager.create` name
-methods that class has never defined -- `_patch_method` reads a class's own
-`__dict__`, so an inherited method is not one it can wrap.
+Two ways a row goes stale, so both are checked: the engine no longer has that
+name at all, or the class named has the method only by inheritance --
+`_patch_method` reads a class's own `__dict__`, and an inherited method is
+not one it can wrap.
 
 These tests read the tables against the real engine, so the next rename fails
 here rather than in a report somebody is about to draw a conclusion from.
@@ -34,6 +34,9 @@ if TOOLS not in sys.path:
 
 import perf_probe  # noqa: E402
 import perf_tables  # noqa: E402
+
+from cds.core import settings as core_settings  # noqa: E402
+from tests.fakes import Project, Projects  # noqa: E402
 
 
 def test_every_row_in_the_tables_names_something_the_engine_has():
@@ -80,3 +83,36 @@ def test_install_probes_installs_nothing_when_a_row_is_stale(monkeypatch,
     assert perf_probe.install_probes() == (0, 0)
     assert patched == []
     assert "no_such_engine_function" in capsys.readouterr().out
+
+
+def test_main_does_not_run_the_operation_when_no_probes_went_in(monkeypatch,
+                                                                tmp_path,
+                                                                capsys):
+    """import mode performs a REAL import, so refusing has to reach main().
+
+    install_probes() returning (0, 0) on a stale table only helped as far as
+    the print: main() went on to announce "0 functions", create, update, move
+    and delete objects in the open project, and write a report with no rows
+    in it.
+    """
+    from engine import entry_import, settings as engine_settings
+
+    ran = []
+    monkeypatch.setattr(perf_probe, "unresolved_probes",
+                        lambda: ["no_such_engine_function"])
+    monkeypatch.setattr(entry_import, "import_project",
+                        lambda *args, **kwargs: ran.append(args))
+    monkeypatch.setattr(engine_settings, "prepare",
+                        lambda caller_globals: (core_settings.resolve({}),
+                                                str(tmp_path), None))
+    monkeypatch.setattr(perf_probe, "projects",
+                        Projects(Project(path=str(tmp_path / "Fake.project"))),
+                        raising=False)
+    monkeypatch.setattr(sys, "argv", ["perf_probe.py", "import"])
+
+    perf_probe.main()
+
+    assert ran == []
+    said = capsys.readouterr().out
+    assert "no_such_engine_function" in said
+    assert "Stopping" in said

@@ -313,8 +313,8 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   the copy, and a save that failed still left the previous copy in place
   looking like a fresh backup. They are two calls now, and
   `finalize_sync_operation()` returns the reason either one did not happen —
-  which both import and export report, export saying that the files on disk
-  are complete and only the IDE project went unsaved.
+  which both import and export report, export separating the export itself
+  from the save so the reader does not go hunting for a bad export.
 - **The performance probe could not start, and its table had gone stale.**
   `tools/perf_probe.py` called `resolve_projects()`, a function the engine
   deleted when `engine/entry.py`'s `borrowed()` replaced the four resolvers,

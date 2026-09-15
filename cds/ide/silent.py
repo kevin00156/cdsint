@@ -22,12 +22,7 @@ Three things have to be swapped for that to hold:
     codesys_ui.show_sync_folder_dialog
         the first-run folder picker, which no flag can answer (SPEC 6.7)
 
-There used to be a third: the stand-in was pushed onto the module the IDE
-runs as, because the shared engine modules looked for `system` there rather
-than at the caller's globals. They are handed what they need now
-(engine/entry.py's borrowed()), so nothing reads it.
-
-Both go in before the body's file is exec'd, not after. A body that asks
+All three go in before the body's file is exec'd, not after. A body that asks
 something at module level is unusual but legal, and with the swap done second
 that question reached the real dialog: a modal window on the IDE's message
 loop with nobody there to close it.

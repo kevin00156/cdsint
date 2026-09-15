@@ -323,6 +323,23 @@ CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而�
 `test_sync_cache.py` 433），沒有東西在擋它們繼續長。要納管的話把 `"tests"` 加進
 `SCANNED`，再把這四個填進 `ALLOWED_FILE_LINES`。
 
+**Ruling（階段 6）：統一 `perf_probe.main()` 拿模組的寫法時，順手刪掉那個永遠不會成立的
+檢查。** 第 10 節只說把 `sys.modules["engine.entry"]` 改掉。改成 `__import__` 之後，
+`utils` 和 `engine` 那兩行 `sys.modules.get(...)` 就是剩下的第二種寫法，所以一起改；
+改完 `if utils is None or engine is None: print(...); return` 那三行變成死碼——上面
+兩行 `__import__` 已經成功了，而 `engine.entry_export` 和 `engine.entry_import` 兩個
+模組都在自己的頂層 import 了 `codesys_utils` 和 `codesys_compare_engine`，所以走到這裡
+時它們一定在 `sys.modules` 裡。真的載不進來的話，`__import__` 會丟 ImportError 帶
+traceback，那比印一行話再 return 有用（PRINCIPLES 6）。順帶好處是省下的行數剛好付掉
+「探針零個就停」多出來的三行，`main()` 維持 90 行沒有變長。錯了的代價：引擎模組載不進來
+時使用者看到的是 traceback 不是一句話。
+
+**Ruling（階段 6）：`codesys_utils.py` 裡另外三處「used to」也一起改。** 第 10 節的文字
+只點名 `find_object_by_name`，但驗收 grep 是整個檔案。另外三處（`init_logging`、
+`is_debug`、`ensure_folder_path`）是這張工單之前就在的，同樣是把歷史寫進 docstring。
+每一處都只改寫法：WHY 全部留著，只是從「以前是怎樣」改成「為什麼不那樣」。錯了的代價：
+動到三個不在原始範圍內的 docstring；行為零改動，`git diff` 一看就知道只有文字。
+
 ## 9. 還需要人做的兩件驗收
 
 兩件都要一台開著 IDE、手上有真實專案的機器。這張工單的鐵律說不開 IDE、不對真實專案跑
@@ -345,26 +362,26 @@ CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而�
 
 全新上下文的審查員讀了 `4b4ad14..e190c88`。沒有 Critical；`engine/backup.py` 的每條路徑追過，判定可信。以下是合併前要修的，全部驗證過，每條附驗收句。修完一起一個 commit 或分幾個都可以，測試綠再 commit。
 
-- [ ] **階段 6：審查回饋**
-  - [ ] **探針零個時 `main()` 要停。** `tools/perf_probe.py` 的 `install_probes()` 在表過期時回 `(0, 0)` 只印兩行，`main()` 接著印「Perf probe armed: 0 functions」，然後在 import 模式對開著的專案做一次**真的匯入**，寫一份零列的報告。改法：`main()` 在 `functions == 0` 時印一句然後 `return`。
-    - [ ] 驗收：`tests/test_perf_probe.py` 多一條測試，把 `unresolved_probes` 替換成回傳非空清單，斷言 `main()` 在呼叫 `install_probes` 之後沒有進到匯入（用 mock 或 fake 攔 `perform_import_items` 之類的下一步，斷言它沒被呼叫）
-  - [ ] **`cds/ide/silent.py:16-33` 自相矛盾。** :16 改成「Three things」之後，:25 的「There used to be a third」和 :30 的「Both go in」還是舊的「兩件事」時代寫的。改法：:25 那段講歷史的整段刪掉（git 記得），:30 的「Both」改「All three」。
-    - [ ] 驗收：`grep -n 'used to be a third\|Both go in' cds/ide/silent.py` 為零
-  - [ ] **兩個最重要的新行為沒有測試釘住。** (a) `create_safety_backup` 在 `save()` 失敗時回 `(None, error)` 且不複製——`tests/test_backup.py` 的 `RefusingProject` 只用在 `finalize_sync_operation`。(b) `import_project` 和 `export_project` 在 `finalize_sync_operation` 回錯誤時 `ok is False` 且 summary 含原因——入口層零測試，`grep -rn "save_error\|was not saved" tests/` 沒有命中。
-    - [ ] 驗收：`tests/test_backup.py` 多一條：`create_safety_backup` 搭 `RefusingProject` → `(None, error)`，`shutil.copy2` 沒被呼叫
-    - [ ] 驗收：入口層多兩條（放哪個測試檔看既有的 `test_a_failed_safety_backup_stops_the_import` 在哪就放旁邊）：`import_project` 與 `export_project` 各一條，讓 `finalize_sync_operation` 回錯誤字串，斷言結果 `ok is False` 且 `summary` 含那個字串
-    - [ ] 驗收：把 `entry_export.py` 那行 `and not save_error` 拿掉時新測試紅（自己試，不留在 commit 裡）
-  - [ ] **`engine/entry_export.py:302` 措辭。** 「the files on disk are complete」在 `Failed: N > 0` 或有 `unhandled` 時是假話，跟同一行前半段矛盾。改成不做「complete」斷言的說法，例如「the export itself finished; only the IDE project was not saved」。
-    - [ ] 驗收：`grep -n 'files on disk are complete' engine/entry_export.py` 為零
-  - [ ] **歷史寫進 docstring。** CLAUDE.md 說歷史只放一處，CHANGELOG 已經記了。`engine/backup.py` 的 `finalize_sync_operation` docstring 裡「Save and copy used to be an if/elif...」那幾句、`engine/codesys_utils.py` 的 `find_object_by_name` docstring 裡「It used to take a parent_name...」、`tests/test_perf_probe.py:10-13` 點名三個已刪的列。保留 WHY（「a copy of a stale file is worse than no copy at all」這種），刪「used to」。
-    - [ ] 驗收：`git grep -n 'used to' -- engine/backup.py engine/codesys_utils.py tests/test_perf_probe.py` 為零
-  - [ ] **`tests/test_size_limits.py` 兩處。** (a) docstring 第 7 行「one export function reached 213」是會漂移的數字，就是表裡的 `export_project: 213`；改成不帶數字的說法。(b) `complain()` 在 `found < allowed` 時一律說「Lower its number」，但如果 `found` 已經在硬上限以內，正確動作是把那一列從表裡刪掉，否則那個檔從此被卡在比規則更嚴的數字上。分成兩句：`found <= limit` → 「remove the entry」，否則 → 「lower its number」。
-    - [ ] 驗收：`grep -n '213' tests/test_size_limits.py` 只在 `ALLOWED` 表裡命中
-    - [ ] 驗收：`complain` 的兩種訊息各有一條測試（既有的 self-test 形狀）
-  - [ ] **`tools/perf_probe.py` 拿模組的寫法不一致。** `main()` 裡 `sys.modules["engine.entry"].borrowed(...)` 上面兩行才用 `__import__("engine." + entry_name, ...)`。統一成一種。
-    - [ ] 驗收：`grep -n 'sys.modules\["engine' tools/perf_probe.py` 為零
-  - [ ] 驗收：`python -m pytest -q` 全綠
-  - [ ] 把本節每一項打勾，commit
+- [x] **階段 6：審查回饋**
+  - [x] **探針零個時 `main()` 要停。** `tools/perf_probe.py` 的 `install_probes()` 在表過期時回 `(0, 0)` 只印兩行，`main()` 接著印「Perf probe armed: 0 functions」，然後在 import 模式對開著的專案做一次**真的匯入**，寫一份零列的報告。改法：`main()` 在 `functions == 0` 時印一句然後 `return`。
+    - [x] 驗收：`tests/test_perf_probe.py` 多一條測試，把 `unresolved_probes` 替換成回傳非空清單，斷言 `main()` 在呼叫 `install_probes` 之後沒有進到匯入（用 mock 或 fake 攔 `perform_import_items` 之類的下一步，斷言它沒被呼叫）
+  - [x] **`cds/ide/silent.py:16-33` 自相矛盾。** :16 改成「Three things」之後，:25 的「There used to be a third」和 :30 的「Both go in」還是舊的「兩件事」時代寫的。改法：:25 那段講歷史的整段刪掉（git 記得），:30 的「Both」改「All three」。
+    - [x] 驗收：`grep -n 'used to be a third\|Both go in' cds/ide/silent.py` 為零
+  - [x] **兩個最重要的新行為沒有測試釘住。** (a) `create_safety_backup` 在 `save()` 失敗時回 `(None, error)` 且不複製——`tests/test_backup.py` 的 `RefusingProject` 只用在 `finalize_sync_operation`。(b) `import_project` 和 `export_project` 在 `finalize_sync_operation` 回錯誤時 `ok is False` 且 summary 含原因——入口層零測試，`grep -rn "save_error\|was not saved" tests/` 沒有命中。
+    - [x] 驗收：`tests/test_backup.py` 多一條：`create_safety_backup` 搭 `RefusingProject` → `(None, error)`，`shutil.copy2` 沒被呼叫
+    - [x] 驗收：入口層多兩條（放哪個測試檔看既有的 `test_a_failed_safety_backup_stops_the_import` 在哪就放旁邊）：`import_project` 與 `export_project` 各一條，讓 `finalize_sync_operation` 回錯誤字串，斷言結果 `ok is False` 且 `summary` 含那個字串
+    - [x] 驗收：把 `entry_export.py` 那行 `and not save_error` 拿掉時新測試紅（自己試，不留在 commit 裡）
+  - [x] **`engine/entry_export.py:302` 措辭。** 「the files on disk are complete」在 `Failed: N > 0` 或有 `unhandled` 時是假話，跟同一行前半段矛盾。改成不做「complete」斷言的說法，例如「the export itself finished; only the IDE project was not saved」。
+    - [x] 驗收：`grep -n 'files on disk are complete' engine/entry_export.py` 為零
+  - [x] **歷史寫進 docstring。** CLAUDE.md 說歷史只放一處，CHANGELOG 已經記了。`engine/backup.py` 的 `finalize_sync_operation` docstring 裡「Save and copy used to be an if/elif...」那幾句、`engine/codesys_utils.py` 的 `find_object_by_name` docstring 裡「It used to take a parent_name...」、`tests/test_perf_probe.py:10-13` 點名三個已刪的列。保留 WHY（「a copy of a stale file is worse than no copy at all」這種），刪「used to」。
+    - [x] 驗收：`git grep -n 'used to' -- engine/backup.py engine/codesys_utils.py tests/test_perf_probe.py` 為零
+  - [x] **`tests/test_size_limits.py` 兩處。** (a) docstring 第 7 行「one export function reached 213」是會漂移的數字，就是表裡的 `export_project: 213`；改成不帶數字的說法。(b) `complain()` 在 `found < allowed` 時一律說「Lower its number」，但如果 `found` 已經在硬上限以內，正確動作是把那一列從表裡刪掉，否則那個檔從此被卡在比規則更嚴的數字上。分成兩句：`found <= limit` → 「remove the entry」，否則 → 「lower its number」。
+    - [x] 驗收：`grep -n '213' tests/test_size_limits.py` 只在 `ALLOWED` 表裡命中
+    - [x] 驗收：`complain` 的兩種訊息各有一條測試（既有的 self-test 形狀）
+  - [x] **`tools/perf_probe.py` 拿模組的寫法不一致。** `main()` 裡 `sys.modules["engine.entry"].borrowed(...)` 上面兩行才用 `__import__("engine." + entry_name, ...)`。統一成一種。
+    - [x] 驗收：`grep -n 'sys.modules\["engine' tools/perf_probe.py` 為零
+  - [x] 驗收：`python -m pytest -q` 全綠
+  - [x] 把本節每一項打勾，commit
 
 **明確不做（記在這裡免得下次再問）：** 審查員的 Minor 7——`tests/test_size_limits.py` 只掃 `Module.body` 和 `ClassDef.body` 的直接子節點，包在 `if` 底下的函式量不到。要刻意才鑽得過去，而且這個 repo 現在沒有那種寫法。留給下一張工單。
 

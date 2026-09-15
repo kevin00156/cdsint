@@ -16,7 +16,7 @@ import types
 
 import pytest
 
-from engine import backup, entry_import
+from engine import backup, entry_export, entry_import
 from tests.fakes import DeafSystem, Project, Projects
 
 from cds.core import settings as core_settings
@@ -103,6 +103,17 @@ def test_a_backup_that_worked_hands_back_the_name_it_wrote(tmp_path, copies):
     assert len(copies) == 1
 
 
+def test_a_safety_backup_whose_save_fails_copies_nothing(tmp_path, copies):
+    # A copy taken after a failed save is a copy of the state before the last
+    # edits, which is not the state this import is about to overwrite. The
+    # caller cannot be handed a filename for that.
+    name, error = backup.create_safety_backup(
+        str(tmp_path), Projects(RefusingProject()), ONE_ITEM, settings())
+    assert name is None
+    assert "cannot access the file" in error
+    assert copies == []
+
+
 def test_a_save_that_fails_stops_the_copy(tmp_path, copies):
     error = backup.finalize_sync_operation(
         str(tmp_path), Projects(RefusingProject()),
@@ -151,12 +162,14 @@ def test_no_custom_name_means_the_project_keeps_its_own():
                               A_MOMENT) == "Soft.project"
 
 
-def test_a_failed_safety_backup_stops_the_import(monkeypatch, tmp_path):
-    """The reason the error exists at all, checked where it has to land.
+@pytest.fixture
+def importer(monkeypatch, tmp_path):
+    """entry_import with one file to import, and the two backup calls faked.
 
-    entry_import read the old None as "no backup was asked for" and went on to
-    change the project. Anything can go wrong at the entry point; what may not
-    go wrong is that the guard fires and the import runs anyway.
+    `run` takes what create_safety_backup and finalize_sync_operation should
+    answer, and reports whether perform_import_items was reached: those two
+    answers and that one fact are the whole of what this file is about at the
+    entry point.
     """
     sync = tmp_path / "sync"
     sync.mkdir()
@@ -176,16 +189,82 @@ def test_a_failed_safety_backup_stops_the_import(monkeypatch, tmp_path):
     monkeypatch.setattr(entry_import, "timed_prompt",
                         lambda *args, **kwargs: True)
     monkeypatch.setattr(entry_import, "perform_import_items",
-                        lambda *args: imported.append(args))
-    monkeypatch.setattr(entry_import, "create_safety_backup",
-                        lambda *args: (None, "the .project folder is read-only"))
+                        lambda *args: imported.append(args) or (1, 0, 0, 0, 0))
 
     projects = Projects(Project({}, [], str(tmp_path / "Fake.project")))
     monkeypatch.setattr(entry_import, "projects", projects, raising=False)
     monkeypatch.setattr(entry_import, "system", DeafSystem(), raising=False)
 
-    result = entry_import.import_project(str(sync), core_settings.resolve({}),
-                                         projects)
+    def run(backup_answer=(None, None), finalize_answer=None):
+        monkeypatch.setattr(entry_import, "create_safety_backup",
+                            lambda *args: backup_answer)
+        monkeypatch.setattr(entry_import, "finalize_sync_operation",
+                            lambda *args, **kwargs: finalize_answer)
+        return entry_import.import_project(str(sync),
+                                           core_settings.resolve({}), projects)
+
+    return {"run": run, "imported": imported}
+
+
+def test_a_failed_safety_backup_stops_the_import(importer):
+    """The reason the error exists at all, checked where it has to land.
+
+    entry_import read the old None as "no backup was asked for" and went on to
+    change the project. Anything can go wrong at the entry point; what may not
+    go wrong is that the guard fires and the import runs anyway.
+    """
+    result = importer["run"](
+        backup_answer=(None, "the .project folder is read-only"))
     assert result["ok"] is False
     assert "read-only" in result["summary"]
-    assert imported == []
+    assert importer["imported"] == []
+
+
+def test_an_import_that_could_not_save_the_project_is_not_ok(importer):
+    # The objects did land, so the import is not undone -- but the project
+    # holding them was never written, and a run that says ok would send the
+    # reader away believing it was.
+    result = importer["run"](finalize_answer="the project file is read-only")
+    assert result["ok"] is False
+    assert "the project file is read-only" in result["summary"]
+    assert len(importer["imported"]) == 1
+
+
+def test_an_import_that_saved_is_ok(importer):
+    # The other direction, so the assertion above is about the error and not
+    # about this fixture never producing an ok run.
+    assert importer["run"]()["ok"] is True
+
+
+@pytest.fixture
+def exporter(monkeypatch, tmp_path):
+    """entry_export over an empty project, with finalize_sync_operation faked.
+
+    Nothing in the project, because what is under test is what the entry does
+    with the answer it gets at the end, not what it wrote on the way there.
+    """
+    export_dir = tmp_path / "sync"
+    projects = Projects(Project({}, [], str(tmp_path / "Fake.project")))
+    monkeypatch.setattr(entry_export, "projects", projects, raising=False)
+    monkeypatch.setattr(entry_export, "system", DeafSystem(), raising=False)
+
+    def run(finalize_answer=None):
+        monkeypatch.setattr(entry_export, "finalize_sync_operation",
+                            lambda *args, **kwargs: finalize_answer)
+        return entry_export.export_project(str(export_dir),
+                                           core_settings.resolve({}), projects)
+
+    return run
+
+
+def test_an_export_that_could_not_save_the_project_is_not_ok(exporter):
+    # The .st files are on disk and correct. What did not happen is the save
+    # the settings asked for, and the summary has to separate the two or the
+    # reader goes looking for a bad export that is not there.
+    result = exporter(finalize_answer="the project file is read-only")
+    assert result["ok"] is False
+    assert "the project file is read-only" in result["summary"]
+
+
+def test_an_export_that_saved_is_ok(exporter):
+    assert exporter()["ok"] is True

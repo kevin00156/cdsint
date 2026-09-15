@@ -12,9 +12,8 @@ text does not describe.
 
 Saving and copying are two jobs with two ways to fail, so they are two
 functions and each hands back the reason it could not do its half. Nothing in
-here answers trouble with a falsy value: the caller cannot tell "the settings
-said not to" from "the disk said no", and it was reading the second as the
-first.
+here answers trouble with a falsy value, because a caller holding one cannot
+tell "the settings said not to" from "the disk said no".
 
 The two entry points at the bottom are here rather than in codesys_utils.py
 because they are what the backups are for: finishing a sync (save the project,
@@ -163,12 +162,10 @@ def finalize_sync_operation(base_dir, projects_obj, values, is_import=False):
 
     None, or why one of the two did not happen.
 
-    Save and copy used to be an if/elif, so that with the binary backup on the
-    only save was the one buried inside the copy -- and when that save failed
-    the copy went ahead and preserved the previous contents of the file. They
-    are two calls now: the save happens whenever either setting wants it, and
-    a save that failed stops the copy, because a copy of a stale file is worse
-    than no copy at all.
+    Two calls rather than one branch picking between them: the save happens
+    whenever either setting wants it, and a save that failed stops the copy,
+    because a copy of a stale file is worse than no copy at all -- it looks
+    like a backup and is not one.
     """
     save_after_op = values["save_after_import" if is_import
                            else "save_after_export"]

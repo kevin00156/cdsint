@@ -358,14 +358,11 @@ def main():
     # __import__ with a fromlist hands back the submodule itself, and it
     # means the same thing in IronPython 2.7 and CPython 3.
     entry = __import__("engine." + entry_name, {}, {}, [entry_name])
+    utils = __import__("engine.codesys_utils", {}, {}, ["codesys_utils"])
+    engine = __import__("engine.codesys_compare_engine", {}, {}, ["codesys_compare_engine"])
+    api = __import__("engine.entry", {}, {}, ["entry"])
 
-    utils = sys.modules.get("engine.codesys_utils")
-    engine = sys.modules.get("engine.codesys_compare_engine")
-    if utils is None or engine is None:
-        print("Could not load the engine modules.")
-        return
-
-    projects_obj = sys.modules["engine.entry"].borrowed(globals(), "projects")
+    projects_obj = api.borrowed(globals(), "projects")
     if projects_obj is None or not projects_obj.primary:
         print("Error: no project open.")
         return
@@ -380,6 +377,9 @@ def main():
     utils.init_logging(base_dir, values["debug"])
 
     functions, sites = install_probes()
+    if not functions:
+        print("Stopping: with no probes there is nothing to measure.")
+        return
     print("Perf probe armed: %d functions, %d bound names. Mode=%s" % (functions, sites, mode))
     print("Base dir: " + base_dir)
     print("")

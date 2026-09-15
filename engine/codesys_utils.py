@@ -93,10 +93,10 @@ def log_warning(message):
 def init_logging(base_dir, debug=False):
     """Point the log at the sync folder, and say whether to write one at all.
 
-    Both come from the settings this run read (engine/settings.py). The debug
-    flag used to be fetched from here, which meant the logger reached back
-    into the project through two more modules to answer a question its caller
-    already had the answer to.
+    Both come from the settings this run read (engine/settings.py), and both
+    are handed in: fetching the debug flag here would have the logger reach
+    back into the project through two more modules for an answer its caller
+    is already holding.
     """
     if base_dir and os.path.exists(base_dir):
         _logger._initialize(base_dir)
@@ -280,10 +280,10 @@ def is_debug():
     """True when the settings file turned debug on (SPEC 4.4).
 
     The flag reaches here through init_logging(), which every entry body
-    calls once with the settings this run read. It used to be a project
-    property with a cache of its own in front of it, because reading it
-    crossed into .NET and read_ide_attrs() consults it once per object; a
-    value handed in needs no cache to be cheap.
+    calls once with the settings this run read. read_ide_attrs() consults it
+    once per object, so reading it off the project would cross into .NET that
+    often and need a cache of its own in front of it; a value handed in is
+    cheap without one.
     """
     return _logger.debug
 
@@ -953,10 +953,10 @@ def ensure_folder_path(path_str, project):
     path_str is a relative path like "PLC/Application/MainFolder". The export
     skips 'Plc Logic' nodes, so the lookup looks through those transparently.
 
-    Raises when a component cannot be found or made. The caller is inside the
-    per-object step of an import, which records the object by name and carries
-    on with the rest (SPEC D13); a None returned from here used to travel one
-    frame further and become an object created in the wrong place.
+    Raises when a component cannot be found or made, rather than answering
+    None. The caller is inside the per-object step of an import, which records
+    the object by name and carries on with the rest (SPEC D13); a None would
+    travel one frame further and become an object created in the wrong place.
     """
     if not path_str or path_str == "." or path_str == "src":
         return project
@@ -975,9 +975,9 @@ def find_object_by_name(name, name_map):
     Returns first match or None.
 
     Several objects can share a name, and this answers with the first of
-    them. It used to take a parent_name to break the tie, but the one caller
-    never passed one -- it passed its own local named parent_name as the
-    first argument -- so the tie-break never ran once.
+    them. Nothing breaks that tie, because the one caller has nothing to
+    break it with: it looks a parent POU's name up in a map it built itself,
+    and takes whatever comes back or nothing.
     """
     found = name_map.get(name)
     if not found:

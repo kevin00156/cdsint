@@ -299,7 +299,7 @@ def export_project(export_dir, values, projects_obj=None):
     if pending_import:
         summary += ", Waiting to be imported: " + ", ".join(pending_import)
     if save_error:
-        summary += (" -- the files on disk are complete, but the project"
+        summary += (" -- the export itself finished; only the IDE project"
                     " was not saved: " + save_error)
     log_info("Export complete! " + summary + " Time elapsed: " + elapsed_text)
 
