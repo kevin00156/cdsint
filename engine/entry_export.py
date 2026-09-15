@@ -151,8 +151,6 @@ def export_project(export_dir, values, projects_obj=None):
     # Ensure Git config files exist
     ensure_git_configs(export_dir)
     
-    # Create project binary backup (moved down)
-    
     unhandled.start()
     print("=== Starting Project Export ===")
     start_time = time.time()
@@ -186,8 +184,6 @@ def export_project(export_dir, values, projects_obj=None):
     exported_identical = 0
     exported_failed = 0
     pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
-    
-    # Metadata migration - no longer used
     
     # Property accessors collected dynamically during main loop
     property_accessors = {}
@@ -287,8 +283,8 @@ def export_project(export_dir, values, projects_obj=None):
     # This step saves the project and, when enabled, copies the whole .project
     # binary; running it after the timer meant the reported figure excluded
     # the part of the wait that came after the popup said "complete".
-    finalize_sync_operation(export_dir, projects_obj, values,
-                            is_import=False)
+    save_error = finalize_sync_operation(export_dir, projects_obj, values,
+                                         is_import=False)
 
     print("=== Export Complete ===")
     interaction_time = get_interaction_seconds()
@@ -302,6 +298,9 @@ def export_project(export_dir, values, projects_obj=None):
     summary = "Updated: " + str(exported_updated) + ", Created: " + str(exported_new) + ", Removed: " + str(removed_count) + ", Failed: " + str(exported_failed) + " (Identical: " + str(exported_identical) + ")"
     if pending_import:
         summary += ", Waiting to be imported: " + ", ".join(pending_import)
+    if save_error:
+        summary += (" -- the files on disk are complete, but the project"
+                    " was not saved: " + save_error)
     log_info("Export complete! " + summary + " Time elapsed: " + elapsed_text)
 
     # Record sync version; metadata file is written in debug mode only
@@ -331,7 +330,7 @@ def export_project(export_dir, values, projects_obj=None):
     # find out why, and a file holding an unimported edit (6.1) wants an
     # import. Both mean the disk does not match the IDE, so both mean not ok.
     missing = unhandled.names()
-    return entry.result(not missing and not pending_import,
+    return entry.result(not missing and not pending_import and not save_error,
                         summary if not missing else
                         summary + " -- " + unhandled.summary(),
                         new=exported_new, updated=exported_updated,

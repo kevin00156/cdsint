@@ -10,6 +10,12 @@ The copy is of the binary .project, not of the sync folder. Disk is the source
 of truth for the text (PRINCIPLES 5); this is for the half of the project the
 text does not describe.
 
+Saving and copying are two jobs with two ways to fail, so they are two
+functions and each hands back the reason it could not do its half. Nothing in
+here answers trouble with a falsy value: the caller cannot tell "the settings
+said not to" from "the disk said no", and it was reading the second as the
+first.
+
 The two entry points at the bottom are here rather than in codesys_utils.py
 because they are what the backups are for: finishing a sync (save the project,
 keep a copy) and guarding an import before it changes anything.
@@ -17,176 +23,176 @@ keep a copy) and guarding an import before it changes anything.
 from __future__ import print_function
 
 import os
+import re
 import shutil
+import time
 
-from engine.codesys_utils import log_error, log_info, log_warning, safe_str
+from engine.codesys_utils import log_info, log_warning, safe_str
+
+# YYYYMMDD_HHMMSS_<project name>.bak -- the ones cleanup may delete. A backup
+# without the stamp was named by a person (or by Git LFS) and is not ours to
+# throw away.
+STAMPED = re.compile(r"^\d{8}_\d{6}_.*\.bak$")
+
+
+def target_name(project_path, backup_name, timestamped, now):
+    """What to call this copy of the .project.
+
+    `now` comes from the caller rather than the clock so the name is a
+    function of its arguments and a test can spell out the answer.
+    """
+    if timestamped:
+        return "{}_{}.bak".format(time.strftime("%Y%m%d_%H%M%S", now),
+                                  os.path.basename(project_path))
+    if not backup_name:
+        return os.path.basename(project_path)
+    if backup_name.lower().endswith(".project"):
+        return backup_name
+    return backup_name + ".project"
+
+
+def save_project(projects_obj):
+    """Write the open project to disk. None, or why it could not be written.
+
+    The wide `except Exception` is the .NET boundary: save() is a CODESYS call
+    and what comes back out of it is not a Python exception hierarchy anybody
+    here can enumerate. It does not end here -- it becomes the string the
+    caller returns.
+    """
+    try:
+        projects_obj.primary.save()
+    except Exception as e:
+        message = "could not save the project: " + safe_str(e)
+        log_warning(message)
+        return message
+    log_info("Project saved.")
+    return None
+
+
+def copy_project(project_path, export_dir, file_name):
+    """Copy the .project binary into <export_dir>/.project/.
+
+    None, or why the copy did not land.
+    """
+    project_folder = os.path.join(export_dir, ".project")
+    target_path = os.path.join(project_folder, file_name)
+    try:
+        if not os.path.exists(project_folder):
+            os.makedirs(project_folder)
+        shutil.copy2(project_path, target_path)
+    except (OSError, IOError) as e:
+        message = ("could not copy the project to .project/" + file_name
+                   + ": " + safe_str(e))
+        log_warning(message)
+        return message
+    log_info("Binary backup created: .project/" + file_name)
+    print("Binary backup created: .project/" + file_name)
+    return None
 
 
 def cleanup_old_backups(project_folder, retention_count):
+    """Delete timestamped backups past the retention count.
+
+    An old backup that will not go away endangers nothing, so this one logs
+    and carries on rather than failing the sync. It catches OSError and not
+    Exception because a bug in here is not a busy disk and should not get
+    filed as one.
     """
-    Clean up old timestamped backups in .project/ folder.
-    Only deletes files matching pattern: YYYYMMDD_HHMMSS_*.bak
-    Preserves non-timestamped backup files (Git LFS backups).
-    
-    Args:
-        project_folder: Path to the .project folder
-        retention_count: Number of timestamped backups to keep
-    """
-    if retention_count <= 0:
+    if retention_count <= 0 or not os.path.exists(project_folder):
         return
-    
-    if not os.path.exists(project_folder):
+    try:
+        names = sorted(os.listdir(project_folder), reverse=True)
+    except OSError as e:
+        log_warning("Could not read " + project_folder + ": " + safe_str(e))
         return
-    
-    import re
-    
-    timestamped_backups = []
-    try:
-        for filename in os.listdir(project_folder):
-            if not filename.endswith(".bak"):
-                continue
-            
-            # Pattern: YYYYMMDD_HHMMSS_*.bak
-            # Example: 20260325_143022_MyProject.project.bak
-            if re.match(r'^\d{8}_\d{6}_.*\.bak$', filename):
-                full_path = os.path.join(project_folder, filename)
-                if os.path.isfile(full_path):
-                    timestamped_backups.append(full_path)
-        
-        if len(timestamped_backups) <= retention_count:
-            return
-        
-        # Sort by filename (timestamp is encoded in name)
-        timestamped_backups.sort(reverse=True)
-        
-        # Delete files beyond retention count
-        files_to_delete = timestamped_backups[retention_count:]
-        for file_path in files_to_delete:
-            try:
-                os.remove(file_path)
-                filename = os.path.basename(file_path)
-                log_info("Deleted old backup: .project/" + filename)
-                print("Deleted old backup: .project/" + filename)
-            except Exception as e:
-                log_warning("Failed to delete old backup " + file_path + ": " + safe_str(e))
-                print("Warning: Failed to delete old backup: " + file_path)
-    except Exception as e:
-        log_warning("Error during backup cleanup: " + safe_str(e))
-        print("Warning: Error during backup cleanup: " + safe_str(e))
 
+    stamped = []
+    for name in names:
+        full_path = os.path.join(project_folder, name)
+        if STAMPED.match(name) and os.path.isfile(full_path):
+            stamped.append(full_path)
 
-def backup_project_binary(export_dir, projects_obj, backup_name="",
-                          timestamped=False, retention_count=None):
-    """
-    Copy the current project binary to /project folder.
-    Forces a project save before copying to ensure the backup is current.
-    If timestamped=True, creates a backup with date and time.
-    
-    Args:
-        export_dir: Directory where .project folder will be created
-        projects_obj: CODESYS projects object
-        backup_name: What to call the non-timestamped copy; "" means the
-                     project's own filename
-        timestamped: If True, create timestamped backup with date and time
-        retention_count: Optional. If provided, clean up old timestamped backups
-                         keeping only this many (only applies to timestamped backups)
-    
-    Returns:
-        Backup filename if created successfully, None otherwise
-    """
-    try:
-        if not projects_obj or not getattr(projects_obj, "primary", None):
-            log_warning("Cannot identify project for backup.")
-            print("Debug: Cannot identify project for backup (projects_obj missing or invalid).")
-            return None
-
-        # Force save to ensure we backup the latest state
+    for full_path in stamped[retention_count:]:
+        name = os.path.basename(full_path)
         try:
-            projects_obj.primary.save()
-            log_info("Project saved for backup.")
-        except Exception as e:
-            msg = "Could not save project before backup: " + safe_str(e)
-            log_warning(msg)
-            print("Debug: " + msg)
-
-        if not hasattr(projects_obj.primary, "path") or not projects_obj.primary.path:
-            log_warning("Project not saved to disk yet. Skipping binary backup.")
-            print("Debug: Project has no path on disk.")
-            return None
-
-        project_path = projects_obj.primary.path
-        project_folder = os.path.join(export_dir, ".project")
-        
-        if not os.path.exists(project_folder):
-            os.makedirs(project_folder)
-            
-        # Determine target filename
-        if timestamped:
-            import time
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            base_name = os.path.basename(project_path)
-            # Format: YYYYMMDD_HHMMSS_ProjectName.project.bak
-            file_name = "{}_{}.bak".format(timestamp, base_name)
-        else:
-            custom_name = backup_name
-            if custom_name:
-                # Ensure it ends with .project
-                if not custom_name.lower().endswith(".project"):
-                    file_name = custom_name + ".project"
-                else:
-                    file_name = custom_name
-            else:
-                file_name = os.path.basename(project_path)
-            
-        target_path = os.path.join(project_folder, file_name)
-        
-        shutil.copy2(project_path, target_path)
-        log_info("Binary backup created: .project/" + file_name)
-        print("Binary backup created: .project/" + file_name)
-        
-        # Clean up old timestamped backups if retention is specified
-        if timestamped and retention_count is not None:
-            cleanup_old_backups(project_folder, retention_count)
-        
-        return file_name
-        
-    except Exception as e:
-        log_error("Warning: Could not create binary backup: " + str(e))
-        print("Warning: Could not create binary backup: " + str(e))
-        return None
-
-
-def finalize_sync_operation(base_dir, projects_obj, values, is_import=False):
-    """Save the project, or back it up, as the settings say.
-
-    One or the other, not both: the binary backup saves the project itself
-    before copying it, so doing the save as well would be two full writes of
-    the same file.
-    """
-    save_after_op = values["save_after_import" if is_import
-                           else "save_after_export"]
-
-    if values["backup_binary"] and getattr(projects_obj, 'primary', None):
-        try:
-            print("Action: Updating binary backup...")
-            backup_project_binary(base_dir, projects_obj,
-                                  values["backup_name"])
-        except Exception as e:
-            print("Warning: Could not update binary backup: " + safe_str(e))
-    elif save_after_op and getattr(projects_obj, 'primary', None):
-        try:
-            print("Action: Saving project...")
-            projects_obj.primary.save()
-            print("Project saved successfully.")
-        except Exception as e:
-            op_str = "import" if is_import else "export"
-            print("Warning: Could not save project after " + op_str + ": " + safe_str(e))
+            os.remove(full_path)
+        except OSError as e:
+            log_warning("Failed to delete old backup " + name + ": "
+                        + safe_str(e))
+            print("Warning: Failed to delete old backup: " + name)
+            continue
+        log_info("Deleted old backup: .project/" + name)
+        print("Deleted old backup: .project/" + name)
 
 
 def create_safety_backup(base_dir, projects_obj, items_to_import, values):
-    """Create a timestamped safety backup of the project before importing changes."""
+    """The copy taken before an import changes anything.
+
+    `(filename, error)`, exactly one of them set -- except when there is
+    nothing to guard, which is both of them None: the setting is off, or the
+    import has no items. That is the one case the caller may go on from.
+    """
     if not values["safety_backup"] or not items_to_import:
+        return None, None
+
+    primary = getattr(projects_obj, "primary", None) if projects_obj else None
+    if primary is None:
+        return None, "no project is open"
+
+    error = save_project(projects_obj)
+    if error:
+        return None, error
+
+    project_path = getattr(primary, "path", None)
+    if not project_path:
+        return None, "the project has never been saved to disk"
+
+    file_name = target_name(project_path, values["backup_name"], True,
+                            time.localtime())
+    error = copy_project(project_path, base_dir, file_name)
+    if error:
+        return None, error
+
+    cleanup_old_backups(os.path.join(base_dir, ".project"),
+                        values["backup_retention_count"])
+    return file_name, None
+
+
+def finalize_sync_operation(base_dir, projects_obj, values, is_import=False):
+    """End of a sync: save the project, and copy it if the settings say so.
+
+    None, or why one of the two did not happen.
+
+    Save and copy used to be an if/elif, so that with the binary backup on the
+    only save was the one buried inside the copy -- and when that save failed
+    the copy went ahead and preserved the previous contents of the file. They
+    are two calls now: the save happens whenever either setting wants it, and
+    a save that failed stops the copy, because a copy of a stale file is worse
+    than no copy at all.
+    """
+    save_after_op = values["save_after_import" if is_import
+                           else "save_after_export"]
+    backup_binary = values["backup_binary"]
+    if not save_after_op and not backup_binary:
         return None
-    return backup_project_binary(
-        base_dir, projects_obj, values["backup_name"], timestamped=True,
-        retention_count=values["backup_retention_count"])
+
+    primary = getattr(projects_obj, "primary", None) if projects_obj else None
+    if primary is None:
+        return "no project is open"
+
+    print("Action: Saving project...")
+    error = save_project(projects_obj)
+    if error:
+        return error
+    print("Project saved successfully.")
+    if not backup_binary:
+        return None
+
+    project_path = getattr(primary, "path", None)
+    if not project_path:
+        return "the project has never been saved to disk"
+
+    print("Action: Updating binary backup...")
+    return copy_project(project_path, base_dir,
+                        target_name(project_path, values["backup_name"],
+                                    False, time.localtime()))

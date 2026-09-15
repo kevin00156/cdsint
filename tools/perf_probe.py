@@ -225,10 +225,10 @@ _FUNCTIONS = [
     ("save_sync_cache", "cache:save_sync_cache"),
     ("build_folder_hashes", "cache:build_folder_hashes"),
     ("file_signature", "disk:file_signature"),
-    # end-of-run bookkeeping -- project.save() and a full .project copy live
-    # in here, and none of it used to be measured
+    # end-of-run bookkeeping, none of which used to be measured
     ("finalize_sync_operation", "final:finalize_sync_operation"),
-    ("backup_project_binary", "final:backup_project_binary"),
+    ("save_project", "final:save_project"),
+    ("copy_project", "final:copy_project"),
     ("create_safety_backup", "final:create_safety_backup"),
     ("save_sync_metadata", "final:save_sync_metadata"),
     ("cleanup_orphaned_files", "final:cleanup_orphaned_files"),

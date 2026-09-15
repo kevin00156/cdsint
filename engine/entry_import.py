@@ -86,7 +86,6 @@ def import_project(base_dir, values, projects_obj=None):
     
     export_xml = values["export_xml"]
     
-    # ── Phase 1: Find all changes ──
     print("Comparing IDE with disk...")
     results = find_all_changes(base_dir, projects_obj, export_xml=export_xml)
     
@@ -160,8 +159,6 @@ def import_project(base_dir, values, projects_obj=None):
                             identical=unchanged_count,
                             failed_objects=missing, not_created=not_created)
 
-
-    # Show what we're about to import
     print("")
     print("Importing " + str(len(to_import)) + " items to IDE:")
     for item in to_import:
@@ -192,12 +189,13 @@ def import_project(base_dir, values, projects_obj=None):
         system.ui.warning(cancelled)
         return entry.result(False, cancelled)
 
-
-    # ── Create timestamped safety backup if enabled ──
-    backup_filename = create_safety_backup(base_dir, projects_obj,
-                                           to_import, values)
+    backup_filename, backup_error = create_safety_backup(
+        base_dir, projects_obj, to_import, values)
+    if backup_error:
+        refused = "Safety backup failed, nothing was imported: " + backup_error
+        system.ui.warning(refused)
+        return entry.result(False, refused)
     
-    # ── Phase 2: Import all changes ──
     updated, created, failed, deleted, moved = perform_import_items(
         projects_obj.primary, base_dir, to_import,
         entry.borrowed(globals(), "PouType")
@@ -206,8 +204,8 @@ def import_project(base_dir, values, projects_obj=None):
     # Save and back up BEFORE stopping the clock and announcing completion,
     # so the reported figure covers the whole wait rather than ending at the
     # popup and leaving a project save running behind it.
-    finalize_sync_operation(base_dir, projects_obj, values,
-                            is_import=True)
+    save_error = finalize_sync_operation(base_dir, projects_obj, values,
+                                         is_import=True)
 
     interaction = get_interaction_seconds()
     elapsed = time.time() - start_time - interaction
@@ -218,6 +216,8 @@ def import_project(base_dir, values, projects_obj=None):
     summary = "Updated: " + str(updated) + ", Created: " + str(created) + ", Moved: " + str(moved) + ", Deleted: " + str(deleted) + ", Failed: " + str(failed) + " (Identical: " + str(unchanged_count) + ")"
     if withheld:
         summary += " -- " + withheld
+    if save_error:
+        summary += " -- but the project was not saved: " + save_error
     print(summary)
     if backup_filename:
         print("Backup created: .project/" + backup_filename)
@@ -252,8 +252,8 @@ def import_project(base_dir, values, projects_obj=None):
     # stopping at the first one would be worse than naming the ones that
     # did not.
     missing = unhandled.names()
-    return entry.result(not missing, summary if not missing else
-                        summary + " -- " + unhandled.summary(),
+    return entry.result(not missing and not save_error, summary if not missing
+                        else summary + " -- " + unhandled.summary(),
                         updated=updated, created=created, moved=moved,
                         deleted=deleted, failed=failed,
                         identical=unchanged_count, failed_objects=missing,

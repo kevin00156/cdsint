@@ -300,6 +300,21 @@ to a settings file, below — so the renumbering costs nobody a prompt.
   reads. The mismatch dialog went with the settings move above, and D15 says
   the disk format does not change without a major version, so there is
   nothing left for a stamp to guard.
+- **A safety backup that could not be made no longer lets the import run.**
+  `engine/backup.py` answered every kind of trouble with the same `None`: no
+  project open, project never saved to disk, save refused, copy refused — and
+  the caller read that `None` as "no backup was asked for" and went on to
+  change the project, which is the one thing a safety backup exists to
+  prevent. `create_safety_backup()` now hands back `(filename, error)` with
+  exactly one of the two set, both `None` only when the settings genuinely
+  asked for no backup, and import refuses with `ok: false` on an error.
+  End-of-sync saving is the other half: saving and copying were an `if/elif`,
+  so with `cds-sync-backup-binary` on the only save was the one buried inside
+  the copy, and a save that failed still left the previous copy in place
+  looking like a fresh backup. They are two calls now, and
+  `finalize_sync_operation()` returns the reason either one did not happen —
+  which both import and export report, export saying that the files on disk
+  are complete and only the IDE project went unsaved.
 
 Behaviour that was in `main` but never released:
 
