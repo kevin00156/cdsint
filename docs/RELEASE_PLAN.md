@@ -242,10 +242,10 @@ if error:
   - [x] CHANGELOG 加一條
   - [x] commit
 
-- [ ] **收尾**
-  - [ ] 在 worktree 裡從乾淨狀態跑一次 `python -m pytest -q`，把最後一行貼進回報
-  - [ ] `git log --oneline 4b4ad14..HEAD` 貼進回報
-  - [ ] 第 7 節的裁決全部寫回本工單並 commit
+- [x] **收尾**
+  - [x] 在 worktree 裡從乾淨狀態跑一次 `python -m pytest -q`，把最後一行貼進回報
+  - [x] `git log --oneline 4b4ad14..HEAD` 貼進回報
+  - [x] 第 7 節的裁決全部寫回本工單並 commit
   - [ ] 驗收（還需要人）：在一個註解裡有中文的真實專案上跑 `cdsint verify --project`，確認 compare 不炸。這張工單不開 IDE，所以留給人。
   - [ ] 驗收（還需要人）：把 `.project` 資料夾設成唯讀之後跑一次匯入，看到 `ok: false` 且 summary 講備份失敗、沒有物件被改。同上，留給人。
 
@@ -322,6 +322,24 @@ CLAUDE.md 註解紀律要求直接刪的東西，所以不是為了湊數字而�
 （`test_call_tree.py` 712、`test_watcher.py` 513、`test_silent.py` 501、
 `test_sync_cache.py` 433），沒有東西在擋它們繼續長。要納管的話把 `"tests"` 加進
 `SCANNED`，再把這四個填進 `ALLOWED_FILE_LINES`。
+
+## 9. 還需要人做的兩件驗收
+
+兩件都要一台開著 IDE、手上有真實專案的機器。這張工單的鐵律說不開 IDE、不對真實專案跑
+`cdsint verify --project`，所以兩件都沒做，留在這裡。
+
+**一、帶中文註解的專案跑一次 `cdsint verify --project`。** 確認 compare 不會炸。
+機器做不了的原因：`calculate_hash` 在 CPython 上的那半邊已經有 `tests/test_hash.py`
+在守，但 IronPython 2.7 上 `str` 和 `unicode` 是同一個型別，這裡沒有 IronPython 可跑，
+所以另外半邊只能靠讀碼和真的跑一次。
+
+**二、把 `.project` 資料夾設成唯讀，跑一次匯入。** 要看到 `ok: false`、summary 講
+備份為什麼失敗，而且專案裡一個物件都沒被改。機器做不了的原因：這條路徑要一個真的會
+拒絕寫入的檔案系統加上一個真的 CODESYS 專案。假物件版本已經有
+`tests/test_backup.py::test_a_failed_safety_backup_stops_the_import` 在守，它證明的是
+`entry_import` 在拿到錯誤時不會進 `perform_import_items`；它證明不了真實的
+`shutil.copy2` 在唯讀資料夾上丟的是什麼、`copy_project` 的 `except (OSError, IOError)`
+接不接得住。
 
 ## 8. 接手 prompt
 
