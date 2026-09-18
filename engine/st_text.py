@@ -11,7 +11,7 @@ Moved out of codesys_utils.py unchanged.
 from __future__ import print_function
 
 import os
-import codecs
+import io
 from engine.codesys_constants import (
     IMPL_MARKER,
     PROPERTY_GET_MARKER,
@@ -98,7 +98,7 @@ def merge_native_xmls(file_paths, output_path):
     for path in file_paths:
         try:
             if not os.path.exists(path): continue
-            with codecs.open(path, 'r', 'utf-8') as f:
+            with io.open(path, "r", encoding="utf-8", newline="") as f:
                 content = f.read()
             
             # Find the EntryList container
@@ -128,7 +128,7 @@ def merge_native_xmls(file_paths, output_path):
     # Reassemble: Header + all payloads + Footer
     merged = header + "\n".join(payloads) + footer
     try:
-        with codecs.open(output_path, 'w', 'utf-8') as f:
+        with io.open(output_path, "w", encoding="utf-8", newline="") as f:
             f.write(merged)
         return True
     except Exception as e:
@@ -311,7 +311,7 @@ def read_sync_text(file_path):
     Raises whatever the read raises; each caller already has an answer for a
     file it cannot read, and they are not the same answer.
     """
-    with codecs.open(file_path, "r", "utf-8-sig") as handle:
+    with io.open(file_path, "r", encoding="utf-8-sig", newline="") as handle:
         return handle.read()
 
 

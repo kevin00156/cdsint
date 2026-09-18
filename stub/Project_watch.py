@@ -2,11 +2,12 @@
 """Scripts menu -> start or stop the watcher. Run it again to stop it."""
 from __future__ import print_function
 
-import codecs, os, sys
+import io, os, sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
 # utf-8-sig, not open(): a BOM would otherwise end up on sys.path.
-with codecs.open(os.path.join(_here, "body.path"), "r", "utf-8-sig") as _f:
+with io.open(os.path.join(_here, "body.path"), "r", encoding="utf-8-sig",
+             newline="") as _f:
     _root = _f.read().strip()
 if _root not in sys.path:
     sys.path.insert(0, _root)

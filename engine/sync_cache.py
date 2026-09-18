@@ -14,7 +14,7 @@ That is why it is one function here and not two.
 """
 from __future__ import print_function
 
-import codecs
+import io
 import json
 import os
 import time
@@ -120,7 +120,7 @@ def load_sync_cache(base_dir):
     empty = {"objects": {}, "folders": {}, "types": {}, "version": CACHE_VERSION}
     if os.path.exists(cache_path):
         try:
-            with codecs.open(cache_path, "r", "utf-8") as f:
+            with io.open(cache_path, "r", encoding="utf-8", newline="") as f:
                 data = json.load(f)
                 cache_version = data.get("version", "1.0")
                 if cache_version != CACHE_VERSION:
@@ -161,7 +161,7 @@ def save_sync_cache(base_dir, objects_cache, folder_hashes=None, type_cache=None
         "objects": objects_cache
     }
     try:
-        with codecs.open(cache_path, "w", "utf-8") as f:
+        with io.open(cache_path, "w", encoding="utf-8", newline="") as f:
             # Compact, not indented. sync_cache.json is machine-read and
             # gitignored, and every entry carries an mtime that changes each
             # run, so it never produces a readable diff anyway. Indenting cost

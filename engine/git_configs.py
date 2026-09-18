@@ -9,7 +9,7 @@ Moved out of codesys_utils.py unchanged.
 from __future__ import print_function
 
 import os
-import codecs
+import io
 from engine.strings import safe_str
 from engine.sync_log import log_error, log_info
 
@@ -41,7 +41,7 @@ def ensure_git_configs(export_dir):
             ""
         ]
         try:
-            with codecs.open(gitignore_path, "w", "utf-8") as f:
+            with io.open(gitignore_path, "w", encoding="utf-8", newline="") as f:
                 f.write("\n".join(content))
             log_info("Created: .gitignore")
         except Exception as e:
@@ -49,12 +49,12 @@ def ensure_git_configs(export_dir):
     else:
         # File exists, check if essential patterns are present
         try:
-            with codecs.open(gitignore_path, "r", "utf-8") as f:
+            with io.open(gitignore_path, "r", encoding="utf-8", newline="") as f:
                 lines = f.readlines()
             
             # Ensure *.log is ignored
             if not any("*.log" in line for line in lines):
-                with codecs.open(gitignore_path, "a", "utf-8") as f:
+                with io.open(gitignore_path, "a", encoding="utf-8", newline="") as f:
                     f.write("\n*.log\n")
                 log_info("Updated .gitignore with *.log")
         except: pass
@@ -73,7 +73,7 @@ def ensure_git_configs(export_dir):
             ""
         ]
         try:
-            with codecs.open(gitattributes_path, "w", "utf-8") as f:
+            with io.open(gitattributes_path, "w", encoding="utf-8", newline="") as f:
                 f.write("\n".join(content))
             log_info("Created: .gitattributes")
         except Exception as e:

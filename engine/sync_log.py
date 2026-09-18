@@ -11,7 +11,7 @@ Moved out of codesys_utils.py unchanged.
 from __future__ import print_function
 
 import os
-import codecs
+import io
 import json
 import traceback
 import time
@@ -68,7 +68,7 @@ class Logger:
             return
 
         try:
-            with codecs.open(self.log_file, "a", "utf-8") as f:
+            with io.open(self.log_file, "a", encoding="utf-8", newline="") as f:
                 f.write(log_entry)
         except:
             pass
@@ -184,7 +184,7 @@ def save_sync_metadata(base_dir, action, stats, elapsed):
     }
     metadata_path = os.path.join(base_dir, "sync_metadata.json")
     try:
-        with codecs.open(metadata_path, "w", "utf-8") as f:
+        with io.open(metadata_path, "w", encoding="utf-8", newline="") as f:
             json.dump(metadata, f, indent=2)
         log_info("%s metadata saved to sync_metadata.json (v%s)" % (action.capitalize(), SCRIPT_VERSION))
     except Exception as e:

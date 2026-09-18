@@ -247,7 +247,7 @@ class RefusingCodecs(object):
 @pytest.fixture
 def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     """An export of one healthy object whose file cannot be written."""
-    import codecs
+    import io
 
     export = entry_export
     managers = sys.modules["engine.managers_base"]
@@ -261,7 +261,7 @@ def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     # Only the manager's writes are refused: the export writes .gitattributes
     # and the sync cache through other modules, and those are not what this
     # test is about.
-    monkeypatch.setattr(managers, "codecs", RefusingCodecs(codecs))
+    monkeypatch.setattr(managers, "io", RefusingCodecs(io))
     return lambda: export.export_project(sync, DEFAULTS, projects)
 
 

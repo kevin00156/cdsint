@@ -10,7 +10,7 @@ Moved out of codesys_managers.py unchanged.
 from __future__ import print_function
 
 import os
-import codecs
+import io
 from engine.sync_cache import file_signature, normalize_path
 from engine.ide_hash import get_quick_ide_hash
 from engine.st_text import read_sync_text
@@ -130,7 +130,7 @@ class ObjectManager(object):
             if self._disk_moved_since_sync(rel_path, file_path, context):
                 return self._pending(rel_path, context)
 
-        with codecs.open(file_path, "w", "utf-8") as f:
+        with io.open(file_path, "w", encoding="utf-8", newline="") as f:
             f.write(content)
         return self._tracked(obj, rel_path, file_path, context, content_hash,
                              "new" if is_new else "updated")

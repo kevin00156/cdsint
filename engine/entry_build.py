@@ -7,7 +7,7 @@ one a person picks, and reports errors/warnings.
 """
 from __future__ import print_function
 
-import codecs
+import io
 import os
 import time
 
@@ -265,7 +265,7 @@ def _write_build_log(base_dir, app_name, lines):
                         for c in app_name)
     path = os.path.join(base_dir, "build_{}.log".format(safe_name))
     try:
-        with codecs.open(path, "w", "utf-8") as handle:
+        with io.open(path, "w", encoding="utf-8", newline="") as handle:
             handle.write("\n".join(lines))
         print("Build log saved to: " + path)
     except (IOError, OSError) as exc:

@@ -14,7 +14,7 @@ from __future__ import print_function
 
 import os
 import sys
-import codecs
+import io
 import time
 
 from engine.sync_log import init_logging, log_info, is_debug
@@ -163,7 +163,7 @@ def main():
         if is_debug():
             try:
                 log_path = os.path.join(base_dir, "compare.log")
-                log_file_obj = codecs.open(log_path, "w", "utf-8")
+                log_file_obj = io.open(log_path, "w", encoding="utf-8", newline="")
 
                 class Tee(object):
                     def __init__(self, terminal, file_obj):
