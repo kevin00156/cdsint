@@ -66,7 +66,7 @@ from perf_report import build_report  # noqa: E402
 # ═══════════════════════════════════════════════════════════════════
 
 # The probes go in after the entry body is imported: importing it is what
-# pulls in the codesys_* modules the probes rebind.
+# pulls in the engine modules the probes rebind.
 _ENTRY_FOR_MODE = {
     "export": "entry_export",
     "compare": "entry_export",   # find_all_changes comes along with it

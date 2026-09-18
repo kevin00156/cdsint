@@ -47,26 +47,30 @@ is about whether you can say what something is for.
 - **Functions: 40 lines soft, 60 hard.**
 - A dispatcher with more than ~5 branches is a `dict`, not an `if/elif`.
 
-**Hard means: no new file starts over it, and no file already over it gets
-longer.** A file past the limit is not a bug to be fixed today; it is a file
-that has to be split before the next thing goes in. That is a rule you can
-actually keep, and "a file over 400 lines is a bug" was not — this repo
-shipped with three engine files over 1100 lines and the sentence just sat
-there being false.
+**The numbers are a tripwire for rule 1, not a definition of clean.** Any
+number would be arbitrary; what is not arbitrary is that a module doing
+several jobs grows past it and a module doing one rarely does. So when the
+wire trips, the answer is to find the seam between the jobs and split
+there — never to cut at line 400 to make the number, and never to add an
+exemption. Every file that ever needed exempting from this rule was a file
+with three jobs in it, and the exemption was what let it stay that way.
 
-- Written here: the limits apply as written, to every file.
-- Moved here: exempt as it stands, and there are files well past 400. What is
-  not exempt: a function you touch may not come out longer than it went in,
-  and a function or file you add obeys the limits like anything else.
+**Files: no exceptions.** `tests/test_size_limits.py` fails on any file
+over 400 lines, anywhere in `engine/`, `cds/`, `cdsint/`, `stub/` or
+`tools/`. It also refuses a module named `utils`, `helpers`, `common` or
+`misc`: a name like that is the admission that nobody can say what the
+module does, and it is how the last grab-bag grew to eleven hundred lines.
 
-`tests/test_size_limits.py` is the ratchet for the two hard numbers, in the
-shape `test_bare_excepts.py` proved: one table of the files over 400 and one
-of the functions over 60, each entry the length it is today. Over and the
-test says so; under and it tells you to lower the entry. Those tables are
-the count — the numbers in them are a record, not a target, and no other
-file carries a copy that has to be kept in step. The soft limits stay out of
-it: they are a note to somebody reading their own diff, and a test that
-fires on them is one everybody learns to ignore.
+**Functions: a debt table, not an exemption.** The same test carries one
+table of the functions still over 60 lines, each at the length it is today.
+An entry may only go down; the table may only lose entries; nothing may be
+added to it. Every one of them is a function known to be doing more than one
+thing, and the table is the list of what is left to fix. Touching one of them
+means it comes out no longer than it went in.
+
+The soft limits (300 and 40) stay out of the test: they are a note to
+somebody reading their own diff, and a test that fires on them is one
+everybody learns to ignore.
 
 ## 3. The expensive boundary gets crossed once.
 

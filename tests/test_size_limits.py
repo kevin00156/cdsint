@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
-"""The hard size limits, and the two tables that say what is still over them.
+"""The hard size limits: no file over 400, and the table of functions still over 60.
 
-PRINCIPLES 2 sets 400 lines for a file and 60 for a function, and says what
-hard means: no new file starts over it, and no file already over it gets
-longer. Nothing enforced that, so the sentence sat there while several engine
+PRINCIPLES 2 calls the numbers a tripwire for "one job per module": a module
+doing several jobs grows past them, a module doing one rarely does. Nothing
+enforced them for months, so the sentence sat there while several engine
 files went past a thousand lines and one export function grew to several
 times the limit.
 
-Same shape as tests/test_bare_excepts.py, for the same reason: a ratchet
-beats a target. The tables below record what is over the limit today.
-Anything not in a table must be inside the limit. Anything in one must be at
-exactly its number -- go over and the test says so, come under and the test
-tells you what to do about it: lower the entry, or, once the thing is inside
-the limit, take the entry out so the table stops holding it to a number
-stricter than the rule. These tables are the count; no other file carries a
-number that has to be kept in step with them.
+Files have no exceptions any more: the split that took the last three
+oversized modules apart happened before 0.0.1, and a file over the limit
+fails here with no table to hide in. A module named utils, helpers, common
+or misc fails too, because that name is how a grab-bag starts.
+
+Functions are a debt table, in the shape tests/test_bare_excepts.py proved:
+each entry at the length it is today. Go over and the test says so; come
+under and the test tells you what to do about it: lower the entry, or, once
+the function is inside the limit, take the entry out so the table stops
+holding it to a number stricter than the rule. The table is the count; no
+other file carries a number that has to be kept in step with it.
 
 Only the hard limits are here. The soft ones (300 and 40) are a note to a
 person reading their own diff, and a test that fires on them would be a test
@@ -43,11 +46,12 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools")
 FILE_LIMIT = 400
 FUNCTION_LIMIT = 60
 
-# What is over 400 lines. Lower these; do not raise them.
-ALLOWED_FILE_LINES = {
-}
+# A module whose name says "I could not say what this does". The last one
+# reached eleven hundred lines and sixteen jobs before it was split.
+BANNED_MODULE_NAMES = ("utils", "helpers", "common", "misc")
 
-# What is over 60 lines, by file and then by function. Same rule.
+# What is over 60 lines, by file and then by function. Lower these; do not
+# raise them, and do not add to them.
 ALLOWED_FUNCTION_LINES = {
     "engine/change_detect.py": {
         "detect_moved_files": 81,
@@ -164,18 +168,21 @@ def complain(what, found, allowed, limit):
 
 
 @pytest.mark.parametrize("rel_path", sorted(sources()))
-def test_no_file_is_longer_than_it_was_allowed_to_be(rel_path):
-    allowed = ALLOWED_FILE_LINES.get(rel_path, FILE_LIMIT)
+def test_no_file_is_over_the_limit(rel_path):
     found = file_lines(rel_path)
-    if rel_path not in ALLOWED_FILE_LINES:
-        assert found <= FILE_LIMIT, (
-            "%s is %d lines, over the %d-line hard limit, and it is not in "
-            "ALLOWED_FILE_LINES. A new file does not get to start over it."
-            % (rel_path, found, FILE_LIMIT))
-        return
-    problem = complain(rel_path, found, allowed, FILE_LIMIT)
-    if problem:
-        pytest.fail(problem)
+    assert found <= FILE_LIMIT, (
+        "%s is %d lines, over the %d-line hard limit. Find the seam between "
+        "the jobs in it and split there (PRINCIPLES 2)."
+        % (rel_path, found, FILE_LIMIT))
+
+
+@pytest.mark.parametrize("rel_path", sorted(sources()))
+def test_no_module_is_named_as_a_grab_bag(rel_path):
+    stem = rel_path.rsplit("/", 1)[-1][:-3].lstrip("_")
+    assert stem not in BANNED_MODULE_NAMES, (
+        "%s: a module called %s is one nobody can describe in a sentence. "
+        "Name it after the one job it does (PRINCIPLES 1, 2)."
+        % (rel_path, stem))
 
 
 @pytest.mark.parametrize("rel_path", sorted(sources()))
@@ -199,10 +206,6 @@ def test_the_function_table_has_no_entries_for_functions_that_are_gone(rel_path)
     without measuring anything, which is the failure mode this test exists
     to prevent, one level up."""
     assert set(ALLOWED_FUNCTION_LINES[rel_path]) <= set(function_lines(rel_path))
-
-
-def test_the_file_table_has_no_entries_for_files_that_are_gone():
-    assert set(ALLOWED_FILE_LINES) <= set(sources())
 
 
 def test_something_over_its_entry_is_told_to_split():
