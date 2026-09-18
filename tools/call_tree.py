@@ -30,14 +30,16 @@ from call_tree_parse import (  # noqa: F401
     split_decl_impl,
 )
 from call_tree_resolve import (  # noqa: F401
-    _build_global_instance_types,
-    _build_gvl_members,
-    _collect_local_symbols,
-    _collect_project_symbols_from_st_files,
     _extract_function_calls,
     _extract_method_calls,
     _process_st_file,
     _resolve_calls,
+)
+from call_tree_symbols import (  # noqa: F401
+    _build_global_instance_types,
+    _build_gvl_members,
+    _collect_local_symbols,
+    _collect_project_symbols_from_st_files,
     load_system_catalog,
 )
 

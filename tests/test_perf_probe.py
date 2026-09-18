@@ -32,6 +32,7 @@ TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 
+import perf_patch  # noqa: E402
 import perf_probe  # noqa: E402
 import perf_tables  # noqa: E402
 
@@ -40,13 +41,13 @@ from tests.fakes import Project, Projects  # noqa: E402
 
 
 def test_every_row_in_the_tables_names_something_the_engine_has():
-    assert perf_probe.unresolved_probes() == []
+    assert perf_patch.unresolved_probes() == []
 
 
 @pytest.mark.parametrize("name", [row[0] for row in perf_tables.FUNCTIONS])
 def test_each_function_row_names_one_engine_function(name):
     """Named one per row so a failure says which row, not just that one broke."""
-    assert perf_probe._find_function(name) is not None
+    assert perf_patch._find_function(name) is not None
 
 
 @pytest.mark.parametrize("row", perf_tables.METHODS,
@@ -56,17 +57,17 @@ def test_each_method_row_names_a_method_that_class_defines_itself(row):
     method, and putting it on a subclass that merely inherits one would wrap
     the same function twice."""
     module_name, class_name, method_name = row[0], row[1], row[2]
-    cls = perf_probe._find_class(module_name, class_name)
+    cls = perf_patch._find_class(module_name, class_name)
     assert cls is not None, module_name + " has no " + class_name
     assert method_name in cls.__dict__
 
 
 def test_a_name_the_engine_does_not_have_is_reported(monkeypatch):
     """The mechanism itself, so a table that goes stale cannot pass quietly."""
-    monkeypatch.setattr(perf_probe, "FUNCTIONS",
+    monkeypatch.setattr(perf_patch, "FUNCTIONS",
                         [("no_such_engine_function", "x:gone")])
-    monkeypatch.setattr(perf_probe, "METHODS", [])
-    assert perf_probe.unresolved_probes() == ["no_such_engine_function"]
+    monkeypatch.setattr(perf_patch, "METHODS", [])
+    assert perf_patch.unresolved_probes() == ["no_such_engine_function"]
 
 
 def test_install_probes_installs_nothing_when_a_row_is_stale(monkeypatch,
@@ -74,13 +75,13 @@ def test_install_probes_installs_nothing_when_a_row_is_stale(monkeypatch,
     """Refusing beats a report three rows short: the rows that go missing are
     the ones nobody thinks to look for."""
     patched = []
-    monkeypatch.setattr(perf_probe, "FUNCTIONS",
+    monkeypatch.setattr(perf_patch, "FUNCTIONS",
                         [("no_such_engine_function", "x:gone")])
-    monkeypatch.setattr(perf_probe, "METHODS", [])
-    monkeypatch.setattr(perf_probe, "_patch_function",
+    monkeypatch.setattr(perf_patch, "METHODS", [])
+    monkeypatch.setattr(perf_patch, "_patch_function",
                         lambda *args, **kwargs: patched.append(args) or 1)
 
-    assert perf_probe.install_probes() == (0, 0)
+    assert perf_patch.install_probes() == (0, 0)
     assert patched == []
     assert "no_such_engine_function" in capsys.readouterr().out
 
@@ -98,7 +99,7 @@ def test_main_does_not_run_the_operation_when_no_probes_went_in(monkeypatch,
     from engine import entry_import, settings as engine_settings
 
     ran = []
-    monkeypatch.setattr(perf_probe, "unresolved_probes",
+    monkeypatch.setattr(perf_patch, "unresolved_probes",
                         lambda: ["no_such_engine_function"])
     monkeypatch.setattr(entry_import, "import_project",
                         lambda *args, **kwargs: ran.append(args))

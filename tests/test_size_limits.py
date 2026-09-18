@@ -45,8 +45,6 @@ FUNCTION_LIMIT = 60
 
 # What is over 400 lines. Lower these; do not raise them.
 ALLOWED_FILE_LINES = {
-    "tools/call_tree_resolve.py": 439,
-    "tools/perf_probe.py": 444,
 }
 
 # What is over 60 lines, by file and then by function. Same rule.
@@ -94,8 +92,10 @@ ALLOWED_FUNCTION_LINES = {
         "_resolve_calls": 104,
     },
     "tools/perf_probe.py": {
-        "build_report": 104,
         "main": 90,
+    },
+    "tools/perf_report.py": {
+        "build_report": 104,
     },
 }
 

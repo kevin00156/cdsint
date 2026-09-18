@@ -472,9 +472,10 @@ python tools/call_tree.py <sync-dir> MAIN -o call_tree.json
 It follows calls between project functions and function-block methods across
 files, including instances declared in GVLs, tags IEC system calls from
 `tools/sys_funcs.json`, and marks whatever it could not resolve.
-**`tools/call_tree_parse.py`** and **`tools/call_tree_resolve.py`** are its two
-halves — reading `.st` text, and resolving names to definitions. Run
-`call_tree.py`; import the halves only if you want the pieces.
+**`tools/call_tree_parse.py`**, **`tools/call_tree_symbols.py`** and
+**`tools/call_tree_resolve.py`** are its three parts — reading `.st` text,
+collecting what that text defines, and resolving calls against it. Run
+`call_tree.py`; import the parts only if you want the pieces.
 
 Run it from a checkout, not from a copy of the files somewhere else. The
 parser reads the `// === IMPLEMENTATION ===` separator from
@@ -504,6 +505,10 @@ file of its own because a row that names something the engine has renamed
 measures nothing and prints nothing, so the report comes out a row short
 without saying so — `tests/test_perf_probe.py` reads these tables against the
 real engine, and `install_probes()` refuses to run on a stale one.
+**`tools/perf_patch.py`** is the wrapping itself — every row of those tables
+rebound to a timing wrapper in every namespace that imported it — and
+**`tools/perf_report.py`** turns what the wrappers recorded into the ranked
+report. Neither is run on its own; `perf_probe.py` is the entry.
 
 **`tools/headless_watch.py`** opens a project in a headless IDE and arms the
 watcher in it, so that `--target` has something to talk to without a person
