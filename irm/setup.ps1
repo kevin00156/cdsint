@@ -163,7 +163,7 @@ function Install-Stubs {
         downloaded or is a clone you are editing. One mechanism means an
         upgrade cannot leave a stale stub behind in one IDE's ScriptDir and
         a fresh one in another's (SPEC D16), and it is what the by-hand
-        instructions in readMe.md already describe.
+        instructions in README.md already describe.
 
         body.path is one line naming the body root. It is machine specific,
         which is why it is written here and gitignored rather than checked in.

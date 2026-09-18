@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Every in-repo link in the docs points at something that exists.
 
-A dead link is the failure nobody notices: `docs/AI_WORKFLOW.md` spent the
-whole move pointing at two readMe sections that had not come across, and the
+A dead link is the failure nobody notices: the agent workflow doc spent the
+whole move pointing at two README sections that had not come across, and the
 only way anyone would find out is by clicking. Headings move, so this checks
 the anchors too, using GitHub's own slug rule.
 """
@@ -14,12 +14,10 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Every markdown file a reader is meant to follow links out of. docs/history
-# is deliberately absent: those are records of what was decided on a day, and
-# their links describe the repo as it was then.
-DOCS = ("readMe.md", "CONTRIBUTING.md", "PRINCIPLES.md",
-        "docs/SPEC.md", "docs/WATCHER.md", "docs/AI_WORKFLOW.md",
-        "skills/cdsint/SKILL.md")
+# Every markdown file a reader is meant to follow links out of.
+DOCS = ("README.md", "CONTRIBUTING.md", "PRINCIPLES.md", "SECURITY.md",
+        "docs/SPEC.md", "docs/WATCHER.md", "skills/cdsint/SKILL.md",
+        "tools/README.md", "irm/setup.md")
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)

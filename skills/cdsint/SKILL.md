@@ -248,4 +248,4 @@ new `.st` file creates a new object in the IDE, at the tree position matching it
 folder.
 
 Fuller detail, including every flag and the whole result schema, is in
-`docs/AI_WORKFLOW.md` in the cdsint repo.
+the cdsint repo's `README.md`.

@@ -1,9 +1,9 @@
 # 產品規格：cdsint
 
 > 這份文件描述「做完之後的樣子」，不是施工順序，也不是進度表。
-> 「現在做到哪裡」不寫在這裡：那是 `git log` 與 `CHANGELOG.md` 回答的問題，而寫在規格裡的進度必然過期。施工順序的紀錄在 [`docs/history/SPEC_10_CONSTRUCTION.md`](history/SPEC_10_CONSTRUCTION.md)。
+> 「現在做到哪裡」不寫在這裡：那是 `git log` 與 `CHANGELOG.md` 回答的問題，而寫在規格裡的進度必然過期。
 > 所有規則只寫在第 3 節的決策表裡，其他章節和程式碼註解用 D 編號引用，不重抄內容。
-> 程式碼來源是 `kevin-cds-text-sync`（`C:\Users\qazsskevin\Documents\repo\kevin-cds-text-sync`，分支 `fix/member-creation-parent-resolution`，commit 9aa9886）。本 repo 只從它讀，不寫回去。
+> 程式碼來源是 `kevin-cds-text-sync`（分支 `fix/member-creation-parent-resolution`，commit 9aa9886）。本 repo 只從它讀，不寫回去。
 
 ---
 
@@ -502,23 +502,8 @@ compare 之前在磁碟上改一個 POU，所以剛好一個差異；build 兩�
 
 ## 9. 文件
 
-- `readMe.md`：定位、三個場景各一段十行內的例子、安裝（三家的 ScriptDir 表）、CLI 命令表、exit code、權限、FAQ。安裝來源指向本 repo。`WORKFLOW.md` 裡還成立的內容併進三個場景那段。
-- `docs/AI_WORKFLOW.md` 與 `skills/cdsint/SKILL.md`：場景 B 的操作手冊，跟著改路徑與命令名。加上 `--project` 形式那一段。
+- `README.md`：定位、三個場景各一段十行內的例子、安裝（三家的 ScriptDir 表）、CLI 命令表、exit code、權限、FAQ。安裝來源指向本 repo。`WORKFLOW.md` 裡還成立的內容併進三個場景那段。
+- `skills/cdsint/SKILL.md`：場景 B 的操作手冊，跟著改路徑與命令名。加上 `--project` 形式那一段。
 - `docs/SPEC.md`：本文，做完的樣子。
 - `docs/WATCHER.md`：新檔。看門人的協定規格、看門人規格、計時器設計，從 `WATCHER_CLI_PLAN.md` 第 5、6、14 節抽出來。程式碼裡引用節號的六處指標改指它。
-- `docs/history/`：做完的工單、被取代的研究、搬出去的施工順序。都是某一天的決策紀錄，不描述今天的程式碼，所以不改也不維護。
 - `CHANGELOG.md`：每個 release 一段，寫「症狀、根因、改法」，不寫檔案清單。
-
----
-
-## 10. 從現在的 repo 走到這裡
-
-這一節的施工順序已經走完，整節搬到 [`docs/history/SPEC_10_CONSTRUCTION.md`](history/SPEC_10_CONSTRUCTION.md)。
-
----
-
-## 11. 未決事項
-
-1. **速度引擎。** 要不要換成 `export_native` 整包倒出，對著第 7 節的基準表決定。換的話是引擎內部的事，三個入口與磁碟格式不動。
-2. **Delta 1.10 無頭升級後 `save()` 的 NullReferenceException。** 沒查到根因。先繞過，記在相容性矩陣。
-3. **看門人跑著時 Scripts 選單能不能啟動別的腳本。** 沒驗過。

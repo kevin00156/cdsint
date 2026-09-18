@@ -23,16 +23,16 @@ def test_the_ide_side_shares_one_implementation():
 
 def test_text_that_is_already_text_comes_back_untouched():
     # The IronPython-safe property: nothing decodes a unicode string.
-    path = u"P:/Kevin/Acme/Site/Shm.project"
+    path = u"P:/專案/客戶/產線/Shm.project"
     assert as_text(path) is path
 
 
 def test_bytes_are_decoded_as_utf8():
-    assert as_text(u"Acme".encode("utf-8")) == u"Acme"
+    assert as_text(u"客戶".encode("utf-8")) == u"客戶"
 
 
 def test_the_report_keeps_none_as_none():
     # headless wraps as_text rather than repeating it: a report field with
     # nothing in it should be null, not the word "None".
     assert headless._text(None) is None
-    assert headless._text(u"Acme") == u"Acme"
+    assert headless._text(u"客戶") == u"客戶"

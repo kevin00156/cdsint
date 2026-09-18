@@ -156,46 +156,6 @@ mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
 `Project_export`, `Project_import`, `Project_watch`.
 
-### Coming from kevin-cds-text-sync
-
-Four things moved, and none of them migrate themselves:
-
-- **The junction.** The old one points the ScriptDir at the whole
-  `kevin-cds-text-sync` clone, which is why that IDE shows eleven menu
-  entries. Remove it before adding the new one, or the menu carries both sets
-  and you cannot tell which is running. `cdsint installs` prints each IDE's
-  ScriptDir; the junction to delete is the `cds-text-sync` folder inside it.
-- **The running watcher.** Stop it — run `Project_watch` a second time in the
-  IDE that has it — before starting the new one. The instance directory moved
-  from `%LOCALAPPDATA%\cds-text-sync\instances` to
-  `%LOCALAPPDATA%\cdsint\instances`, so `cdsint list` cannot see the old one
-  and cannot stop it for you.
-- **The command name.** `python cli/cds_ide.py` is now `cdsint`.
-- **A toolbar button, if you made one.** It is bound to a script by the name
-  the ScriptEngine registered, and the ScriptDir subfolder changed from
-  `cds-text-sync` to `cdsint`. Whether that breaks the binding has not been
-  measured either way; if the button stops doing anything, remove it and add
-  it again from the new entry.
-
-**Where the settings live.** They used to be project properties inside the
-`.project` file. They are a text file beside it now (see **Settings**). The
-old properties are no longer read; they stay in the `.project` untouched and
-nothing removes them, and nothing is migrated out of them.
-
-That last part has a consequence worth reading twice: **a setting somebody
-turned off in the old properties comes back on.** Every key falls back to the
-default in the Settings table until the new file says otherwise. On a project
-whose old save-after-export property was set to `False`, for instance, an export
-now saves the project when it used to leave the file alone — measured on
-softplc_refactor.project, 2026-09-06, where that save also changed what
-`discover` counts in the project tree (407 nodes before, 402 after: five alarm
-groups). Nothing cdsint writes causes that; it is what the IDE's own save does
-to that project. Look at the old properties once, in the IDE, and write the
-ones you had chosen into the new file.
-
-A project already set up is also asked for its sync folder once more, on its
-next export, and that answer goes into the new file.
-
 ## The commands
 
 Every command that touches a project takes one of two forms, and never both:
@@ -453,107 +413,6 @@ rather than a change:
   from the IDE — the Library Manager is one), `import_only`, or `disabled`
   (invisible to sync, which is where `device` and `device_module` sit).
 
-## `tools/`
-
-Offline instruments for whoever maintains this. None of them is a cdsint
-command and none appears in the Scripts menu (PRINCIPLES 12). Every instrument
-in that directory has an entry here; `tests/test_tools_are_documented.py`
-fails if one is added and this list is not. A file whose name starts with an
-underscore is not an instrument but something the instruments stand on, and
-gets a closing note rather than an entry — there is one, `_root.py`.
-
-Some of them run **inside** an IDE, through **Tools > Scripting > Execute
-Script File** or `--runscript`; the rest are ordinary CPython you run from a
-shell. Each entry below says which, because that is the thing that decides
-what you can do with it — no count here, since the count is what goes stale
-the next time somebody adds one.
-
-**`tools/call_tree.py`** builds a cross-file call graph from an exported sync
-folder. Plain CPython, no IDE:
-
-```
-python tools/call_tree.py <sync-dir> MAIN -o call_tree.json
-```
-
-It follows calls between project functions and function-block methods across
-files, including instances declared in GVLs, tags IEC system calls from
-`tools/sys_funcs.json`, and marks whatever it could not resolve.
-**`tools/call_tree_parse.py`**, **`tools/call_tree_symbols.py`** and
-**`tools/call_tree_resolve.py`** are its three parts — reading `.st` text,
-collecting what that text defines, and resolving calls against it. Run
-`call_tree.py`; import the parts only if you want the pieces.
-
-Run it from a checkout, not from a copy of the files somewhere else. The
-parser reads the `// === IMPLEMENTATION ===` separator from
-`engine/codesys_constants.py` rather than carrying its own copy, because two
-definitions of the disk format is one too many (SPEC D15) — so it needs
-`engine/` and `profiles/` beside it. Three files copied into a scratch
-directory stop at `No module named '_root'`.
-
-**`tools/cache_doctor.py`** answers "would the cache actually skip anything on
-the next run?" without opening the IDE, and names the reasons it would not:
-
-```
-python tools/cache_doctor.py <sync-dir>
-```
-
-**`tools/perf_probe.py`** wraps the real engine functions and ranks where a
-sync spends its time. Runs inside an IDE that has the project open: **Execute
-Script File**, then pick the file. With no argument it profiles an export;
-`compare` and `import` are the other two modes, given in the script-arguments
-box. The report goes to `perf_probe_<mode>.txt` in the sync folder. Run the
-same mode twice — the second run is the one that says whether the cache is
-earning its keep.
-
-**`tools/perf_tables.py`** is that probe's two tables: the engine functions it
-measures, and the manager methods it measures. Not something you run. It is a
-file of its own because a row that names something the engine has renamed
-measures nothing and prints nothing, so the report comes out a row short
-without saying so — `tests/test_perf_probe.py` reads these tables against the
-real engine, and `install_probes()` refuses to run on a stale one.
-**`tools/perf_patch.py`** is the wrapping itself — every row of those tables
-rebound to a timing wrapper in every namespace that imported it — and
-**`tools/perf_report.py`** turns what the wrappers recorded into the ranked
-report. Neither is run on its own; `perf_probe.py` is the entry.
-
-**`tools/headless_watch.py`** opens a project in a headless IDE and arms the
-watcher in it, so that `--target` has something to talk to without a person
-opening the IDE. Runs inside the IDE it starts:
-
-```
-<exe> --profile="<name>" --noUI --runscript="<abs path>\tools\headless_watch.py"
-```
-
-with `CDSINT_WATCH_PROJECT` naming the `.project`, and optionally
-`CDSINT_WATCH_SYNC` and `CDSINT_WATCH_ANSWERS` (`KEY=VALUE,KEY=VALUE`). Under
-`--noUI` it parks the process with `system.delay()` — SPEC D5's one stated
-exception, and it refuses to park when the IDE has a window.
-
-**`tools/probe_watcher_ui.py`** is the acceptance launcher behind
-`docs/WATCHER.md` 8: it builds a throwaway project, arms the watcher the way
-**Project_watch** does, and returns, so that somebody can check the IDE is
-still clickable. Runs inside the IDE, same `--runscript` shape.
-
-**`tools/probe_click_menu.py`** is the other half of that acceptance, and the
-only tool that drives an IDE from outside it: real mouse clicks on the File
-menu, counting whether a drop-down appeared.
-
-```
-python tools/probe_click_menu.py --pid 1234 --seconds 60 --every 5
-```
-
-**`tools/attr_probe.py`** prints what `build_properties` exposes on the first
-few objects of the open project, and what each attribute answers. Use it when
-a compile attribute (`exclude_from_build` and friends) does not round-trip on
-an IDE version: the names differ between versions, and this says what this one
-calls them. Runs inside the IDE, same `--runscript` shape. It used to be a
-one-shot dump inside `read_ide_attrs()`, costing a `getattr` per object on
-every export to answer a question somebody asks once a year.
-
-And the one that is not an instrument: **`tools/_root.py`** puts the install
-root on `sys.path` so the others can import `engine/` and `cds/`. Nothing to
-run; it is imported.
-
 ## Layout
 
 ```
@@ -565,8 +424,7 @@ cds/ide/    the listener, the stand-in UI, the status window, the IDE side of
             the headless launcher.
 stub/       the three small files the IDE's menu scans.
 cdsint/     the `cdsint` command. CPython 3.11+.
-tools/      the maintainer's instruments; every one of them is listed
-            under `tools/` above.
+tools/      the maintainer's instruments; tools/README.md lists them.
 profiles/   object-type GUIDs and per-kind sync policy, as JSON.
 skills/     the manual an agent reads: skills/cdsint/SKILL.md.
 docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.
@@ -577,10 +435,10 @@ docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.
 - [`docs/SPEC.md`](docs/SPEC.md) — the product spec: what this is for, every
   decision and why.
 - [`docs/WATCHER.md`](docs/WATCHER.md) — the listener and the command protocol.
-- [`docs/AI_WORKFLOW.md`](docs/AI_WORKFLOW.md) — the loop for an agent driving
-  this without a screen.
-- [`skills/cdsint/SKILL.md`](skills/cdsint/SKILL.md) — the same thing packaged
-  for Claude Code; `npx skills add kevin00156/cdsint` installs it.
+- [`skills/cdsint/SKILL.md`](skills/cdsint/SKILL.md) — the loop for an agent
+  driving this without a screen; `npx skills add kevin00156/cdsint`
+  installs it into Claude Code.
+- [`tools/README.md`](tools/README.md) — the maintainer's instruments.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed and why, per release.
 - [`PRINCIPLES.md`](PRINCIPLES.md) — the rules the code is held to.
 

@@ -9,7 +9,7 @@ name = "cdsint"
 # release needed three files edited by hand (SPEC 8, PRINCIPLES 7).
 dynamic = ["version"]
 description = "Drive CODESYS-family IDEs from outside: sync .st text, build, verify"
-readme = "readMe.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = []

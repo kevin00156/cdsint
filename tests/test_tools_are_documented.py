@@ -32,12 +32,9 @@ def on_disk(include_private=False):
 
 
 def mentioned():
-    with io.open(os.path.join(REPO_ROOT, "readMe.md"),
+    with io.open(os.path.join(REPO_ROOT, "tools", "README.md"),
                  encoding="utf-8") as handle:
-        readme = handle.read()
-    section = readme[readme.index("## `tools/`"):]
-    section = section[:section.index("\n## ")]
-    return set(MENTION.findall(section))
+        return set(MENTION.findall(handle.read()))
 
 
 def test_every_tool_has_a_line_in_the_readme():

@@ -69,11 +69,11 @@ def test_path_for_puts_the_file_beside_the_project():
 
 
 def test_path_for_keeps_a_chinese_name_intact():
-    # The real projects on this machine live under paths like
-    # D:\Acme\Site\..., so a name that only survives ASCII is no use.
-    project = os.path.join(u"D:", u"Acme", u"SheetSplitter.project")
+    # Real projects live under paths like D:\客戶\產線\..., so a name that
+    # only survives ASCII is no use.
+    project = os.path.join(u"D:", u"客戶", u"包裝機.project")
     assert settings.path_for(project) == os.path.join(
-        u"D:", u"Acme", u"SheetSplitter" + settings.SUFFIX)
+        u"D:", u"客戶", u"包裝機" + settings.SUFFIX)
 
 
 # -- read ------------------------------------------------------------------

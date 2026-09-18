@@ -241,9 +241,9 @@ def test_stdout_and_the_report_share_a_name_so_two_runs_do_not_collide(machine,
 
 
 def test_a_report_path_survives_a_project_name_with_spaces_and_chinese(machine):
-    # Real project names look like "SheetSplitter v2.project", and the report file
+    # Real project names look like "包裝機 v2.project", and the report file
     # is named after them.
-    made = report_side.default_report(u"C:\\p\\\u4e09\u660e \u5206\u7d19\u6a5f.project")
+    made = report_side.default_report(u"C:\\p\\包裝機 v2.project")
     assert made.endswith(".json") and " " not in os.path.basename(made)
     assert os.path.basename(made).encode("ascii")
 
