@@ -29,7 +29,7 @@ def documented():
     """Every setting name in SPEC 4.4's table."""
     with io.open(SPEC, encoding="utf-8") as handle:
         text = handle.read()
-    section = text.split("### 4.4 設定檔", 1)[1].split("### 4.5", 1)[0]
+    section = text.split("### 4.4 ", 1)[1].split("### 4.5", 1)[0]
     names = set()
     for row in section.splitlines():
         if not row.startswith("|"):

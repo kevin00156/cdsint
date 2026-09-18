@@ -77,7 +77,7 @@ KINDS = {
 }
 
 # A kind says how a flag is shaped; a flag may still name what its value is
-# called in the help. Only --gateway does, and "IP" is what the readMe and
+# called in the help. Only --gateway does, and "IP" is what the README and
 # SPEC 4.2 have always called it.
 METAVAR = 3
 

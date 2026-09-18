@@ -59,14 +59,17 @@ silence is not.
 one of its rules comes back with the rule number. These are the ones that catch
 people out:
 
-- **Size limits (2).** Files 300 lines soft, 400 hard. Functions 40 soft, 60
-  hard. New files obey them as written, and a function you touch may not come
-  out longer than it went in.
+- **Size limits (2).** Files 300 lines soft, 400 hard, no exceptions: the test
+  fails on any file over 400 and on a module named `utils`, `helpers`,
+  `common` or `misc`. Functions 40 soft, 60 hard; the ones still over 60 are
+  a debt table in `tests/test_size_limits.py` that may only shrink, and a
+  function you touch may not come out longer than it went in.
 - **Two tiers (the preamble).** `engine/`, and the diagnostics that came with it
-  into `tools/`, were moved here rather than written here; they are exempt from
-  the size limits as they stand, and there are files well past 400 lines.
-  Everything written since — including a new file added under `engine/` — is
-  held to the rules exactly as written.
+  into `tools/`, were moved here rather than written here, and splitting them
+  did not change that: their functions keep the knowledge real projects beat
+  into them, so a rewrite for style's sake is not welcome. Everything written
+  since — including a new file added under `engine/` — is held to the rules
+  exactly as written.
 - **IronPython 2.7 (8).** `engine/`, `cds/ide/`, `cds/core/` and `stub/` all run
   inside the IDE at some point, and the IDE ships IronPython 2.7. That means no
   type annotations, no f-strings, no `pathlib`, standard library only, and

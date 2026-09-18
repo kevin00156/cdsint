@@ -14,7 +14,7 @@ not there at all: ScriptEngine hands IronPython the file, not a package, and
 sys.path is the IDE's own search list. That is why the stubs in stub/ carry
 their own path insert too.
 
-The leading underscore keeps this out of the tool list in the readMe: it is
+The leading underscore keeps this out of the tool list in tools/README.md: it is
 not an instrument, it is what the instruments stand on.
 """
 from __future__ import print_function

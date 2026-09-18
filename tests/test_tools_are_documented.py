@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Every instrument in tools/ is named in the readMe, and nothing else is.
+"""Every instrument in tools/ is named in tools/README.md, and nothing else is.
 
-The readMe listed three of the nine for months. Nobody noticed, because the
+The user README listed three of the nine for months. Nobody noticed, because the
 only way to notice is to run `ls tools/` and compare by eye — and a maintainer
-reaching for an instrument reads the readMe precisely because they do not yet
+reaching for an instrument reads that file precisely because they do not yet
 know what is in there.
 
-Both directions matter. A tool the readMe does not mention is a tool nobody
-will find; a tool the readMe mentions that is not there sends the reader
+Both directions matter. A tool the list does not mention is a tool nobody
+will find; a tool the list mentions that is not there sends the reader
 looking for a file that was deleted.
 """
 import io
@@ -17,7 +17,7 @@ import re
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # tools/_root.py earns its underscore: it is not an instrument, it is the
-# sys.path bootstrap the instruments stand on, and the readMe says so in one
+# sys.path bootstrap the instruments stand on, and the list says so in one
 # line rather than giving it an entry.
 PRIVATE = "_"
 
@@ -42,7 +42,7 @@ def test_every_tool_has_a_line_in_the_readme():
 
 
 def test_the_readme_names_no_tool_that_is_gone():
-    # Against everything on disk, private ones included: the readMe is allowed
+    # Against everything on disk, private ones included: the list is allowed
     # to name _root.py while saying it is not an instrument, but not to name a
     # file that no longer exists.
     assert sorted(mentioned() - on_disk(include_private=True)) == []

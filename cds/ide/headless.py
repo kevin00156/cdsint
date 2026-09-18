@@ -8,7 +8,8 @@ Started by cdsint/headless.py as
 with CDSINT_HEADLESS_JOB naming a JSON file that says what to do. The job goes
 through a file rather than --scriptargs because that flag is one string split
 on spaces with quoting rules of its own, and these project paths have spaces
-and Chinese in them (SPEC 6.4, "專案路徑走環境變數"). One variable naming one
+and Chinese in them (SPEC 6.4, "the project path travels in an environment
+variable"). One variable naming one
 file also keeps the two sides from growing a dozen variables between them.
 
 The commands themselves run exactly as they do for the watcher — same bodies,
