@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Applying a change list to the IDE, in the order that makes it work.
 
-codesys_compare_engine.py works out what differs and how to do one object;
+change_detect.py works out what differs and object_create.py how to do one;
 this is the pass structure that puts those in the right order and counts what
 happened. The order is the whole design, and it used to be one 256-line
 function nine levels deep, with the same child lookup written out four times
@@ -13,19 +13,27 @@ import os
 
 from engine import unhandled
 from engine.classify import create_import_managers
-from engine.codesys_compare_engine import (
-    apply_device_remap, batch_import_native_xmls_with_children,
-    build_device_remap, create_new_object, order_st_files_parents_first,
-    orphans_their_parent_takes, save_pou_children, summarize_device_remap,
+from engine.device_remap import (
+    apply_device_remap,
+    build_device_remap,
+    summarize_device_remap,
+)
+from engine.import_order import (
+    order_st_files_parents_first,
+    orphans_their_parent_takes,
+)
+from engine.object_create import (
+    batch_import_native_xmls_with_children,
+    create_new_object,
     update_existing_object,
 )
+from engine.pou_children import save_pou_children
 from engine.codesys_constants import (
     TYPE_GUIDS, kind_allows_import, kind_of, sync_direction_of,
 )
-from engine.codesys_utils import (
-    ensure_folder_path, find_object_by_path, log_error, log_info,
-    log_warning, safe_str
-)
+from engine.ide_tree import ensure_folder_path, find_object_by_path
+from engine.strings import safe_str
+from engine.sync_log import log_error, log_info, log_warning
 from engine.ide_read import child_named, guid_of, parent_of
 
 

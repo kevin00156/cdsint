@@ -19,7 +19,7 @@ import os
 from cds.core import ipc
 from engine import entry, plc_crc, plc_link, unhandled
 from engine import ide_read
-from engine.codesys_utils import safe_str
+from engine.strings import safe_str
 
 
 class Trip(object):

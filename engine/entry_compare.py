@@ -17,10 +17,8 @@ import sys
 import codecs
 import time
 
-from engine.codesys_utils import (
-    init_logging, log_info,  is_debug
-)
-from engine.codesys_compare_engine import find_all_changes
+from engine.sync_log import init_logging, log_info, is_debug
+from engine.change_detect import find_all_changes
 from engine import entry, settings, unhandled
 
 # What one row of data.changes says happened to an object. A caller reading

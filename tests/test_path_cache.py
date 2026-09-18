@@ -323,14 +323,14 @@ class TestDebugFlag:
         round trip. The value now arrives from the settings this run read,
         handed to init_logging() once, so there is nothing left to cache.
         """
-        utils = sys.modules["engine.codesys_utils"]
+        utils = sys.modules["engine.sync_log"]
         utils.init_logging(None, True)
         assert utils.is_debug() is True
         utils.init_logging(None, False)
         assert utils.is_debug() is False
 
     def test_anything_truthy_becomes_a_real_boolean(self, env):
-        utils = sys.modules["engine.codesys_utils"]
+        utils = sys.modules["engine.sync_log"]
         utils.init_logging(None, 1)
         assert utils.is_debug() is True
         utils.init_logging(None, None)

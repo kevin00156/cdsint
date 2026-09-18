@@ -3,7 +3,7 @@
 
 Answers one question without opening CODESYS: *would the cache actually skip
 anything on the next run?* It asks the engine's own predicate rather than a
-copy of it -- codesys_utils.file_signature() is what both export and compare
+copy of it -- sync_cache.file_signature() is what both export and compare
 compare against, so this imports that function and hands it the same two
 values the cache holds.
 
@@ -44,7 +44,7 @@ if _HERE not in sys.path:
 import _root  # noqa: E402,F401
 
 from engine.codesys_constants import PROFILE_HASH  # noqa: E402
-from engine.codesys_utils import CACHE_VERSION  # noqa: E402
+from engine.sync_cache import CACHE_VERSION
 from engine.sync_cache import file_signature  # noqa: E402
 
 CACHE_NAME = "sync_cache.json"
@@ -182,7 +182,7 @@ def main(argv=None):
             reasons["file missing on disk"].append(norm_path)
             continue
 
-        # The one comparison both sides make (codesys_utils.file_signature).
+        # The one comparison both sides make (sync_cache.file_signature).
         mtime, size = file_signature(file_path)
         if (mtime, size) == (entry.get("disk_mtime"), entry.get("disk_size")):
             hit += 1

@@ -13,9 +13,8 @@ import time
 
 from engine import build_log
 from engine.codesys_constants import kind_of
-from engine.codesys_utils import (
-    log_warning, safe_str, init_logging, is_debug
-)
+from engine.strings import safe_str
+from engine.sync_log import log_warning, init_logging, is_debug
 from engine import entry, settings
 
 # Every severity a build message can carry, ORed into one flags value.

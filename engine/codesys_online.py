@@ -17,7 +17,8 @@ evidence against.
 from __future__ import print_function
 
 
-from engine.codesys_utils import safe_str, log_warning
+from engine.strings import safe_str
+from engine.sync_log import log_warning
 from engine.object_paths import get_container_prefix
 from engine.ide_read import children_of, kind_of, name_of
 

@@ -15,7 +15,7 @@ functions and each hands back the reason it could not do its half. Nothing in
 here answers trouble with a falsy value, because a caller holding one cannot
 tell "the settings said not to" from "the disk said no".
 
-The two entry points at the bottom are here rather than in codesys_utils.py
+The two entry points at the bottom are here rather than beside the log
 because they are what the backups are for: finishing a sync (save the project,
 keep a copy) and guarding an import before it changes anything.
 """
@@ -26,7 +26,8 @@ import re
 import shutil
 import time
 
-from engine.codesys_utils import log_info, log_warning, safe_str
+from engine.strings import safe_str
+from engine.sync_log import log_info, log_warning
 
 # YYYYMMDD_HHMMSS_<project name>.bak -- the ones cleanup may delete. A backup
 # without the stamp was named by a person (or by Git LFS) and is not ours to

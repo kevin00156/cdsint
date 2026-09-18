@@ -8,12 +8,12 @@ than the sync. Prompts now go through timed_prompt() and are subtracted.
 """
 import pytest
 
-from engine import codesys_utils
+from engine import sync_log
 
 
 @pytest.fixture(scope="module")
 def utils():
-    return codesys_utils
+    return sync_log
 
 
 @pytest.fixture(autouse=True)

@@ -14,12 +14,12 @@ import pytest
 
 from tests.fakes import Project
 
-from engine import codesys_utils, entry_build, object_kind, object_paths, sync_cache
+from engine import entry_build, ide_attrs, object_kind, object_paths, sync_cache
 
 
 @pytest.fixture(scope="module")
 def env():
-    utils = codesys_utils
+    utils = ide_attrs
     managers = object_paths
     return utils, managers, sys.modules["engine.codesys_constants"].TYPE_GUIDS
 

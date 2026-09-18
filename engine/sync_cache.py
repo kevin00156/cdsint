@@ -19,8 +19,17 @@ import json
 import os
 import time
 
-from engine.codesys_utils import (CACHE_VERSION, calculate_hash, log_info,
-                                  log_warning, safe_str)
+from engine.strings import calculate_hash, safe_str
+from engine.sync_log import log_info, log_warning
+
+# Cache version - bump when the cache format or hash semantics change to
+# force a full rebuild
+# 3.1: ide hashes include build_properties (exclude_from_build, etc.)
+# 3.2: kind pragma - ambiguous-kind files get a one-time header rewrite
+# 3.3: disk_mtime is now milliseconds-since-epoch as an int, produced by
+# file_signature(). Older caches stored whole seconds (export) or a float
+# (compare), so they are discarded rather than silently mis-compared.
+CACHE_VERSION = "3.3"
 
 
 def file_signature(file_path, stat_info=None):

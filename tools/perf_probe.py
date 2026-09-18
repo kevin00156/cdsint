@@ -145,7 +145,7 @@ def _find_class(module_name, class_name):
 def _patch_function(name, label=None, bucket_of=None):
     """Rebind a module-level function in EVERY namespace that imported it.
 
-    `from codesys_utils import read_ide_attrs` copies the function object into
+    `from engine.ide_attrs import read_ide_attrs` copies the function object into
     the importing module, so patching only the defining module would miss most
     call sites. Identity comparison finds them all.
     """
@@ -358,8 +358,8 @@ def main():
     # __import__ with a fromlist hands back the submodule itself, and it
     # means the same thing in IronPython 2.7 and CPython 3.
     entry = __import__("engine." + entry_name, {}, {}, [entry_name])
-    utils = __import__("engine.codesys_utils", {}, {}, ["codesys_utils"])
-    engine = __import__("engine.codesys_compare_engine", {}, {}, ["codesys_compare_engine"])
+    strings, sync_log = [__import__("engine." + n, {}, {}, [n]) for n in ("strings", "sync_log")]
+    engine = __import__("engine.change_detect", {}, {}, ["change_detect"])
     api = __import__("engine.entry", {}, {}, ["entry"])
 
     projects_obj = api.borrowed(globals(), "projects")
@@ -372,9 +372,9 @@ def main():
     if error is None and base_dir is None:
         error = settings.folder_missing(globals())
     if error:
-        print("Error: " + utils.safe_str(error))
+        print("Error: " + strings.safe_str(error))
         return
-    utils.init_logging(base_dir, values["debug"])
+    sync_log.init_logging(base_dir, values["debug"])
 
     functions, sites = install_probes()
     if not functions:
@@ -419,7 +419,7 @@ def main():
     # time for this run. Import always confirms before touching the IDE, and
     # counting a human's deliberation as sync time would swamp everything else.
     try:
-        interaction = utils.get_interaction_seconds()
+        interaction = sync_log.get_interaction_seconds()
     except Exception:
         interaction = 0.0
     wall = max(0.0, wall - interaction)
@@ -436,7 +436,7 @@ def main():
             handle.write(report)
         print("Report written to: " + out_path)
     except Exception as exc:
-        print("Could not write report: " + utils.safe_str(exc))
+        print("Could not write report: " + strings.safe_str(exc))
 
 
 if __name__ == "__main__":

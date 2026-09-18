@@ -30,9 +30,8 @@ import os
 
 from cds.core import settings as schema
 from engine import entry
-from engine.codesys_utils import (
-    safe_str, ensure_git_configs
-)
+from engine.git_configs import ensure_git_configs
+from engine.strings import safe_str
 
 # The command argument that overrides sync_folder for this run (SPEC 4.2).
 # It is never written back: a copy of a project is the case it exists for,

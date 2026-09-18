@@ -10,7 +10,7 @@ Moved out of codesys_managers.py unchanged.
 """
 from __future__ import print_function
 
-from engine.codesys_utils import safe_str, clean_filename
+from engine.strings import safe_str, clean_filename
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_read import guid_of, parent_of
 

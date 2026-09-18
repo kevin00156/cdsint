@@ -31,7 +31,7 @@ from __future__ import print_function
 
 from engine import unhandled
 from engine.codesys_constants import kind_of as kind_of_guid
-from engine.codesys_utils import safe_str
+from engine.strings import safe_str
 
 # The register owns this one: note() needs a name for the very object that is
 # failing, so the fallback chain has to live where the register can reach it

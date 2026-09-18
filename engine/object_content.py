@@ -9,7 +9,9 @@ Moved out of codesys_managers.py unchanged.
 """
 from __future__ import print_function
 
-from engine.codesys_utils import safe_str, log_error, log_warning, ide_flag
+from engine.ide_attrs import ide_flag
+from engine.strings import safe_str
+from engine.sync_log import log_error, log_warning
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_read import name_of
 from engine.object_kind import native_xml_of

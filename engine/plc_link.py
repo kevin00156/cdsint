@@ -10,7 +10,8 @@ from __future__ import print_function
 
 import os
 
-from engine.codesys_utils import log_warning, safe_str
+from engine.strings import safe_str
+from engine.sync_log import log_warning
 from engine.ide_read import children_of, kind_of, name_of
 
 # The only place either credential is read (D14). Named constants so the

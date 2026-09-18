@@ -5,10 +5,16 @@ import time
 
 from engine.codesys_constants import sync_direction_of
 from engine.sync_cache import build_folder_hashes, load_sync_cache, normalize_path, save_sync_cache
-from engine.codesys_utils import (
-    safe_str, log_info, log_warning, log_error,
-    init_logging, ensure_git_configs, reset_interaction_timer, get_interaction_seconds,
-    format_elapsed
+from engine.git_configs import ensure_git_configs
+from engine.strings import safe_str
+from engine.sync_log import (
+    log_info,
+    log_warning,
+    log_error,
+    init_logging,
+    reset_interaction_timer,
+    get_interaction_seconds,
+    format_elapsed,
 )
 from engine.object_paths import clear_path_caches
 from engine.classify import (
@@ -72,7 +78,7 @@ def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
         
         # buttons: Delete (Yes), Ignore (No)
         from engine.codesys_ui import ask_yes_no
-        from engine.codesys_utils import timed_prompt
+        from engine.sync_log import timed_prompt
         delete_them = timed_prompt(ask_yes_no, dialogs.DELETE_ORPHANS,
                                    message)
     
@@ -304,7 +310,7 @@ def export_project(export_dir, values, projects_obj=None):
     log_info("Export complete! " + summary + " Time elapsed: " + elapsed_text)
 
     # Record sync version; metadata file is written in debug mode only
-    from engine.codesys_utils import save_sync_metadata
+    from engine.sync_log import save_sync_metadata
     save_sync_metadata(export_dir, "export", {
         "new": exported_new,
         "updated": exported_updated,

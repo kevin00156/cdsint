@@ -405,7 +405,7 @@ def titles_asked_for(function):
 
     Two call shapes: `ask_yes_no("Title", ...)` and the timed one,
     `timed_prompt(ask_yes_no, "Title", ...)`, which keeps the wait for a
-    person out of the sync timings (codesys_utils.timed_prompt).
+    person out of the sync timings (sync_log.timed_prompt).
     """
     pattern = re.compile(function + r'\s*[(,]\s*"([^"]+)"')
     found = set()

@@ -11,14 +11,18 @@ from __future__ import print_function
 
 import time
 
-from engine.codesys_utils import (
-    safe_str, init_logging, log_info, log_warning,
-    reset_interaction_timer, get_interaction_seconds, format_elapsed,
-    timed_prompt
+from engine.strings import safe_str
+from engine.sync_log import (
+    init_logging,
+    log_info,
+    log_warning,
+    reset_interaction_timer,
+    get_interaction_seconds,
+    format_elapsed,
+    timed_prompt,
 )
-from engine.codesys_compare_engine import (
-    find_all_changes, build_device_remap, summarize_device_remap
-)
+from engine.change_detect import find_all_changes
+from engine.device_remap import build_device_remap, summarize_device_remap
 from engine.import_items import perform_import_items
 from engine.backup import create_safety_backup, finalize_sync_operation
 from engine.sync_dir import has_st_files
@@ -227,7 +231,7 @@ def import_project(base_dir, values, projects_obj=None):
 
     # Record sync version; metadata file is written in debug mode only
     try:
-        from engine.codesys_utils import save_sync_metadata
+        from engine.sync_log import save_sync_metadata
         save_sync_metadata(base_dir, "import", {
             "updated": updated,
             "created": created,

@@ -23,7 +23,8 @@ from engine.managers_native import ConfigManager, NativeManager
 from engine.managers_pou import POUManager, PropertyManager
 from engine.object_kind import classify_object
 from engine.object_paths import build_expected_path
-from engine.codesys_utils import log_info, log_warning, safe_str
+from engine.strings import safe_str
+from engine.sync_log import log_info, log_warning
 
 
 # What resolve_object decided about one object.

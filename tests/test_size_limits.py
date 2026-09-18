@@ -45,20 +45,24 @@ FUNCTION_LIMIT = 60
 
 # What is over 400 lines. Lower these; do not raise them.
 ALLOWED_FILE_LINES = {
-    "engine/codesys_compare_engine.py": 1084,
-    "engine/codesys_utils.py": 1104,
     "tools/call_tree_resolve.py": 439,
     "tools/perf_probe.py": 444,
 }
 
 # What is over 60 lines, by file and then by function. Same rule.
 ALLOWED_FUNCTION_LINES = {
-    "engine/codesys_compare_engine.py": {
-        "batch_import_native_xmls_with_children": 77,
-        "build_device_remap": 75,
-        "create_new_object": 141,
+    "engine/change_detect.py": {
         "detect_moved_files": 81,
         "find_all_changes": 237,
+    },
+    "engine/device_remap.py": {
+        "build_device_remap": 75,
+    },
+    "engine/git_configs.py": {
+        "ensure_git_configs": 64,
+    },
+    "engine/ide_hash.py": {
+        "get_quick_ide_hash": 68,
     },
     "engine/managers_native.py": {
         "NativeManager.export": 67,
@@ -66,9 +70,9 @@ ALLOWED_FUNCTION_LINES = {
     "engine/object_kind.py": {
         "classify_object": 108,
     },
-    "engine/codesys_utils.py": {
-        "ensure_git_configs": 64,
-        "get_quick_ide_hash": 68,
+    "engine/object_create.py": {
+        "batch_import_native_xmls_with_children": 77,
+        "create_new_object": 141,
     },
     "engine/entry_compare.py": {
         "compare_project": 89,

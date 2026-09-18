@@ -13,16 +13,16 @@ import pytest
 
 from tests.fakes import StubManager
 
-from engine import codesys_compare_engine
+from engine import object_create
 
 
 @pytest.fixture(scope="module")
 def env():
     import sys
-    engine = codesys_compare_engine
+    engine = object_create
     return {
         "constants": sys.modules["engine.codesys_constants"],
-        "utils": sys.modules["engine.codesys_utils"],
+        "utils": sys.modules["engine.st_text"],
         "managers": sys.modules["engine.managers_pou"],
         "engine": engine,
     }

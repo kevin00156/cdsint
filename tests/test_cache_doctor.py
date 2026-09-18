@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from engine.codesys_utils import CACHE_VERSION
+from engine.sync_cache import CACHE_VERSION
 from engine.sync_cache import file_signature, save_sync_cache
 from tools import cache_doctor
 

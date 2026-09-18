@@ -22,9 +22,8 @@ the settings file turns debug on.
 from __future__ import print_function
 
 from engine.codesys_constants import kind_of
-from engine.codesys_utils import (
-    safe_str, init_logging, log_info, log_warning
-)
+from engine.strings import safe_str
+from engine.sync_log import init_logging, log_info, log_warning
 from engine import entry, settings, unhandled
 
 

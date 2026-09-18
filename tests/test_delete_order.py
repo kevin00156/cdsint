@@ -20,8 +20,8 @@ from engine import import_items
 
 @pytest.fixture(scope="module")
 def engine():
-    # The four passes live here now; codesys_compare_engine keeps the
-    # per-object operations they call.
+    # The four passes live here now; object_create keeps the per-object
+    # operations they call.
     return import_items
 
 

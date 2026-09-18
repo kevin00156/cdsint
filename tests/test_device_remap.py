@@ -19,13 +19,13 @@ import pytest
 
 from tests.fakes import Node
 
-from engine import codesys_compare_engine
+from engine import device_remap
 
 
 @pytest.fixture(scope="module")
 def env():
     constants = sys.modules["engine.codesys_constants"]
-    engine = codesys_compare_engine
+    engine = device_remap
     return engine, constants.TYPE_GUIDS
 
 

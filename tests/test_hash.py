@@ -15,7 +15,7 @@ which of the two a claim rests on.
 """
 import zlib
 
-from engine.codesys_utils import calculate_hash
+from engine.strings import calculate_hash
 
 A_COMMENT = u"(* 馬達啟動延遲 *)"
 ITS_BYTES = A_COMMENT.encode("utf-8")

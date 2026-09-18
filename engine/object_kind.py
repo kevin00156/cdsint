@@ -12,13 +12,10 @@ from __future__ import print_function
 
 import os
 import tempfile
-from engine.codesys_utils import (
-    safe_str,
-    log_error,
-    log_warning,
-    is_container_device,
-    read_sync_text,
-)
+from engine.ide_tree import is_container_device
+from engine.st_text import read_sync_text
+from engine.strings import safe_str
+from engine.sync_log import log_error, log_warning
 from engine.codesys_constants import (
     TYPE_GUIDS,
     XML_TYPES,

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Tests for the sync-cache primitives that decide whether work can be skipped.
 
-The export side (codesys_managers) and the compare side
-(codesys_compare_engine) read and write the SAME sync_cache.json under the
+The export side (managers_native) and the compare side (content_compare)
+read and write the SAME sync_cache.json under the
 same keys. They used to derive 'disk_mtime' independently -- int(st.st_mtime)
 on one side, os.path.getmtime() (a float) on the other -- so every entry
 written by one was rejected by the other and both ran at a 0% hit rate on real
@@ -14,13 +14,12 @@ import os
 
 import pytest
 
-from engine import (classify, codesys_compare_engine, codesys_utils,
-                    managers_native, sync_cache)
+from engine import classify, managers_native, object_create, sync_cache
 
 
 @pytest.fixture(scope="module")
 def utils():
-    return codesys_utils
+    return sync_cache
 
 
 @pytest.fixture(scope="module")
@@ -185,7 +184,7 @@ class TestCachedClassification:
         from engine.codesys_constants import PROFILE_HASH
         path = tmp_path / "sync_cache.json"
         path.write_text(json.dumps({
-            "version": codesys_utils.CACHE_VERSION,
+            "version": sync_cache.CACHE_VERSION,
             "profile_hash": PROFILE_HASH,
             "objects": {}, "folders": {},
             "types": {"short": ["t", True], "full": ["t", False, "A.st"],
@@ -226,15 +225,15 @@ class TestManagerDispatch:
 
     def test_import_treats_an_xml_file_as_xml_backed(self):
         """Disk is the truth, so the suffix answers first (PRINCIPLES 5)."""
-        assert codesys_compare_engine._is_xml_backed("A/B.device.xml", "guid")
+        assert object_create._is_xml_backed("A/B.device.xml", "guid")
 
     def test_import_treats_an_xml_kind_as_xml_backed_before_the_file_exists(self):
         from engine.codesys_constants import XML_TYPES
         any_xml_kind = sorted(XML_TYPES)[0]
-        assert codesys_compare_engine._is_xml_backed("A/B", any_xml_kind)
+        assert object_create._is_xml_backed("A/B", any_xml_kind)
 
     def test_a_plain_st_file_is_not_xml_backed(self):
-        assert not codesys_compare_engine._is_xml_backed("A/B.st", "guid")
+        assert not object_create._is_xml_backed("A/B.st", "guid")
 
 
 class TestHashContentPerKind:

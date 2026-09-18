@@ -4,7 +4,7 @@
 Runs INSIDE an IDE: Tools > Scripting > Execute Script File, or --runscript.
 
 CODESYS versions disagree about which compile attributes an object carries and
-what they are called, and engine/codesys_utils.py keeps a table (ATTR_REGISTRY)
+what they are called, and engine/codesys_constants.py keeps a table (ATTR_REGISTRY)
 of the names it knows. When a version turns up whose names are different, the
 symptom is an attribute that never round-trips and nothing said why. This is
 how you find out what that version actually calls them.
@@ -23,7 +23,7 @@ if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _root  # noqa: F401  (importing it is the whole of it)
 
-from engine.codesys_utils import safe_str  # noqa: E402
+from engine.strings import safe_str
 from engine.ide_read import name_of  # noqa: E402
 
 # Enough objects to see the pattern, few enough to read. A project has

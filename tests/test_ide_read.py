@@ -116,7 +116,7 @@ class TestQuickHashRefusesToGuess:
     """
 
     def test_none_rather_than_a_hash_of_nothing(self):
-        from engine import codesys_utils
+        from engine import ide_hash
         from engine.codesys_constants import TYPE_GUIDS
 
         class Deaf(object):
@@ -135,13 +135,13 @@ class TestQuickHashRefusesToGuess:
             def get_children(self):
                 raise RuntimeError("no plugin for the accessors")
 
-        assert codesys_utils.get_quick_ide_hash(Deaf(), is_xml=False) is None
+        assert ide_hash.get_quick_ide_hash(Deaf(), is_xml=False) is None
 
     def test_it_does_not_register_the_object_a_second_time(self):
         """classify.collect_accessors reads the same children of the same
         property earlier in the same pass and registers it there. Noting it
         again put one object in the result twice: "2 object(s): P, P"."""
-        from engine import classify, codesys_utils
+        from engine import classify, ide_hash
         from engine.codesys_constants import TYPE_GUIDS
 
         class Deaf(object):
@@ -156,5 +156,5 @@ class TestQuickHashRefusesToGuess:
 
         obj = Deaf()
         classify.collect_accessors(obj, "guid-Speed", TYPE_GUIDS["property"], {})
-        codesys_utils.get_quick_ide_hash(obj, is_xml=False)
+        ide_hash.get_quick_ide_hash(obj, is_xml=False)
         assert unhandled.names() == ["Speed"]

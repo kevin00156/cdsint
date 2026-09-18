@@ -46,7 +46,8 @@ import os
 import tempfile
 
 from cds.core import ipc
-from engine.codesys_utils import log_warning, safe_str
+from engine.strings import safe_str
+from engine.sync_log import log_warning
 
 # The verdict, and what it is called in the report (SPEC 6.6).
 MATCH = "MATCH"

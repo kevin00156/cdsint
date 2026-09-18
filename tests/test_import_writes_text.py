@@ -13,7 +13,7 @@ import io
 
 import pytest
 
-from engine import codesys_compare_engine, codesys_utils, object_content
+from engine import content_compare, object_content, st_text
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def managers():
 
 @pytest.fixture(scope="module")
 def utils():
-    return codesys_utils
+    return st_text
 
 
 class TextDocument(object):
@@ -174,7 +174,7 @@ class TestAByteOrderMarkIsNotCode:
             self, tmp_path):
         """Otherwise compare reports the file forever, and every import
         rewrites the POU with the mark still in it."""
-        compare = codesys_compare_engine
+        compare = content_compare
         ide_content = DECL_EMPTY + u"\n\n// === IMPLEMENTATION ==="
         path = self.write(tmp_path, ide_content, "utf-8-sig")
         disk_content = compare.read_file(path)

@@ -9,15 +9,11 @@ Moved out of codesys_managers.py unchanged.
 from __future__ import print_function
 
 import os
-from engine.codesys_utils import (
-    safe_str,
-    log_error,
-    log_warning,
+from engine.ide_attrs import read_ide_attrs, write_ide_attrs
+from engine.st_text import (
     format_st_content,
     format_property_content,
     parse_property_content,
-    read_ide_attrs,
-    write_ide_attrs,
     render_sync_pragmas,
     build_state_hash,
     parse_sync_pragmas,
@@ -25,6 +21,8 @@ from engine.codesys_utils import (
     needs_kind_pragma,
     read_sync_text,
 )
+from engine.strings import safe_str
+from engine.sync_log import log_error, log_warning
 from engine.codesys_constants import IMPLEMENTATION_TYPES, kind_of
 from engine.managers_base import ObjectManager
 from engine.object_content import (
@@ -89,7 +87,7 @@ class POUManager(ObjectManager):
                                 build_state_hash(clean_content, attrs), context)
 
     def update(self, obj, file_path):
-        from engine.codesys_utils import parse_st_file
+        from engine.st_text import parse_st_file
         declaration, implementation, pragmas = parse_st_file(file_path)
         if declaration is None and implementation is None:
             return False
@@ -100,7 +98,7 @@ class POUManager(ObjectManager):
         return updated
 
     def create(self, container, name, file_path, type_guid):
-        from engine.codesys_utils import parse_st_file
+        from engine.st_text import parse_st_file
         declaration, implementation, pragmas = parse_st_file(file_path)
 
         obj = None

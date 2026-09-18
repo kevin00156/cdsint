@@ -82,7 +82,7 @@ def a_synced_project(monkeypatch, tmp_path):
     written = [p for p in sync.rglob("*.st")]
     assert len(written) == 1, written
 
-    engine_module = sys.modules["engine.codesys_compare_engine"]
+    engine_module = sys.modules["engine.change_detect"]
     look = lambda: engine_module.find_all_changes(str(sync), projects,
                                                   export_xml=False)
 

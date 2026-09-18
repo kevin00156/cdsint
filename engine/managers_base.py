@@ -12,11 +12,9 @@ from __future__ import print_function
 import os
 import codecs
 from engine.sync_cache import file_signature, normalize_path
-from engine.codesys_utils import (
-    calculate_hash,
-    get_quick_ide_hash,
-    read_sync_text,
-)
+from engine.ide_hash import get_quick_ide_hash
+from engine.st_text import read_sync_text
+from engine.strings import calculate_hash
 
 
 class ObjectManager(object):
@@ -30,7 +28,7 @@ class ObjectManager(object):
         open, and a command has exactly one.
 
         None is allowed because one caller wants nothing but the hashing:
-        codesys_compare_engine keeps a bare NativeManager to hash two strings
+        content_compare keeps a bare NativeManager to hash two strings
         it already holds.
 
         pou_type is the IDE's PouType enum, needed only where a new POU is
@@ -244,7 +242,7 @@ class FolderManager(ObjectManager):
     def create(self, container, name, file_path, type_guid):
         # For folders, container should be the parent folder/application
         # But we also have absolute path in file_path (which is relative in metadata)
-        from engine.codesys_utils import ensure_folder_path
+        from engine.ide_tree import ensure_folder_path
         try:
             # file_path here is the rel_path from the sync folder, e.g.
             # "Device/Application/Folder/Sub".
