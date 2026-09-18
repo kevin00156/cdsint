@@ -31,6 +31,13 @@ from cdsint.report import untrusted_exit as report_untrusted_exit
 # one place is how one of them goes stale (PRINCIPLES.md 7).
 IDE_SIDE = os.path.join(REPO_ROOT, "cds", "ide", "headless.py")
 
+# What a wheel does not carry. `pip install .` without -e, or from a git
+# URL, lands cds/, cdsint/ and engine/ under site-packages and nothing else;
+# the IDE side then dies inside the IDE on the missing profile, which reads
+# as an IDE bug. The profile is the one file every command needs, so it is
+# the one to look for.
+INSTALL_ROOT_MARKER = os.path.join(REPO_ROOT, "profiles", "default.json")
+
 KILL_GRACE_S = 5.0
 
 # --timeout bounds one step (SPEC 4.2), so the deadline for the whole process
@@ -72,6 +79,7 @@ class Headless(object):
         # _clear_our_lock has no other way to tell its own mess from
         # somebody else's (--force-lock lets a real one through).
         self._lock_was_there = lock.held(self.project) is not None
+        self._check_install_root()
         self._check_project(force_lock)
         self._note(installs.elevation_note(self.install))
 
@@ -133,6 +141,15 @@ class Headless(object):
                 + SHUTDOWN_GRACE_S)
 
     # -- before the launch --------------------------------------------------
+
+    def _check_install_root(self):
+        """Refuse to start an IDE that would only die on a half-installed tree."""
+        if os.path.isfile(INSTALL_ROOT_MARKER):
+            return
+        raise Failure(
+            "%s is missing: cdsint is not running from a clone. The IDE side "
+            "needs the whole tree, so install with `pip install -e .` from a "
+            "checkout." % INSTALL_ROOT_MARKER, EXIT_HEADLESS)
 
     def _check_project(self, force_lock):
         """Refuse a project another process has open, and say where the lock is.

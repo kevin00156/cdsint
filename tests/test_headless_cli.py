@@ -45,6 +45,22 @@ def test_a_project_that_is_not_there_is_refused(machine):
     assert raised.value.code == EXIT_HEADLESS
 
 
+def test_an_install_without_the_tree_is_refused_before_any_ide_starts(
+        machine, monkeypatch):
+    # `pip install .` without -e, or from a git URL, lands cds/, cdsint/ and
+    # engine/ under site-packages and nothing else. The IDE side then dies
+    # inside the IDE on the missing profile, which reads as an IDE bug; the
+    # CLI can say what is wrong before spending an IDE launch on it.
+    (machine / "line.project").write_text("binary", encoding="utf-8")
+    monkeypatch.setattr(cli_side, "INSTALL_ROOT_MARKER",
+                        str(machine / "profiles" / "default.json"))
+    with pytest.raises(Failure) as raised:
+        cli_side.Headless(str(machine / "line.project"), "3.5.21.40")
+    assert raised.value.code == EXIT_HEADLESS
+    assert "pip install -e" in str(raised.value)
+    assert str(machine / "profiles" / "default.json") in str(raised.value)
+
+
 def test_the_install_has_to_be_named(machine):
     (machine / "line.project").write_text("binary", encoding="utf-8")
     with pytest.raises(Failure) as raised:

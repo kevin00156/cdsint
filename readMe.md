@@ -90,6 +90,12 @@ python -m pip install -e .
 cdsint --help
 ```
 
+The `-e` is not optional. The IDE half runs out of the same tree as the
+command — `profiles/`, `stub/` and `tools/` beside the packages — and a wheel
+carries only the packages. A `cdsint` installed without `-e`, or from a git
+URL, still answers `installs`, `list` and every `--target` command, but a
+`--project` command refuses before it starts an IDE, and says so.
+
 ### The skill, if you use Claude Code
 
 ```
