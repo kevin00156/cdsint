@@ -1,20 +1,30 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
-title: '[FEATURE] '
+about: Something this should do and does not
+title: ''
 labels: enhancement
 assignees: ''
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**What are you trying to do?**
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+Describe the situation you are in, not the flag you want. "Add `--foo`" hides
+the thing that would let someone tell you it already works another way, or that
+`--foo` is the wrong shape for the problem.
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+**What do you do today instead?**
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+Even if the answer is "by hand, in the IDE".
+
+**Is it in scope?**
+
+`docs/SPEC.md` lists the non-goals explicitly. If your request sits next to
+something on that list, say why yours is different — that is the argument worth
+having.
+
+**Would you write it?**
+
+Not required, and saying no costs nothing. If yes, read `CONTRIBUTING.md`
+first: one change per pull request, and anything large gets agreed before it
+gets written, not after.

@@ -1,41 +1,116 @@
-# Contributing to cdsint
+# Contributing
 
-First off, thank you for your interest in `cdsint`! It's great to see the community engaging with modern workflows for CODESYS.
+Pull requests are welcome. Two things decide whether one gets merged: CI has to
+be green, and the change has to be one change.
 
-## 🛡️ Development Policy
+## One change per pull request
 
-To ensure the architectural integrity and long-term stability of this tool, **I am currently not accepting Pull Requests (PRs) involving core logic changes.** I prefer to review all feedback and implement improvements personally. This ensures that every line of code aligns with the project's vision and remains safe for industrial use.
+A pull request does one thing. Fix one bug, or add one feature, or clean up one
+thing — not two, and not "while I was in there". A branch that does three things
+cannot be reviewed as three decisions, cannot be reverted when one of them turns
+out wrong, and cannot be bisected when a regression shows up months later.
 
----
+Large rewrites are not accepted as a surprise. If your change moves code between
+files, replaces an existing mechanism with a different one, or touches more than
+a handful of files, open an issue first and say what you want to do. The answer
+is often yes — but it has to be yes *before* you write it, because afterwards
+the only choices are merge it or waste your week.
 
-## 🚀 How Can I Help?
+A pull request gets sent back regardless of how good the code is if it:
 
-### 1. Reporting Bugs
+- renames or restructures something the change did not need
+- adds a second way to do something that already has one (PRINCIPLES 7)
+- reformats a file it also edits, so the diff hides the real change
+- changes the format of what lands on disk
 
-If you find a bug, please open an **Issue**. This is the most helpful thing you can do! Be as specific as possible:
+## The line you cannot cross
 
-- What version of CODESYS are you using?
-- What was the error message or unexpected behavior?
-- Can you provide a small code snippet to reproduce the issue?
+The `.st` files and the `//% cds-text-sync.<key>=<value>` pragma lines in them
+are user data. Somebody's project has those files committed to git. Changing the
+format, or the spelling of a pragma, breaks every checkout of every project that
+has ever been synced, and no amount of migration code makes that free. That is a
+major version, not a pull request.
 
-### 2. Suggesting Enhancements
+The pragma prefix says `cds-text-sync` because this code came from there and the
+files already on disk still say it. It stays.
 
-I am always looking for ways to improve the workflow. If you have an idea:
+## Before you open the pull request
 
-- Open an **Issue** with the "Enhancement" tag.
-- Explain the use case and why it would be beneficial for your workflow.
-- I will review these suggestions and prioritize them for future updates.
+```
+python -m pip install -r requirements-dev.txt
+python -m pytest tests -q
+```
 
-### 3. Submitting Compatibility Examples
+CI runs exactly that, on Windows and on Linux, on Python 3.12. Both have to
+pass. Windows is the real target, because the IDE only exists there. Linux is
+the portability guard: it is the only thing that catches a Windows path handled
+with `os.path`, because on Windows that mistake cannot fail.
 
-To keep this repository lightweight and minimalist, all test cases, problematic objects, and compatibility examples are hosted in a separate **[Reference Project](https://github.com/ArthurkaX/cds-text-sync-reference-project)**.
+New behaviour needs a test. Everything in `cds/core/` has a unit test — that is
+the whole reason `core/` is kept pure Python. Engine logic is tested against
+fake IDE objects. If your change genuinely cannot be tested in CI, say so in the
+pull request and say what you did instead: which IDE, which version, what you
+saw. "A person at a real machine has to confirm this" is a valid answer;
+silence is not.
 
-If you encounter an object that cannot be exported or imported correctly, please refer to that repository's README for detailed contribution guidelines and verification procedures.
+## Read PRINCIPLES.md first
 
-## 🍴 Forking
+[`PRINCIPLES.md`](PRINCIPLES.md) is the rulebook, and a pull request that breaks
+one of its rules comes back with the rule number. These are the ones that catch
+people out:
 
-If you need a specific feature immediately or want to experiment with the code, feel free to **Fork** the repository! That is the beauty of the MIT License. You are welcome to maintain your own version for your specific needs.
+- **Size limits (2).** Files 300 lines soft, 400 hard. Functions 40 soft, 60
+  hard. New files obey them as written, and a function you touch may not come
+  out longer than it went in.
+- **Two tiers (the preamble).** `engine/`, and the diagnostics that came with it
+  into `tools/`, were moved here rather than written here; they are exempt from
+  the size limits as they stand, and there are files well past 400 lines.
+  Everything written since — including a new file added under `engine/` — is
+  held to the rules exactly as written.
+- **IronPython 2.7 (8).** `engine/`, `cds/ide/`, `cds/core/` and `stub/` all run
+  inside the IDE at some point, and the IDE ships IronPython 2.7. That means no
+  type annotations, no f-strings, no `pathlib`, standard library only, and
+  `from __future__ import print_function` at the top of every module. `cdsint/`
+  runs outside the IDE on CPython 3.11+ and has none of these restrictions.
+- **No bare `except:` (6).** Catch the exception you expect and let the rest
+  crash; a traceback is a gift. Code written here is held at zero.
+- **Layer boundaries (4).** `engine/` may not import `cds/ide`. `cds/core/` may
+  not import `system`, `projects`, `online` or `clr`.
+- **No parallel paths (7).** When you replace something, delete the old one in
+  the same pull request.
 
-## ⚖️ License
+Several of these are enforced twice: once as a rule you can read, and once as a
+test that parses the source, so you will find out either way. When such a test
+fails, read the rule rather than the test — the test is only the ratchet.
 
-By participating in discussions or reporting issues, you agree that any feedback provided may be used to improve the project under its **MIT License**.
+## Reporting a bug
+
+Open an issue. The template asks for the things that actually narrow it down:
+which IDE and version, the exact command, the exit code, and what it printed.
+`cdsint installs` prints every IDE on this machine with its profile and
+ScriptDir, and is usually the fastest way to answer the first one.
+
+If an object failed to export or import, run `cdsint discover` and include the
+lines for the objects involved. It names every object and the kind it counted
+as, which is what says whether the kind is unknown or the GUID is.
+
+## Suggesting a feature
+
+Open an issue and describe the situation you are in, not the API you want. This
+tool has a scope, and [`docs/SPEC.md`](docs/SPEC.md) lists the non-goals
+explicitly; the useful thing to argue about is whether your case sits inside
+that line.
+
+## Where the code came from
+
+This repository was moved out of
+[`kevin-cds-text-sync`](https://github.com/kevin00156/cds-text-sync), itself a
+fork of
+[`ArthurkaX/cds-text-sync`](https://github.com/ArthurkaX/cds-text-sync). Much of
+`engine/` and most of `tools/` is still that code. Where a file says which
+upstream commit it was adapted from, leave the note in place when you edit
+around it.
+
+The licence is MIT and the copyright is Arthur's — see [`LICENSE`](LICENSE). By
+opening a pull request you agree your contribution goes in under the same
+licence.
