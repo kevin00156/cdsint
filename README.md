@@ -444,4 +444,5 @@ docs/       SPEC.md is what it should be; WATCHER.md is how the listener works.
 
 ## Licence
 
-MIT. Copyright belongs to Arthur, the upstream author; see [`LICENSE`](LICENSE).
+MIT. The parts that came from upstream are Arthur's; the rest is Kevin
+Chang's. See [`LICENSE`](LICENSE).
