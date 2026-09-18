@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — moved into cdsint
+### 0.0.1 (2026-09-18) — moved into cdsint
 
 **The tool became a product with its own repo.** The code came out of
 `kevin-cds-text-sync` (branch `fix/member-creation-parent-resolution`, commit
@@ -13,6 +13,41 @@ up to that commit. Version numbering restarts at `0.0.1` — the `k1.x` line was
 a fork of upstream `cds-text-sync` and does not carry over. Nothing compares
 that number against a project any more — the version stamp went with the move
 to a settings file, below — so the renumbering costs nobody a prompt.
+
+- **No engine file does more than one job any more.** The three modules that
+  came across at over a thousand lines each — the managers, the "utils", the
+  compare engine — are twenty one-job modules now (`object_kind`,
+  `object_paths`, `managers_*`, `st_text`, `ide_attrs`, `change_detect`,
+  `object_create`, `device_remap` and so on), and the two oversized tools
+  are split the same way. Every statement moved verbatim: on two real IDEs
+  (CODESYS 3.5.21.40, DIADesigner-AX 1.10) the export listing's SHA-256s,
+  `discover`'s counts and a full `verify` came out identical before and
+  after each step. PRINCIPLES 2's exemption for moved files is gone with
+  them: `tests/test_size_limits.py` fails on any file over 400 lines, refuses
+  a module named `utils`, `helpers`, `common` or `misc`, and keeps the
+  functions still over 60 lines as a debt table that may only shrink.
+- **Every text file is opened with `io.open`, newline untouched.**
+  `codecs.open` is deprecated on CPython 3.12+ and the test run printed the
+  warning 157 times. Each call passes `newline=""` both ways, because
+  `codecs.open` never translated newlines and `io.open` would — on Windows
+  that would turn every `\n` written into `\r\n` and change the bytes of every
+  `.st`. Verified by the same two-IDE listing comparison.
+- **A `--project` run refuses before it starts an IDE when the install is not
+  a clone.** `pip install .` without `-e`, or from a git URL, ships the
+  packages and nothing else; the IDE side then died inside the IDE on the
+  missing type profile, which read as an IDE bug. Exit 4, with the fix
+  spelled out.
+- **The performance probe's compare mode works again.** With the compare
+  engine split, `entry_export` no longer pulled in the import-side modules
+  the probe table names, so a compare run refused on a table that was right.
+  Both entry bodies are imported before the probes go in, whatever the mode.
+- **The repo is in English, and carries nothing that belongs to one machine.**
+  The spec, the watcher doc and the Claude instructions are translated with
+  their section numbers unchanged; the construction tickets, the duplicate
+  agent-workflow doc, the machine-specific worker rules, the code of conduct
+  template and the old repo's version history are gone; the tests no longer
+  use a customer's name as their non-ASCII fixture; the README has its
+  conventional name and the maintainer's instruments are in `tools/README.md`.
 
 - **The engine's parallel paths came down to one each.** Export and compare
   had carried the same thirty lines twice, with a comment in one copy asking
@@ -413,7 +448,7 @@ Behaviour that was in `main` but never released:
 
 - **The documentation and the tests were gone through for things that had
   stopped being true.** No behaviour changed here, but a good deal of what a
-  reader was being told did. The spec carried a "現況" line per decision — a
+  reader was being told did. The spec carried a "status" line per decision — a
   snapshot with no expiry date, and thirty-two of them had drifted into saying
   the opposite of the code, down to a test count that was off by six hundred;
   where the code stands is what this file and `git log` are for, and the spec

@@ -12,9 +12,9 @@ you give, or nobody at all if you would rather.
 
 ## Which versions get fixes
 
-There is no published release yet, so there is nothing to backport to. Fixes go
-on `main`, and `main` is the only place to get them. When releases start, this
-section will say which ones are still supported.
+The newest release, and only that one. Fixes go on `main` and ship in the next
+release; nothing is backported to an older tag. From 0.0.1 on, "supported"
+means "upgrade and the fix is there".
 
 ## What this tool can reach
 
