@@ -27,7 +27,12 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 # ago somebody last looked -- git blame answers that without going stale.
 ALLOWED = {
     "engine/codesys_compare_engine.py": 3,
-    "engine/codesys_managers.py": 18,
+    "engine/managers_base.py": 1,
+    "engine/managers_native.py": 1,
+    "engine/managers_pou.py": 2,
+    "engine/object_content.py": 4,
+    "engine/object_kind.py": 4,
+    "engine/object_paths.py": 6,
     "engine/codesys_utils.py": 10,
     "engine/entry_compare.py": 2,
 }

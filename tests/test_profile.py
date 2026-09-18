@@ -13,7 +13,7 @@ import pytest
 
 from tests.fakes import Node as BaseNode
 
-from engine import codesys_constants, codesys_managers
+from engine import codesys_constants, object_kind
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def constants():
 
 @pytest.fixture(scope="module")
 def managers():
-    return codesys_managers
+    return object_kind
 
 
 # The exact k1.0.2 hardcoded table (pre-profile), used as golden reference.

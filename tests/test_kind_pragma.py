@@ -23,7 +23,7 @@ def env():
     return {
         "constants": sys.modules["engine.codesys_constants"],
         "utils": sys.modules["engine.codesys_utils"],
-        "managers": sys.modules["engine.codesys_managers"],
+        "managers": sys.modules["engine.managers_pou"],
         "engine": engine,
     }
 

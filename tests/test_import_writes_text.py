@@ -13,12 +13,12 @@ import io
 
 import pytest
 
-from engine import codesys_compare_engine, codesys_managers, codesys_utils
+from engine import codesys_compare_engine, codesys_utils, object_content
 
 
 @pytest.fixture(scope="module")
 def managers():
-    return codesys_managers
+    return object_content
 
 
 @pytest.fixture(scope="module")

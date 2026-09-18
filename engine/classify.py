@@ -7,10 +7,10 @@ never writes, marks it an orphan, and the next import deletes it from the IDE.
 They used to agree by carrying the same thirty lines twice, with a comment in
 one copy asking whoever edited it to remember the other.
 
-This is the deciding half; codesys_managers.py is the doing half. It stayed
-there until the shared answers outgrew it -- classify_object() and
-build_expected_path() are still over there, because they read the IDE object
-rather than decide anything about the command.
+This is the deciding half; the managers_* modules are the doing half.
+classify_object() (object_kind.py) and build_expected_path()
+(object_paths.py) are not here because they read the IDE object rather than
+decide anything about the command.
 """
 from __future__ import print_function
 
@@ -18,10 +18,11 @@ import collections
 
 from engine import unhandled
 from engine.codesys_constants import TYPE_GUIDS, XML_TYPES, kind_allows_export
-from engine.codesys_managers import (
-    ConfigManager, FolderManager, NativeManager, POUManager, PropertyManager,
-    build_expected_path, classify_object,
-)
+from engine.managers_base import FolderManager
+from engine.managers_native import ConfigManager, NativeManager
+from engine.managers_pou import POUManager, PropertyManager
+from engine.object_kind import classify_object
+from engine.object_paths import build_expected_path
 from engine.codesys_utils import log_info, log_warning, safe_str
 
 

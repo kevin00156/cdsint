@@ -18,7 +18,7 @@ from __future__ import print_function
 
 
 from engine.codesys_utils import safe_str, log_warning
-from engine.codesys_managers import get_container_prefix
+from engine.object_paths import get_container_prefix
 from engine.ide_read import children_of, kind_of, name_of
 
 # Applications sit at Device / [PLC Logic] / Application, so three levels

@@ -74,7 +74,7 @@ Every attribute read on a CODESYS script object crosses into .NET, and on a
 project with a few hundred objects that cost dominates everything else.
 
 - Do not read the same property twice. Read it once and pass it down. The
-  helpers in `engine/codesys_managers.py` carry `obj_guid` and `parent`
+  helpers in `engine/object_paths.py` carry `obj_guid` and `parent`
   through their call chains for exactly this reason, and
   `tests/test_ide_round_trips.py` counts the reads so a refactor cannot
   quietly put a second one back.

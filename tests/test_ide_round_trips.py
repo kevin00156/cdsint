@@ -14,13 +14,13 @@ import pytest
 
 from tests.fakes import Project
 
-from engine import codesys_managers, codesys_utils, entry_build, sync_cache
+from engine import codesys_utils, entry_build, object_kind, object_paths, sync_cache
 
 
 @pytest.fixture(scope="module")
 def env():
     utils = codesys_utils
-    managers = codesys_managers
+    managers = object_paths
     return utils, managers, sys.modules["engine.codesys_constants"].TYPE_GUIDS
 
 
@@ -227,25 +227,25 @@ class TestGraphicalPouDetection:
         _, managers, guids = env
         obj = CountingObj(type_guid=guids["pou"],
                           flags={"has_textual_implementation": True})
-        assert managers.is_graphical_pou(obj) is False
+        assert object_kind.is_graphical_pou(obj) is False
 
     def test_absent_implementation_flag_defaults_to_textual(self, env):
         _, managers, guids = env
         obj = CountingObj(type_guid=guids["pou"],
                           missing=["has_textual_implementation"])
-        assert managers.is_graphical_pou(obj) is False
+        assert object_kind.is_graphical_pou(obj) is False
 
     def test_present_but_false_means_graphical(self, env):
         _, managers, guids = env
         obj = CountingObj(type_guid=guids["pou"],
                           flags={"has_textual_implementation": False})
-        assert managers.is_graphical_pou(obj) is True
+        assert object_kind.is_graphical_pou(obj) is True
 
     def test_reads_the_flag_once(self, env):
         _, managers, guids = env
         obj = CountingObj(type_guid=guids["pou"],
                           flags={"has_textual_implementation": True})
-        managers.is_graphical_pou(obj)
+        object_kind.is_graphical_pou(obj)
         assert obj.reads["has_textual_implementation"] == 1
 
 

@@ -33,10 +33,10 @@ from engine.codesys_utils import (
     attrs_from_pragmas, read_ide_attrs, normalize_sync_attrs, build_state_hash,
     render_sync_pragmas, read_sync_text
 )
-from engine.codesys_managers import (
-    NativeManager, export_object_content, native_xml_of,
-    update_object_code, clear_path_caches
-)
+from engine.managers_native import NativeManager
+from engine.object_content import export_object_content, update_object_code
+from engine.object_kind import native_xml_of
+from engine.object_paths import clear_path_caches
 from engine.classify import collect_accessors, manager_for, resolve_object
 from engine import unhandled
 from engine.sync_dir import sync_files

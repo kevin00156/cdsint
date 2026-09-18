@@ -14,8 +14,8 @@ import types
 
 import pytest
 
-from engine import (codesys_managers, entry_compare, entry_export,
-                    entry_import)
+from engine import (entry_compare, entry_export, entry_import,
+                    object_kind)
 
 from cds.core import settings
 
@@ -98,7 +98,7 @@ def test_the_summary_names_them_and_stops_at_ten():
 
 @pytest.fixture(scope="module")
 def managers():
-    return codesys_managers
+    return object_kind
 
 
 def test_classify_object_names_it_instead_of_raising(managers):
@@ -250,7 +250,7 @@ def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     import codecs
 
     export = entry_export
-    managers = sys.modules["engine.codesys_managers"]
+    managers = sys.modules["engine.managers_base"]
 
     sync = str(tmp_path)
     version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION

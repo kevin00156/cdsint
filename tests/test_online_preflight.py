@@ -18,7 +18,7 @@ import pytest
 
 from tests.fakes import Node as BaseNode
 
-from engine import codesys_managers, codesys_online
+from engine import codesys_online, object_paths
 
 
 @pytest.fixture(scope="module")
@@ -36,9 +36,9 @@ def clean_caches():
     from the name, which is exactly the collision the cache is built to
     exploit. Same fixture as tests/test_path_cache.py.
     """
-    codesys_managers.clear_path_caches()
+    object_paths.clear_path_caches()
     yield
-    codesys_managers.clear_path_caches()
+    object_paths.clear_path_caches()
 
 
 class WalkCountingNode(BaseNode):

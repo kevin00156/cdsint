@@ -10,7 +10,7 @@ from engine.codesys_utils import (
     init_logging, ensure_git_configs, reset_interaction_timer, get_interaction_seconds,
     format_elapsed
 )
-from engine.codesys_managers import clear_path_caches
+from engine.object_paths import clear_path_caches
 from engine.classify import (
     SKIP_SYNC_DIRECTION, collect_accessors, create_import_managers,
     manager_for, resolve_object

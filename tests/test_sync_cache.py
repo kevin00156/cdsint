@@ -14,8 +14,8 @@ import os
 
 import pytest
 
-from engine import (classify, codesys_compare_engine, codesys_managers,
-                    codesys_utils, sync_cache)
+from engine import (classify, codesys_compare_engine, codesys_utils,
+                    managers_native, sync_cache)
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +25,7 @@ def utils():
 
 @pytest.fixture(scope="module")
 def managers(utils):
-    return codesys_managers
+    return managers_native
 
 
 @pytest.fixture
@@ -331,7 +331,7 @@ class TestTheFilenameFallbackIsPinned:
     """
 
     def flavours(self):
-        from engine.codesys_managers import _XML_FLAVOURS, _PLAIN
+        from engine.managers_native import _XML_FLAVOURS, _PLAIN
         return _XML_FLAVOURS, _PLAIN
 
     def test_every_special_flavour_is_marked_as_falling_back(self):
@@ -362,7 +362,7 @@ class TestTheFilenameFallbackIsPinned:
         """The line that says which flavour this is survives its own filter,
         so those two never reach the fallback. That is why narrowing the rule
         to two showed up in no test and in no exported byte."""
-        from engine.codesys_managers import _xml_flavour
+        from engine.managers_native import _xml_flavour
         flavour = _xml_flavour(content)
         assert [line for line in content.splitlines(True) if flavour.keep(line)]
 
