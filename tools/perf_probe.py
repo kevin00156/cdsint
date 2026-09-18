@@ -65,13 +65,25 @@ from perf_report import build_report  # noqa: E402
 #  DRIVER
 # ═══════════════════════════════════════════════════════════════════
 
-# The probes go in after the entry body is imported: importing it is what
-# pulls in the engine modules the probes rebind.
+# The probes go in after both entry bodies are imported: importing them is
+# what pulls in every engine module the tables name. Both, whatever the
+# mode, because the import-side rows resolve only once entry_import has
+# loaded its modules, and a row that resolves nothing stops the run.
 _ENTRY_FOR_MODE = {
     "export": "entry_export",
     "compare": "entry_export",   # find_all_changes comes along with it
     "import": "entry_import",
 }
+
+
+def _entry_bodies():
+    """Both entry bodies, by name, imported.
+
+    __import__ with a fromlist hands back the submodule itself, and it
+    means the same thing in IronPython 2.7 and CPython 3.
+    """
+    return dict((name, __import__("engine." + name, {}, {}, [name]))
+                for name in ("entry_export", "entry_import"))
 
 
 def main():
@@ -81,10 +93,7 @@ def main():
         if low in _ENTRY_FOR_MODE:
             mode = low
 
-    entry_name = _ENTRY_FOR_MODE[mode]
-    # __import__ with a fromlist hands back the submodule itself, and it
-    # means the same thing in IronPython 2.7 and CPython 3.
-    entry = __import__("engine." + entry_name, {}, {}, [entry_name])
+    entry = _entry_bodies()[_ENTRY_FOR_MODE[mode]]
     strings, sync_log = [__import__("engine." + n, {}, {}, [n]) for n in ("strings", "sync_log")]
     engine = __import__("engine.change_detect", {}, {}, ["change_detect"])
     api = __import__("engine.entry", {}, {}, ["entry"])
@@ -158,8 +167,8 @@ def main():
 
     out_path = os.path.join(base_dir, "perf_probe_%s.txt" % mode)
     try:
-        import codecs
-        with codecs.open(out_path, "w", "utf-8") as handle:
+        import io
+        with io.open(out_path, "w", encoding="utf-8", newline="") as handle:
             handle.write(report)
         print("Report written to: " + out_path)
     except Exception as exc:

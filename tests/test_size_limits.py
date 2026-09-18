@@ -96,7 +96,7 @@ ALLOWED_FUNCTION_LINES = {
         "_resolve_calls": 104,
     },
     "tools/perf_probe.py": {
-        "main": 90,
+        "main": 87,
     },
     "tools/perf_report.py": {
         "build_report": 104,
