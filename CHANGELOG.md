@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### 0.0.1 (2026-09-18) — moved into cdsint
+### 0.0.1 (2026-09-22) — moved into cdsint
 
 **The tool became a product with its own repo.** The code came out of
 `kevin-cds-text-sync` (branch `fix/member-creation-parent-resolution`, commit
