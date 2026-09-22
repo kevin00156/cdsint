@@ -12,7 +12,7 @@ All of `engine/`, and the diagnostics that came with it into `tools/`, were
 moved here rather than written here: they carry knowledge that real projects
 beat into them, and rewriting them to satisfy a rule would throw that away
 (SPEC D1). `git log --follow` on a file settles which tier it is in — the
-moved ones all arrive in `5c96d4e`, the commit that brought the code across.
+moved ones all arrive in `269261b`, the commit that brought the code across.
 Everything written since, including a new file added under `engine/`, is in
 the strict tier.
 
