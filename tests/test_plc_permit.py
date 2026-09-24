@@ -28,8 +28,13 @@ def test_one_word_allows_one_action():
     assert permit.granted(ide(allowed=["connect"])["projects"]) == ["connect"]
 
 
-def test_both_words_allow_both_in_the_order_spec_lists_them():
-    assert permit.granted(ide(allowed=["download", "connect"])["projects"])         == ["connect", "download"]
+def test_every_word_is_allowed_in_the_order_spec_lists_them():
+    assert permit.granted(
+        ide(allowed=["trace", "download", "connect"])["projects"])         == ["connect", "download", "trace"]
+
+
+def test_trace_alone_allows_neither_connect_nor_download():
+    assert permit.granted(ide(allowed=["trace"])["projects"]) == ["trace"]
 
 
 def test_case_is_a_persons_typing_not_a_decision():

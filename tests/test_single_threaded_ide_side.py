@@ -20,10 +20,12 @@ neither cannot be. That keeps `probe_click_menu.py` out, and it has to be out:
 it drives an IDE from a *separate* CPython process over Win32, and sleeping
 between real mouse clicks is its whole method, not a violation.
 
-D5's one stated exception — headless_watch.park(), which parks a --noUI
-process with system.delay() because with no window there is no screen to
-freeze and nothing else holds the process up — is registered below by name,
-so a second delay() in that file is still red.
+D5 states two exceptions, both a --noUI process held with system.delay()
+because with no window there is no screen to freeze and nothing else holds
+the process up: headless_watch.park(), which keeps a headless watcher alive,
+and cds/ide/hold.py, the wait `plc trace` records through. Each is registered
+below by file and by call, so a second delay() in either file is still red,
+and a third file that grows one is red too.
 """
 import ast
 import io
@@ -45,10 +47,13 @@ IDE_SIDE = ("engine", os.path.join("cds", "ide"), "stub")
 MIXED = ("tools",)
 IDE_SIDE_IMPORTS = ("engine", "cds", "_root")
 
-# D5's one exception, by file and by what it calls. Registered rather than
+# D5's two exceptions, by file and by what each calls. Registered rather than
 # excused by directory: the file stays under the rule, and anything else it
 # grows is caught. See the module docstring and SPEC D5.
-ALLOWED = {"tools/headless_watch.py": ["delay"]}
+ALLOWED = {
+    "tools/headless_watch.py": ["delay"],
+    "cds/ide/hold.py": ["delay"],
+}
 
 BANNED_CALLS = {
     "sleep": "blocks the IDE's message loop",
@@ -153,3 +158,12 @@ def test_the_check_can_actually_see_one(tmp_path):
     guilty.write_text(u"import time\ndef park():\n    time.sleep(3)\n",
                       encoding="utf-8")
     assert offences(str(guilty)) == [(3, "sleep")]
+
+
+def test_a_second_delay_in_a_registered_file_is_still_red(tmp_path):
+    # The allowance is one call per listed name, not a pardon for the file:
+    # the hold growing a second wait is exactly what this has to catch.
+    twice = tmp_path / "hold.py"
+    twice.write_text(u"def hold(system):\n    system.delay(200)\n"
+                     u"    system.delay(200)\n", encoding="utf-8")
+    assert offences(str(twice), ALLOWED["cds/ide/hold.py"]) == [(3, "delay")]

@@ -4,7 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased
+### Unreleased (0.1.0)
+
+- **`cdsint plc trace` records named variables from a controller, with
+  nobody at the IDE.** A job file names the task, the variables and how
+  long; the command logs in without downloading, records, saves `.trace`
+  and `.csv`, and judges from the timestamps whether any cycle is missing.
+  A `trigger` (numeric variable, edge, level, samples after) or a
+  `record_condition` (one BOOL variable) are optional. The trace object
+  lives only in memory as `cdsint_trace` and the project is never saved.
+  It needs the word `trace` in the settings file's `plc` list, and
+  `--gateway`, because a controller found by name can be the wrong one.
+  What it refuses, and why, is in SPEC 6.8; the measurements behind it are
+  in `docs/trace-research.md`.
+- **A login that changes nothing can still download, and `plc trace`
+  checks for that first.** Measured on the bench: a login with
+  `OnlineChangeOption.Keep` downloads the whole application, without
+  asking, when the IDE's `.compileinfo` and `.bootinfo_guids` are missing
+  beside the project, even while cdsint's own record says `MATCH`. The
+  command now compares the code and data identities in `.bootinfo_guids`
+  with the ones in the controller's `Application.app` before it logs in.
+- **The controller holds the whole recording.** The IDE stops fetching
+  samples while its main thread is held up, measured at 13 s on a busy
+  machine, so the ring on the controller is sized for the whole recording.
+  The controller allocates it at once and does not refuse one it cannot
+  hold (a soft PLC was killed by the operating system), so the estimate is
+  held to a new setting, `trace_memory_mb` (default 256).
+- **`system.delay()` has a second registered place on the IDE side**,
+  `cds/ide/hold.py`, for the recording's wait, and only under `--noUI`
+  (SPEC D5).
 
 - **An edited native-XML object imports headless.** A trace, a
   visualisation, a text list, a task configuration: any object stored as

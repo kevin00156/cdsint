@@ -1,0 +1,84 @@
+[key]; [value]
+Version; 0x03050000
+Name; Application.T_new
+ApplicationName; Application
+ApplicationDataGuid; 00000000-0000-0000-0000-000000000000
+IecTaskName; EtherCAT_Task
+Comment; 
+Trigger.Flags; 0
+Condition.Name; 
+Condition.AddrFlags; 0x00000000
+Condition.Class; 0
+Condition.Size; 0
+EveryNCycles; 1
+BufferEntries; 5000
+Flags; 32
+0.Variable; PRG_AxisControl._uFlags
+0.Address.AddrFlags; 0x00000000
+0.Class; 12
+0.Size; 4
+0.GraphColor; 4287090411
+0.GraphType; 1
+0.MinWarningColor; 4278190080
+0.MaxWarningColor; 4294901760
+0.CriticalLowerLimit; 0
+0.CriticalUpperLimit; 0
+0.ActivateMinWarning; 0
+0.ActivateMaxWarning; 0
+0.YAxis; 0
+0.Data; 
+; 291; 0
+; 1257; 0
+; 2254; 0
+; 3198; 0
+; 4288; 0
+; 5297; 0
+; 6267; 0
+; 7239; 0
+; 8253; 0
+; 9262; 0
+; 10297; 0
+; 11211; 0
+; 12249; 0
+; 13253; 0
+; 14232; 0
+; 15223; 0
+; 16218; 0
+; 17354; 0
+; 18222; 0
+; 19246; 0
+; 20207; 0
+1.Variable; PRG_AxisControl._iOvrZone
+1.Address.AddrFlags; 0x00000000
+1.Class; 7
+1.Size; 2
+1.GraphColor; 4284456608
+1.GraphType; 1
+1.MinWarningColor; 4278190080
+1.MaxWarningColor; 4294901760
+1.CriticalLowerLimit; 0
+1.CriticalUpperLimit; 0
+1.ActivateMinWarning; 0
+1.ActivateMaxWarning; 0
+1.YAxis; 0
+1.Data; 
+; 291; 3
+; 1257; 3
+; 2254; 3
+; 3198; 3
+; 4288; 3
+; 5297; 3
+; 6267; 3
+; 7239; 3
+; 8253; 3
+; 9262; 3
+; 10297; 3
+; 11211; 3
+; 12249; 3
+; 13253; 3
+; 14232; 3
+; 15223; 3
+; 16218; 3
+; 17354; 3
+; 18222; 3
+; 19246; 3

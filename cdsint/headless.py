@@ -122,13 +122,13 @@ class Headless(object):
         # dialog and wrote nothing. stdout and stderr are already truncated
         # each launch; this makes the report agree with them.
         ipc.remove_file(self.report_path)
-        deadline = self.deadline(len(steps))
+        deadline = self.deadline(steps)
         started = time.time()
         code, pid = self._launch(job_path, deadline)
         elapsed = time.time() - started
         return self._collect(code, pid, elapsed, deadline)
 
-    def deadline(self, step_count):
+    def deadline(self, steps):
         """How long this whole process may take, from what one step may take.
 
         --timeout means the same thing in both forms — the longest one
@@ -137,7 +137,8 @@ class Headless(object):
         rather than giving the headless form a default of its own keeps one
         flag with one meaning (SPEC 4.2).
         """
-        return (STARTUP_GRACE_S + step_count * self.timeout
+        return (STARTUP_GRACE_S
+                + sum(self.timeout + waits_s(args) for _command, args in steps)
                 + SHUTDOWN_GRACE_S)
 
     # -- before the launch --------------------------------------------------
@@ -374,6 +375,17 @@ class Headless(object):
 
     def stderr_path(self):
         return self.report_path + ".stderr"
+
+
+def waits_s(args):
+    """Seconds a step waits on purpose, on top of --timeout (SPEC 6.8).
+
+    A trace records for its job's duration_s: time the caller asked for, not
+    time the IDE took. Read from the step's args, not its name, so the job
+    on the wire is the one place the duration is written down.
+    """
+    job = args.get("job")
+    return job["duration_s"] if job else 0.0
 
 
 def _also(existing, note):

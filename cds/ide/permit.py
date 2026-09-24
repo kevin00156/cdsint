@@ -23,7 +23,7 @@ import json
 from cds.core import settings
 from cds.ide import project
 
-# The only two values the list recognises (SPEC 6.5). A word that is not one
+# The only values the list recognises (SPEC 6.5). A word that is not one
 # of these is refused by cds/core/settings.py when the file is read, so
 # nothing here has to guess what somebody meant.
 ACTIONS = settings.PLC_ACTIONS

@@ -107,7 +107,7 @@ it; the rest take their default:
 | Key | Type | Default |
 |---|---|---|
 | `sync_folder` | string, `./` is relative to the `.project`'s directory | none — the first export asks |
-| `plc` | list of `connect` and `download` | `[]` |
+| `plc` | list of `connect`, `download` and `trace` | `[]` |
 | `debug` | boolean — write `sync_metadata.json` and the `*.log` files | `false` |
 | `export_xml` | boolean — also export visualisations and alarms as XML | `false` |
 | `backup_binary` | boolean — copy the `.project` into the sync folder on export | `false` |
@@ -116,6 +116,7 @@ it; the rest take their default:
 | `backup_retention_count` | integer — how many backups to keep | `10` |
 | `save_after_import`, `save_after_export` | boolean | `true` |
 | `auto_delete_orphans` | boolean — delete orphaned `.st` files without asking | `false` |
+| `trace_memory_mb` | integer — the most controller memory one `plc trace` may ask for | `256` |
 
 A key cdsint does not know, a wrong type, a word `plc` does not recognise, or
 broken JSON stops the whole command with the table in the message. Nothing is
@@ -130,8 +131,8 @@ cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-di
 
 `plc download` is the only command that changes a machine, and it has two gates in
 front of it. **The project has to allow it**: the `plc` key in the settings file
-lists `connect`, `download`, or both, and a command that is not listed is exit 5
-with the file, the current list and what to add named in the message. No flag
+lists any of `connect`, `download` and `trace`, and a command that is not listed
+is exit 5 with the file, the current list and what to add named in the message. No flag
 answers that one — ask the user to add the word. **And the call has to be
 confirmed**: `plc download` takes `-y`, exactly as `import` does.
 
@@ -151,11 +152,41 @@ Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
 `--gateway IP [--port N]` overrides the project's own gateway settings; without it
 the project's are left alone.
 
+`plc trace` records variables from a controller that is at `MATCH`, without
+downloading anything. It needs `trace` in the `plc` list, `--gateway` (it is
+exit 2 without one) and a job file, and takes no `-y`. Write `trace.json` as
+`{"task": "MainTask", "variables": ["PRG_X.var"], "duration_s": 3, "out": "runs/first"}`,
+then:
+
+```
+cdsint plc trace --project C:\p\line.project --install 3.5.21.40 --gateway 192.168.1.5 --job trace.json
+```
+
+A wrong job file is exit 2 before any IDE starts, and the refusal lists every
+field the job may hold with its default. The run is exit 1 when samples are
+missing (`data.variables[].complete`, `gaps`); the files named in `data.files`
+are written either way. `--timeout` bounds the work around the recording, and
+`duration_s` is added to it.
+
+Two optional job fields, never together. `"trigger": {"variable": "GVL.cnt",
+"edge": "rising", "level": 5000, "post_samples": 2000}` (a numeric variable;
+edge `rising`, `falling` or `both`) stops the trace by itself after the event;
+`duration_s` is then the longest wait, a trigger that never finishes is exit 1
+with the files written, and `data.trigger.reached` says whether it fired.
+`"record_condition": "GVL.xEnable"` (one BOOL variable, no expression) keeps
+only the cycles where it is TRUE; completeness is then not judged
+(`data.complete` is `null`) and `min_complete`/`max_gap_periods` are refused.
+
+The controller's ring holds the whole recording, and a ring estimated over
+`trace_memory_mb` is refused before download (`data.buffer.controller_bytes`).
+Do not raise that key without the user's word: a controller given more than it
+has stops its application.
+
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
-itself is wrong — flags that do not go together, or no single live IDE matched
-— so change what you typed rather than running it again, `3` timed out with no
+itself is wrong — flags that do not go together, a flag or job file `plc trace`
+needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
 report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`

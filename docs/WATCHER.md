@@ -115,7 +115,7 @@ file has the same name and lives in `result\`.
 | `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
-| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: it runs inside an IDE somebody is using, and logging in to a controller would take that person's online session away (SPEC D8). These two commands exist only in the `--project` form |
+| `plc connect`, `plc download`, `plc trace` | — | The watcher always refuses, with an error that states the reason: it runs inside an IDE somebody is using, and logging in to a controller would take that person's online session away (SPEC D8). These three commands exist only in the `--project` form |
 
 ## 5. What one tick does
 

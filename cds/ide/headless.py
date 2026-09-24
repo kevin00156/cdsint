@@ -21,7 +21,9 @@ it reads -y and never writes it anywhere (SPEC 4.2).
 Nothing here waits: no sleep, no system.delay(), no timer (SPEC D5). The
 script opens, runs, writes the report and returns, and the process ends
 because there is nothing left holding it. Holding a headless IDE open for a
-watcher is a different job and lives in tools/headless_watch.py.
+watcher is a different job and lives in tools/headless_watch.py. The one
+command that has to wait, `plc trace`, is handed the wait as a function
+(cds/ide/hold.py) and calls it itself.
 
 IronPython 2.7: `system`, `projects` and the enum types come from the
 caller's globals, and only the standard library is available.
@@ -44,7 +46,7 @@ del _ROOT
 from cds.core import commands, ipc   # noqa: E402
 from cds.core.exits import EXIT_FAILED, EXIT_OK  # noqa: E402
 from cds.core.text import as_text  # noqa: E402
-from cds.ide import entries, project  # noqa: E402
+from cds.ide import entries, hold, project  # noqa: E402
 
 JOB_ENV = "CDSINT_HEADLESS_JOB"
 
@@ -133,7 +135,11 @@ def run_commands(ide_globals, wanted, sync_dir=None):
     cds/ide/silent.py already puts into the body's namespace (SPEC 4.2). Only
     one place fans it out, so `verify`'s four steps cannot end up disagreeing
     about which folder this run means.
+
+    The hold is lent here, where commands are pressed in a headless run and
+    nowhere else, so the watcher's bodies never find one (SPEC D5).
     """
+    hold.lend(ide_globals)
     results = []
     for step in wanted:
         args = dict(step.get("args") or {})

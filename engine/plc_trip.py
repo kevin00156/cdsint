@@ -215,15 +215,26 @@ class Trip(object):
         has no such file. It still fails the command, because "cannot tell"
         must not read the same as "matches".
         """
-        local = plc_crc.forget(os.path.join(self.workspace(),
-                                            plc_crc.PLC_CRC_NAME))
-        try:
-            self.device.upload_file(plc_crc.REMOTE_CRC, local, True)
-        except Exception as exc:
-            self.note("%s could not be fetched: %s"
-                      % (plc_crc.REMOTE_CRC, safe_str(exc)))
+        local, problem = self.pull(plc_crc.REMOTE_CRC, plc_crc.PLC_CRC_NAME)
+        if problem:
+            self.note(problem)
             return None
         return plc_crc.crc_field(plc_crc.read_bytes(local))
+
+    def pull(self, remote, name):
+        """Fetch one controller file into the workspace as `name`.
+
+        (local path, None), or (None, why it could not be fetched). The old
+        copy is removed first, so a call that returns without writing reads
+        as "nothing", not as the last run's file.
+        """
+        local = plc_crc.forget(os.path.join(self.workspace(), name))
+        try:
+            self.device.upload_file(remote, local, True)
+        except Exception as exc:
+            return None, "%s could not be fetched: %s" % (remote,
+                                                          safe_str(exc))
+        return local, None
 
     def pull_source_archive(self):
         """The source archive the controller holds, when it holds one.
@@ -245,7 +256,7 @@ class Trip(object):
             # reading could be wrong.
             self.note("no source archive to fetch: nothing has been source-"
                       "downloaded to this controller (the IDE said: %s)"
-                      % _one_line(safe_str(exc)))
+                      % one_line(safe_str(exc)))
             return None
         return target if os.path.isfile(target) else None
 
@@ -281,6 +292,16 @@ class Trip(object):
         the verdict, and a caller that reads only the exit code is exactly
         the caller SPEC 6.6 has in mind.
         """
+        answer = self.judge_crc()
+        return self.result(answer == plc_crc.MATCH,
+                           plc_crc.verdict_line(self.action, self.found))
+
+    def judge_crc(self):
+        """Hold the controller's CRC against this copy's record. The answer.
+
+        Also fills in `crc`, `why` and `recorded`, which is what a reader of
+        the report audits the answer by.
+        """
         path = plc_crc.record_path(self.project_path())
         records = plc_crc.read_records(path)
         self.found["recorded"] = records.get(self.found["controller"])
@@ -288,8 +309,7 @@ class Trip(object):
                                     self.found["plc_crc"])
         self.found["crc"] = answer
         self.found["why"] = why
-        return self.result(answer == plc_crc.MATCH,
-                           plc_crc.verdict_line(self.action, self.found))
+        return answer
 
     def failed(self, problem):
         """A trip that never got as far as a comparison."""
@@ -299,7 +319,15 @@ class Trip(object):
         return entry.result(
             ok, summary, action=self.action, notes=list(self.notes),
             workspace=self._workspace, failed_objects=unhandled.names(),
-            **self.found)
+            **self.reported())
+
+    def reported(self):
+        """What this command's report carries of what it found. All of it.
+
+        engine/plc_trace.py narrows it: the trace report has a shape of its
+        own (SPEC 6.8), and the CRC bookkeeping it did on the way is not in it.
+        """
+        return self.found
 
     def project_path(self):
         """This run's project file on disk, or None when it was never saved."""
@@ -316,6 +344,15 @@ class Trip(object):
         return self._workspace
 
 
-def _one_line(text):
+def first_problem(steps):
+    """Run steps until one reports a problem. That problem, or None."""
+    for step in steps:
+        problem = step()
+        if problem:
+            return problem
+    return None
+
+
+def one_line(text):
     """One line of an exception's words: these arrive with a CRLF inside."""
     return " ".join(safe_str(text).split())

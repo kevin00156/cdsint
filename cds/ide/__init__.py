@@ -7,6 +7,7 @@
     entries     which engine body each command presses, and its result record
     permit      whether this project allows a PLC command, and the refusal
     silent      running an engine body with nobody there to click its dialogs
+    hold        the one wait a --noUI run may do, for plc trace's recording
     outcome     what one such run hands back
     tee         watching its stdout go past and keeping the last of it
     project     asking the IDE what it has open

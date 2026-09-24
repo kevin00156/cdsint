@@ -29,10 +29,10 @@ TEXT_TYPES = tuple(set([type(u""), type("")]))
 TEXT = "a string"
 FLAG = "true or false"
 COUNT = "a whole number"
-ACTIONS = "a list of the words connect and download"
-
-# The only two words the `plc` list recognises (SPEC 6.5).
-PLC_ACTIONS = ("connect", "download")
+# The only words the `plc` list recognises (SPEC 6.5), one per plc command
+# that talks to a controller.
+PLC_ACTIONS = ("connect", "download", "trace")
+ACTIONS = "a list of the words " + ", ".join(PLC_ACTIONS)
 
 # name, kind, default, what it is for. `sync_folder` is the one setting with
 # no default -- there is no sensible guess for where somebody's files go, so
@@ -56,6 +56,8 @@ SCHEMA = (
     ("save_after_import", FLAG, True, "save the project after an import"),
     ("sync_folder", TEXT, NO_DEFAULT,
      "where the .st files live; './...' is relative to the project file"),
+    ("trace_memory_mb", COUNT, 256,
+     "the most controller memory one plc trace may ask for (SPEC 6.8)"),
 )
 
 KINDS = dict((name, kind) for name, kind, _d, _m in SCHEMA)
@@ -231,7 +233,7 @@ def _actions(path, key, value):
         if word.strip().lower() not in PLC_ACTIONS:
             raise Invalid(_refusal(
                 path, "%s is not one of %s, so plc %s allows nothing"
-                % (json.dumps(word), " and ".join(PLC_ACTIONS),
+                % (json.dumps(word), ", ".join(PLC_ACTIONS),
                    json.dumps(value))))
     return [word.strip().lower() for word in value]
 

@@ -452,6 +452,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `backup_retention_count` | integer | how many backups to keep | 10 |
 | `save_after_import`, `save_after_export` | boolean | save after a sync | true |
 | `auto_delete_orphans` | boolean | delete orphans on disk automatically on export | false |
+| `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for, see 6.8 | 256 |
 
 The one function that reads the file is the only validation: an unknown key, a
 wrong type, an unrecognised word in `plc`, broken JSON, and the whole command
@@ -708,10 +709,11 @@ Every other command is outside permission control.
 ### 6.6 PLC connection and download
 
 Moved from the probe, placed in the engine next to `codesys_online.py` (D12),
-offered only in the `--project` form (D8). Split into four files:
-`entry_plc.py` is the front for the two commands, `plc_trip.py` the steps of
-one run, `plc_link.py` the part that connects to the controller, and
-`plc_crc.py` the verdict itself (pure bytes, paths and JSON; no IDE).
+offered only in the `--project` form (D8). `entry_plc.py` is the front for
+the three `plc` commands, `plc_trip.py` the steps of one run, `plc_link.py`
+the part that connects to the controller, and `plc_crc.py` the verdict itself
+(pure bytes, paths and JSON; no IDE). The trace command adds its own steps on
+top of the trip in `plc_trace.py` (6.8).
 
 - `connect`: set `online.auth_fallback_modes` to `CredentialSourceKind.None`
   to switch off the credential dialog (on ScriptEngine 4.2.0.0 it is, by
@@ -832,13 +834,27 @@ measurements behind every rule here are in `docs/trace-research.md`.
    exit 2 unless `--gateway` is given (6.6).
 2. Pull `Application.crc` and compare it with this working copy's record, as
    `connect` does (6.6). Anything but `MATCH` is exit 1, and the message
-   points at `plc download -y`.
+   points at `plc download -y`. Then check that the IDE will agree, because
+   `MATCH` alone does not stop a `Keep` login from downloading: pull
+   `Application.app` and compare the 32 bytes after its application name
+   (the code and data identities the controller logs for every download)
+   with the `<project>.<device>.<application>.<guid>.bootinfo_guids` file the
+   IDE wrote beside the project on the download. The IDE decides what the
+   controller runs from that file and the `.compileinfo` beside it; when they
+   are missing, measured on the bench, a `Keep` login downloads the whole
+   application without asking. A missing `.bootinfo_guids` or `.compileinfo`,
+   more than one candidate, an `.app` header in a layout cdsint does not
+   recognise, or identities that differ, is exit 1 pointing at
+   `plc download -y`. This also catches a working copy downloaded to two
+   controllers: the record is per controller, those files are not.
 3. Open the project. Refuse if it already has an object named
    `cdsint_trace` anywhere; it is not renamed around, because the overwrite
    prompt in D7 is only safe to answer while that name is cdsint's alone.
    Refuse if the trace plug-in lacks the private member that sets the buffers
    (below). Create `cdsint_trace` under the application, in memory only, and
-   set its variables, task, resolution, sampling rate and both buffers.
+   set its variables, task, resolution, sampling rate and, when the job has
+   them, its trigger or record condition. The buffers are set after step 5,
+   once the variables' types are known.
 4. Log in with `OnlineChangeOption.Keep`. `Keep` means "log in and change
    nothing"; the application is never downloaded. A refusal because another
    client is already logged in to the controller says exactly that, not
@@ -847,28 +863,45 @@ measurements behind every rule here are in `docs/trace-research.md`.
    one that fails is listed by name in `data.failed_objects` (D13), and the run
    stops without downloading the trace. The IDE and the build check none of
    these names; the controller is the only thing that does, and `start()`
-   failing on a bad name names nothing.
+   failing on a bad name names nothing. The types read here size the
+   controller's ring, which is checked against `trace_memory_mb` now, before
+   anything reaches the controller ("The controller's memory", below).
 6. Refuse if the application is not running. Starting it is a change to the
    controller's state the caller did not ask for.
 7. Download the trace (the trace editor's own download, not an application
    download; D7 covers its overwrite prompt), start it, wait `duration_s`
    (D5 says how the wait is allowed), stop it, and save each requested format.
-8. Log out and close the project without saving. The project file is never
-   written; the trace object never reaches disk.
+8. Log out. The project is never saved (and, as in every headless run, never
+   closed, 6.4), so the project file is never written and the trace object
+   never reaches disk.
 9. Check completeness from the saved samples and write the report.
 
 **The buffers.** The controller keeps a ring of samples that the IDE empties
-only now and then, 80 to 180 ms apart as measured. With the default ring of
-100 entries a task faster than about 4 ms loses samples between fetches, so
-the ring is sized from the task period to hold two seconds of samples, and the
-IDE's own per-variable buffer from the expected sample count of the whole
-recording, doubled. Neither is a job field. The script API exposes neither
-buffer; they are set through the private `PerformWithWriteableCopy` of the
-trace plug-in's script object. Before it is used, its presence is checked, and
-an IDE without it is refused rather than left to record with 100 entries,
-because a trace that silently loses 70% of its samples is the failure this
-command exists to prevent. It is the only non-public member cdsint depends on;
-section 7 records which IDEs have it.
+whenever its main thread is free: every 80 to 180 ms on an idle machine, and
+not at all while the IDE is held up, which on a busy machine was measured at
+13 s in one stretch. Whatever the ring cannot hold until the IDE comes back is
+lost. So the ring holds the whole recording (the expected sample count of
+`duration_s`), and so does the IDE's own per-variable buffer, doubled; then no
+stall shorter than the recording loses anything. Neither is a job field. The
+script API exposes neither buffer; they are set through the private
+`PerformWithWriteableCopy` of the trace plug-in's script object. Before it is
+used, its presence is checked, and an IDE without it is refused rather than
+left to record with 100 entries, because a trace that silently loses 70% of its
+samples is the failure this command exists to prevent. It is the only
+non-public member cdsint depends on; section 7 records which IDEs have it.
+
+**The controller's memory.** The runtime allocates the whole ring when the
+trace is downloaded and keeps it until the next `plc trace` replaces it, and
+it does not refuse a ring it cannot hold: measured on CODESYS Control for
+Linux SL, it kept allocating until the operating system killed it, stopping
+the application. So the command bounds the ring itself. Its cost is estimated
+as entries × (12 + the size of each variable; 12 because the bench measured 22.5 bytes an entry for 12 bytes of values), the sizes coming from the types
+`read_value()` reports (step 5); a variable whose type has no known size is
+refused by name. An estimate over the settings file's `trace_memory_mb` (4.4)
+refuses the run before the trace is downloaded, naming the estimate, the limit
+and the key. The default is small on purpose: cdsint does not know the
+controller, and a limit too high for it stops a machine, while one too low
+only asks for a line in the settings file.
 
 **The job file.** JSON; an unknown key, a missing required key or a wrong type
 refuses the run before any IDE starts.
@@ -884,19 +917,51 @@ refuses the run before any IDE starts.
 | `every_n_cycles` | integer | no, 1 | sample every Nth cycle |
 | `min_complete` | number | no, 0.99 | completeness below which the run fails |
 | `max_gap_periods` | integer | no, 20 | a gap longer than this many sampling periods fails the run |
+| `trigger` | object | no | start keeping samples around an event instead of for a fixed time; below |
+| `record_condition` | string | no | a BOOL variable; a sample is recorded only in the cycles where it is TRUE; below |
 
-A trigger and a record condition are not fields until a run shows they take
-effect under `--noUI`.
+**`trigger`** has four keys, all required: `variable` (a path, as in
+`variables`, of a numeric type), `edge` (`"rising"`, `"falling"` or `"both"`),
+`level` (a number, converted by the IDE to the variable's type) and
+`post_samples` (an integer of at least 1). The trace records from its start,
+fires when `variable` crosses `level` on `edge`, keeps `post_samples` more
+samples, and stops by itself. `duration_s` becomes the longest the run waits
+for that: a trace that has not stopped by then is a run whose trigger never
+came, exit 1, with whatever was recorded still written. Without a trigger
+the opposite holds: a trace that is no longer running when `duration_s` ends
+stopped early, which its timestamps cannot show, and that is exit 1 too. A BOOL trigger
+variable is refused: how the IDE takes a boolean level is not known
+(docs/trace-research.md 4), and only a rising edge on a counter has been
+measured.
+
+**`record_condition`** is the path of one BOOL variable. An expression is
+refused by the IDE at `start()` without saying why, so it is refused here
+first: the condition is read in step 5 like every variable, and anything that
+does not read back as a BOOL is refused by name. With a condition the samples
+are no longer one per cycle, so completeness cannot be judged from them:
+`complete` is `null` in the report, `min_complete` and `max_gap_periods` may
+not be given, and the run's verdict is only that it recorded and saved.
+Nothing is lost for the reason completeness exists to catch, because the
+controller's ring holds the whole recording ("The buffers", above).
+
+`trigger` and `record_condition` together are refused: they were only
+measured apart.
 
 **Completeness.** Per variable, over the span the samples cover: the number
 of samples against the number the sampling period (task period × `every_n_cycles`)
 says that span should hold. Every interval longer than 1.5 periods is listed as
-a gap. The two limits exist to tell two things apart that timestamps alone
-cannot: a task that started late on a non-realtime controller leaves a gap of
-a few periods and loses nothing, while a buffer that overflowed leaves one of
-80 periods or more. A run below `min_complete` or with a gap over
-`max_gap_periods` exits 1, and its files are still written, because the
-samples it did get are the evidence for why.
+a gap. A run below `min_complete` or with a gap over `max_gap_periods` exits
+1, and its files are still written, because the samples it did get are the
+evidence for why. Since the controller's ring holds the whole recording, a
+stalled IDE cannot cause a gap any more; what is left is the controller
+itself not running cycles, which the bench showed with a per-cycle counter
+that stepped by exactly one across every gap. That is worth failing on,
+because a controller skipping cycles is a fact about the machine the reader
+of a trace needs, and on a realtime controller it is rare. The message says
+so, and names the two ways on: loosen the job's limits where skipped cycles
+are expected (a soft PLC in a VM), or look at the task's cycle time and the
+controller's load where they are not. Lengthening the task's cycle is not
+suggested by default: it changes the control program, not the recording.
 
 **Exit codes** keep the meanings of 4.3: 0 recorded and within the job's
 limits; 1 anything else that ran (no `MATCH`, another client logged in, a
@@ -916,7 +981,8 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
   "period_us": 4000,
   "resolution": "us",
   "duration_s": 3.0,
-  "buffer": {"controller_entries": 500, "ide_per_variable": 1500},
+  "buffer": {"controller_entries": 750, "controller_bytes": 18000,
+             "ide_per_variable": 1500},
   "files": {"trace": "out.trace", "csv": "out.csv"},
   "variables": [
     {"name": "PRG_X.var", "type": "INT", "samples": 745, "expected": 745,
@@ -930,7 +996,9 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
 
 `gaps` are `[from, to]` pairs and `longest_interval` a single interval, both
 in the file's timestamp unit, which `resolution` names. `type` is what
-`read_value()` reported.
+`read_value()` reported. A run with a `trigger` also carries `"trigger":
+{"reached": true}` (or `false`), from the editor's own trigger state; its
+samples are continuous, so completeness is judged as for any other run.
 
 **Where the code lives** (D12). Everything that talks to the IDE or the
 controller is in `engine/`, next to the other `plc` modules. Reading the saved

@@ -10,7 +10,7 @@ running a command means — so that part lives here rather than in both, and
 The bodies are engine/entry_*.py, reached by path and by sys.modules name so
 this file never imports the engine, which is the direction SPEC D12 forbids.
 
-The plc commands are the odd pair. They reach the same engine bodies the same
+The plc commands are the odd ones. They reach the same engine bodies the same
 way, but only one of the two callers may press them and only when the
 project's settings file says so, so both gates — cds/ide/permit.py and
 WATCHER_REFUSES below — sit here, in front of the press.
@@ -30,8 +30,8 @@ from cds.ide.outcome import NeedsInput, Outcome
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Command -> the entry body it presses, and the function that is its button.
-# These are the bodies in engine/, not the stubs the IDE menu scans. The two
-# plc commands share a file and differ by which function is pressed, so the
+# These are the bodies in engine/, not the stubs the IDE menu scans. The plc
+# commands share a file and differ by which function is pressed, so the
 # action needs no dispatcher of its own.
 SCRIPTS = {
     "export": ("entry_export.py", "main"),
@@ -41,6 +41,7 @@ SCRIPTS = {
     "build": ("entry_build.py", "main"),
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),
+    "plc trace": ("entry_plc.py", "record"),
 }
 
 # What the watcher will not run, whoever asks. Logging into a PLC takes the

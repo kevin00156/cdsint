@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from cds.core import ipc
+from cds.core import ipc, trace_job
 from cds.ide import headless as ide_side
 from cdsint import headless as cli_side
 from cds.core.exits import EXIT_HEADLESS
@@ -134,3 +134,29 @@ def test_each_result_says_which_ide_ran_it(machine, monkeypatch):
     results = started.run([("export", {})])
     assert results[0]["ide"] == "CODESYS.exe"
     assert results[0]["report_path"] == started.report_path
+
+
+# --- the deadline --------------------------------------------------------
+
+def test_a_trace_step_waits_its_duration_on_top_of_the_timeout(machine,
+                                                               monkeypatch):
+    # --timeout bounds the trace's own work; the recording itself is time the
+    # caller asked for, so a ten-minute trace must not be killed at two
+    # (SPEC 6.8).
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    job, _problem = trace_job.normalise(
+        {"task": "MainTask", "variables": ["PRG_X.var"], "duration_s": 600,
+         "out": "run1"})
+    plain = started.deadline([("plc connect", {"job": None})])
+    assert started.deadline([("plc trace", {"job": job})]) == plain + 600
+    started.run([("plc trace", {"job": job})])
+    assert launches[0]["process"].waited == plain + 600
+
+
+def test_every_other_step_keeps_the_timeout_it_had(machine, monkeypatch):
+    started = make(machine, monkeypatch)
+    one = started.deadline([("export", {})])
+    assert started.deadline([("import", {}), ("export", {})]) == \
+        one + started.timeout

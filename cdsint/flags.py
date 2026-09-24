@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""What you may type: one table, and the refusals that come out of it.
+"""What you may type: one table, and the parser built from it.
 
 Every fact about a subcommand is one row of COMMANDS: what it does, which of
 the two forms it has (SPEC D2), what flags it carries, and what it is called
@@ -9,17 +9,15 @@ flag builder, a branch in the argument packer — and the failure that came of
 missing one was never "unknown command", it was a flag that parsed and then
 quietly did not reach the IDE.
 
-Every refusal here is a decision somebody made once, and the message says
-which one. "unrecognized arguments" would be shorter and would send the
-reader looking for a typo they did not make. All of them are exit 2, which
-means "the command line itself is wrong" (SPEC 4.3): the caller's next move
-is to change what they typed, not to run it again.
-
-cdsint/cli.py is the other half.
+cdsint/refusals.py turns the table into the refusals argparse cannot make
+on its own; cdsint/cli.py is what becomes of a command line that passed.
 """
 from __future__ import print_function
 
 import argparse
+
+from cds.core import settings
+from cdsint import job_file
 
 # Seconds one command step may take (SPEC 4.2). The one number: the help text
 # renders it with %(default)s, and both runners take it as their default, so
@@ -45,9 +43,10 @@ def key_value(text):
 
     Checked here because here is where argparse checks every other flag, and
     a malformed one is a command line that will not run rather than a command
-    that ran and failed: argparse answers it with exit 2, like every other
-    refusal in this file (SPEC 4.3). It used to be parsed in cdsint/cli.py
-    after the parser had finished, and a Failure's exit 1 said the opposite.
+    that ran and failed: argparse answers it with exit 2, like every
+    refusal in cdsint/refusals.py (SPEC 4.3). It used to be parsed in
+    cdsint/cli.py after the parser had finished, and a Failure's exit 1 said
+    the opposite.
     """
     key, separator, value = text.partition("=")
     if not separator:
@@ -66,6 +65,7 @@ CONFIRM = "confirm"   # -y/--yes: the same flag wherever a step changes things
 NAME = "name"         # --app NAME
 NUMBER = "number"     # --port N
 PAIRS = "pairs"       # --answer KEY=VALUE, and again for the next one
+JOB = "job"           # --job FILE: the IDE side gets what the file says
 
 KINDS = {
     SWITCH: {"action": "store_true", "default": None},
@@ -74,6 +74,7 @@ KINDS = {
     NUMBER: {"type": int, "default": None, "metavar": "N"},
     PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE",
             "type": key_value},
+    JOB: {"type": job_file.read, "default": None, "metavar": "FILE"},
 }
 
 # A kind says how a flag is shaped; a flag may still name what its value is
@@ -96,18 +97,23 @@ CONFIRM_IMPORT = ("-y/--yes", CONFIRM,
 class Command(object):
     """One subcommand, and everything the command line knows about it."""
 
-    def __init__(self, summary, form, flags=(), action=None, one_form=None):
+    def __init__(self, summary, form, flags=(), action=None, one_form=None,
+                 needs=None, refuses=None):
         self.summary = summary
         self.form = form
         self.flags = tuple(flags)
         # The positional argument, when the command has one. `plc` is the
-        # only one: its two halves are separate rows in cds/ide/entries.py
-        # because one is read-only and one writes to a machine, and a table
-        # that tells them apart needs no dispatcher to read the difference
-        # back out (SPEC 4.2).
+        # only one: its actions are separate rows in cds/ide/entries.py
+        # because each has its own word in the plc list and only one writes
+        # to a machine, and a table that tells them apart needs no dispatcher
+        # to read the difference back out (SPEC 4.2).
         self.action = action
         # Why this command has only one form, in the words the refusal uses.
         self.one_form = one_form
+        # {action: {dest: why}}: the flags one action cannot run without,
+        # and the ones it will not take, each with the sentence that refuses.
+        self.needs = needs or {}
+        self.refuses = refuses or {}
 
     def dests(self):
         """What argparse will call each of this command's flags."""
@@ -132,6 +138,8 @@ class Command(object):
             named.update(PROJECT_ONLY)
         return named
 
+
+ONLY_TRACE = "Only plc trace reads a job file."
 
 COMMANDS = {
     "installs": Command(
@@ -163,17 +171,28 @@ COMMANDS = {
                 "confirm the import step; without it verify only looks and "
                 "says what the import would have done")]),
     "plc": Command(
-        "talk to the controller: read what it runs, or download to it",
+        "talk to the controller: read what it runs, download to it, or "
+        "record a trace from it",
         HEADLESS,
-        action=("connect", "download"),
+        # The words the settings file's plc list allows are the actions.
+        action=settings.PLC_ACTIONS,
         flags=[("-y/--yes", CONFIRM,
-                "confirm the download; connect never needs it"),
+                "confirm the download; connect and trace never need it"),
                ("--gateway", NAME,
                 "reach the controller through this address instead of "
                 "whatever the project already holds", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
-                "CODESYS device port is used")],
+                "CODESYS device port is used"),
+               ("--job", JOB, "the trace job file; only plc trace takes it")],
+        needs={"trace": {
+            "gateway": "A controller found by the project's device name can "
+                       "be the wrong one, and a trace recorded from the wrong "
+                       "controller looks exactly like a right one (SPEC 6.6).",
+            "job": "The job file says what to record and for how long "
+                   "(SPEC 6.8)."}},
+        refuses={
+            "connect": {"job": ONLY_TRACE}, "download": {"job": ONLY_TRACE}},
         one_form="The watcher runs inside an IDE somebody is using, and "
                  "logging into a controller would take their online session "
                  "away from them (SPEC D8)."),
@@ -182,8 +201,8 @@ COMMANDS = {
 # Flags that only mean something when we start the IDE ourselves. --answer is
 # among them because the prompts it answers are the IDE's own, and in the
 # --target form there is a person sitting in front of that IDE to answer them.
-# One list, so that what the parser offers and what check() refuses without a
-# --project cannot be two different sets of six names.
+# One list, so that what the parser offers and what refusals.check refuses
+# without a --project cannot be two different sets of six names.
 PROJECT_FLAGS = (
     ("--install", NAME, "which IDE to start; `cdsint installs` lists them"),
     ("--profile", NAME,
@@ -245,14 +264,16 @@ def _build_one(sub, name, row):
     if row.action is not None:
         command.add_argument("action", choices=row.action,
                              help="connect reads what the controller holds; "
-                                  "download writes this project to it")
+                                  "download writes this project to it; trace "
+                                  "records what a job file names")
     command.add_argument("--timeout", type=float,
                          default=DEFAULT_TIMEOUT_S,
                          help="seconds one command step may take (default "
                               "%(default)g); also how long a busy IDE counts "
                               "as alive. With --project the process deadline "
                               "is derived from it, so a four-step verify "
-                              "waits longer than this number")
+                              "waits longer than this number, and a plc trace "
+                              "adds its job's duration_s")
     command.add_argument("--json", action="store_true",
                          help="print the raw record instead of a summary")
     if row.form != NO_IDE:
@@ -310,49 +331,3 @@ def wire_name(ns):
     if COMMANDS[ns.command].action is None:
         return ns.command
     return "%s %s" % (ns.command, ns.action)
-
-
-def check(parser, ns):
-    """Every refusal that belongs to the command line, in one call.
-
-    All of them go through parser.error, so all of them are exit 2 (SPEC
-    4.3). A Failure's exit 1 would say "the command ran and did not work",
-    and nothing has run: the flags do not go together.
-    """
-    row = COMMANDS[ns.command]
-    _one_form_only(parser, ns, row)
-    _project_flags_need_a_project(parser, ns, row)
-
-
-def _one_form_only(parser, ns, row):
-    """A command with a single form, asked for the other one (SPEC D8).
-
-    argparse could simply not offer --target here, but then asking for it
-    reads as a typo. Which form a command has and why is a decision, so it
-    gets a sentence, and the sentence is the row's.
-    """
-    if row.form != HEADLESS:
-        return
-    if ns.target:
-        parser.error("%s has no --target form; it starts an IDE of its own, "
-                     "so it wants --project P --install I. %s"
-                     % (ns.command, row.one_form))
-    if not ns.project:
-        parser.error("%s needs --project P --install I. It is the only "
-                     "command with no --target form. %s"
-                     % (ns.command, row.one_form))
-
-
-def _project_flags_need_a_project(parser, ns, row):
-    """A --project flag with no --project is a caller who thinks it is headless.
-
-    Ignoring it would run the command against somebody's open IDE while the
-    caller believed it was driving one of its own.
-    """
-    if row.form == NO_IDE or ns.project:
-        return
-    said = vars(ns)
-    given = [name for name in PROJECT_ONLY if said[name]]
-    if given:
-        parser.error("--%s only works with --project"
-                     % given[0].replace("_", "-"))

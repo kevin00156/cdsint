@@ -61,12 +61,14 @@ CRC_FIELD = (4, 8)
 
 REMOTE_APP_DIR = "PlcLogic/Application"
 REMOTE_CRC = REMOTE_APP_DIR + "/Application.crc"
+REMOTE_APP = REMOTE_APP_DIR + "/Application.app"
 
 # What a run pulls off the controller, under names of its own so a reader who
 # goes and looks in the workspace knows which side each file came from. Each
 # run overwrites the last rather than leaving a pile nobody reads, and no code
 # here ever deletes a directory it did not create.
 PLC_CRC_NAME = "plc_Application.crc"
+PLC_APP_NAME = "plc_Application.app"
 SOURCE_ARCHIVE_NAME = "plc_source.projectarchive"
 
 # The record lives beside the project rather than in a machine-wide store,

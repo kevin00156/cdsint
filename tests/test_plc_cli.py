@@ -133,7 +133,9 @@ def test_the_project_form_no_longer_has_to_say_where_the_st_files_are():
 def test_the_watcher_will_not_run_a_plc_command():
     assert "plc connect" not in entries.COMMANDS
     assert "plc download" not in entries.COMMANDS
-    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download"}
+    assert "plc trace" not in entries.COMMANDS
+    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download",
+                                            "plc trace"}
 
 
 def test_the_watcher_refuses_by_name_rather_than_pretending_not_to_know():
@@ -143,9 +145,10 @@ def test_the_watcher_refuses_by_name_rather_than_pretending_not_to_know():
         assert "--project" in reason and "D8" in reason
 
 
-def test_the_two_actions_reach_two_different_functions():
+def test_each_action_reaches_its_own_function():
     assert entries.SCRIPTS["plc connect"] == ("entry_plc.py", "connect")
     assert entries.SCRIPTS["plc download"] == ("entry_plc.py", "download")
+    assert entries.SCRIPTS["plc trace"] == ("entry_plc.py", "record")
 
 
 def test_the_cli_spells_the_action_into_the_command_name():
@@ -154,7 +157,7 @@ def test_the_cli_spells_the_action_into_the_command_name():
          "--sync-dir", "S"])
     assert flags.wire_name(parsed) == "plc download"
     assert flags.command_args(parsed) == {"yes": True, "gateway": None,
-                                        "port": None}
+                                        "port": None, "job": None}
 
 
 def test_the_gateway_flags_reach_the_body():
@@ -162,7 +165,7 @@ def test_the_gateway_flags_reach_the_body():
         ["plc", "connect", "--project", "P", "--install", "I", "--sync-dir",
          "S", "--gateway", "192.168.1.5", "--port", "11740"])
     assert flags.command_args(parsed) == {"yes": None, "gateway": "192.168.1.5",
-                                        "port": 11740}
+                                        "port": 11740, "job": None}
 
 
 # --------------------------------------------------------------------------

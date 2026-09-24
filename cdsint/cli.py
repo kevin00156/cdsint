@@ -13,12 +13,16 @@ because CODESYS will not open a project twice, so no run could want both.
     cdsint verify  -y --project C:\\p\\line.project --install 3.5.21.40 \\
                    --sync-dir C:\\p\\exported
     cdsint plc connect --project C:\\p\\line.project --install 3.5.21.40
+    cdsint plc trace --project C:\\p\\line.project --install 3.5.21.40 \\
+                     --gateway 192.168.1.5 --job C:\\p\\trace.json
 
-The work is elsewhere: cdsint/flags.py is the shape of the command line,
-cdsint/target.py and cdsint/headless.py are the two forms, cdsint/verify.py
-is the round trip, cdsint/report.py does the printing, cds/core/exits.py
-holds SPEC 4.3's exit codes and cdsint/exits.py the exception that carries
-one. This file is what becomes of a parsed command.
+The work is elsewhere: cdsint/flags.py is the shape of the command line
+and cdsint/refusals.py what it will not run, cdsint/job_file.py reads a
+trace job before anything starts, cdsint/target.py and cdsint/headless.py
+are the two forms, cdsint/verify.py is the round trip, cdsint/report.py does
+the printing, cds/core/exits.py holds SPEC 4.3's exit codes and
+cdsint/exits.py the exception that carries one. This file is what becomes of
+a parsed command.
 """
 from __future__ import print_function
 
@@ -33,7 +37,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cds.core import ipc  # noqa: E402
 from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK  # noqa: E402
-from cdsint import flags, headless, installs, report, target, verify  # noqa: E402
+from cdsint import (  # noqa: E402
+    flags, headless, installs, refusals, report, target, verify)
 from cdsint.exits import Failure  # noqa: E402
 
 
@@ -140,7 +145,7 @@ ABOUT_THIS_MACHINE = {"installs": run_installs, "list": run_list}
 def main(argv=None):
     parser = flags.build_parser()
     ns = parser.parse_args(argv)
-    flags.check(parser, ns)
+    refusals.check(parser, ns)
     try:
         if flags.COMMANDS[ns.command].form == flags.NO_IDE:
             return ABOUT_THIS_MACHINE[ns.command](ns)

@@ -177,11 +177,14 @@ Every command that touches a project takes one of two forms, and never both:
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
 | `plc connect [--gateway IP --port N]` | — | yes | is the controller still holding the last download from here |
 | `plc download -y` | — | yes | download to the controller, read the CRC back, write it down |
+| `plc trace --gateway IP --job FILE` | — | yes | record the variables a job file names, without downloading anything |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
 derived from it — a launch allowance, plus that many seconds per step, plus a
 shutdown allowance — so a four-step `verify` waits well past 120 seconds.
+A `plc trace` adds its job's `duration_s` on top: `--timeout` bounds the
+work around the recording, not the recording itself.
 `--json` prints the raw record. A `--project` run's record carries four
 fields the other form has no use for: `ide`, `sync_dir`, `report_path`, and
 `notes` — what the launcher had to say about the run rather than about the
@@ -260,10 +263,11 @@ one with a permission layer in front of it, and the layer has two parts that
 cannot stand in for each other.
 
 - **The project has to allow it.** The `plc` key in the project's settings
-  file is a list, and it recognises exactly `connect` and `download`:
+  file is a list, and it recognises exactly `connect`, `download` and
+  `trace`:
 
   ```json
-  { "plc": ["connect", "download"] }
+  { "plc": ["connect", "download", "trace"] }
   ```
 
   A command that is not in the list comes back as exit 5, and the message
@@ -299,13 +303,96 @@ Delta controller has been tried, and the two ways of switching the credential
 dialog off have only been checked on ScriptEngine 4.2.0.0 — on a version with
 neither, `connect` refuses rather than hanging.
 
+### Recording a trace: `plc trace`
+
+```
+cdsint plc trace --project C:\p\line.project --install 3.5.21.40 --gateway 192.168.1.5 --job C:\p\trace.json
+```
+
+records the variables a job file names, for as long as it says, from a
+controller that is still holding this working copy's last download (`MATCH`,
+as above; anything else stops the run and points at `plc download -y`). It
+logs in without downloading, never starts or stops the application and never
+writes a variable, so it needs no `-y` (one given is ignored); the `trace` word in
+the `plc` list is its whole gate. `--gateway` is compulsory: a controller
+found by the project's device name can be the wrong one, and a trace from the
+wrong controller looks exactly like a right one.
+
+The job file is JSON:
+
+```json
+{
+  "task": "MainTask",
+  "variables": ["PRG_X.var", "GVL.speed"],
+  "duration_s": 3,
+  "out": "runs/first"
+}
+```
+
+These are all the fields it may hold. The same table is what a refusal
+prints, and a test holds this copy to it:
+
+```
+  task             a non-empty string; required. the cyclic IEC task to sample in
+  variables        a non-empty list of distinct variable paths, without Application.; required. paths as read_value() takes them, e.g. PRG_X.var or GVL.var
+  duration_s       a number greater than 0; required. how long to record, in seconds
+  out              a non-empty string; required. output path without extension; existing files are overwritten
+  formats          a non-empty list of distinct words from trace, csv and txt; default ["trace", "csv"]. which files to save
+  resolution       either "us" or "ms"; default "us". timestamp unit in the files
+  every_n_cycles   a whole number of at least 1; default 1. sample every Nth task cycle
+  min_complete     a number from 0 to 1; default 0.99. completeness below which the run fails
+  max_gap_periods  a whole number of at least 1; default 20. a gap longer than this many sampling periods fails the run
+  trigger          an object: "variable" a path, "edge" "rising", "falling" or "both", "level" a number, "post_samples" a whole number of at least 1; optional. stop by itself post_samples after variable crosses level on edge; duration_s is then the longest wait for that
+  record_condition one variable path, without Application.; optional. a BOOL variable; record only the cycles where it is TRUE
+```
+
+`out` is relative to the directory you run `cdsint` in. An unknown field, a
+missing required one or a value of the wrong kind is exit 2 before any IDE
+starts. The run exits 1 when a variable's samples fall below `min_complete`
+or a gap is longer than `max_gap_periods`, and the files are written anyway,
+because the samples it did get are the evidence for why. Since the
+controller holds the whole recording, a missing stretch is most likely cycles
+the controller itself did not run, usually because its CPU was busy. On a
+realtime controller that is rare and worth knowing; a soft PLC in a VM or
+without a realtime kernel does it routinely, so there, loosen
+`max_gap_periods` in the job. `data.variables`
+has one row per variable with `samples`, `expected`, `complete` and `gaps`;
+`data.files` names what was written.
+
+A `trigger` records from the start, fires when its variable (a numeric one;
+a BOOL is refused) crosses `level` on the `edge`, keeps `post_samples` more
+samples and stops by itself; `duration_s` is then the longest the run waits
+for that. A trigger that has not stopped the trace by then is exit 1, with
+what was recorded still written, and `data.trigger.reached` says whether it
+fired at all:
+
+```json
+"trigger": {"variable": "GVL.udiCount", "edge": "rising", "level": 5000, "post_samples": 2000}
+```
+
+A `record_condition` names one BOOL variable, and a sample is kept only in
+the cycles where it is TRUE. Those samples are not one per cycle, so nothing
+is judged against a count: `min_complete` and `max_gap_periods` are refused
+beside it, `data.complete` is `null`, and each row's `expected`, `complete`
+and `gaps` are `null` too. `trigger` and `record_condition` together are
+refused.
+
+The controller holds the whole recording in a ring it allocates when the
+trace is downloaded, and it does not refuse a ring it cannot hold: a soft
+PLC was measured allocating until the operating system killed it. So the
+ring's cost, entries × (12 bytes + each variable's size), is estimated from
+the types the controller reports, and a run over the settings file's
+`trace_memory_mb` (default 256) is refused before anything is downloaded;
+`data.buffer.controller_bytes` is the estimate. Raise the key only for a
+controller you know has the memory.
+
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
-| 2 | the command line itself is wrong: flags that do not go together, or no single live IDE matched |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (`plc trace` without `--gateway` or `--job`), a trace job file that is wrong, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
@@ -332,7 +419,7 @@ like this is complete:
 | Key | Type | Meaning | Default |
 |---|---|---|---|
 | `sync_folder` | string | where the `.st` files live. Starting with `./` it is relative to the directory holding the `.project`; anything else is used as written | none — the first export asks |
-| `plc` | list of strings | which PLC commands this project allows; only `connect` and `download` are recognised | `[]` |
+| `plc` | list of strings | which PLC commands this project allows; only `connect`, `download` and `trace` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
 | `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | `false` |
@@ -342,6 +429,7 @@ like this is complete:
 | `save_after_import` | boolean | save the project after an import | `true` |
 | `save_after_export` | boolean | save the project after an export | `true` |
 | `auto_delete_orphans` | boolean | delete `.st` files with no object behind them, without asking | `false` |
+| `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for | `256` |
 
 **A file that is wrong stops the command.** A key cdsint does not know, a
 value of the wrong type, a word `plc` does not recognise, broken JSON — any of

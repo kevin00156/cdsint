@@ -211,7 +211,7 @@ def _show_data(data):
         if isinstance(value, dict):
             lines = ["%s %s" % (name, value[name]) for name in sorted(value)]
         elif isinstance(value, list):
-            lines = [_one_line(item) for item in value]
+            lines = [ROWS.get(key, _one_line)(item) for item in value]
         else:
             print("  %-16s %s" % (key, UNSET if value is None else value))
             continue
@@ -236,6 +236,28 @@ def _one_line(item):
     if "moved_from" in item:
         line += "  (was %s)" % item["moved_from"]
     return line
+
+
+def _traced(row):
+    """One variable a trace recorded: how much of it came back, and the gaps.
+
+    The row's own fields side by side would print the list of gaps whole,
+    and a reader deciding whether the run can be trusted wants the count
+    (SPEC 6.8 says what each field means). A row recorded under a
+    condition has no count to hold its samples against, so it prints only
+    what it has.
+    """
+    if row["complete"] is None:
+        return "%s  %s samples  longest interval %s" % (
+            row["name"], row["samples"], row["longest_interval"])
+    return "%s  %s/%s samples  complete %.4g  gaps %d" % (
+        row["name"], row["samples"], row["expected"], row["complete"],
+        len(row["gaps"]))
+
+
+# The data lists whose rows need their own words; every other list's rows go
+# through _one_line.
+ROWS = {"variables": _traced}
 
 
 def _show_needs(result):
