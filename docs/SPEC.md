@@ -84,12 +84,15 @@ just put on it. Nobody is at the keyboard for the whole run.
   whoever rewrites it will not discover in the first week what they are
   missing.
 - No static analysis, FSM diagrams, formatting, SVG conversion of
-  visualisations, or live read/write of PLC variables. Upstream has them;
-  cdsint does not chase them.
+  visualisations, writing PLC variables, or watching single PLC values live.
+  Upstream has them; cdsint does not chase them. Reading PLC variables has one
+  form: `plc trace` records the variables a job names into a file, and reads
+  each of them once beforehand only to check the name (6.8).
 - No HTTP or MCP server in the first version. The CLI's `--json` is already
   machine-readable; wrapping it as MCP is a job outside the IDE, can be added
   any time, and does not touch the command hand-off protocol (D6).
-- No online change. A download is always a full download.
+- No online change. A download is always a full download. `plc trace` logs
+  in without downloading at all (6.8); that is not an online change either.
 - No multi-user, no cross-network. The command directory sits under the local
   user's `%LOCALAPPDATA%`; whoever is logged in to this machine can issue
   commands.
@@ -151,13 +154,19 @@ into the IDE (the criterion is whether the file imports `engine`, `cds` or
 `tools/_root.py`). It looks at the two kinds of syntax node, calls and imports,
 not at text, so a comment that mentions "thread" is not a false hit.
 
-The only permitted exception to this rule is `park()` in
-`tools/headless_watch.py`, which uses `system.delay()`, and only under
-`--noUI`: with no window there is no screen to freeze, and with nothing holding
-the process up the IDE exits the instant the script returns, before the watcher
-gets a single tick. It checks `system.ui_present` before running and refuses to
-park when there is a UI, so the exception cannot leave the situation that
-justifies it. It is an acceptance tool and does not live under `cds/ide/`.
+The one permitted exception is holding a `--noUI` process open with
+`system.delay()`. With no window there is no screen to freeze, and with
+nothing holding the process up the IDE exits the instant the script returns.
+Every place that does it checks `system.ui_present` first and refuses when
+there is a UI, so the exception cannot leave the situation that justifies it,
+and every place is registered by file and by call in
+`tests/test_single_threaded_ide_side.py`, so a third one goes red. There are
+two: `park()` in `tools/headless_watch.py`, an acceptance tool that keeps a
+headless watcher alive; and the wait of `plc trace` (6.8), which records for
+`duration_s` seconds and has nothing to return to in between. That wait lives
+in `cds/ide/`, the layer D12 gives the timer to, and the engine's recording
+loop receives it as a function, so the loop itself has no waiting call in it
+and CI runs it against a fake clock.
 
 **D6 Command hand-off is a file protocol; not a named pipe, not HTTP.** The
 protocol spec is in `docs/WATCHER.md`.
@@ -177,6 +186,16 @@ only in the `--project` form, and none of them has a default, because answering
 Yes to `UpgradeProjectConfirmation` rewrites the project's storage format and an
 older IDE can never open it again. Unanswered prompts print their key to stdout
 through `LogMessageKeys`, and the message says which `--answer` to add.
+
+One IDE prompt is answered by cdsint itself, with no flag:
+`Strings.OverwriteExistingOnlineTrace`, answered OK by `plc trace` and by
+nothing else. It asks whether to delete a trace of the same name already on the
+controller, and the only name `plc trace` ever downloads is its own
+`cdsint_trace` (6.8), so the trace being deleted is the one the previous run
+left behind. Answering is not guessing for the caller; leaving it to a flag
+would make every run after the first need the same `--answer` for no
+information. The exception is by key and by command: the answer is set by the
+trace step, not by `answer_prompts`, so no other command inherits it.
 
 **D8 Only actions that touch the PLC are under permission control, in two
 layers.** The `plc` list in the settings file decides whether this project
@@ -323,6 +342,7 @@ mutually exclusive, and argparse blocks them directly.
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect [--gateway IP --port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
 | `plc download -y` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
@@ -371,7 +391,7 @@ Why `plc` commands refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc trace` without `--gateway`), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -423,7 +443,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | Key | Type | Meaning | Default |
 |---|---|---|---|
 | `sync_folder` | string | the sync folder. Starting with `./` it is relative to the directory holding the project file; otherwise used as written | none, asked on first run |
-| `plc` | list of strings | PLC authorisation; only `connect` and `download` are recognised as elements, see 6.5 | empty list |
+| `plc` | list of strings | PLC authorisation; only `connect`, `download` and `trace` are recognised as elements, see 6.5 | empty list |
 | `debug` | boolean | write `sync_metadata.json` and `*.log` only when on | false |
 | `export_xml` | boolean | also save visualisations, alarms and text lists as XML | false |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | false |
@@ -659,7 +679,7 @@ done, and the CLI side adds what only the outside knows: `stdout_reached`
 Where D8 lands.
 
 **The `plc` list in the settings file** (4.4), its elements recognised as
-exactly `connect` and `download`, case-insensitive, empty by default. A `plc`
+exactly `connect`, `download` and `trace`, case-insensitive, empty by default. A `plc`
 command checks it before running; if the command is not in the list it returns
 exit 5, and the refusal says three things: where the file is, what the value
 is now, and what to add. A misspelt word is not guessed into the right one;
@@ -670,6 +690,13 @@ command (4.4).
 run would do (full download, stop, write the boot application, start), returns
 `needs_input`, exit 1. That is exactly the same as `import` without `-y`. Exit
 5 has one meaning only: "the list does not allow it".
+
+**`plc trace` does not need `-y`.** `-y` confirms a change of state, and a
+trace run changes none the caller would have to confirm: it never downloads
+the application, never starts or stops it, and never writes a variable (6.8).
+What it does put on the controller is a trace of its own, `cdsint_trace`, which
+replaces the one the previous run left there. The `trace` word in the list is
+the whole gate.
 
 The first layer used to carry the meaning "only a person inside the IDE can
 write it"; that was the project-property era (D8). Now it is one key in a text
@@ -736,13 +763,26 @@ one run, `plc_link.py` the part that connects to the controller, and
   road to a stronger claim: do a source download along with the download, and
   have `connect` pull the source archive back and compare it. That is a
   separate job, not done yet.
+- **`plc trace` leans on `MATCH` harder than `connect` does**, and the gap in
+  the previous point matters more there. A login with
+  `OnlineChangeOption.Keep` does not notice a program that differs from the
+  controller, so `MATCH` is the only thing standing between a trace and a
+  reader who assumes the recorded variables mean what the working copy says
+  they mean. It still does not say the working copy is unedited since the
+  download. The name check in 6.8 narrows the gap for the traced variables, and
+  only for those: a variable the controller does not have is refused by name,
+  but a variable whose meaning changed in an undownloaded edit is not caught.
 - The report of both commands has to contain the comparison result, `MATCH`
   or `DIFFERENT`; the pipeline uses it as the gate.
 
 A few more things. `connect` touches the device node's gateway setting only
 when `--gateway` was given; without it the project's own is used, because that
 is an answer somebody else set, and a read-only command should not change it
-in passing. `--port` defaults to 11740. When the project has more than one
+in passing. `plc trace` is the exception: without `--gateway` it exits 2.
+A project that finds its controller by device name can reach the wrong one
+(two WSL soft PLCs report the same host name), and the IDE's "the address
+differs from the project" prompt defaults to Yes; a trace recorded from the
+wrong controller looks exactly like a right one. `--port` defaults to 11740. When the project has more than one
 device node, both commands refuse and list the names; there is no flag to pick
 one, since guessing a download target is not something that can have a default
 (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
@@ -778,6 +818,125 @@ Three routes to the settings, one per kind of user:
 Gone: the machine-name mismatch dialog, the version mismatch dialog, and
 `--force` (4.4 says why).
 
+### 6.8 PLC trace
+
+`cdsint plc trace --project P --install I --gateway IP [--port N] --job FILE`
+records the variables a job file names, for as long as it says, from a
+controller already holding this working copy's program, and writes the result
+to files. Nobody has to be at the IDE and no dialog is left open. The
+measurements behind every rule here are in `docs/trace-research.md`.
+
+**One run, in order.** Each step that refuses stops the run there.
+
+1. Refuse with exit 5 unless the `plc` list holds `trace` (6.5), and with
+   exit 2 unless `--gateway` is given (6.6).
+2. Pull `Application.crc` and compare it with this working copy's record, as
+   `connect` does (6.6). Anything but `MATCH` is exit 1, and the message
+   points at `plc download -y`.
+3. Open the project. Refuse if it already has an object named
+   `cdsint_trace` anywhere; it is not renamed around, because the overwrite
+   prompt in D7 is only safe to answer while that name is cdsint's alone.
+   Refuse if the trace plug-in lacks the private member that sets the buffers
+   (below). Create `cdsint_trace` under the application, in memory only, and
+   set its variables, task, resolution, sampling rate and both buffers.
+4. Log in with `OnlineChangeOption.Keep`. `Keep` means "log in and change
+   nothing"; the application is never downloaded. A refusal because another
+   client is already logged in to the controller says exactly that, not
+   "project differs", so nobody downloads for nothing.
+5. Read every variable once with the online session's `read_value()`. Each
+   one that fails is listed by name in `data.failed_objects` (D13), and the run
+   stops without downloading the trace. The IDE and the build check none of
+   these names; the controller is the only thing that does, and `start()`
+   failing on a bad name names nothing.
+6. Refuse if the application is not running. Starting it is a change to the
+   controller's state the caller did not ask for.
+7. Download the trace (the trace editor's own download, not an application
+   download; D7 covers its overwrite prompt), start it, wait `duration_s`
+   (D5 says how the wait is allowed), stop it, and save each requested format.
+8. Log out and close the project without saving. The project file is never
+   written; the trace object never reaches disk.
+9. Check completeness from the saved samples and write the report.
+
+**The buffers.** The controller keeps a ring of samples that the IDE empties
+only now and then, 80 to 180 ms apart as measured. With the default ring of
+100 entries a task faster than about 4 ms loses samples between fetches, so
+the ring is sized from the task period to hold two seconds of samples, and the
+IDE's own per-variable buffer from the expected sample count of the whole
+recording, doubled. Neither is a job field. The script API exposes neither
+buffer; they are set through the private `PerformWithWriteableCopy` of the
+trace plug-in's script object. Before it is used, its presence is checked, and
+an IDE without it is refused rather than left to record with 100 entries,
+because a trace that silently loses 70% of its samples is the failure this
+command exists to prevent. It is the only non-public member cdsint depends on;
+section 7 records which IDEs have it.
+
+**The job file.** JSON; an unknown key, a missing required key or a wrong type
+refuses the run before any IDE starts.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `task` | string | yes | the IEC task to sample in; it must be cyclic, since completeness is measured against its period |
+| `variables` | list of strings | yes | paths as `read_value()` takes them (`PRG_X.var`, `GVL.var`), no application prefix |
+| `duration_s` | number | yes | how long to record |
+| `out` | string | yes | output path without extension, relative to the working directory; existing files are overwritten |
+| `formats` | list of strings | no, `["trace", "csv"]` | any of `trace`, `csv`, `txt` |
+| `resolution` | `"us"` or `"ms"` | no, `"us"` | timestamp unit in the files |
+| `every_n_cycles` | integer | no, 1 | sample every Nth cycle |
+| `min_complete` | number | no, 0.99 | completeness below which the run fails |
+| `max_gap_periods` | integer | no, 20 | a gap longer than this many sampling periods fails the run |
+
+A trigger and a record condition are not fields until a run shows they take
+effect under `--noUI`.
+
+**Completeness.** Per variable, over the span the samples cover: the number
+of samples against the number the sampling period (task period × `every_n_cycles`)
+says that span should hold. Every interval longer than 1.5 periods is listed as
+a gap. The two limits exist to tell two things apart that timestamps alone
+cannot: a task that started late on a non-realtime controller leaves a gap of
+a few periods and loses nothing, while a buffer that overflowed leaves one of
+80 periods or more. A run below `min_complete` or with a gap over
+`max_gap_periods` exits 1, and its files are still written, because the
+samples it did get are the evidence for why.
+
+**Exit codes** keep the meanings of 4.3: 0 recorded and within the job's
+limits; 1 anything else that ran (no `MATCH`, another client logged in, a
+name that does not resolve, application not running, incomplete samples,
+`needs_input`); 2 bad command line, including a missing `--gateway`; 3 timed
+out; 4 no usable IDE; 5 `trace` not in the `plc` list. `--timeout` is the
+ceiling for the trace step excluding `duration_s`, which is added to it.
+
+**Report `data`.**
+
+```json
+{
+  "action": "trace",
+  "controller": "127.0.0.1:11741",
+  "crc": "MATCH",
+  "task": "MainTask",
+  "period_us": 4000,
+  "resolution": "us",
+  "duration_s": 3.0,
+  "buffer": {"controller_entries": 500, "ide_per_variable": 1500},
+  "files": {"trace": "out.trace", "csv": "out.csv"},
+  "variables": [
+    {"name": "PRG_X.var", "type": "INT", "samples": 745, "expected": 745,
+     "complete": 1.0, "gaps": [], "longest_interval": 4210}
+  ],
+  "complete": true,
+  "failed_objects": [],
+  "why": null
+}
+```
+
+`gaps` are `[from, to]` pairs and `longest_interval` a single interval, both
+in the file's timestamp unit, which `resolution` names. `type` is what
+`read_value()` reported.
+
+**Where the code lives** (D12). Everything that talks to the IDE or the
+controller is in `engine/`, next to the other `plc` modules. Reading the saved
+samples and judging completeness is plain Python on a file, in `cds/core/`, so
+CI tests it without an IDE.
+
 ---
 
 ## 7. Compatibility matrix
@@ -800,6 +959,7 @@ or a person's record; anything else is "should work".
 | Headless build | verified | not verified | not verified | not verified | verified; only really compiles after a fix, see below |
 | `verify --project` in one command | verified | not verified | not verified | not verified | verified |
 | PLC connect, download | verified, 2026-09-06, full round on two WSL soft PLCs | not verified | not verified | not verified | not verified |
+| PLC trace: private buffer member `PerformWithWriteableCopy` present | verified by reflection and by recording, 2026-09-23 | not checked | not checked | not checked | not checked |
 
 Every cell in this table is "one vendor's IDE opening its own project". One
 round each was verified on 2026-09-05: stock 3.5.21.40 opening the softplc
