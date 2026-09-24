@@ -73,7 +73,7 @@ ALLOWED_FUNCTION_LINES = {
         "classify_object": 108,
     },
     "engine/object_create.py": {
-        "batch_import_native_xmls_with_children": 77,
+        "batch_import_native_xmls_with_children": 75,
         "create_new_object": 141,
     },
     "engine/entry_compare.py": {

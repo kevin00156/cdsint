@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **An edited native-XML object imports headless.** A trace, a
+  visualisation, a text list, a task configuration: any object stored as
+  native XML that already existed in the project failed to import in the
+  `--project` form, because the IDE asked which objects to overwrite
+  (`PromptImportConflict`), and that multiple-choice prompt cannot be
+  answered by `--answer`. The failure was named, never silent, but it was
+  every time. Every native import now passes a handler that answers
+  "replace", which is what `import -y` asked for. Checked on CODESYS
+  3.5.21.40 and DIADesigner-AX 1.10 by editing a trace object's XML,
+  importing it and exporting it back; the sample project's export listing
+  and `discover` counts are unchanged.
+
 ### 0.0.1 (2026-09-22) — moved into cdsint
 
 **The tool became a product with its own repo.** The code came out of

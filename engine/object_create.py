@@ -35,6 +35,7 @@ from engine.pou_children import restore_pou_children
 from engine.classify import manager_for
 from engine import unhandled
 from engine.ide_read import child_named
+from engine.native_import import import_native
 
 
 def _is_xml_backed(rel_path, type_guid):
@@ -264,11 +265,9 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
         
         if merge_native_xmls(file_paths, temp_xml):
             try:
-                if hasattr(container, "import_native"):
-                    container.import_native(temp_xml)
-                else:
-                    project.import_native(temp_xml)
-                
+                import_native(container if hasattr(container, "import_native")
+                              else project, temp_xml)
+
                 # Restore POU children after XML import
                 # Find POUs by name in the container
                 for rel_path, file_path, name, type_guid, is_new in items:

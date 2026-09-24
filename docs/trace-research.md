@@ -23,7 +23,7 @@ dialog left open.
 | C. Does ck_cutter's loader need changing? | No: it reads a saved `.trace` as it is. It drops the timestamps, so it cannot check for gaps | 5 |
 | D. Do trace objects upset `discover`, `export`, `verify`? | No. They are recognised as kind `trace`, exported as `<name>.trace.xml` when `export_xml` is on, and survive `verify` | 6 |
 | D. Does a GUID have to be added to `profiles/default.json`? | No, it is already there | 6 |
-| D. Can an edited trace XML be imported? | **Not today.** Every edited native-XML object fails to import headless; a cdsint bug, not a trace one (section 6.3) | 6 |
+| D. Can an edited trace XML be imported? | It could not: every edited native-XML object failed to import headless, a cdsint bug rather than a trace one. Fixed since (section 6.3) | 6 |
 
 ---
 
@@ -293,7 +293,7 @@ closed it without saving, the `.project` SHA-256 was unchanged. The IDE does
 write two `.opt` files (per-user view options) beside the project on the first
 open; every `--project` command already does that.
 
-### 6.3 An edited native XML object cannot be imported headless (a cdsint bug)
+### 6.3 An edited native XML object could not be imported headless (a cdsint bug, fixed)
 
 Editing `T_slot1.trace.xml` (ring buffer 100 to 5000, one variable renamed)
 and running `import -y` failed:
@@ -305,18 +305,20 @@ Failed: 1 (Identical: 228) -- 1 object(s) could not be handled: T_slot1
 
 `PromptImportConflict` asks which existing objects to overwrite; it is a
 multiple-choice prompt, and `--answer PromptImportConflict=OK` did not get past
-it. The failure is reported by name, so D13 held; but it means that **no
+it. The failure was reported by name, so D13 held; but it meant that **no
 edited native-XML object of any kind** (trace, visualisation, text list, task
-configuration...) can be imported by the `--project` form today. The cause is
-the call in `engine/object_create.py:268` and in `engine/managers_native.py`,
-`import_native(path)` with no handler.
+configuration...) could be imported by the `--project` form. The cause was
+that every import called `import_native(path)` with no handler.
 
-ScriptEngine 4.2.0.0 has an overload
-`import_native(path, filter, handler)`, where `handler` implements
-`INativeImportHandler` and its `conflict()` returns `NativeImportResolve.replace`,
-`skip` or `cancel`. A probe that passed a handler answering `replace` imported
-the edited XML, and the trace object then had the new buffer and the new
-variable. This is independent of the trace work and should be its own change.
+ScriptEngine has an overload `import_native(path, filter, handler)`, where
+`handler` implements `INativeImportHandler` and its `conflict()` returns
+`NativeImportResolve.replace`, `skip` or `cancel`; every ScriptEngine3.dll on
+the compatibility matrix carries it. Every native import now goes through
+`engine/native_import.py`, which passes a handler that answers `replace`.
+Checked after the change: the edited `T_slot1.trace.xml` above imported
+(`Updated: 1, Failed: 0`) and a re-export showed the new buffer and variable,
+and on DIADesigner-AX 1.10 (ScriptEngine 4.0.0.0) an edited trace XML of that
+project imported the same way. Lenze was not tried.
 
 ---
 
@@ -530,7 +532,8 @@ some is. `type` is what `read_value()` reported.
    `read_value()` check narrows it for the variables being traced, and only
    for those.
 8. **SPEC goal 1 and D13, native XML import (section 6.3).** Not a conflict
-   with the trace design; an existing gap the trace work exposed.
+   with the trace design; an existing gap the trace work exposed, since
+   fixed.
 
 A trace object that is never saved never has to reach disk, so the
 disk-is-the-truth rule (PRINCIPLES 5) is not in play.
@@ -547,7 +550,7 @@ Taken after this research, on 2026-09-24:
    about 4 ms lose samples. If a later IDE changes it, the likely change is a
    public member, and the command follows then.
 3. **Native XML import (section 6.3) is fixed first**, as its own change,
-   before the trace command.
+   before the trace command. Done.
 
 Still open:
 

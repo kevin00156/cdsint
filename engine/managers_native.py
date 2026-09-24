@@ -19,6 +19,7 @@ from engine.strings import safe_str
 from engine.sync_log import log_info, log_error
 from engine.codesys_constants import TYPE_GUIDS
 from engine.managers_base import ObjectManager
+from engine.native_import import import_native
 
 
 def _crc(text):
@@ -244,14 +245,14 @@ class NativeManager(ObjectManager):
             
             if parent and hasattr(parent, "import_native"):
                 log_info("Updating native object " + obj_name + " via parent import.")
-                parent.import_native(file_path)
+                import_native(parent, file_path)
                 return True
             else:
                 # Fallback to project-level import (object ref may be stale)
                 log_info("Updating native object " + obj_name + " via project import.")
                 if self.project is None:
                     return False
-                self.project.import_native(file_path)
+                import_native(self.project, file_path)
                 return True
         except Exception as e:
             log_error("Native update failed for " + obj_name + ": " + safe_str(e))
@@ -262,11 +263,11 @@ class NativeManager(ObjectManager):
             # CODESYS import_native imports into the project/container
             # If container is provided, use its import_native method
             if container and hasattr(container, "import_native"):
-                container.import_native(file_path)
+                import_native(container, file_path)
             else:
                 # Fallback to project-level import
                 if self.project is not None:
-                    self.project.import_native(file_path)
+                    import_native(self.project, file_path)
             
             # Find newly created object
             if container:
