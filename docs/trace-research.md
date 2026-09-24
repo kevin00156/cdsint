@@ -563,12 +563,198 @@ Still open:
 ## 11. Not verified
 
 - A trigger or record condition firing under `--noUI` (section 4).
-- Recording longer than 4 s. The IDE-side buffer was set to 1,000,000
-  samples per variable; memory use at that size and behaviour over minutes
-  were not measured.
+  Answered in 13.4: both do, the condition only as a BOOL variable.
+- Recording longer than 4 s. Answered in 13.1 and 13.2: minutes are fine
+  while the IDE is not held up for longer than the controller's ring lasts.
 - That values recorded while the program differs from the controller are
   always the controller's (one run, section 7.4).
-- Whether a trace download changes `Application.crc`. The file's modification
-  time did not change across the trace runs here; its content was not
-  compared.
+- Whether a trace download changes `Application.crc`. Answered in 12.3: it
+  does not.
 - Any IDE other than CODESYS 3.5.21.40.
+
+## 12. Measured while implementing (2026-09-24)
+
+Same bench, same IDE. Every login below is `OnlineChangeOption.Keep`; the
+runtime's audit log (`/var/opt/codesys/.Audit*.log`) is what says whether
+anything was downloaded.
+
+### 12.1 `Keep` downloads when the IDE's download info is missing
+
+The IDE writes three files beside the project on every download:
+`<project>.<device>.<application>.<guid>.compileinfo`, `.bootinfo` and
+`.bootinfo_guids`. A working copy that had only the `.project` (plus a copied
+cdsint download record, so the CRC check said `MATCH`) was downloaded to in
+full on login: `ReinitApplication`, 22 blocks, boot application written, and
+the application left stopped. Nothing asked. The same happened with a plain
+login and no trace object, so it is not a trace effect.
+
+| Case | Application | Project vs controller | Trace object | Download info | Downloaded |
+|---|---|---|---|---|---|
+| A | running | same | no | present | no |
+| C | running | same | yes | present | no |
+| B | stopped | same | no | present | no |
+| D | stopped | same | yes | present | no |
+| E | stopped | edited in memory | no | present | no |
+| F | running | edited in memory | yes | present | no |
+| G | just after a runtime restart | same | no | present | no |
+| H | running | same | no | **absent** | **yes** |
+
+The "application is stopped" seen after such a login is the download's doing
+(it reinitialises the application), not its cause. The research's p2 probe on
+2026-09-23 saw the same thing on a fresh copy.
+
+`MATCH` cannot catch this: the CRC record is cdsint's, the download info is
+the IDE's, and only the second decides what the login does. A working copy
+downloaded to two controllers has the same hole: the record is per controller,
+the download info is per working copy.
+
+### 12.2 The identities that tie the two together
+
+`.bootinfo_guids` is 32 bytes: the code identity and the data identity of the
+download that wrote it. The controller logs the same two for every download
+(`App CodeGUID: 17d038a4-..., DataGUID: 2b9658e1-...`), and its
+`PlcLogic/Application/Application.app` carries them in its header, right after
+the application name:
+
+```
+0x00  81 01 d4 00  70 8c 80 00  "Application\0"
+0x14  71 a0 80 00  a4 38 d0 17 00*12  e1 58 96 2b 00*12
+0x38  74 84 80 00 ...
+```
+
+An older offline build had the same layout with its own identities. Comparing
+these 32 bytes before logging in is how `plc trace` now refuses a login that
+would download (SPEC 6.8, step 2). Only one application name has been seen;
+another name length is assumed to pad to four bytes, and anything that does not
+parse is refused rather than guessed.
+
+### 12.3 Answered from section 11
+
+- A trace download does not change `Application.crc`: its SHA-256 was the
+  same before and after a complete run.
+- A full `plc trace` run on the 1 ms task, 3 s, two variables: 2792 of 2792
+  samples each, completeness 1.0, five intervals over 1.5 periods per variable
+  (jitter, section 2.3), exit 0, no download in the audit log.
+
+## 13. Long recordings, trigger and record condition (2026-09-24)
+
+A research probe (throwaway, not in the repo) created `cdsint_trace` the way
+`plc trace` does and varied one thing per run. Each run sampled the IDE
+process's memory and the machine's per-process CPU every 5 s from outside,
+and logged how long each 200 ms `system.delay()` really took.
+
+### 13.1 Samples are lost when the IDE stalls longer than the controller's ring
+
+The one 60 s `plc trace` that failed (56% complete, one 22.7 s hole) could not
+be reproduced by the same command a few minutes later (100%). What differed
+was how long each hold took: about 375 ms in the failed run, about 200 ms in
+the good ones. A 300 s run showed the mechanism: one hold took 13.4 s, and the
+samples of those seconds were gone. During these runs four `find.exe`
+processes started by some other session were each using a full core and
+scanning the whole disk. The IDE does not fetch from the controller while its
+main thread is held up, and the ring on the controller covers only what it was
+sized for.
+
+A stall made on purpose (a research-only `time.sleep()` mid-recording) turns
+that into a controlled measurement:
+
+| Controller ring | Stall | Variables | Complete | Holes over 20 periods |
+|---|---|---|---|---|
+| 2 s (2000 entries) | 10 s | 2 | 73.9% | one, 7.07 s |
+| 30 s (30000 entries) | 10 s | 2 | 100.0% | none |
+| 120 s (120000 entries) | 60 s | 4 | 99.99% | none |
+
+After the stall the IDE caught up on the whole backlog. The runtime accepted
+a ring of 120000 entries with four variables; larger was not tried, and a real
+controller has less memory than this soft PLC.
+
+### 13.2 IDE memory is the project, not the trace
+
+The IDE's working set reached about 1.2 GB while the project was opening and
+compiling, before any recording, and stayed flat through a 300 s recording
+with an IDE-side buffer of 600000 samples per variable. Section 11's worry
+about memory at that size does not show at these lengths.
+
+### 13.3 This bench's controller runs slow
+
+Every recording covered about 90% of the wall-clock time between `start()` and
+`stop()`, on the 1 ms task and the 4 ms task alike, with a sample for every
+cycle. A per-cycle counter read twice, 60 wall seconds apart, advanced 54356:
+900.6 cycles per second on a 1 ms task. The runtime's own time base runs at
+about 0.9 of real time in this VM, while the WSL clock itself keeps time with
+Windows. Nothing was lost; the controller ran fewer cycles. A recording's
+span measured from its timestamps is therefore shorter than `duration_s` on
+this bench, and completeness, which is judged over the span, is unaffected.
+
+### 13.4 Trigger and record condition work headless
+
+Measured on the counter the research added in section 4 (`udiProbeCnt`,
++1 per cycle; `xProbePulse`, TRUE every 500 cycles):
+
+- **Trigger**: variable `udiProbeCnt`, edge `Positive`, level "now + 5000",
+  2000 post-trigger samples. The editor reported `WaitForTrigger`, then
+  `TriggerReached`, then stopped by itself; the CSV held exactly 2000 samples
+  above the level, every one consecutive, plus everything from the start of
+  the recording before it. The CSV header carries the trigger settings
+  (`Trigger.Variable.Name`, `Trigger.Level`, `Trigger.UpdatesAfterTrigger`).
+  **A trace that stopped itself refuses `stop()`** ("Cannot stop the trace in
+  the current state"), so a caller has to look at `get_packet_state()` first.
+- **Record condition**: a BOOL variable (`xProbePulse`) recorded exactly the
+  cycles where it was TRUE, 27 samples in 15 s, each 500 cycles apart. An
+  expression (`udiProbeCnt MOD 2 = 0`) made `start()` fail with "Cannot start
+  the trace in the current state", which names nothing, the same failure as a
+  bad variable name (section 7.3).
+
+### 13.5 What a large ring costs the controller, and what too large does
+
+Four variables (2 + 4 + 4 + 2 bytes), 20 s on the 1 ms task, the runtime
+process's memory read from `/proc` every 2 s:
+
+| Controller ring | Recorded | Runtime memory added |
+|---|---|---|
+| 2000 entries | 100% | (baseline) |
+| 600000 entries (10 min) | 99.8% | +16 MB |
+| 3600000 entries (1 h) | 100% | +81 MB, the same in resident and virtual size |
+
+About 22.5 bytes an entry for those four variables: 12 bytes of values, an
+8-byte timestamp and a little more. The runtime allocates the whole ring when
+the trace is downloaded, not as it fills, and keeps it after the recording:
+the trace stays on the controller (section 7.1) until the next download of a
+trace with that name replaces it.
+
+**Nothing on the controller refuses a ring that does not fit.** With
+400000000 entries (about 9 GB, more than the VM has) the runtime kept
+allocating up to 6.8 GB and the Linux OOM killer killed it. The application
+stopped, the runtime service stayed down until started by hand, and the IDE
+reported only "No connection to the device" and "Cannot start the trace in
+the current state". Whether a controller other than CODESYS Control for Linux
+SL fails the same way was not tested. A command that sizes the ring has to
+bound it itself.
+
+### 13.6 Acceptance of the command with the whole recording in the ring
+
+`plc trace` itself, same bench, after the changes that sections 13.1 to 13.5
+led to:
+
+| Job | Exit | Result |
+|---|---|---|
+| fixed 3 s, two variables | 0 | 2757 of 2757 each |
+| trigger at a level the counter had already passed | 1 | "never came within duration_s", files written, `reached: false` |
+| trigger about 90 s ahead, 2000 post-trigger samples | 0 | stopped by itself; exactly 2000 samples above the level, every cycle consecutive |
+| trigger at an unreachable level, 5 s | 1 | "never came", files written |
+| record condition `xProbePulse`, 10 s | 0 | 19 samples, 500 cycles apart; `complete` null |
+| 120 s with `trace_memory_mb` 1 | 1 | refused before the trace was downloaded: 2.1 MB estimated |
+| 120 s, two variables | 1 | 98.68%, longest interval 35.9 ms |
+| 120 s, the per-cycle counter | 0 | 100%; 160 intervals over 1.5 ms, the longest 7.1 ms |
+
+A CSV recorded under a record condition has `Flags` 36, not 32: the field is
+a bit field, 32 and 16 naming the timestamp unit and 4 set by the condition.
+
+**What the gaps are once the ring holds everything.** In the counter run,
+every one of the 160 intervals longer than 1.5 periods had the counter step by
+exactly 1 across it: the controller ran no cycle in that time, and the trace
+recorded every cycle that ran. With the IDE unable to lose samples any more
+(13.1), a gap in the timestamps is the controller skipping cycles, which this
+bench does (`DisableOmittedCycleWatchdog=1`, and a time base 10% slow, 13.3).
+The failed two-variable run is presumably the same, with some stretches of up
+to 36 ms without a cycle; it had no counter to show it.
