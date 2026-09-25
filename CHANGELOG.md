@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased (0.1.0)
+### 0.1.0 (2026-09-25) — plc trace, libraries and devices as text, self-update
 
 - **`cdsint update` installs the newest release, and every command says when
   there is one.** Only for an install `irm/setup.ps1` downloaded; a clone
