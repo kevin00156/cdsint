@@ -18,7 +18,7 @@ import io
 import time
 
 from engine.sync_log import init_logging, log_info, is_debug
-from engine.change_detect import find_all_changes
+from engine.device_pass import find_changes
 from engine import entry, settings, unhandled
 
 # What one row of data.changes says happened to an object. A caller reading
@@ -66,11 +66,9 @@ def compare_project(base_dir, values, projects_obj=None):
     print("Comparing: CODESYS IDE <-> " + base_dir)
     start_time = time.time()
     
-    export_xml = values["export_xml"]
-    
     # ── Run comparison engine ──
     print("Comparing IDE objects with disk...")
-    results = find_all_changes(base_dir, projects_obj, export_xml=export_xml)
+    results = find_changes(base_dir, projects_obj, values)
     
     different = results["different"]
     new_in_ide = results["new_in_ide"]

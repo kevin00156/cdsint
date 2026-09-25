@@ -125,6 +125,7 @@ def traced(trip):
         trip.reach_the_device,    # aim the device at --gateway
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y
         trip.the_ide_agrees,      # the IDE's download info names it too
+        trip.the_program_is_unchanged,  # or Keep would download the change
         trip.find_the_period,     # the task's period, from its configuration
         trip.no_trace_of_ours,    # nothing already called cdsint_trace
         trip.make_the_trace,      # in memory only; buffers wait for step 5

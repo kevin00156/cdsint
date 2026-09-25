@@ -10,6 +10,7 @@ Moved out of codesys_managers.py unchanged.
 """
 from __future__ import print_function
 
+from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
 from engine.strings import safe_str, clean_filename
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_read import guid_of, parent_of
@@ -273,6 +274,8 @@ def build_expected_path(obj, effective_type, is_xml, obj_guid=None):
         elif obj_kind == "folder":
             # Folders use their own name as the last part of path
             file_name = ""
+        elif obj_kind == "library_manager":
+            file_name = clean_name + LIBRARY_SUFFIX
         else:
             file_name = clean_name + ".st"
 

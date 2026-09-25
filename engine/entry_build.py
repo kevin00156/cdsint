@@ -11,7 +11,7 @@ import io
 import os
 import time
 
-from engine import build_log
+from engine import build_clean, build_log
 from engine.codesys_constants import kind_of
 from engine.strings import safe_str
 from engine.sync_log import log_warning, init_logging, is_debug
@@ -310,17 +310,13 @@ def build_project(base_dir, projects_obj=None):
     app_name = safe_str(app.get_name())
     print("=== Starting Project Build ===")
     print("Application: " + app_name)
+    _clear_build_messages(build_category)
 
     try:
-        system.clear_messages(build_category)
-    except Exception as exc:
-        # An IDE that will not clear the category still builds; the count is
-        # then of this build plus whatever was already filed, which is worth
-        # a line rather than a silent skip.
-        log_warning("Could not clear the previous build messages: "
-                    + safe_str(exc))
-
-    try:
+        cleaned = build_clean.clean_if_libraries_changed(
+            app, app_name, safe_str(projects_obj.primary.path))
+        if cleaned:
+            print(cleaned)
         messages, elapsed = run_build(app, system, build_category, Severity)
         if not messages:
             nothing = _nothing_was_built(app_name, elapsed)
@@ -344,6 +340,18 @@ def build_project(base_dir, projects_obj=None):
         print(traceback.format_exc())
         system.ui.error(failure)
         return entry.result(False, failure)
+
+
+def _clear_build_messages(build_category):
+    """Empty the build category, so the count is of this build only."""
+    try:
+        system.clear_messages(build_category)
+    except Exception as exc:
+        # An IDE that will not clear the category still builds; the count is
+        # then of this build plus whatever was already filed, which is worth
+        # a line rather than a silent skip.
+        log_warning("Could not clear the previous build messages: "
+                    + safe_str(exc))
 
 
 def _verdict(app_name, errors, warnings, elapsed):

@@ -72,12 +72,12 @@ class TestTheGates:
         assert decided.rel_path.endswith(".st")
 
     def test_an_xml_kind_is_gated_when_export_xml_is_off(self):
-        obj = Node("Library Manager", TYPE_GUIDS["library_manager"])
+        obj = Node("T_slot1", TYPE_GUIDS["trace"])
         decided = classify.resolve_object(obj, "guid-Main", {}, export_xml=False, project=None)
         assert decided.skip_reason == classify.SKIP_XML_GATE
 
     def test_the_same_object_passes_when_export_xml_is_on(self):
-        obj = Node("Library Manager", TYPE_GUIDS["library_manager"])
+        obj = Node("T_slot1", TYPE_GUIDS["trace"])
         decided = classify.resolve_object(obj, "guid-Lib", {}, export_xml=True, project=None)
         assert decided.skip_reason is None
 

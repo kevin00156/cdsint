@@ -79,7 +79,6 @@
     "6394ad93-46a4-4927-8819-c1ca8654c6ad": "Second Application GUID observed by upstream on other CODESYS versions"
   },
   "sync_direction": {
-    "library_manager": "export_only",
     "device": "disabled",
     "device_module": "disabled"
   }

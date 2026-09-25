@@ -19,6 +19,8 @@ import collections
 from engine import unhandled
 from engine.codesys_constants import TYPE_GUIDS, XML_TYPES, kind_allows_export
 from engine.managers_base import FolderManager
+from engine.managers_device import DeviceManager
+from engine.managers_library import LibraryManager
 from engine.managers_native import ConfigManager, NativeManager
 from engine.managers_pou import POUManager, PropertyManager
 from engine.object_kind import classify_object
@@ -47,7 +49,7 @@ SKIP_XML_GATE = "xml_gate"
 
 # The XML kinds written whether or not export_xml is on. A task configuration
 # and the NVL lists are project structure, not the optional extras the flag is
-# about (Library Manager, visualizations, alarm config, trace).
+# about (visualizations, alarm config, trace).
 ALWAYS_EXPORTED_XML = (
     TYPE_GUIDS["task_config"],
     TYPE_GUIDS["nvl_sender"],
@@ -181,8 +183,10 @@ def create_import_managers(project, pou_type=None):
         TYPE_GUIDS["task_config"]: ConfigManager(project),
         TYPE_GUIDS["alarm_config"]: ConfigManager(project),
         TYPE_GUIDS["visu_manager"]: ConfigManager(project),
-        TYPE_GUIDS["device"]: ConfigManager(project),
+        TYPE_GUIDS["device"]: DeviceManager(project),
+        TYPE_GUIDS["device_module"]: DeviceManager(project),
         TYPE_GUIDS["softmotion_pool"]: ConfigManager(project),
+        TYPE_GUIDS["library_manager"]: LibraryManager(project),
         "default": POUManager(project, pou_type),
         "native": NativeManager(project)
     }

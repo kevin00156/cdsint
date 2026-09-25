@@ -125,12 +125,13 @@ class TestGoldenEquivalence:
         old = _old_expandable(
             "visu", "textlist", "global_text_list", "imagepool",
             "symbol_config", "alarm_config", "alarm_group", "alarm_storage",
-            "visu_manager", "task_config", "task", "library_manager",
+            "visu_manager", "task_config", "task",
             "trace", "softmotion_pool", "visu_style", "project_settings",
             "device", "device_module", "file_object", "alarm_class",
             "imagepool_variant", "alarm_config_item", "task_local_gvl",
             "nvl_sender", "nvl_receiver",
         )
+        # Intended removal: the Library Manager is a text kind (SPEC 6.9).
         assert set(constants.XML_TYPES) == old
 
     def test_implementation_types_unchanged(self, constants):
@@ -212,10 +213,11 @@ class TestSyncDirection:
         assert constants.kind_allows_export("pou")
         assert constants.kind_allows_import("pou")
 
-    def test_library_manager_export_only(self, constants):
-        assert constants.sync_direction_of("library_manager") == "export_only"
+    def test_library_manager_is_bidirectional(self, constants):
+        # Imported through the script API since SPEC 6.9.
+        assert constants.sync_direction_of("library_manager") == "bidirectional"
         assert constants.kind_allows_export("library_manager")
-        assert not constants.kind_allows_import("library_manager")
+        assert constants.kind_allows_import("library_manager")
 
     def test_devices_disabled(self, constants):
         for kind in ("device", "device_module"):

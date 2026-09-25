@@ -19,8 +19,16 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
     managers_base       ObjectManager, the per-kind contract; FolderManager
     managers_pou        POUManager and PropertyManager
     managers_native     NativeManager and ConfigManager: native XML kinds
+    managers_library    LibraryManager: the .libraries file of SPEC 6.9
+    library_refs        a Library Manager's references, read and changed
+    build_clean         clean before a build whose libraries changed
+    managers_device     DeviceManager: an EtherCAT device's .device file
+    device_params       a device's parameters and mappings, read and written
+    device_pass         the EtherCAT devices, synced beside the objects
+    device_changes      which devices an import changed, for the result
     content_compare     is the IDE's text the same as the file's
-    change_detect       what differs, object by object; moves too
+    change_detect       what differs, object by object
+    move_detect         which of those are moves, paired by file name
     object_create       one file's content into the IDE: update or create
     pou_children        a POU's members kept across a recreate
     import_order        parents before members; orphans with their parent

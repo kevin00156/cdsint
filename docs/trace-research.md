@@ -157,7 +157,9 @@ own `download()`, which is not an application download.
 
 ck_cutter's prototype saw a full download after creating trace objects
 because it logged in with `OnlineChangeOption.Never`, which means "download
-whatever differs". `Keep` means "log in, change nothing".
+whatever differs". `Keep` does not download for a trace object. It is not
+"change nothing" either: section 12.1, corrected, shows it applying an
+edited program.
 
 ### 3.2 It fails when someone else is logged in
 
@@ -370,7 +372,12 @@ time. It also returns the type, which a trigger level needs (section 4).
 It is a read of a live value, which is the one thing section 9, point 1 is
 about.
 
-### 7.4 `Keep` does not notice a changed program
+### 7.4 `Keep` and a changed program
+
+(Corrected on 2026-09-24: `Keep` does notice a changed program when the
+IDE's download info is present, and applies it by online change; see 12.1.
+What follows was measured on 2026-09-23, before those files were
+understood, and its audit log was not read for online changes.)
 
 With the program itself changed (a variable added to a POU, not downloaded),
 `Keep` still logged in. A trace of variables that exist on both sides then
@@ -594,10 +601,24 @@ login and no trace object, so it is not a trace effect.
 | C | running | same | yes | present | no |
 | B | stopped | same | no | present | no |
 | D | stopped | same | yes | present | no |
-| E | stopped | edited in memory | no | present | no |
-| F | running | edited in memory | yes | present | no |
+| E | stopped | edited in memory | no | present | no, but an **online change** |
+| F | running | edited in memory | yes | present | no, but an **online change** |
 | G | just after a runtime restart | same | no | present | no |
 | H | running | same | no | **absent** | **yes** |
+
+Rows E and F were first recorded as "no" and nothing more, because only
+download lines were looked for. Read again on 2026-09-24, the audit log shows
+each of those logins followed by `OnlineChange started` and nine
+`OnlineChange successful, create bootproject: 0` (06:19 and 06:27 UTC), each
+ending with code identity 4c729cdf and data identity 86b76c46, where the
+controller had held 55e0b114 and 2b9658e1. The boot project, and so `Application.crc`, was not
+touched. A `Keep` login with the download info present applies what the
+working copy has that the controller lacks: by online change when it can, by
+full download when it cannot (`docs/ethercat-research.md` 5.2). The trace
+object itself is not such a difference: the audit log holds 31 application
+logins from 07:01 to 09:20 UTC that day, the `plc trace` runs and the
+section 13 probes, each with `cdsint_trace` created in memory on an
+unchanged copy, and not one online change or download among them.
 
 The "application is stopped" seen after such a login is the download's doing
 (it reinitialises the application), not its cause. The research's p2 probe on

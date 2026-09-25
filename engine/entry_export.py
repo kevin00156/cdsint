@@ -22,6 +22,7 @@ from engine.classify import (
     manager_for, resolve_object
 )
 from engine.backup import finalize_sync_operation
+from engine.device_pass import export_devices
 from engine.sync_dir import sync_files
 from engine import entry, settings, unhandled
 
@@ -129,6 +130,18 @@ def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
 
 
 
+
+
+def _save_cache(export_dir, new_cache, context):
+    """Calculate folder hashes (Merkle Tree) and save the updated cache."""
+    if not new_cache:
+        return
+    # build_folder_hashes expects a dict of {path: ide_hash}
+    just_hashes = {path: record.get('ide_hash') for path, record in new_cache.items()}
+    folder_hashes = build_folder_hashes(just_hashes)
+    save_sync_cache(export_dir, new_cache, folder_hashes, context.get('new_types'))
+    log_info("Saved updated sync cache with {} objects and {} folders.".format(
+        len(new_cache), len(folder_hashes)))
 
 
 def export_project(export_dir, values, projects_obj=None):
@@ -272,19 +285,13 @@ def export_project(export_dir, values, projects_obj=None):
             unhandled.note(obj, e)
             log_error("Error exporting " + unhandled.name_of(obj) + ": " + safe_str(e))
 
+    # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
+    pending_import.extend(export_devices(project, export_dir, context, managers))
     # Orphan cleanup now uses exported_paths set directly
     removed_count = cleanup_orphaned_files(export_dir, exported_paths,
                                            values["auto_delete_orphans"])
+    _save_cache(export_dir, new_cache, context)
 
-    # Calculate folder hashes (Merkle Tree) and save the updated cache
-    if new_cache:
-        # build_folder_hashes expects a dict of {path: ide_hash}
-        just_hashes = {path: record.get('ide_hash') for path, record in new_cache.items()}
-        folder_hashes = build_folder_hashes(just_hashes)
-        save_sync_cache(export_dir, new_cache, folder_hashes, context.get('new_types'))
-        log_info("Saved updated sync cache with {} objects and {} folders.".format(
-            len(new_cache), len(folder_hashes)))
-            
     # Save and back up BEFORE stopping the clock and announcing completion.
     # This step saves the project and, when enabled, copies the whole .project
     # binary; running it after the timer meant the reported figure excluded

@@ -239,7 +239,6 @@ XML_KINDS = [
     # web_visu and target_visu are part of visu_manager's recursive export
     "task_config",
     "task",
-    "library_manager",
     "trace",
     "softmotion_pool",
     "visu_style",

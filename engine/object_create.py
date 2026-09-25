@@ -32,6 +32,7 @@ from engine.st_text import (
 from engine.strings import safe_str
 from engine.sync_log import log_info, log_error, log_warning
 from engine.pou_children import restore_pou_children
+from cds.core.device_text import SUFFIX as DEVICE_SUFFIX
 from engine.classify import manager_for
 from engine import unhandled
 from engine.ide_read import child_named
@@ -56,6 +57,9 @@ def update_existing_object(obj, rel_path, file_path, import_managers):
     the one that checks whether the IDE side would actually change.
     """
     type_guid = safe_str(obj.type)
+    if rel_path.endswith(DEVICE_SUFFIX):
+        # Whatever GUID the device reports: its file is a device file.
+        return import_managers[TYPE_GUIDS["device"]].update(obj, file_path)
     manager = manager_for(import_managers, type_guid, _is_xml_backed(rel_path, type_guid))
     return manager.update(obj, file_path)
 

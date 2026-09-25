@@ -11,8 +11,12 @@ from __future__ import print_function
 
 import os
 
+from cds.core.device_text import SUFFIX as DEVICE_SUFFIX
+from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
 from engine import unhandled
 from engine.classify import create_import_managers
+from engine.managers_device import NOT_CREATED as DEVICE_NOT_CREATED
+from engine.managers_library import NOT_CREATED
 from engine.device_remap import (
     apply_device_remap,
     build_device_remap,
@@ -108,13 +112,51 @@ def _is_import_allowed(item):
     overwritten or DELETED: their disk file is a projection for Git to see,
     not a source of truth."""
     kind = kind_of(item.get("type_guid") or "")
-    if not kind or kind_allows_import(kind):
+    if item.get("device_pass") or not kind or kind_allows_import(kind):
         return True
     msg = ("Skipping import of '%s' (%s): sync_direction=%s"
            % (item.get("name"), kind, sync_direction_of(kind)))
     print("  [!] " + msg)
     log_warning(msg)
     return False
+
+
+LEGACY_LIBRARY_XML = (
+    "an old Library Manager XML; it is not imported, because it would put "
+    "back libraries removed since. Run export first: it writes Library "
+    "Manager.libraries and this file becomes an orphan")
+
+
+def _refused_by_path(item, tally):
+    """An item this import must not apply, recorded by path.
+
+    Two kinds: a Library Manager's XML from before SPEC 6.9, which imported as
+    native XML merges back libraries removed since (research 4.2); and a
+    device item the device pass refused, because the settings file does not
+    allow device settings (SPEC 6.10).
+    """
+    path = item.get("path", "")
+    why = item.get("refused")
+    if (not why and path.endswith(".library_manager.xml")
+            and not item.get("is_orphan")):
+        why = LEGACY_LIBRARY_XML
+    if not why:
+        return False
+    log_error("%s: %s" % (path, why))
+    unhandled.note(path, why)
+    tally.failed += 1
+    return True
+
+
+def _never_deleted(item):
+    """A Library Manager or an EtherCAT device with no file is kept: import
+    never deletes either, and a missing file means "not synchronised yet"
+    (SPEC 6.9, 6.10)."""
+    if (not item.get("device_pass")
+            and kind_of(item.get("type_guid") or "") != "library_manager"):
+        return False
+    log_info("Kept %s: import never deletes it" % item.get("name"))
+    return True
 
 
 def _delete_orphan(item, taken_by_parent, tally):
@@ -168,9 +210,13 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
     st_files = []
     for item in to_sync:
         try:
+            if _refused_by_path(item, tally):
+                continue
             if not _is_import_allowed(item):
                 continue
             if item.get("is_orphan"):
+                if _never_deleted(item):
+                    continue
                 _delete_orphan(item, taken_by_parent, tally)
                 continue
 
@@ -248,7 +294,15 @@ def _create_st(item, rel_path, abs_path, import_managers, name_map,
     that returns nothing is a failure with a name, not a number: "it just did
     not import and I do not know why" is the outcome this tool exists to
     avoid (SPEC D13).
+
+    A Library Manager's file is refused before creation is tried: sniffing
+    its content would make it a POU, and import never makes a Library
+    Manager (SPEC 6.9). _import_st notes the refusal by path.
     """
+    if rel_path.endswith(LIBRARY_SUFFIX):
+        raise RuntimeError(NOT_CREATED % rel_path)
+    if rel_path.endswith(DEVICE_SUFFIX):
+        raise RuntimeError(DEVICE_NOT_CREATED % rel_path)
     if create_new_object(rel_path, abs_path, import_managers, name_map,
                          folder_cache, project):
         tally.created += 1

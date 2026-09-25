@@ -71,7 +71,8 @@ class TraceTrip(TraceSetup):
         option = entry.borrowed(self.globals, "OnlineChangeOption")
         if option is None:
             return ("this IDE did not provide OnlineChangeOption, so a login "
-                    "that changes nothing cannot be asked for explicitly")
+                    "that neither downloads nor makes an online change cannot "
+                    "be asked for explicitly")
         self.session = self.online.create_online_application(self.application)
         try:
             return self._log_in(option.Keep) or first_problem([
@@ -82,7 +83,8 @@ class TraceTrip(TraceSetup):
             plc_link.logout(self.session)
 
     def _log_in(self, keep):
-        """Keep: log in and change nothing; the application is never sent."""
+        """Keep: log in, applying whatever the program has that the controller
+        lacks. the_program_is_unchanged has already made that nothing."""
         try:
             self.session.login(keep, False)
         except Exception as exc:

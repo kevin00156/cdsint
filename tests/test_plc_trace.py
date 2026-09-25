@@ -304,6 +304,29 @@ def test_a_controller_without_an_app_is_refused():
     assert bench.calls("login") == [] and nothing_was_created(bench)
 
 
+def test_a_program_that_differs_from_the_download_is_refused_before_login():
+    # The bench: with the download info in place, a Keep login on a copy
+    # edited in memory made an online change, and a changed master cycle
+    # made a full download that left the application stopped
+    # (docs/ethercat-research.md 5.2).
+    bench = TraceBench()
+    bench.application.is_uptodate = False
+    result = bench.run()
+    assert not result["ok"]
+    assert "differs from what was last downloaded" in result["summary"]
+    assert "online change or a full download" in result["summary"]
+    assert "plc download -y" in result["summary"]
+    assert bench.calls("login") == [] and nothing_was_created(bench)
+
+
+def test_an_ide_that_cannot_say_whether_the_program_changed_is_refused():
+    bench = TraceBench()
+    del bench.application.is_uptodate
+    result = bench.run()
+    assert not result["ok"] and "is_uptodate" in result["summary"]
+    assert bench.calls("login") == [] and nothing_was_created(bench)
+
+
 def test_a_project_without_an_active_application_is_refused():
     bench = TraceBench()
     bench.project.active_application = None

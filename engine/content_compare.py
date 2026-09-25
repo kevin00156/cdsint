@@ -10,6 +10,8 @@ Moved out of codesys_compare_engine.py unchanged.
 from __future__ import print_function
 
 import os
+from cds.core import library_list
+from engine import library_refs
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_attrs import read_ide_attrs
 from engine.st_text import (
@@ -42,34 +44,14 @@ def get_ide_content(obj, is_xml, property_accessors, project, can_have_impl=Fals
     # Read the type once and pass it down; both branches below needed it and
     # read_ide_attrs re-read it a third time.
     obj_type = safe_str(obj.type)
-    ide_attrs = {} if is_xml else read_ide_attrs(obj, obj_type)
-
+    if obj_type == TYPE_GUIDS["library_manager"]:
+        # Its text is built from the script API, not from a declaration
+        # (SPEC 6.9), and it has no build attributes.
+        return library_refs.render_ide(obj), {}
     if is_xml:
-        try:
-            # ConfigManager objects require recursive=True to include all children
-            monolithic_types = [
-                TYPE_GUIDS["task_config"], TYPE_GUIDS["alarm_config"],
-                TYPE_GUIDS["visu_manager"], TYPE_GUIDS["softmotion_pool"]
-            ]
-            recursive = obj_type in monolithic_types
+        return _native_content(obj, obj_type, project), {}
+    ide_attrs = read_ide_attrs(obj, obj_type)
 
-            # Special logic for devices: only recursive if not a project container
-            if obj_type == TYPE_GUIDS["device"]:
-                from engine.ide_tree import is_container_device
-                recursive = not is_container_device(obj)
-
-            content = native_xml_of(project, obj, recursive)
-            if content is not None:
-                return content, {}
-        except Exception as exc:
-            # "" reads downstream as "the IDE side is empty", which compares
-            # as different and re-exports the object -- wrong, but harmless.
-            # An object nobody could read is not harmless, so say whose (D13).
-            unhandled.note(obj, exc)
-            log_warning("Could not read the native XML of %s: %s"
-                        % (unhandled.name_of(obj), safe_str(exc)))
-        return "", {}
-    
     # ST content
     obj_guid = safe_str(obj.guid)
 
@@ -93,6 +75,34 @@ def get_ide_content(obj, is_xml, property_accessors, project, can_have_impl=Fals
     return format_st_content(declaration, implementation, can_have_impl), ide_attrs
 
 
+def _native_content(obj, obj_type, project):
+    """An XML-backed object's native XML, or "" when it could not be read."""
+    try:
+        # ConfigManager objects require recursive=True to include all children
+        monolithic_types = [
+            TYPE_GUIDS["task_config"], TYPE_GUIDS["alarm_config"],
+            TYPE_GUIDS["visu_manager"], TYPE_GUIDS["softmotion_pool"]
+        ]
+        recursive = obj_type in monolithic_types
+
+        # Special logic for devices: only recursive if not a project container
+        if obj_type == TYPE_GUIDS["device"]:
+            from engine.ide_tree import is_container_device
+            recursive = not is_container_device(obj)
+
+        content = native_xml_of(project, obj, recursive)
+        if content is not None:
+            return content
+    except Exception as exc:
+        # "" reads downstream as "the IDE side is empty", which compares
+        # as different and re-exports the object -- wrong, but harmless.
+        # An object nobody could read is not harmless, so say whose (D13).
+        unhandled.note(obj, exc)
+        log_warning("Could not read the native XML of %s: %s"
+                    % (unhandled.name_of(obj), safe_str(exc)))
+    return ""
+
+
 def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
                        ide_attrs=None, disk_attrs=None):
     """Compare two content strings, with XML-specific filtering.
@@ -102,6 +112,9 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
     both attr dicts are provided. Returns True only if code AND attributes
     match.
     """
+    if rel_path.endswith(library_list.SUFFIX):
+        # Compared as entries, so a comment or spacing is not a difference.
+        return library_list.same(ide_content or "", disk_content or "")
     if not ide_content or not disk_content:
         return ide_content == disk_content
 

@@ -16,11 +16,14 @@ from __future__ import print_function
 
 import os
 
+from cds.core.device_text import SUFFIX as DEVICE_SUFFIX
+from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
 from engine.codesys_constants import RESERVED_FILES
 
-# The two extensions this tool writes and reads back. Anything else in the
-# folder belongs to whoever put it there.
-SYNC_SUFFIXES = (".st", ".xml")
+# The extensions this tool writes and reads back: code, native XML, the
+# Library Manager's list (SPEC 6.9) and EtherCAT devices' settings (6.10).
+# Anything else in the folder belongs to whoever put it there.
+SYNC_SUFFIXES = (".st", ".xml", LIBRARY_SUFFIX, DEVICE_SUFFIX)
 
 # Where git and the backups keep their own copies, and where Python leaves its
 # bytecode. Walking into any of them would offer their contents up as project

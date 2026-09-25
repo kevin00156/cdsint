@@ -311,8 +311,10 @@ cdsint plc trace --project C:\p\line.project --install 3.5.21.40 --gateway 192.1
 
 records the variables a job file names, for as long as it says, from a
 controller that is still holding this working copy's last download (`MATCH`,
-as above; anything else stops the run and points at `plc download -y`). It
-logs in without downloading, never starts or stops the application and never
+as above; anything else stops the run and points at `plc download -y`), and
+whose program has not been edited since (a working copy that differs from its
+last download is refused the same way, because the login would put the edit
+on the controller). It logs in without downloading, never starts or stops the application and never
 writes a variable, so it needs no `-y` (one given is ignored); the `trace` word in
 the `plc` list is its whole gate. `--gateway` is compulsory: a controller
 found by the project's device name can be the wrong one, and a trace from the
@@ -421,6 +423,7 @@ like this is complete:
 | `sync_folder` | string | where the `.st` files live. Starting with `./` it is relative to the directory holding the `.project`; anything else is used as written | none — the first export asks |
 | `plc` | list of strings | which PLC commands this project allows; only `connect`, `download` and `trace` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
+| `devices` | boolean | let `import` apply EtherCAT device settings (`.device` files) | `false` |
 | `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | `false` |
 | `safety_backup` | boolean | back the `.project` up before an import | `true` |
@@ -464,6 +467,54 @@ with `--answer UpgradeProjectConfirmation=Yes`.
 **Where do the settings live?** In a text file beside the project — see
 **Settings**.
 
+## Libraries: `Library Manager.libraries`
+
+Each application's Library Manager is one text file beside its code,
+`.../Plc Logic/Application/Library Manager.libraries`, one line per library:
+
+```
+library      Util, 3.5.19.0 (System)                        qualified_only
+library      CAA Memory, * (CAA Technical Workgroup)        qualified_only namespace=MEM
+placeholder  MyUtil = Util, 3.5.14.0 (System)
+redirect     Standard = Standard, 3.5.18.0 (System)
+# system     SM3_Basic = SM3_Basic, 4.20.0.0 (CODESYS)      resolved by SoftMotion profile 4.20.1.0
+```
+
+Add, delete or edit lines and run `import` (or `verify`). The version is what
+the IDE writes: a fixed version pins it, `*` takes the newest installed.
+`# system` lines are what the devices put there; they are shown, never
+applied. A library that is not installed on this machine is not added, and
+`failed_objects` names it. The next `build` cleans first whenever an
+application's libraries changed since its last build, because a plain build
+after a library change can report 0 errors for code it did not compile; it
+remembers what each application was built with in `<project>.cdsint-build.json`
+beside the project. SPEC 6.9 has the rules.
+
+## EtherCAT devices: `<name>.device`
+
+Every EtherCAT master and every device below it (slaves, modules, SoftMotion
+axes) is one text file, laid out like the device tree:
+`CODESYS_Control_for_Linux_SL/EtherCAT_2/X5_7SEtherCAT_1.device`.
+
+```
+device  65|766_0001000000000001|Revision=16#00000001
+c1/1074855936 = 0                                   # Physical Address of the Slave
+c1/1610743808 = 'x 1'                               # DC sync0 factor
+c1/1627394048/Value = 6                             # Op mode
+map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]  # Error Code, %IW5
+```
+
+Change a value or a `map` line and run `import`; delete a `map` line to unmap
+the channel. Import applies it only when the settings file has
+`"devices": true`: most device settings turn the next download into a full
+one, and a full download stops the machine. Every write is read back, and a
+value the IDE replaced is named in `failed_objects`. A slave's DC cycle times
+are not in the file: they follow the master's `MasterCycleTime` times the
+slave's DC factor, which is. Import never adds, removes or updates a device, and a
+file for another device model is refused. After an import that changed a
+device, `data.devices_changed` names them and `data.full_download` says
+whether the IDE now needs a full download. SPEC 6.10 has the rules.
+
 ## Sync pragmas in `.st` files
 
 An exported file may start with one or more `//% cds-text-sync.<key>=<value>`
@@ -496,7 +547,7 @@ rather than a change:
   itself.
 - **`sync_direction`** is the per-kind policy: `bidirectional` (the default),
   `export_only` (written to disk so git can see it, never read back or deleted
-  from the IDE — the Library Manager is one), `import_only`, or `disabled`
+  from the IDE), `import_only`, or `disabled`
   (invisible to sync, which is where `device` and `device_module` sit).
 
 ## Layout

@@ -21,7 +21,8 @@ from engine.sync_log import (
     format_elapsed,
     timed_prompt,
 )
-from engine.change_detect import find_all_changes
+from engine import device_changes
+from engine.device_pass import find_changes
 from engine.device_remap import build_device_remap, summarize_device_remap
 from engine.import_items import perform_import_items
 from engine.backup import create_safety_backup, finalize_sync_operation
@@ -88,10 +89,8 @@ def import_project(base_dir, values, projects_obj=None):
     start_time = time.time()
     reset_interaction_timer()
     
-    export_xml = values["export_xml"]
-    
     print("Comparing IDE with disk...")
-    results = find_all_changes(base_dir, projects_obj, export_xml=export_xml)
+    results = find_changes(base_dir, projects_obj, values)
     
     different = results["different"]
     new_in_ide = results["new_in_ide"]
@@ -134,7 +133,7 @@ def import_project(base_dir, values, projects_obj=None):
             "file_path": item["file_path"],
             "type": "new",
             "type_guid": "",
-            "obj": None
+            "obj": None, "refused": item.get("refused"), "device_pass": item.get("device_pass")
         })
         
     # Orphans in IDE (missing on disk) -> delete
@@ -261,7 +260,8 @@ def import_project(base_dir, values, projects_obj=None):
                         updated=updated, created=created, moved=moved,
                         deleted=deleted, failed=failed,
                         identical=unchanged_count, failed_objects=missing,
-                        not_created=not_created)
+                        not_created=not_created,
+                        **device_changes.report(projects_obj.primary))
 
 
 def main():
