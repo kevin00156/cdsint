@@ -847,6 +847,13 @@ measurements behind every rule here are in `docs/trace-research.md`.
    recognise, or identities that differ, is exit 1 pointing at
    `plc download -y`. This also catches a working copy downloaded to two
    controllers: the record is per controller, those files are not.
+   Last, refuse if the application's `is_uptodate` is false: the working
+   copy's code, IO mapping, device settings or libraries differ from that
+   download, and a `Keep` login applies such a difference itself, by online
+   change or by full download, without asking (measured on the bench,
+   `docs/ethercat-research.md` 5.2). An IDE without `is_uptodate` is refused
+   too. It needs no build, and the trace object of step 3 does not change
+   it, which is why it is asked before that object exists.
 3. Open the project. Refuse if it already has an object named
    `cdsint_trace` anywhere; it is not renamed around, because the overwrite
    prompt in D7 is only safe to answer while that name is cdsint's alone.
@@ -855,8 +862,9 @@ measurements behind every rule here are in `docs/trace-research.md`.
    set its variables, task, resolution, sampling rate and, when the job has
    them, its trigger or record condition. The buffers are set after step 5,
    once the variables' types are known.
-4. Log in with `OnlineChangeOption.Keep`. `Keep` means "log in and change
-   nothing"; the application is never downloaded. A refusal because another
+4. Log in with `OnlineChangeOption.Keep`. `Keep` puts on the controller
+   whatever the working copy has that it lacks; after step 2 that is nothing,
+   so the application is not downloaded and not changed. A refusal because another
    client is already logged in to the controller says exactly that, not
    "project differs", so nobody downloads for nothing.
 5. Read every variable once with the online session's `read_value()`. Each

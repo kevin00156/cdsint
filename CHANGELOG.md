@@ -24,6 +24,11 @@ All notable changes to this project will be documented in this file.
   beside the project, even while cdsint's own record says `MATCH`. The
   command now compares the code and data identities in `.bootinfo_guids`
   with the ones in the controller's `Application.app` before it logs in.
+  With those files present, the same login applied a program edited in
+  memory and a remapped IO channel by online change, and a changed EtherCAT
+  cycle by a full download that left the application stopped; so the
+  command also refuses a working copy whose application is not up to date
+  with its last download (`docs/ethercat-research.md` 5.2).
 - **The controller holds the whole recording.** The IDE stops fetching
   samples while its main thread is held up, measured at 13 s on a busy
   machine, so the ring on the controller is sized for the whole recording.

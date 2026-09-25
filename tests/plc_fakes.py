@@ -635,6 +635,9 @@ class TraceBench(object):
                                     TYPE_GUIDS["task_config"])
         self.application = BaseNode("Application", "an-application",
                                     [self.task_config])
+        # What the IDE says when the working copy compiles to what was
+        # last downloaded; a test that edits the program sets it False.
+        self.application.is_uptodate = True
         self.project = TraceProject(
             [DeviceNode("Device", DEVICE_GUID)], self.application,
             read_data(TASK_CONFIG_XML) if xml is None else xml, names)

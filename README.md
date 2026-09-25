@@ -311,8 +311,10 @@ cdsint plc trace --project C:\p\line.project --install 3.5.21.40 --gateway 192.1
 
 records the variables a job file names, for as long as it says, from a
 controller that is still holding this working copy's last download (`MATCH`,
-as above; anything else stops the run and points at `plc download -y`). It
-logs in without downloading, never starts or stops the application and never
+as above; anything else stops the run and points at `plc download -y`), and
+whose program has not been edited since (a working copy that differs from its
+last download is refused the same way, because the login would put the edit
+on the controller). It logs in without downloading, never starts or stops the application and never
 writes a variable, so it needs no `-y` (one given is ignored); the `trace` word in
 the `plc` list is its whole gate. `--gateway` is compulsory: a controller
 found by the project's device name can be the wrong one, and a trace from the

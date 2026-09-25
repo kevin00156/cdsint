@@ -8,10 +8,12 @@ happens online is engine/plc_trace.py, whose TraceTrip is this with the
 recording added.
 
 Each check is here because a bench run showed what happens without it
-(docs/trace-research.md): a Keep login notices no changed program, so the
-CRC has to MATCH, and the IDE's download info has to agree, or the login
-downloads after all; and without the private buffer member the default ring
-loses most samples on a fast task, so its absence is refused before login.
+(docs/trace-research.md, docs/ethercat-research.md 5.2): a Keep login applies
+whatever the working copy has that the controller lacks, by online change or
+by full download, without asking. So the CRC has to MATCH, the IDE's download
+info has to agree, and the IDE has to find the program unchanged since that
+download; and without the private buffer member the default ring loses most
+samples on a fast task, so its absence is refused before login.
 """
 from __future__ import print_function
 
@@ -92,9 +94,9 @@ class TraceSetup(Trip):
     def holds_our_download(self):
         """The controller's CRC MATCHes this copy's record. None if it does.
 
-        A Keep login notices no changed program (research 7.4), so MATCH is
-        all that stands between a trace and variables that mean something
-        other than what the working copy says.
+        MATCH says nobody else has downloaded to the controller since this
+        copy did. Whether this copy has changed since is the_program_is_
+        unchanged's question.
         """
         problem = self.connected(self._pull_the_crc)
         if problem:
@@ -133,6 +135,33 @@ class TraceSetup(Trip):
         if problem:
             return problem
         self.note("download info agrees with the controller: code %s" % code)
+        return None
+
+    def the_program_is_unchanged(self):
+        """The working copy still compiles to what was last downloaded.
+
+        A Keep login is not "change nothing": with the download info in
+        place it applied a program edited in memory and a remapped IO channel
+        by online change, and a changed EtherCAT cycle by a full download
+        that left the application stopped, all without a prompt (research
+        12.1, as corrected; docs/ethercat-research.md 5.2). is_uptodate
+        answers without a build and was false for each of those and true for
+        an unchanged copy, cdsint_trace included, so it is asked before
+        cdsint_trace exists. An IDE without it cannot promise the login
+        changes nothing, and is refused rather than trusted.
+        """
+        uptodate = getattr(self.application, "is_uptodate", None)
+        if uptodate is None:
+            return ("this IDE's application object has no is_uptodate, so "
+                    "there is no way to tell whether a Keep login would "
+                    "download; nothing was logged in to")
+        if not uptodate:
+            return ("the working copy's program differs from what was last "
+                    "downloaded (the IDE's is_uptodate is false): code, IO "
+                    "mapping, device settings or libraries were changed. A "
+                    "Keep login would put that change on the controller, by "
+                    "online change or a full download, without asking. Save "
+                    "and run plc download -y first, or undo the change")
         return None
 
     # -- the trace, in memory -----------------------------------------------
