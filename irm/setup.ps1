@@ -24,7 +24,8 @@
     directory rather than holding a copy.
 
 .PARAMETER Version
-    Which tag to download, or "main". Ignored with -Clone.
+    Which release tag to download, "latest" for the newest release, or
+    "main" for the branch as it stands. Ignored with -Clone.
 
 .PARAMETER List
     Print the IDEs and ScriptDirs found, and change nothing.
@@ -39,7 +40,7 @@
 param(
     [string] $ScriptDir,
     [string] $Clone,
-    [string] $Version = "main",
+    [string] $Version = "latest",
     [switch] $List
 )
 
@@ -47,6 +48,7 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $RepoUrl = "https://github.com/kevin00156/cdsint"
+$LatestUrl = "https://api.github.com/repos/kevin00156/cdsint/releases/latest"
 $StubNames = @("Project_export.py", "Project_import.py", "Project_watch.py")
 
 # The subdirectory of ScriptDir the stubs live in. It is the product name,
@@ -119,18 +121,28 @@ function Get-Body {
     <#
         Where the engine, cds and cdsint packages live after this runs.
         Downloads a release unless a clone was named.
+
+        The body is a directory of its own inside %LOCALAPPDATA%\cdsint,
+        not that directory itself: the registrations of the IDEs that are
+        listening and the status window's position live there too, and
+        replacing the body must not take them with it. cdsint/release.py
+        names the same path; `cdsint update` replaces what is here.
     #>
     param([string] $Version)
 
-    $root = Join-Path $env:LOCALAPPDATA "cdsint"
-    $zip = Join-Path $env:TEMP "cdsint-$Version.zip"
-    $unpacked = Join-Path $env:TEMP "cdsint-unpacked-$Version"
+    $appDir = Join-Path $env:LOCALAPPDATA "cdsint"
+    $root = Join-Path $appDir "body"
 
+    if ($Version -eq "latest") {
+        $Version = (Invoke-RestMethod -Uri $LatestUrl -UseBasicParsing).tag_name
+    }
     if ($Version -eq "main") {
         $url = "$RepoUrl/archive/refs/heads/main.zip"
     } else {
         $url = "$RepoUrl/archive/refs/tags/$Version.zip"
     }
+    $zip = Join-Path $env:TEMP "cdsint-$Version.zip"
+    $unpacked = Join-Path $env:TEMP "cdsint-unpacked-$Version"
 
     Write-Host "[*] Downloading $Version from $RepoUrl" -ForegroundColor Cyan
     try {
@@ -141,8 +153,11 @@ function Get-Body {
         # GitHub wraps the tree in one directory named after the ref.
         $inner = Get-ChildItem $unpacked -Directory | Select-Object -First 1
 
+        Remove-FlatBody -AppDir $appDir -Tree $inner.FullName
+
         # Replace rather than merge: a file deleted upstream must not survive
         # an upgrade, or the Scripts menu keeps showing a stub that is gone.
+        New-Item -ItemType Directory -Force -Path $appDir | Out-Null
         if (Test-Path $root) { Remove-Item $root -Recurse -Force }
         Move-Item -Path $inner.FullName -Destination $root
     } finally {
@@ -151,6 +166,24 @@ function Get-Body {
     }
     Write-Host "[+] Body installed to $root" -ForegroundColor Green
     return $root
+}
+
+
+function Remove-FlatBody {
+    <#
+        0.0.1 unpacked the body straight into %LOCALAPPDATA%\cdsint, beside
+        the state. Whatever there has the name of something at the top of a
+        release is a leftover of that and goes; everything else is state and
+        stays. Nothing matches once the body has its own directory.
+    #>
+    param([string] $AppDir, [string] $Tree)
+
+    if (-not (Test-Path (Join-Path $AppDir "cdsint\cli.py"))) { return }
+    Write-Host "[*] Removing the 0.0.1 layout from $AppDir" -ForegroundColor Cyan
+    foreach ($entry in Get-ChildItem $Tree -Force) {
+        $leftover = Join-Path $AppDir $entry.Name
+        if (Test-Path $leftover) { Remove-Item $leftover -Recurse -Force }
+    }
 }
 
 
@@ -251,4 +284,7 @@ foreach ($target in $targets) {
 
 Write-Host "`nRestart the IDE. Tools > Scripting > Scripts should list three entries." -ForegroundColor Cyan
 Write-Host "For the CLI: python -m pip install -e `"$body`"" -ForegroundColor Cyan
+if (-not $Clone) {
+    Write-Host "Later, 'cdsint update' replaces the body with the newest release." -ForegroundColor Cyan
+}
 if ($failed -gt 0) { exit 1 }

@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Unreleased (0.1.0)
 
+- **`cdsint update` installs the newest release, and every command says when
+  there is one.** Only for an install `irm/setup.ps1` downloaded; a clone
+  updates with `git pull` and never checks. The check asks GitHub at most once
+  a day, prints one line on stderr, and says nothing under `--json` or when
+  GitHub cannot be reached. The update refuses while any CODESYS-family IDE is
+  running, unpacks the new tree beside the old one and swaps it in by two
+  renames, so a failed download leaves the old one as it was (SPEC D17).
+- **`irm/setup.ps1` installs the newest release, not `main`.** `-Version
+  main` still gets the branch. The body moves to `%LOCALAPPDATA%\cdsint\body`:
+  the old layout put it straight into `%LOCALAPPDATA%\cdsint`, and replacing
+  it deleted the registrations of the IDEs that were listening along with it.
+  Run from a 0.0.1 install, the script removes what the old layout left there;
+  run `pip install -e` on the new path afterwards, as it says.
+- **A pushed `v*` tag publishes a GitHub release**, after the tests pass, with
+  that version's section of this file as its notes. The job refuses a tag that
+  is not `SCRIPT_VERSION` and a section still headed "Unreleased".
+
 - **`cdsint plc trace` records named variables from a controller, with
   nobody at the IDE.** A job file names the task, the variables and how
   long; the command logs in without downloading, records, saves `.trace`

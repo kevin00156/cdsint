@@ -174,6 +174,20 @@ def show_installs(found, want_json=False):
                   % install["run_as_admin"])
 
 
+def show_update(record, want_json=False):
+    """Print what `cdsint update` did."""
+    if want_json:
+        return as_json(record)
+    if not record["updated"]:
+        print("cdsint %s is the newest release" % record["from"])
+        return
+    print("cdsint %s -> %s; restart any IDE to load it"
+          % (record["from"], record["latest"]))
+    if record["left_behind"]:
+        print("warning: could not delete the old copy at %s; delete it by "
+              "hand" % record["left_behind"], file=sys.stderr)
+
+
 def show_notes(results, want_json=False):
     """What the launcher had to say about the run, not about the work.
 

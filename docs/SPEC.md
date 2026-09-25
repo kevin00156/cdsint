@@ -300,6 +300,16 @@ the compatibility floor.
 Reason: PRINCIPLES.md keeps no dead code. That is how the last `cds/` skeleton
 got cleared out.
 
+**D17 A newer release is offered, never installed unasked.** Every command
+run from a downloaded install says on stderr when a newer release is out;
+`cdsint update` installs it.
+Reason: this tool drives PLC projects and controllers, and its behaviour
+changing between two commands of one job, with nobody having asked, is worse
+than it arriving a week late. The check is once a day and silent when it
+fails, because factory machines are often offline and a courtesy must not
+fail or slow the command it rides on. A clone never checks: it is updated
+with git and usually sits ahead of the newest release.
+
 ---
 
 ## 4. What the user sees
@@ -333,6 +343,7 @@ mutually exclusive, and argparse blocks them directly.
 |---|---|---|---|
 | `installs` | n/a | n/a | list the IDEs on this machine, their profile names, and whether they need admin |
 | `list` | n/a | n/a | list the IDEs that are listening. It asks "who is listening", not about one IDE, so it takes neither form |
+| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release (D17). Refuses on a clone and while any CODESYS-family IDE is running |
 | `ping`, `status`, `stop` | yes | n/a | the watcher's lifecycle, not under permission control |
 | `export [--delete-orphans]` | yes | yes | write the IDE project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back into the IDE, disk wins |
@@ -551,7 +562,7 @@ answers the dialogs.
 Split into body and stubs, as in upstream v2.9.0:
 
 ```
-Body  %LOCALAPPDATA%\cdsint\             or any git clone
+Body  %LOCALAPPDATA%\cdsint\body\        or any git clone
       engine\  cds\  cdsint\  profiles\  tools\  docs\ …
 
 ScriptDir\cdsint\                       what the IDE scans; only the three stubs
@@ -1181,8 +1192,12 @@ code is worse than no documentation.
 `version = {attr = "engine.codesys_constants.SCRIPT_VERSION"}` under
 `[tool.setuptools.dynamic]`, the watcher's registration file gets it passed in
 by `stub/Project_watch.py`, and README.md does not state a version number.
-There is no release script and none is needed: a release is changing that line
-and tagging.
+There is no release script and none is needed: a release is changing that
+line, dating its section in `CHANGELOG.md`, and pushing the tag `v` plus that
+number. CI's release job publishes the GitHub release once the tests pass, and
+refuses a tag that is not the version or a section that is not dated
+(`tools/release_notes.py`); `cdsint update` and `irm/setup.ps1` install the
+newest published release.
 
 ---
 
