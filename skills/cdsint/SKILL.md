@@ -328,4 +328,4 @@ new `.st` file creates a new object in the IDE, at the tree position matching it
 folder.
 
 Fuller detail, including every flag and the whole result schema, is in
-the cdsint repo's `README.md`.
+the cdsint repo's `docs/REFERENCE.md`.

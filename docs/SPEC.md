@@ -828,7 +828,7 @@ Three routes to the settings, one per kind of user:
    does not move. It writes a settings file with the single key `sync_folder`,
    creates the directory, and writes `.gitattributes` and `.gitignore`. The
    confirmation message says the other settings and their defaults are in the
-   settings table of README.md. No flag can answer this dialog, so unattended
+   settings table of docs/REFERENCE.md. No flag can answer this dialog, so unattended
    (the `--target` form, or the `--project` form without `--sync-dir`) it
    returns `needs_input`, and the message says which file and which key to
    write beside the project, or to run an export from the menu once.
@@ -1396,11 +1396,13 @@ newest published release.
 
 ## 9. Documentation
 
-- `README.md`: positioning, one example under ten lines for each of the three
-  scenarios, install (the ScriptDir table for the three vendors), the CLI
-  command table, exit codes, permissions, FAQ. The install source points at
-  this repo. Whatever in `WORKFLOW.md` still holds is folded into the
-  three-scenarios section.
+- `README.md`: for someone deciding whether to install it. What it needs, the
+  one-line install and the skill, what it does, and a few things to ask an
+  agent. Nothing a reader would look up rather than read; that goes in
+  `docs/REFERENCE.md`.
+- `docs/REFERENCE.md`: the three scenarios, install details, the CLI command
+  table, exit codes, permissions, settings, FAQ, and the text formats of
+  libraries, devices and pragmas.
 - `skills/cdsint/SKILL.md`: the operating manual for scenario B; paths and
   command names updated with the move. Add the section on the `--project`
   form.
