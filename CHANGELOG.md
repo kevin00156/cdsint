@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased (0.1.1)
+### 0.1.1 (2026-09-25) — one-line install, cdsint link
 
 - **Install is one line and no clone.** `irm .../setup.ps1 | iex` downloads
   the newest release, links every IDE and now pip-installs the `cdsint`
