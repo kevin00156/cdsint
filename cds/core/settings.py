@@ -48,6 +48,8 @@ SCHEMA = (
     ("backup_name", TEXT, "", "what to call those backups"),
     ("backup_retention_count", COUNT, 10, "how many backups to keep"),
     ("debug", FLAG, False, "write sync_metadata.json and the *.log files"),
+    ("devices", FLAG, False,
+     "let import apply EtherCAT device settings (SPEC 6.10)"),
     ("export_xml", FLAG, False,
      "also export visualisations, alarms and text lists as XML"),
     ("plc", ACTIONS, (), "which PLC commands this project allows (SPEC 6.5)"),

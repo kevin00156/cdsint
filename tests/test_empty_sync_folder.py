@@ -38,12 +38,12 @@ def importer(monkeypatch, tmp_path):
     body = entry_import
     compared = []
 
-    def spy(base_dir, projects_obj, export_xml=False):
+    def spy(base_dir, projects_obj, values):
         compared.append(base_dir)
         return {"different": [], "new_in_ide": [], "new_on_disk": [],
                 "unchanged_count": 0}
 
-    monkeypatch.setattr(body, "find_all_changes", spy)
+    monkeypatch.setattr(body, "find_changes", spy)
 
     def run(sync_dir):
         project = Project({}, [], str(tmp_path / "Fake.project"))

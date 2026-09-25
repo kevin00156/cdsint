@@ -29,6 +29,28 @@ All notable changes to this project will be documented in this file.
   cycle by a full download that left the application stopped; so the
   command also refuses a working copy whose application is not up to date
   with its last download (`docs/ethercat-research.md` 5.2).
+- **Libraries are a text file an agent can edit.** Each application's Library
+  Manager is exported as `Library Manager.libraries`, one line per library,
+  placeholder or redirection, and `import` applies an edited file through the
+  script API, reading every change back. It was `export_only` XML before,
+  and importing that XML only ever merged. A library that is not installed
+  is not added and is named in `failed_objects`; the devices' own libraries
+  are listed as comments and never touched; a Library Manager is never
+  created or deleted by import. An old `Library Manager.library_manager.xml`
+  in the sync folder becomes an orphan. `build` now cleans first when an
+  application's libraries changed since its last build, remembered in
+  `<project>.cdsint-build.json`, because a plain build after a library change
+  can report 0 errors without compiling (`docs/library-manager-research.md`,
+  SPEC 6.9).
+- **EtherCAT device settings are text files an agent can edit.** Every
+  EtherCAT master and every device below it is exported as `<name>.device`:
+  the ReadWrite parameters (cycle time, DC, station addresses, startup SDO
+  values, PDO entries, axis scaling) and the variables mapped to its
+  channels, keyed by connector and parameter identifier. `import` applies
+  edits through the script API and reads them back, only when the settings
+  file has the new key `devices: true`; the result carries
+  `devices_changed` and `full_download`. Native XML stays out: importing it
+  duplicated the whole tree (`docs/ethercat-research.md`, SPEC 6.10).
 - **The controller holds the whole recording.** The IDE stops fetching
   samples while its main thread is held up, measured at 13 s on a busy
   machine, so the ring on the controller is sized for the whole recording.

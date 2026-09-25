@@ -178,8 +178,8 @@ def importer(monkeypatch, tmp_path):
                 "file_path": str(sync / "PLC_PRG.st")}]
     imported = []
 
-    monkeypatch.setattr(entry_import, "find_all_changes",
-                        lambda base_dir, projects_obj, export_xml=False: {
+    monkeypatch.setattr(entry_import, "find_changes",
+                        lambda base_dir, projects_obj, values: {
                             "different": [], "new_in_ide": [],
                             "new_on_disk": list(on_disk),
                             "unchanged_count": 0})

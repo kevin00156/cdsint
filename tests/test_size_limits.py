@@ -54,8 +54,11 @@ BANNED_MODULE_NAMES = ("utils", "helpers", "common", "misc")
 # raise them, and do not add to them.
 ALLOWED_FUNCTION_LINES = {
     "engine/change_detect.py": {
-        "detect_moved_files": 81,
         "find_all_changes": 237,
+    },
+    # Split out of change_detect.py unchanged; the debt moved with it.
+    "engine/move_detect.py": {
+        "detect_moved_files": 81,
     },
     "engine/device_remap.py": {
         "build_device_remap": 75,
@@ -77,14 +80,14 @@ ALLOWED_FUNCTION_LINES = {
         "create_new_object": 141,
     },
     "engine/entry_compare.py": {
-        "compare_project": 89,
+        "compare_project": 87,
     },
     "engine/entry_export.py": {
         "cleanup_orphaned_files": 96,
-        "export_project": 213,
+        "export_project": 207,
     },
     "engine/entry_import.py": {
-        "import_project": 229,
+        "import_project": 228,
     },
     "tools/cache_doctor.py": {
         "main": 176,

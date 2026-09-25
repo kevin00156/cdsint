@@ -17,8 +17,22 @@ from engine.st_text import (
     format_property_content,
     format_st_content,
 )
-from engine.strings import safe_str
+from engine import library_refs
+from engine.strings import calculate_hash, safe_str
 from engine.sync_log import log_warning
+
+
+def _textless_hash(obj, obj_type_guid):
+    """The quick hash of an object with no declaration or implementation.
+
+    None, which means "no fast path", except for the Library Manager: its
+    content is its reference list (SPEC 6.9), and without a hash the folder
+    hash leaves it out, so from the second compare on a library removed in
+    the IDE read as unchanged.
+    """
+    if obj_type_guid != TYPE_GUIDS["library_manager"]:
+        return None
+    return calculate_hash(library_refs.render_ide(obj))
 
 
 def get_quick_ide_hash(obj, is_xml):
@@ -79,7 +93,7 @@ def get_quick_ide_hash(obj, is_xml):
                 can_have_impl = obj_type_guid in IMPLEMENTATION_TYPES
                 content = format_st_content(decl, impl, can_have_impl)
             else:
-                return None
+                return _textless_hash(obj, obj_type_guid)
 
         # Include build attributes in the hash so attribute-only changes
         # (like toggling Exclude from build) invalidate the cache

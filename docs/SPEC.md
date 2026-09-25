@@ -445,6 +445,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `sync_folder` | string | the sync folder. Starting with `./` it is relative to the directory holding the project file; otherwise used as written | none, asked on first run |
 | `plc` | list of strings | PLC authorisation; only `connect`, `download` and `trace` are recognised as elements, see 6.5 | empty list |
 | `debug` | boolean | write `sync_metadata.json` and `*.log` only when on | false |
+| `devices` | boolean | let `import` apply EtherCAT device settings (6.10) | false |
 | `export_xml` | boolean | also save visualisations, alarms and text lists as XML | false |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | false |
 | `safety_backup` | boolean | back the `.project` up before an import | true |
@@ -484,6 +485,10 @@ The existing format is kept, not one byte changed (D15):
   creating an object), `legacy_kind_names`, `sync_direction`
   (`bidirectional`, `export_only`, `import_only`, `disabled`). How many kinds
   there are is decided by that file and not repeated here.
+- An application's Library Manager is one `Library Manager.libraries` text
+  file, not an `.st` (6.9).
+- Each device under an EtherCAT master is one `<name>.device` text file of
+  its settings and mappings (6.10).
 - `sync_cache.json` is local state, gitignored. `sync_metadata.json` and
   `*.log` are written only with debug on.
 
@@ -1012,6 +1017,182 @@ samples are continuous, so completeness is judged as for any other run.
 controller is in `engine/`, next to the other `plc` modules. Reading the saved
 samples and judging completeness is plain Python on a file, in `cds/core/`, so
 CI tests it without an IDE.
+
+### 6.9 Library Manager
+
+An agent changes which libraries an application uses by editing one text
+file, and `import` applies it. The measurements behind every rule here are in
+`docs/library-manager-research.md`.
+
+**Not native XML.** Importing the Library Manager's native XML merges: it
+adds and restores references and never removes one, so a file cannot say
+"drop this library". The XML also carries a timestamp and a hash table whose
+order changes by itself. The kind therefore leaves `XML_KINDS`, is written
+and read as text built from the script API, and its `sync_direction` becomes
+`bidirectional`. `export_xml` does not gate it. An old
+`Library Manager.library_manager.xml` in a sync folder is an orphan after the
+first export and is swept like any other.
+
+**The file.** Beside where the XML was, one per application:
+`.../Plc Logic/Application/Library Manager.libraries`, UTF-8, one entry per
+line, sorted by kind and then name, `#` starts a comment:
+
+```
+library      Util, 3.5.19.0 (System)                        qualified_only
+library      CAA Memory, * (CAA Technical Workgroup)        qualified_only namespace=MEM
+placeholder  MyUtil = Util, 3.5.14.0 (System)
+redirect     Standard = Standard, 3.5.18.0 (System)
+# system     SM3_Basic = SM3_Basic, 4.20.0.0 (CODESYS)      resolved by SoftMotion profile 4.20.1.0
+```
+
+- `library NAME, VERSION (COMPANY)`: a plain reference. `VERSION` is exactly
+  what the IDE writes: a version, `*`, or a partial wildcard such as `1.*`.
+- `placeholder NAME = DEFAULT`: a placeholder the user added, with its default
+  resolution.
+- `redirect NAME = FIXED`: a placeholder pinned with `set_redirection`.
+- Options after a `library` line: `qualified_only`, `optional`,
+  `hide_when_referenced`, `publish_symbols`, `namespace=X`. Each is written
+  only when set (a namespace only when it differs from the library's own
+  name), and applied as written.
+- `# system` lines: references with `system_library` set, or resolved by a
+  device, a SoftMotion profile, licensing or Essentials. They belong to the
+  devices, not the user; export writes them as comments so a reader sees the
+  whole list, and import never applies them.
+
+The file is what `export` renders from the API, so two exports of an unchanged
+application are identical, and compare parses both sides into entries and
+compares those, so spacing and comments are not differences.
+
+**Import.** In this order, for each application whose file differs:
+
+1. Parse the file. A line that does not parse is a failure by line number,
+   and nothing in that application is changed.
+2. Diff by name against the IDE's references. References are matched by
+   name, never by `id`, which changes every session.
+3. Remove what the file no longer has, never a system reference. Add what it
+   has that the IDE does not, set redirections and options.
+4. After each `add_library`, read the reference's `managed_library`. A
+   reference that does not resolve (4.2.0.0 accepts a library or version
+   that is not installed without a word, and the build ignores it) is removed
+   again and is a failure naming the line. On 4.0.0.0 the add itself raises,
+   and that is the same failure.
+5. Read every reference back and compare with the file. Anything not as
+   written, including a placeholder that resolved to another version than
+   its default, is in `data.failed_objects` by application and line (D13).
+
+A `.libraries` file with no Library Manager beside it in the IDE is a failure
+by path; import does not create a Library Manager. A Library Manager with no
+file is left alone on import and never deleted: the object is the
+application's, and an absent file means "not synchronised yet", not "empty".
+
+Installing libraries into a repository is not part of import. It changes the
+machine and every open project that uses the library, and is left out until
+somebody asks for it as a command of its own.
+
+**Build.** After a library changes, `build()` can say "application is up to
+date, 0 errors" for code it did not compile; only `clean()` then `build()` is
+an answer. So `build` (and `verify`'s build step) hashes the application's
+library list, rendered as above, and compares it with the hash recorded at
+that application's last build in `<project>.cdsint-build.json` beside the
+project. Different, or no record, means `clean()` first, and the new hash is
+recorded then. An import that changed an application's Library Manager
+drops that application's record, because the record knows only cdsint's own
+builds: a person who built another list in the IDE, followed by an import
+that puts the recorded list back, would otherwise leave the digests equal
+and the IDE compiled for the other list. The record is local state like
+`sync_cache.json`.
+
+**Where the code lives** (D12). Rendering, parsing and diffing the file is
+plain Python in `cds/core/`, tested in CI. Reading and changing references is
+an engine manager, `engine/managers_library.py`.
+
+### 6.10 EtherCAT device settings
+
+An agent changes an EtherCAT master's or slave's settings (cycle time, DC,
+station addresses, startup SDO values, PDO entries, a SoftMotion axis's
+scaling) and the variables mapped to its channels by editing one text file
+per device, and `import` applies it when the project allows it. The
+measurements behind every rule here are in `docs/ethercat-research.md`.
+
+**Not native XML.** Importing a device's native XML over the existing tree
+adds a renamed copy with new GUIDs and every IO mapping doubled; a single
+slave does not import at all; and on DIADesigner-AX a deleted master is
+rebuilt at once from the network topology with every slave renamed. The
+script API changes one value at a time on both IDEs, with the same parameter
+identifiers. So `device` and `device_module` stay `disabled` for the object
+sync, and the devices under an EtherCAT master are handled by a pass of their
+own, through the API.
+
+**Which devices.** Every device whose identification has type 64 (an
+EtherCAT master), and every device below one: slaves, their modules, and the
+SoftMotion axes under drives. Nothing else about the device tree is touched.
+
+**The file.** One per device, laid out like the tree:
+`.../<PLC device>/EtherCAT_2.device`, `.../EtherCAT_2/X5_7SEtherCAT_1.device`,
+`.../EtherCAT_2/X5_7SEtherCAT_1/Axis_1.device`. UTF-8, `#` starts a comment:
+
+```
+device  65|766_0001000000000001|Revision=16#00000001
+c1/1074855936 = 0                      # Physical Address of the Slave
+c1/1610743808 = 'x 1'                  # DC sync0 factor
+c1/1627394048/Value = 6                # Op mode / Value
+map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
+```
+
+- `device TYPE|ID|VERSION`: the identification the device must have. It is
+  never applied: a device whose identification differs is refused by path,
+  because changing it (`update()`) removed the SoftMotion axis under a drive
+  and moved 11766 channel addresses.
+- A value line: the connector (`c<id>`, or `dev` for device parameters), the
+  parameter identifier, and for a sub-element its identifier after `/`, then
+  the value exactly as the API reads it. Only leaves (elements with no
+  sub-elements) with `ReadWrite` offline access are written, and never one
+  inside a channel: a channel's value is the process image, and the sample
+  project has 12296 channels and bits. Nor is a slave's DC sync0 or sync1
+  cycle time: the plug-in makes it the master's `MasterCycleTime` times the
+  slave's sync factor whatever is written, and a master cycle change reaches
+  every slave by itself (research 4.2); a file that names one is refused for
+  that key. The factor is written. Everything else follows from the written
+  values or is the IDE's.
+- A `map` line: a channel with a variable mapped. A mappable channel with no
+  `map` line has no variable.
+- Comments carry the parameter's visible name and a channel's IEC address,
+  for the reader; they are never read back.
+
+**Import**, when the settings file allows it (below):
+
+1. Parse the file. A line that does not parse changes nothing on that device
+   and is a failure by line number.
+2. The device at that path must exist with the identification in the file,
+   or the file is a failure by path. Import never creates, removes, updates
+   or moves a device; a device with no file is left alone.
+3. Read every parameter of the device once, then write only the values and
+   mappings that differ. Reading first also avoids the first write after
+   opening a project failing half way (research 8.1).
+4. Read everything back. A value not as written is a failure naming the
+   device and the key.
+5. When any device changed, the result says so in `data.devices_changed`, and
+   `data.full_download` carries the IDE's own judgement: true when
+   `is_online_change_possible` is false after the change, which it was for a
+   changed cycle, startup SDO or station address (research 5.1). A full
+   download stops the application; this is the caller's warning before any
+   `plc` command.
+
+**Permission.** A new settings key, `devices` (boolean, default `false`).
+Without it, export and compare work as usual and import applies nothing to a
+device: each device whose file differs is a failure by path saying that
+`devices` is off. Device settings do not touch the controller, but most of
+them turn the next download into a full one, and a full download stops the
+machine; the key is the project saying that is acceptable.
+
+**Cost.** Reading a device's parameters is one pass over them; the sample
+project's 81 devices, 46354 values, take 4 to 8 seconds, which export,
+compare and import each pay once.
+
+**Where the code lives** (D12). The file format, parsing and diffing are
+plain Python in `cds/core/`. Reading and writing a device is an engine
+module, and one pass per command (export, compare, import) is added beside
+the object sync, not inside it.
 
 ---
 
