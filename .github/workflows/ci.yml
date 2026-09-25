@@ -2,7 +2,8 @@ name: CI
 
 on:
   # Every branch, not just main: a branch whose tests nobody ran is a
-  # branch nobody can merge without running them by hand (SPEC 8).
+  # branch nobody can merge without running them by hand (SPEC 8). A pushed
+  # tag arrives here too, and is what the release job below waits for.
   push:
   pull_request:
   workflow_dispatch:
@@ -29,3 +30,22 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest tests -q
+
+  release:
+    # Here rather than in a workflow of its own so that it can wait for the
+    # tests: a release is what `cdsint update` installs on every machine
+    # that asks, so one whose tests failed must not be published at all.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: core-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md
+      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
