@@ -1,6 +1,6 @@
 ---
 name: cdsint
-description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, building a PLC application, or downloading to a controller and checking what it runs (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC、下載到 PLC).
+description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, building a PLC application, changing its libraries or EtherCAT device settings and IO mapping, downloading to a controller and checking what it runs, or recording variables from a running controller (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC、函式庫、EtherCAT 設定、下載到 PLC、錄 PLC 變數).
 ---
 
 # Driving a CODESYS IDE from the shell
@@ -109,7 +109,8 @@ it; the rest take their default:
 | `sync_folder` | string, `./` is relative to the `.project`'s directory | none — the first export asks |
 | `plc` | list of `connect`, `download` and `trace` | `[]` |
 | `debug` | boolean — write `sync_metadata.json` and the `*.log` files | `false` |
-| `export_xml` | boolean — also export visualisations and alarms as XML | `false` |
+| `devices` | boolean — let `import` apply EtherCAT `.device` files | `false` |
+| `export_xml` | boolean — also export visualisations, alarms and text lists as XML | `false` |
 | `backup_binary` | boolean — copy the `.project` into the sync folder on export | `false` |
 | `safety_backup` | boolean — back the `.project` up before an import | `true` |
 | `backup_name` | string — what to call those backups | `""` |
@@ -153,7 +154,9 @@ Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
 the project's are left alone.
 
 `plc trace` records variables from a controller that is at `MATCH`, without
-downloading anything. It needs `trace` in the `plc` list, `--gateway` (it is
+downloading anything. It also refuses a working copy that differs from its last
+download — an imported edit nobody downloaded — because logging in would put
+that edit on the controller; `plc download -y` first, with the user's word. It needs `trace` in the `plc` list, `--gateway` (it is
 exit 2 without one) and a job file, and takes no `-y`. Write `trace.json` as
 `{"task": "MainTask", "variables": ["PRG_X.var"], "duration_s": 3, "out": "runs/first"}`,
 then:
@@ -258,6 +261,48 @@ time and wait for it.
   every create, move and delete anyway.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
+
+## Libraries: `Library Manager.libraries`
+
+Each application's Library Manager is one text file in its folder, one line per
+library:
+
+```
+library      Util, 3.5.19.0 (System)                        qualified_only
+placeholder  MyUtil = Util, 3.5.14.0 (System)
+redirect     Standard = Standard, 3.5.18.0 (System)
+# system     SM3_Basic = SM3_Basic, 4.20.0.0 (CODESYS)      resolved by SoftMotion profile 4.20.1.0
+```
+
+Add, delete or edit lines, then `import --yes` and `build`. `*` as the version
+takes the newest installed. `# system` lines belong to the devices: shown, never
+applied. cdsint cannot install a library; one not installed on this machine is
+not added and `failed_objects` names it — tell the user, do not hunt for a copy.
+`build` cleans first by itself after a library change, so a clean build result
+there is real.
+
+## EtherCAT devices: `<name>.device`
+
+Every EtherCAT master and every device below it is one text file, laid out like
+the device tree:
+
+```
+device  65|766_0001000000000001|Revision=16#00000001
+c1/1610743808 = 'x 1'                               # DC sync0 factor
+c1/1627394048/Value = 6                             # Op mode
+map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]  # Error Code, %IW5
+```
+
+Change a value or a `map` line; delete a `map` line to unmap the channel. The
+`device` line is checked, never applied: leave it alone. `import` applies these
+files only when the settings file has `"devices": true`, and without it says so —
+do not add that key without the user's word, because most device settings turn
+the next download into a full one, and a full download stops the machine. After
+an import `data.devices_changed` names the devices it changed and
+`data.full_download` says whether the next download is a full one; report both.
+A value the IDE would not take is named in `failed_objects`. Import never adds,
+removes or updates a device, and a slave's DC cycle times are not in the file
+(they follow the master's); changes like those are for the user in the IDE.
 
 ## The `.st` format
 
