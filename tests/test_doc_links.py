@@ -16,8 +16,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Every markdown file a reader is meant to follow links out of.
 DOCS = ("README.md", "CONTRIBUTING.md", "PRINCIPLES.md", "SECURITY.md",
-        "docs/SPEC.md", "docs/WATCHER.md", "skills/cdsint/SKILL.md",
-        "tools/README.md", "irm/setup.md")
+        "docs/SPEC.md", "docs/WATCHER.md", "docs/REFERENCE.md",
+        "skills/cdsint/SKILL.md", "tools/README.md", "irm/setup.md")
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.MULTILINE)

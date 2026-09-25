@@ -199,16 +199,16 @@ def test_a_trace_exits_the_way_every_plc_command_does(result, code, tmp_path,
     assert cli.main(trace_argv(write_job(tmp_path, GOOD))) == code
 
 
-def test_the_readme_job_table_is_the_one_a_refusal_prints():
-    # README carries a copy so a reader can see the fields without making a
-    # mistake first; this is what keeps the copy from being a second source.
-    readme = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "README.md")
-    with open(readme, encoding="utf-8") as handle:
+def test_the_reference_job_table_is_the_one_a_refusal_prints():
+    # docs/REFERENCE.md carries a copy so a reader can see the fields without
+    # making a mistake first; this keeps the copy from being a second source.
+    reference = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "docs", "REFERENCE.md")
+    with open(reference, encoding="utf-8") as handle:
         text = handle.read()
     first = trace_job.table()[0]
-    assert first in text, "README has no job table"
+    assert first in text, "REFERENCE.md has no job table"
     # The whole fenced block, so a field dropped from the code cannot live on
-    # in the README either.
+    # in the reference either.
     block = text[text.index(first):].split("```")[0]
     assert block.splitlines() == trace_job.table()

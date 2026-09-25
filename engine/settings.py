@@ -131,7 +131,7 @@ def choose_sync_folder(caller_globals, project_path):
     print("Sync folder set to: " + written)
     system.ui.info("Sync folder saved to " + path + "\n\n" + written
                    + "\n\nThe other settings and their defaults are in the "
-                     "settings table in README.md; add a key to that file "
+                     "settings table in docs/REFERENCE.md; add a key to that file "
                      "when you want to change one.")
     return schema.resolve({"sync_folder": written}), None
 
