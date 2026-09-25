@@ -261,6 +261,8 @@ time and wait for it.
   every create, move and delete anyway.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
+- Run `cdsint update` because stderr said a newer release is out. That line is
+  for the user: tell them, and let them decide when the tool changes under them.
 
 ## Libraries: `Library Manager.libraries`
 

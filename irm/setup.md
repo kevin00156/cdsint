@@ -48,9 +48,16 @@ Without an elevated shell the script says which ScriptDir it skipped and
 carries on with the rest; run it again as administrator to add it.
 
 **Installs the body.** Downloads the requested version (`-Version`, default
-`main`) into `%LOCALAPPDATA%\cdsint`, replacing whatever is there rather than
-merging — a stub deleted upstream must not survive an upgrade and keep
-showing in the menu. With `-Clone` it skips this and uses the clone.
+the newest release) into `%LOCALAPPDATA%\cdsint\body`, replacing whatever is
+there rather than merging — a stub deleted upstream must not survive an
+upgrade and keep showing in the menu. With `-Clone` it skips this and uses the
+clone.
+
+The body has a directory of its own because `%LOCALAPPDATA%\cdsint` also
+holds the registrations of the IDEs that are listening and the status
+window's position, and replacing the body must not take those with it. 0.0.1
+unpacked the body straight into `%LOCALAPPDATA%\cdsint`; the script removes
+what that left there, and only that.
 
 This happens before the listing, because the body is what answers it. The one
 exception is `-List` run from a checkout: listing changes nothing, so it must
@@ -73,7 +80,19 @@ cannot leave a stale stub in one IDE's ScriptDir and a fresh one in another's.
 | `-List` | print the IDEs and ScriptDirs found, change nothing |
 | `-ScriptDir D` | install into `D` only, instead of everything found |
 | `-Clone P` | use the tree at `P` as the body instead of downloading |
-| `-Version v1.2.3` | download this tag instead of `main` |
+| `-Version v1.2.3` | download this tag instead of the newest release; `main` downloads the branch as it stands |
+
+## Updating
+
+An install this script downloaded updates itself: `cdsint update` replaces
+the body with the newest release, and every other `cdsint` command prints one
+line on stderr when a newer one is out. It checks GitHub at most once a day,
+says nothing under `--json` or when it cannot reach GitHub, and never checks
+from a clone. The junctions need no change, because the body stays at the
+same path. It refuses while any CODESYS-family IDE is running: an IDE that
+has run one of the stubs keeps the old engine loaded.
+
+A clone updates with `git pull`, and `cdsint update` says so.
 
 ## Requirements
 

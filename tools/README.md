@@ -95,6 +95,16 @@ calls them. Runs inside the IDE, same `--runscript` shape. It used to be a
 one-shot dump inside `read_ide_attrs()`, costing a `getattr` per object on
 every export to answer a question somebody asks once a year.
 
+**`tools/release_notes.py`** prints one release's section of `CHANGELOG.md`,
+and refuses when the tag is not `v` plus `SCRIPT_VERSION` or the section is
+not dated yet. Plain CPython. The release job in `.github/workflows/ci.yml`
+runs it on every pushed `v*` tag and publishes what it prints; run it by hand
+before tagging to see what the release will say:
+
+```
+python tools/release_notes.py v0.1.0
+```
+
 And the one that is not an instrument: **`tools/_root.py`** puts the install
 root on `sys.path` so the others can import `engine/` and `cds/`. Nothing to
 run; it is imported.

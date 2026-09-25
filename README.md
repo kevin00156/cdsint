@@ -94,6 +94,12 @@ carries only the packages. A `cdsint` installed without `-e`, or from a git
 URL, still answers `installs`, `list` and every `--target` command, but a
 `--project` command refuses before it starts an IDE, and says so.
 
+### Updating
+
+A clone updates with `git pull`. An install that `irm/setup.ps1` downloaded
+updates with `cdsint update`, and every other command says on stderr when
+there is a newer release to update to; `irm/setup.md` has the details.
+
 ### The skill, if you use Claude Code
 
 ```
