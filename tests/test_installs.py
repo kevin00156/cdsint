@@ -7,7 +7,6 @@ looks like one, and two Lenze generations whose ScriptDirs differ.
 """
 import io
 import os
-import re
 
 import pytest
 
@@ -197,37 +196,17 @@ def test_no_profile_at_all_says_which_install(machine):
     assert "CODESYS 3.5.21.40" in str(raised.value)
 
 
-# --- what irm/setup.ps1 reads out of `cdsint installs --json` --------------
+# --- irm/setup.ps1 leaves the IDEs to `cdsint link` ------------------------
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SETUP = os.path.join(REPO_ROOT, "irm", "setup.ps1")
 
 
-def installer_fields():
-    """The JSON field names irm/setup.ps1 reads, taken from the script."""
-    with io.open(SETUP, encoding="utf-8") as handle:
-        block = handle.read().split("function Get-ScriptDirs", 1)[1]
-    block = block.split("\nfunction ", 1)[0]
-    return (set(re.findall(r"\$_(?:\.Group\[0\])?\.([a-z_]+)", block))
-            | set(re.findall(r"Group-Object ([a-z_]+)", block)))
-
-
-def test_every_field_the_installer_reads_is_one_this_hands_it(machine):
-    # setup.ps1 has no copy of the vendor table left; it asks for this one.
-    # A field renamed here is a field the installer stops finding, and
-    # nothing else would notice until somebody ran it on a real machine.
-    wanted = installer_fields()
-    assert wanted, "no fields found in Get-ScriptDirs; did it move?"
-    for install in installs.find():
-        missing = wanted - set(install)
-        assert not missing, "irm/setup.ps1 reads %s" % sorted(missing)
-
-
 def test_the_installer_carries_no_scriptdir_knowledge_of_its_own():
     # The two copies disagreed about ProgramData for months, and the one
     # without tests was the one people ran. Where the *body* goes is still
-    # the installer's own decision (%LOCALAPPDATA%\cdsint); where an IDE
-    # looks for menu scripts is not.
+    # the installer's own decision (%LOCALAPPDATA%\cdsint\body); where an
+    # IDE looks for menu scripts is not.
     with io.open(SETUP, encoding="utf-8") as handle:
         script = handle.read()
     for spelled_out in ("Program Files", "ProgramData", "ScriptDir\\"):

@@ -174,18 +174,45 @@ def show_installs(found, want_json=False):
                   % install["run_as_admin"])
 
 
+# What each state of `cdsint link` means to the person reading it.
+_LINK_SAYS = {
+    "linked": "in the Scripts menu now; restart the IDE",
+    "already": "already in the Scripts menu",
+    "needs_admin": "skipped: this ScriptDir needs an elevated shell; run "
+                   "`cdsint link` again as administrator",
+    "occupied": "skipped: a directory that is not a cdsint junction is in "
+                "the way; move it and run `cdsint link` again",
+    "failed": "failed",
+}
+
+
+def show_links(rows, want_json=False):
+    """Print what `cdsint link` did, one ScriptDir at a time."""
+    if want_json:
+        return as_json(rows)
+    if not rows:
+        print("no CODESYS-family IDE found on this machine; pass "
+              "--script-dir to link one anyway")
+    for row in rows:
+        print("%s\n  %s\n  %s" % (row["ide"], _LINK_SAYS[row["state"]],
+                                  row["detail"]))
+
+
 def show_update(record, want_json=False):
     """Print what `cdsint update` did."""
     if want_json:
         return as_json(record)
     if not record["updated"]:
         print("cdsint %s is the newest release" % record["from"])
-        return
-    print("cdsint %s -> %s; restart any IDE to load it"
-          % (record["from"], record["latest"]))
-    if record["left_behind"]:
+    else:
+        print("cdsint %s -> %s; restart any IDE to load it"
+              % (record["from"], record["latest"]))
+    if record.get("left_behind"):
         print("warning: could not delete the old copy at %s; delete it by "
               "hand" % record["left_behind"], file=sys.stderr)
+    changed = [row for row in record["menus"] if row["state"] != "already"]
+    if changed:
+        show_links(changed)
 
 
 def show_notes(results, want_json=False):

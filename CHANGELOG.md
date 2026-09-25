@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### 0.1.1 (2026-09-25) — one-line install, cdsint link
+
+- **Install is one line and no clone.** `irm .../setup.ps1 | iex` downloads
+  the newest release, links every IDE and now pip-installs the `cdsint`
+  command itself; README leads with it. It no longer calls `exit` when run
+  through `iex`, which closed the user's shell window.
+- **`cdsint link` puts the install in every IDE's Scripts menu**, and is how
+  an IDE installed after cdsint gets it: `setup.ps1` runs it, `cdsint update`
+  runs it after every update and when there was nothing to update, and every
+  command says once a day which IDE's menu does not reach this install. What
+  used to be PowerShell with no tests is `cdsint/link.py`. A real directory
+  at `ScriptDir\cdsint` is no longer deleted: it is named and left alone.
+
 ### 0.1.0 (2026-09-25) — plc trace, libraries and devices as text, self-update
 
 - **`cdsint update` installs the newest release, and every command says when

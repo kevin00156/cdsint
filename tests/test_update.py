@@ -13,7 +13,7 @@ import zipfile
 import pytest
 
 from cds.core.exits import EXIT_FAILED
-from cdsint import cli, release, update
+from cdsint import cli, link, release, update
 from cdsint.exits import Failure
 from engine.codesys_constants import SCRIPT_VERSION
 
@@ -52,6 +52,7 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "running_ides", lambda: [])
     reinstalled = []
     monkeypatch.setattr(update, "_reinstall", reinstalled.append)
+    monkeypatch.setattr(link, "link_all", lambda: [])
     return body, reinstalled
 
 
@@ -61,13 +62,6 @@ def test_the_new_release_replaces_the_body(machine):
     assert which(body) == "new"
     assert not os.path.exists(body + ".new")
     assert not os.path.exists(body + ".old")
-
-
-def test_the_stubs_are_told_where_the_body_is(machine):
-    body, _ = machine
-    update.replace_body(NEWER, body)
-    with io.open(os.path.join(body, "stub", "body.path"), "rb") as f:
-        assert f.read() == body.encode("utf-8")
 
 
 def test_state_beside_the_body_survives(machine):
@@ -127,7 +121,8 @@ def test_update_under_json(machine, capsys):
     assert cli.main(["update", "--json"]) == 0
     record = json.loads(capsys.readouterr().out)
     assert record == {"from": release.tag_of(SCRIPT_VERSION),
-                      "latest": NEWER, "updated": True, "left_behind": None}
+                      "latest": NEWER, "updated": True, "left_behind": None,
+                      "menus": []}
 
 
 def test_nothing_to_do_on_the_newest_release(machine, monkeypatch, capsys):
@@ -138,6 +133,18 @@ def test_nothing_to_do_on_the_newest_release(machine, monkeypatch, capsys):
     assert which(body) == "old"
     assert reinstalled == []
     assert "newest release" in capsys.readouterr().out
+
+
+def test_an_ide_added_since_is_linked_even_without_a_release(
+        machine, monkeypatch, capsys):
+    monkeypatch.setattr(release, "latest_tag",
+                        lambda timeout: release.tag_of(SCRIPT_VERSION))
+    monkeypatch.setattr(link, "link_all", lambda: [
+        {"ide": "Lenze 4.0", "state": link.LINKED, "detail": "X"},
+        {"ide": "SP21", "state": link.ALREADY, "detail": "Y"}])
+    assert cli.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert "Lenze 4.0" in out and "SP21" not in out
 
 
 def test_refused_while_an_ide_runs(machine, monkeypatch, capsys):

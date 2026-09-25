@@ -24,7 +24,7 @@ import zlib
 # from zero. Nothing compares this number against a project any more -- the
 # version stamp and the mismatch prompt went with the move to a settings file
 # (SPEC 6.7) -- so a release is free to renumber.
-SCRIPT_VERSION = "0.1.0"
+SCRIPT_VERSION = "0.1.1"
 
 # Sync direction policy values allowed in the profile
 _DIRECTION_VALUES = ("bidirectional", "export_only", "import_only", "disabled")

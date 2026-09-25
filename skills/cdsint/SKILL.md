@@ -17,9 +17,10 @@ CODESYS will not open one project twice:
 - **`--project P --install I`** starts an IDE of its own, runs the command and
   lets it go. This is the one for a project nobody has open.
 
-`cdsint` is a console command, installed with `pip install -e .` from a clone of
-the cdsint repo. If the command is not on PATH, ask the user where that repo is
-checked out and run `python -m cdsint.cli` from it instead.
+`cdsint` is a console command, installed by `irm/setup.ps1` or with
+`pip install -e .` from a clone of the cdsint repo. If the command is not on
+PATH, ask the user where cdsint is installed and run `python -m cdsint.cli`
+from that directory instead.
 
 ## Before anything: is an IDE listening?
 
@@ -261,8 +262,9 @@ time and wait for it.
   every create, move and delete anyway.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
-- Run `cdsint update` because stderr said a newer release is out. That line is
-  for the user: tell them, and let them decide when the tool changes under them.
+- Run `cdsint update` or `cdsint link` because stderr said one is due. Those
+  lines are for the user: tell them, and let them decide when the tool changes
+  under them or writes into their IDEs' directories.
 
 ## Libraries: `Library Manager.libraries`
 
