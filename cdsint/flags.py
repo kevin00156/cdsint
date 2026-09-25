@@ -26,7 +26,8 @@ DEFAULT_TIMEOUT_S = 120.0
 
 # The two forms of every command (SPEC D2), plus the two that have neither.
 #
-#   NO_IDE     about this machine, not about a project: installs, list, update
+#   NO_IDE     about this machine, not about a project: installs, list,
+#              update, link
 #   WATCHER    only --target: the watcher's own life, which needs a watcher
 #   EITHER     both forms, the ordinary case
 #   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
@@ -146,8 +147,14 @@ COMMANDS = {
         "list the IDEs on this machine, and what to call each one", NO_IDE),
     "list": Command("show the IDEs that are listening", NO_IDE),
     "update": Command(
-        "replace this install with the newest release; only one "
-        "irm/setup.ps1 downloaded", NO_IDE),
+        "replace this install with the newest release and put it in the "
+        "menu of any IDE added since; only one irm/setup.ps1 downloaded",
+        NO_IDE),
+    "link": Command(
+        "put this install in the Scripts menu of every IDE on this machine",
+        NO_IDE,
+        flags=[("--script-dir", NAME,
+                "link this ScriptDir only, instead of every one found")]),
     "ping": Command("check that an IDE is answering", WATCHER),
     "status": Command("show what an IDE has open right now", WATCHER),
     "stop": Command("tell a watcher to shut down", WATCHER),

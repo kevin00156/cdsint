@@ -10,6 +10,7 @@ because CODESYS will not open a project twice, so no run could want both.
     cdsint installs
     cdsint list
     cdsint update
+    cdsint link
     cdsint export  --target softplc
     cdsint verify  -y --project C:\\p\\line.project --install 3.5.21.40 \\
                    --sync-dir C:\\p\\exported
@@ -21,8 +22,8 @@ The work is elsewhere: cdsint/flags.py is the shape of the command line
 and cdsint/refusals.py what it will not run, cdsint/job_file.py reads a
 trace job before anything starts, cdsint/target.py and cdsint/headless.py
 are the two forms, cdsint/verify.py is the round trip, cdsint/update.py
-replaces a downloaded install and cdsint/release.py says when there is
-something newer to replace it with, cdsint/report.py does
+replaces a downloaded install, cdsint/link.py puts it in the IDEs' menus
+and cdsint/reminders.py says when either is due, cdsint/report.py does
 the printing, cds/core/exits.py holds SPEC 4.3's exit codes and
 cdsint/exits.py the exception that carries one. This file is what becomes of
 a parsed command.
@@ -41,8 +42,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cds.core import ipc  # noqa: E402
 from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK  # noqa: E402
 from cdsint import (  # noqa: E402
-    flags, headless, installs, refusals, release, report, target, update,
-    verify)
+    flags, headless, installs, link, refusals, reminders, report, target,
+    update, verify)
 from cdsint.exits import Failure  # noqa: E402
 
 
@@ -141,11 +142,11 @@ def exit_code(result):
 
 
 # The commands that answer without an IDE: what is installed on this
-# machine, who is listening, and replacing this install with a newer one.
-# cdsint/flags.py says they take neither form; this says which function
-# answers each.
+# machine, who is listening, replacing this install with a newer one, and
+# putting it in the IDEs' menus. cdsint/flags.py says they take neither
+# form; this says which function answers each.
 ABOUT_THIS_MACHINE = {"installs": run_installs, "list": run_list,
-                      "update": update.run}
+                      "update": update.run, "link": link.run}
 
 
 def main(argv=None):
@@ -153,7 +154,7 @@ def main(argv=None):
     ns = parser.parse_args(argv)
     refusals.check(parser, ns)
     code = run(ns)
-    release.remind(ns.command, ns.json)
+    reminders.remind(ns.command, ns.json)
     return code
 
 

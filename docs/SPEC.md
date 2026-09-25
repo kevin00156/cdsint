@@ -301,8 +301,11 @@ Reason: PRINCIPLES.md keeps no dead code. That is how the last `cds/` skeleton
 got cleared out.
 
 **D17 A newer release is offered, never installed unasked.** Every command
-run from a downloaded install says on stderr when a newer release is out;
-`cdsint update` installs it.
+run from a downloaded install says on stderr when a newer release is out, or
+when an IDE's Scripts menu does not reach the install; `cdsint update` and
+`cdsint link` act on it. Neither is done from any other command: linking
+writes into another program's directory, and Delta's needs an elevated
+shell, which an unrelated command would only fail on.
 Reason: this tool drives PLC projects and controllers, and its behaviour
 changing between two commands of one job, with nobody having asked, is worse
 than it arriving a week late. The check is once a day and silent when it
@@ -343,7 +346,8 @@ mutually exclusive, and argparse blocks them directly.
 |---|---|---|---|
 | `installs` | n/a | n/a | list the IDEs on this machine, their profile names, and whether they need admin |
 | `list` | n/a | n/a | list the IDEs that are listening. It asks "who is listening", not about one IDE, so it takes neither form |
-| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release (D17). Refuses on a clone and while any CODESYS-family IDE is running |
+| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, then `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
+| `link [--script-dir D]` | n/a | n/a | junction every IDE's `ScriptDir\cdsint` onto this body's `stub\` and write `stub\body.path` (5.3). A ScriptDir needing an elevated shell is skipped without one, and a real directory in the way is left alone; either makes it exit 1 |
 | `ping`, `status`, `stop` | yes | n/a | the watcher's lifecycle, not under permission control |
 | `export [--delete-orphans]` | yes | yes | write the IDE project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back into the IDE, disk wins |

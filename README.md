@@ -75,30 +75,49 @@ report.
 
 ## Install
 
-Two things get installed and they are independent: the `cdsint` command, and
-the stubs the IDE's Scripts menu scans. A third, optional, is the skill file
-that teaches Claude Code how to drive the command.
+One line, in PowerShell, with Python 3.11 or later on PATH:
 
-### The command
+```powershell
+irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
+```
+
+It downloads the newest release into `%LOCALAPPDATA%\cdsint\body`, puts it in
+the **Tools > Scripting > Scripts** menu of every CODESYS-family IDE on the
+machine, and pip-installs the `cdsint` command. Restart any IDE that was open;
+the menu should list `Project_export`, `Project_import` and `Project_watch`.
+No git, no clone. Run it from an elevated shell to include Delta, whose
+ScriptDir is inside Program Files; otherwise it says which one it skipped.
+
+### Keeping it current
+
+Every command says, on stderr and at most once a day, when there is a newer
+release or an IDE whose menu does not have cdsint in it yet — one installed
+after cdsint was, usually. Neither happens by itself:
+
+```
+cdsint update     # the newest release, and any IDE added since
+cdsint link       # just the IDE menus; as administrator for Delta
+```
+
+`update` refuses while any CODESYS-family IDE is running, because one that has
+run a cdsint script keeps the old engine loaded. `irm/setup.md` has the rest.
+
+### From a clone, to work on cdsint itself
 
 ```
 git clone https://github.com/kevin00156/cdsint
 cd cdsint
-python -m pip install -e .
-cdsint --help
+.\irm\setup.ps1 -Clone .
 ```
 
-The `-e` is not optional. The IDE half runs out of the same tree as the
-command — `profiles/`, `stub/` and `tools/` beside the packages — and a wheel
-carries only the packages. A `cdsint` installed without `-e`, or from a git
-URL, still answers `installs`, `list` and every `--target` command, but a
-`--project` command refuses before it starts an IDE, and says so.
-
-### Updating
-
-A clone updates with `git pull`. An install that `irm/setup.ps1` downloaded
-updates with `cdsint update`, and every other command says on stderr when
-there is a newer release to update to; `irm/setup.md` has the details.
+The same install, pointed at the clone: the menus run what you are editing, and
+the command is pip-installed with `-e`. The `-e` is not optional. The IDE half
+runs out of the same tree as the command — `profiles/`, `stub/` and `tools/`
+beside the packages — and a wheel carries only the packages. A `cdsint`
+installed without `-e`, or from a git URL, still answers `installs`, `list` and
+every `--target` command, but a `--project` command refuses before it starts an
+IDE, and says so. A clone updates with `git pull`; it never checks for
+releases.
 
 ### The skill, if you use Claude Code
 
@@ -110,29 +129,18 @@ That reads `skills/cdsint/SKILL.md` straight out of this repo — there is no
 separate package. It is what an agent reads before it starts editing `.st`
 files: the loop, how to read a result, and what never to do.
 
-### The IDE half
+### How the menu finds the code
 
 The IDE finds scripts by scanning one directory tree for `.py` files and putting
-every one of them in **Tools > Scripting > Scripts**. So only the stubs go there;
-the code they call lives in your clone.
-
-The installer does both halves of that — it finds every IDE on the machine,
-junctions each one's ScriptDir onto `stub\`, and writes the clone's path into
-`stub\body.path`:
-
-```powershell
-.\irm\setup.ps1 -Clone .
-```
-
-Run it from an elevated shell to include Delta, whose ScriptDir is inside
-Program Files; it says which ones it skipped otherwise. `.\irm\setup.ps1 -List`
-shows what it found without touching anything, and `irm/setup.md` has the rest
-of the options.
+every one of them in **Tools > Scripting > Scripts**. So only the three stubs
+are reachable from there: `cdsint link` makes each IDE's `ScriptDir\cdsint` an
+NTFS junction onto the body's `stub\`, and writes the body's path into
+`stub\body.path`. `cdsint installs` shows each IDE's ScriptDir.
 
 <details>
 <summary>By hand, if you would rather</summary>
 
-Write the clone's path — one line, no trailing slash, no BOM — into a file
+Write the body's path — one line, no trailing slash, no BOM — into a file
 called `body.path` next to the stubs:
 
 ```powershell
@@ -142,7 +150,7 @@ called `body.path` next to the stubs:
 
 Then point the IDE's ScriptDir at `stub\` with an NTFS junction. **Which
 directory that is depends on the IDE**, and getting it wrong is the usual reason
-nothing shows up in the menu — `cdsint installs` prints the right one per IDE:
+nothing shows up in the menu:
 
 | IDE | ScriptDir |
 |---|---|
@@ -156,9 +164,6 @@ mklink /J "%LOCALAPPDATA%\CODESYS\ScriptDir\cdsint" "C:\path\to\cdsint\stub"
 ```
 
 </details>
-
-Restart the IDE. **Tools > Scripting > Scripts** should now list three entries:
-`Project_export`, `Project_import`, `Project_watch`.
 
 ## The commands
 
@@ -174,6 +179,8 @@ Every command that touches a project takes one of two forms, and never both:
 |---|---|---|---|
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
 | `list` | — | — | which IDEs are listening; it asks about this machine, not about one IDE |
+| `update` | — | — | replace a downloaded install with the newest release, and link any IDE added since |
+| `link [--script-dir D]` | — | — | put this install in every IDE's Scripts menu |
 | `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back in, disk wins |

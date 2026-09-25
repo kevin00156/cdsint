@@ -7,7 +7,8 @@ nobody here knows what else depends on that.
 
 The junctions in each IDE's ScriptDir and the editable pip install both name
 the body by its path, and the path does not change, so replacing the
-directory is the whole upgrade. The new tree is unpacked beside the old one
+directory is the whole upgrade; then cdsint/link.py rewrites stubody.path
+in the new tree and adds any IDE installed since, updated or not. The new tree is unpacked beside the old one
 first and only then swapped in by two renames, so a failed download or a
 full disk leaves the old body exactly as it was.
 
@@ -32,7 +33,7 @@ import zipfile
 
 from cds.core.exits import EXIT_FAILED, EXIT_OK
 from cds.ide.entries import REPO_ROOT
-from cdsint import installs, release, report
+from cdsint import installs, link, release, report
 from cdsint.exits import Failure
 from engine.codesys_constants import SCRIPT_VERSION
 
@@ -53,6 +54,7 @@ def run(ns):
         _check_no_ide_running()
         record["left_behind"] = _replace(tag, release.body_root())
         _reinstall(release.body_root())
+    record["menus"] = link.link_all()
     report.show_update(record, ns.json)
     return EXIT_OK
 
@@ -108,7 +110,6 @@ def replace_body(tag, body):
         if os.path.exists(leftover):
             shutil.rmtree(leftover)
     fresh = _unpack(_download(tag, staging), staging)
-    _write_body_path(fresh, body)
     os.rename(body, retired)
     try:
         os.rename(fresh, body)
@@ -142,16 +143,6 @@ def _unpack(archive, staging):
                           % (archive, sorted(top)), EXIT_FAILED)
         bundle.extractall(staging)
     return os.path.join(staging, top.pop())
-
-
-def _write_body_path(tree, body):
-    """What the stubs read to find the body; setup.ps1 writes it the same way.
-
-    One line, no newline, no BOM: the stub puts it on sys.path verbatim.
-    """
-    with io.open(os.path.join(tree, "stub", "body.path"), "w",
-                 encoding="utf-8", newline="") as handle:
-        handle.write(body)
 
 
 def _reinstall(body):
