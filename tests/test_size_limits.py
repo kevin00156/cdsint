@@ -82,9 +82,6 @@ ALLOWED_FUNCTION_LINES = {
     "engine/entry_export.py": {
         "export_project": 173,
     },
-    "engine/entry_import.py": {
-        "import_project": 228,
-    },
     "tools/cache_doctor.py": {
         "main": 176,
     },

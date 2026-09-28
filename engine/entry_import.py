@@ -6,6 +6,10 @@ Uses the same comparison engine as entry_compare.py, then automatically
 applies all disk-side changes to IDE (equivalent to Compare -> Select All -> Import to IDE).
 
 Also detects new files on disk (e.g. from git pull) not yet tracked in metadata.
+
+import_project reads as the steps of one import: refuse what cannot land,
+plan from the comparison, confirm, back up, apply, report. The steps were
+one 228-line function; they were split out of it unchanged.
 """
 from __future__ import print_function
 
@@ -33,6 +37,18 @@ from engine import entry, settings, unhandled
 from cds.core import dialogs
 
 
+class _Plan(object):
+    """What this import is going to do, worked out from the comparison."""
+
+    def __init__(self, results):
+        self.different = results["different"]
+        self.new_in_ide = results["new_in_ide"]
+        self.new_on_disk = results["new_on_disk"]
+        self.unchanged_count = results["unchanged_count"]
+        self.not_created = []
+        self.withheld = ""
+        self.items = []
+
 
 def import_project(base_dir, values, projects_obj=None):
     """
@@ -41,7 +57,47 @@ def import_project(base_dir, values, projects_obj=None):
     Disk is the source of truth — any IDE↔Disk mismatch results in disk winning.
     """
     projects_obj = projects_obj or entry.borrowed(globals(), "projects")
-    
+    refused = _preflight(base_dir, projects_obj)
+    if refused is not None:
+        return refused
+
+    print("=== Starting Project Import ===")
+    print("Importing from: " + base_dir)
+    start_time = time.time()
+    reset_interaction_timer()
+
+    print("Comparing IDE with disk...")
+    plan = _plan(find_changes(base_dir, projects_obj, values))
+    if not plan.items:
+        return _nothing_to_import(plan, start_time)
+
+    refused = _confirm(plan, projects_obj)
+    if refused is not None:
+        return refused
+
+    backup_filename, backup_error = create_safety_backup(
+        base_dir, projects_obj, plan.items, values)
+    if backup_error:
+        refused = "Safety backup failed, nothing was imported: " + backup_error
+        system.ui.warning(refused)
+        return entry.result(False, refused)
+
+    counts = perform_import_items(
+        projects_obj.primary, base_dir, plan.items,
+        entry.borrowed(globals(), "PouType")
+    )
+
+    # Save and back up BEFORE stopping the clock and announcing completion,
+    # so the reported figure covers the whole wait rather than ending at the
+    # popup and leaving a project save running behind it.
+    save_error = finalize_sync_operation(base_dir, projects_obj, values,
+                                         is_import=True)
+    return _report(plan, counts, save_error, backup_filename, start_time,
+                   base_dir, projects_obj)
+
+
+def _preflight(base_dir, projects_obj):
+    """The refusals that come before any comparison. None when it may go on."""
     if projects_obj is None or not projects_obj.primary:
         msg = "Error: 'projects' object not found or no project open."
         system.ui.error(msg)
@@ -83,20 +139,13 @@ def import_project(base_dir, values, projects_obj=None):
         log_warning("Import blocked - logged into: " + ", ".join(online_apps))
         system.ui.error(block)
         return entry.result(False, block, failed_objects=unhandled.names())
+    return None
 
-    print("=== Starting Project Import ===")
-    print("Importing from: " + base_dir)
-    start_time = time.time()
-    reset_interaction_timer()
-    
-    print("Comparing IDE with disk...")
-    results = find_changes(base_dir, projects_obj, values)
-    
-    different = results["different"]
-    new_in_ide = results["new_in_ide"]
-    new_on_disk = results["new_on_disk"]
-    unchanged_count = results["unchanged_count"]
-    
+
+def _plan(results):
+    """Every difference, turned into an item for perform_import_items."""
+    plan = _Plan(results)
+
     # An object this run could not read never reached the comparison, so
     # nothing claims its .st and the file looks new. Creating an object for
     # it duplicates something the project already has, or -- paired with a
@@ -105,29 +154,22 @@ def import_project(base_dir, values, projects_obj=None):
     # (engine/orphan_sweep.py); this is that rule pointed the
     # other way. Updates and deletions still run: each names an IDE object
     # this run did read.
-    not_created = []
-    withheld = ""
-    if unhandled.any_so_far() and new_on_disk:
-        not_created = [item["path"] for item in new_on_disk]
-        new_on_disk = []
-        withheld = ("Not creating %d file(s) this run cannot account for: it "
-                    "could not read every object, so some of those files may "
-                    "already belong to one of them. %s"
-                    % (len(not_created), ", ".join(not_created)))
-        print(withheld)
-        log_warning(withheld)
+    if unhandled.any_so_far() and plan.new_on_disk:
+        plan.not_created = [item["path"] for item in plan.new_on_disk]
+        plan.new_on_disk = []
+        plan.withheld = ("Not creating %d file(s) this run cannot account for: it "
+                         "could not read every object, so some of those files may "
+                         "already belong to one of them. %s"
+                         % (len(plan.not_created), ", ".join(plan.not_created)))
+        print(plan.withheld)
+        log_warning(plan.withheld)
 
-    # For import, we care about ANY difference (disk or ide side) — disk wins
-    # Also include new files found on disk, and DELETE orphans from IDE
-    to_import = []
-    
-    # Modified objects: disk wins
-    for item in different:
-        to_import.append(item)
-    
-    # New files on disk not yet in metadata
-    for item in new_on_disk:
-        to_import.append({
+    # For import, we care about ANY difference (disk or ide side) — disk wins.
+    # Modified objects, then new files on disk not yet in metadata, then the
+    # objects whose file is gone, which are deleted from the IDE.
+    plan.items.extend(plan.different)
+    for item in plan.new_on_disk:
+        plan.items.append({
             "name": item["name"],
             "path": item["path"],
             "file_path": item["file_path"],
@@ -135,43 +177,45 @@ def import_project(base_dir, values, projects_obj=None):
             "type_guid": "",
             "obj": None, "refused": item.get("refused"), "device_pass": item.get("device_pass")
         })
-        
-    # Orphans in IDE (missing on disk) -> delete
-    for item in new_in_ide:
-        to_import.append(item)
-    
-    print("")
-    print("Changes found:")
-    print("  Modified (IDE<>Disk): " + str(len(different)))
-    print("  New on disk: " + str(len(new_on_disk)))
-    print("  Missing on disk (delete): " + str(len(new_in_ide)))
-    print("  Unchanged: " + str(unchanged_count))
-    
-    if not to_import:
-        elapsed = time.time() - start_time - get_interaction_seconds()
-        msg = "No changes to import.\nAll " + str(unchanged_count) + " objects are in sync."
-        if withheld:
-            msg += "\n" + withheld
-        print(msg)
-        system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
-        missing = unhandled.names()
-        if missing:
-            msg += " " + unhandled.summary()
-        return entry.result(not missing, msg, updated=0, created=0, moved=0,
-                            deleted=0, failed=len(missing),
-                            identical=unchanged_count,
-                            failed_objects=missing, not_created=not_created)
+    plan.items.extend(plan.new_in_ide)
 
     print("")
-    print("Importing " + str(len(to_import)) + " items to IDE:")
-    for item in to_import:
+    print("Changes found:")
+    print("  Modified (IDE<>Disk): " + str(len(plan.different)))
+    print("  New on disk: " + str(len(plan.new_on_disk)))
+    print("  Missing on disk (delete): " + str(len(plan.new_in_ide)))
+    print("  Unchanged: " + str(plan.unchanged_count))
+    return plan
+
+
+def _nothing_to_import(plan, start_time):
+    elapsed = time.time() - start_time - get_interaction_seconds()
+    msg = "No changes to import.\nAll " + str(plan.unchanged_count) + " objects are in sync."
+    if plan.withheld:
+        msg += "\n" + plan.withheld
+    print(msg)
+    system.ui.info(msg + "\nTime: " + format_elapsed(elapsed))
+    missing = unhandled.names()
+    if missing:
+        msg += " " + unhandled.summary()
+    return entry.result(not missing, msg, updated=0, created=0, moved=0,
+                        deleted=0, failed=len(missing),
+                        identical=plan.unchanged_count,
+                        failed_objects=missing, not_created=plan.not_created)
+
+
+def _confirm(plan, projects_obj):
+    """Show what is about to change and ask. None when confirmed."""
+    print("")
+    print("Importing " + str(len(plan.items)) + " items to IDE:")
+    for item in plan.items:
         action = "delete" if item.get("is_orphan") else item["type"]
         print("  <- " + item["path"] + " (" + action + ")")
-    
+
     # Detect device-name mismatch so we can warn the user up-front instead of
     # silently nesting everything under a phantom top-level folder.
-    device_remap = build_device_remap(projects_obj.primary, to_import)
-    remap_lines = summarize_device_remap(to_import, device_remap)
+    device_remap = build_device_remap(projects_obj.primary, plan.items)
+    remap_lines = summarize_device_remap(plan.items, device_remap)
     if remap_lines:
         warn = "Device name mismatch detected.\n\n" \
                "The export was made under a different device name than this " \
@@ -180,10 +224,9 @@ def import_project(base_dir, values, projects_obj=None):
         print(warn)
         log_warning("Device remap on import: " + "; ".join(remap_lines))
 
-    # Final confirmation before touching the IDE
     from engine.codesys_ui import ask_yes_no
     confirm_msg = "Ready to import {} changes into the IDE.\n\nModified: {}\nNew on disk: {}\nDelete orphans: {}\n\nProceed?".format(
-        len(to_import), len(different), len(new_on_disk), len(new_in_ide)
+        len(plan.items), len(plan.different), len(plan.new_on_disk), len(plan.new_in_ide)
     )
     if remap_lines:
         confirm_msg += "\n\n[!] Device remap (export -> IDE):\n  " + "\n  ".join(remap_lines)
@@ -191,34 +234,22 @@ def import_project(base_dir, values, projects_obj=None):
         cancelled = "Import cancelled: not confirmed."
         system.ui.warning(cancelled)
         return entry.result(False, cancelled)
+    return None
 
-    backup_filename, backup_error = create_safety_backup(
-        base_dir, projects_obj, to_import, values)
-    if backup_error:
-        refused = "Safety backup failed, nothing was imported: " + backup_error
-        system.ui.warning(refused)
-        return entry.result(False, refused)
-    
-    updated, created, failed, deleted, moved = perform_import_items(
-        projects_obj.primary, base_dir, to_import,
-        entry.borrowed(globals(), "PouType")
-    )
-    
-    # Save and back up BEFORE stopping the clock and announcing completion,
-    # so the reported figure covers the whole wait rather than ending at the
-    # popup and leaving a project save running behind it.
-    save_error = finalize_sync_operation(base_dir, projects_obj, values,
-                                         is_import=True)
 
+def _report(plan, counts, save_error, backup_filename, start_time, base_dir,
+            projects_obj):
+    """Say what the import did, on screen and in the result."""
+    updated, created, failed, deleted, moved = counts
     interaction = get_interaction_seconds()
     elapsed = time.time() - start_time - interaction
     elapsed_text = format_elapsed(elapsed, interaction)
 
     print("")
     print("=== Import Complete ===")
-    summary = "Updated: " + str(updated) + ", Created: " + str(created) + ", Moved: " + str(moved) + ", Deleted: " + str(deleted) + ", Failed: " + str(failed) + " (Identical: " + str(unchanged_count) + ")"
-    if withheld:
-        summary += " -- " + withheld
+    summary = "Updated: " + str(updated) + ", Created: " + str(created) + ", Moved: " + str(moved) + ", Deleted: " + str(deleted) + ", Failed: " + str(failed) + " (Identical: " + str(plan.unchanged_count) + ")"
+    if plan.withheld:
+        summary += " -- " + plan.withheld
     if save_error:
         summary += " -- but the project was not saved: " + save_error
     print(summary)
@@ -237,11 +268,11 @@ def import_project(base_dir, values, projects_obj=None):
             "moved": moved,
             "deleted": deleted,
             "failed": failed,
-            "identical": unchanged_count
+            "identical": plan.unchanged_count
         }, elapsed)
     except Exception as e:
         log_warning("Failed to update metadata: " + safe_str(e))
-    
+
     try:
         message = "Import complete!\n\n" + summary + "\nTime: " + elapsed_text
         if backup_filename:
@@ -259,8 +290,8 @@ def import_project(base_dir, values, projects_obj=None):
                         else summary + " -- " + unhandled.summary(),
                         updated=updated, created=created, moved=moved,
                         deleted=deleted, failed=failed,
-                        identical=unchanged_count, failed_objects=missing,
-                        not_created=not_created,
+                        identical=plan.unchanged_count, failed_objects=missing,
+                        not_created=plan.not_created,
                         **device_changes.report(projects_obj.primary))
 
 
