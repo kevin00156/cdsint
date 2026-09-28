@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — fixes from a review of the sync, update, PLC and watcher paths
+### 0.2.0 (2026-09-28) — fixes from a review of the sync, update, PLC and watcher paths
 
 **What changes for you**
 
