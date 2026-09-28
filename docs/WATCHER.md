@@ -79,12 +79,14 @@ one; it goes by time alone.
 
 **How the registration file is overwritten depends on the runtime.** With
 `os.replace` available, use it; the overwrite is atomic. Without it, fall back
-to "delete the target, then rename", which is the path IronPython 2.7 takes. On
-Windows, `os.rename` fails outright when the target exists, and the registration
-file overwrites the same name every two seconds. This is also why the CLI waits
-up to a second before declaring an instance dead, and looks again before it
-says no IDE is listening while a `<id>.json.tmp` is present: between the
-delete and the rename there is an instant with no file at all.
+to "rename the target aside to `<name>.old`, rename the new one in, delete the
+aside", which is the path IronPython 2.7 takes. On Windows, `os.rename` fails
+outright when the target exists, and the registration file overwrites the same
+name every two seconds. This is also why the CLI waits up to a second before
+declaring an instance dead, and looks again before it says no IDE is listening
+while a `<id>.json.tmp` is present: between the two renames there is an instant
+with no file at all. The aside copy is only read back for the sync cache and
+the plc record; a protocol file the other side deleted must stay deleted.
 
 ## 3. Command files and result files
 
@@ -172,7 +174,9 @@ seconds it reads the registration, and takes the instance for gone when its
 process no longer runs (section 2.1), or when it is idle, has not beaten for
 `ALIVE_TIMEOUT_S`, and no `.running` file says a command is in progress. It
 takes its command back out of the queue and says the watcher stopped before
-answering, instead of waiting out the whole `--timeout`.
+answering, instead of waiting out the whole `--timeout`. When the process still
+runs it says so instead: an IDE whose own thread is held, by a build somebody
+started by hand, cannot tick, and looks the same from outside.
 
 **No two watchers in one IDE.** The instance id is the project name plus the
 process id, so two watchers in the same IDE would get the same id and fight

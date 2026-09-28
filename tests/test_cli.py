@@ -357,8 +357,8 @@ def gone_after_first_wait(watch, monkeypatch):
 
 def test_a_registration_blinking_out_mid_rewrite_is_not_death(watch,
                                                               monkeypatch):
-    # IronPython has no os.replace, so the watcher's rewrite deletes the file
-    # and renames the new one in. Calling a healthy IDE dead on one missed
+    # IronPython has no os.replace, so the watcher's rewrite renames the file
+    # aside and the new one in. Calling a healthy IDE dead on one missed
     # read made every other status come back "stopped before answering".
     path = ipc.registration_path(watch.root, watch.instance_id)
     saved = ipc.read_json(path)
@@ -424,9 +424,13 @@ def test_an_idle_watcher_that_stopped_beating_is_gone(watch, monkeypatch):
     picked, polls = gone_quiet(watch, monkeypatch,
                                lambda: stale_heartbeat(watch))
     picked.timeout = 600.0
-    with pytest.raises(cli.Failure):
+    with pytest.raises(cli.Failure) as raised:
         picked.run_one("export", {})
     assert len(polls) < 5
+    # Its process still runs, so the IDE may only be held by something of
+    # its own, and "stopped" would send the reader looking for a crash.
+    assert "stopped answering before export ran" in str(raised.value)
+    assert "still runs" in str(raised.value)
 
 
 def test_a_stopped_heartbeat_with_a_command_running_is_still_waited_on(
@@ -452,7 +456,7 @@ def test_a_stopped_heartbeat_with_a_command_running_is_still_waited_on(
 
 
 def test_a_target_is_found_through_its_rewrite_gap(watch, monkeypatch):
-    # IronPython deletes the registration and renames the new one in; a
+    # IronPython renames the registration aside and the new one in; a
     # lookup landing in between used to say "no live IDE found".
     path = ipc.registration_path(watch.root, watch.instance_id)
     saved = ipc.read_json(path)

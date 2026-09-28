@@ -28,7 +28,7 @@ GONE = "gone"  # the watcher shut down while we were waiting
 
 # How long the registration has to stay missing before we believe it. Under
 # IronPython the watcher has no os.replace, so its every-two-second rewrite
-# deletes the file and renames the new one into place — for a moment there is
+# renames the file aside and the new one into place — for a moment there is
 # no registration, and a single missed read would call a healthy IDE dead.
 GONE_AFTER_S = 1.0
 
@@ -118,10 +118,33 @@ class Target(object):
         this was.
         """
         if cmd["command"] != "stop":
-            raise Failure("%s stopped before answering %s"
-                          % (self.instance_id, cmd["command"]), EXIT_FAILED)
+            raise Failure(self._why_no_answer(cmd), EXIT_FAILED)
         return commands.new_result(cmd, True, messages=[
             commands.message("info", "%s is gone" % self.instance_id)])
+
+
+    def _why_no_answer(self, cmd):
+        """Gone, or only not answering: the reader acts differently on each.
+
+        An idle watcher whose IDE still runs and has stopped beating is taken
+        for gone as well (docs/WATCHER.md 5), and it may only be an IDE whose
+        own thread is held -- a build somebody started by hand runs there,
+        and no tick can until it ends. Its command was taken back all the
+        same, so saying "stopped" would send the reader looking for a crash.
+        """
+        try:
+            reg = instances.read(self.root, self.instance_id)
+        except (EnvironmentError, ValueError):
+            reg = None
+        if reg is not None and process.registration_running(reg):
+            return ("%s stopped answering before %s ran: its IDE still runs, "
+                    "but its watcher has gone quiet. The IDE may be busy with "
+                    "something of its own, such as a build started by hand; "
+                    "run it again once the IDE is idle, or run Project_watch "
+                    "there again if it is idle already"
+                    % (self.instance_id, cmd["command"]))
+        return "%s stopped before answering %s" % (self.instance_id,
+                                                   cmd["command"])
 
 
 def send(root, instance_id, cmd, timeout, poll=POLL_S):
@@ -163,7 +186,7 @@ class Watching(object):
     whether the file is there, and reads it about as often as it is written.
 
     Missing is debounced. Under IronPython the watcher has no os.replace, so
-    its rewrite deletes the registration and renames the new one into place
+    its rewrite renames the registration aside and the new one into place
     -- for a moment there is no file, and one missed look would call a
     healthy IDE dead (docs/WATCHER.md 2.1). The instance directory goes with
     the registration, so once it has really stayed away the answer is not
