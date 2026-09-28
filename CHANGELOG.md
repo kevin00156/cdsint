@@ -46,7 +46,12 @@ All notable changes to this project will be documented in this file.
 - **Export no longer deletes the files of objects it skips on purpose**
   (import_only kinds, visualizations with `export_xml` off).
 - **Two objects that resolve to one file are both named** instead of one
-  silently writing over the other.
+  silently writing over the other, and the pair no longer stops every other
+  file being created on import or swept as an orphan on export.
+- **A folder exported under a device renamed since keeps its objects on
+  import**; they used to be deleted and created again from their files.
+- **An orphan that could not be deleted is named in the result**, and the
+  export is not ok.
 - **A second `compare` still reports an IDE-side edit**, XML objects
   included.
 - **A `.st` that cannot be read, or text the IDE refuses to take, fails its
@@ -69,11 +74,13 @@ All notable changes to this project will be documented in this file.
 **Controller**
 
 - **A download refuses to run when it cannot read what the controller holds
-  first** -- a listing that fails too is not "nothing loaded" -- fails when the application is not running afterwards, and says
+  first** -- a listing that fails too is not "nothing loaded" -- fails
+  when the record of what it left cannot be written, fails when the application is not running afterwards, and says
   the controller may be stopped when anything fails after the login -- or
   when a headless run with a download in it is killed.
 - **Controller files are read under the active application's name**, and
-  each working copy gets its own fetch workspace.
+  each working copy gets its own fetch workspace. A CRC that could not be
+  read is said in the fetch's own words, not as "has no .crc".
 - **`plc trace` only trusts an `is_uptodate` that is a real true or false**,
   and a dialog is only confirmed by a real `true`, never by a truthy string
   such as `"false"`. `-y` on `connect` or `trace`, which read none, is
@@ -96,13 +103,18 @@ All notable changes to this project will be documented in this file.
   opened the project.
 - **The launch lock is the operating system's**, so a killed run takes it
   with it, and two runs that find it free can no longer both take it.
+- **An IDE that went quiet but still runs is said to be not answering**,
+  maybe busy with a build of its own, rather than stopped.
 
 **Install and update**
 
 - **`setup.ps1` never deletes the old install before the new one is in
   place**, checks for Python 3.11 before downloading anything, prints no
   success line when linking failed, and leaves the caller's shell settings
-  as they were.
+  as they were. Over an existing install it refuses while an IDE runs, as
+  `cdsint update` does, and `-List` never downloads or replaces a body.
+- **`cdsint update` says it could not list the running programs** instead
+  of a traceback, and changes nothing.
 - **`cdsint update` always relinks the menus**, from the new install rather
   than the old code in memory. A pip failure, or a staging folder that would
   not delete, used to stop it before `stub\body.path` was written. A cut

@@ -4,6 +4,10 @@
 Windows only, through ctypes; everywhere else there is nothing to do, since
 no IDE runs there. What it can only show on a real machine: kill cdsint from
 Task Manager mid-run and the --noUI IDE goes with it.
+
+The IDE joins the job once Popen has returned, so a cdsint killed in the
+moment between the two leaves it running. Popen cannot start a process
+suspended, and the moment is too short to be worth giving up Popen for.
 """
 from __future__ import print_function
 
