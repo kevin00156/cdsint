@@ -178,14 +178,10 @@ def aim_at_gateway(online_api, device_node, address, port):
 
 
 def names_in(device, directory):
-    """The names in one controller directory, or None when it cannot be
-    listed at all -- which is what a controller with nothing loaded says
-    about an application's directory, so the caller can tell "not there"
-    from "there, and not read"."""
-    try:
-        items = device.get_file_list_of_directory(directory)
-    except Exception:
-        return None
+    """The names in one controller directory. What the listing raised is
+    let out: a directory that is not there and a link that dropped raise
+    alike, so only a listing that worked can say what is absent."""
+    items = device.get_file_list_of_directory(directory)
     return [safe_str(item.name) for item in items]
 
 

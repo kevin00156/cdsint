@@ -38,17 +38,31 @@ class DownloadTrip(Trip):
         No CRC is the right answer for a controller with nothing loaded, and
         the wrong one for a controller whose fetch failed: landed() would
         then take any CRC afterwards, the one it already held included, as a
-        change. Only the listing can tell the two apart, so a CRC that could
-        not be read is looked for there.
+        change. Only a listing that worked can tell the two apart, and a
+        listing that raised is no evidence of absence -- the fetch before it
+        most likely failed on the same dropped link.
         """
         self._pull_the_crc()
         if self.found["plc_crc"]:
             return None
-        listed = plc_link.names_in(self.device, self.remote["dir"])
-        if listed is None:
-            # No such directory: nothing is loaded, so any CRC is a change.
+        try:
+            return self._unread_crc()
+        except Exception as exc:
+            return ("%s could not be read and the controller would not list "
+                    "what it holds (%s), so a download that writes nothing "
+                    "could not be told from one that lands; nothing was sent"
+                    % (self.remote["crc"], safe_str(exc)))
+
+    def _unread_crc(self):
+        """Why a CRC the controller holds could not be read, or None when it
+        holds none. The application's directory is looked for in its parent
+        rather than listed itself, because listing a directory that is not
+        there raises exactly as a dropped link does."""
+        parent, application = self.remote["dir"].rsplit("/", 1)
+        if application not in plc_link.names_in(self.device, parent):
             return None
-        if plc_crc.file_name(self.remote["crc"]) not in listed:
+        crc = plc_crc.file_name(self.remote["crc"])
+        if crc not in plc_link.names_in(self.device, self.remote["dir"]):
             return None
         return ("the controller lists %s but it could not be read, so a "
                 "download that writes nothing could not be told from one "

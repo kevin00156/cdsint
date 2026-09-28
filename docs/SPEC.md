@@ -773,10 +773,14 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
   does hold this download, but a download that leaves the machine standing
   still has not done its job. An exception anywhere from the login on says
   the controller may now be stopped or partly written. A first pull that
-  fails is "nothing loaded" only when the controller has no `PlcLogic/<app>`
-  directory to list; when the listing names the `.crc` that could not be
-  read, nothing is sent, because a download that writes nothing could not
-  then be told from one that lands.
+  fails is "nothing loaded" only when a listing of `PlcLogic` works and does
+  not name `<app>`, or the listing of `PlcLogic/<app>` works and does not
+  name its `.crc`. When a listing names the `.crc` that could not be read, or
+  a listing itself fails, nothing is sent: a download that writes nothing
+  could not then be told from one that lands, and a listing that raised says
+  no more about absence than the fetch before it, which most likely failed on
+  the same dropped link. That `PlcLogic` itself is there on a controller with
+  nothing loaded is an assumption of this rule, not yet seen on the bench.
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the

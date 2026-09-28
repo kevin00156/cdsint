@@ -196,6 +196,33 @@ def test_a_crc_that_could_not_be_read_before_stops_the_download():
         plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
 
 
+class LinkDropsOnce(FirstCrcFetchFails):
+    """The fetch fails on a reset connection, and so does the listing after
+    it: nothing about the controller could be read, absence included."""
+
+    def get_file_list_of_directory(self, directory):
+        if not getattr(self, "listed", False):
+            self.listed = True
+            raise IOError("transient: the connection was reset")
+        return Device.get_file_list_of_directory(self, directory)
+
+
+def test_a_listing_that_failed_is_not_read_as_nothing_loaded():
+    # A listing that raised was taken for a controller with no application
+    # directory, so the same dropped link that failed the fetch let a
+    # download through, and one that wrote nothing was recorded as landed.
+    device = LinkDropsOnce(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "would not list" in outcome.error_text()
+    assert "connection was reset" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
 def test_a_controller_with_nothing_loaded_still_takes_a_download():
     # No application directory at all is what a fresh controller says, and
     # there any CRC afterwards is a change.
@@ -232,7 +259,8 @@ def test_the_crc_is_read_from_where_the_active_application_keeps_it():
     # other name read a file that is not there and answered UNKNOWN about a
     # controller cdsint had loaded.
     recorded(plc_crc="11223344")
-    ide_globals = ide(allowed=["connect"], device=KeepsOneApplication(),
+    ide_globals = ide(allowed=["connect"],
+                      device=KeepsOneApplication(application="Line2"),
                       application=plc_fakes.Application("Line2"))
     outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "MATCH" and outcome.ok()

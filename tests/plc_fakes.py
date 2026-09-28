@@ -104,9 +104,11 @@ class RemoteFile(object):
 class Device(object):
     """A live device connection: lists files and hands them over."""
 
-    def __init__(self, crc=CRC_B, archive=True, app=APP_HEADER):
+    def __init__(self, crc=CRC_B, archive=True, app=APP_HEADER,
+                 application="Application"):
         self.crc = crc
         self.app = app
+        self.application = application
         self.archive = archive
         self.connected = False
         self.uploaded = []
@@ -119,7 +121,12 @@ class Device(object):
 
     def get_file_list_of_directory(self, directory):
         """What the controller holds, as it would list it. A controller with
-        nothing loaded has no application directory to list at all."""
+        nothing loaded has no application directory to list at all, but its
+        PlcLogic is there, empty."""
+        loaded = self.crc or self.app
+        if directory == "PlcLogic":
+            return [RemoteFile(self.application, is_directory=True)] \
+                if loaded else []
         name = directory.rsplit("/", 1)[-1]
         held = [RemoteFile(name + suffix) for suffix, content
                 in ((".crc", self.crc), (".app", self.app)) if content]
