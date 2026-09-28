@@ -356,7 +356,7 @@ mutually exclusive, and argparse blocks them directly.
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect [--gateway IP --port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc download -y --gateway IP [--port N]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
 | `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
 There is no `config` command. The settings are one text file beside the
@@ -406,7 +406,7 @@ Why `plc` commands refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc trace` without `--gateway`), or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc download` or `plc trace` without `--gateway`), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -800,11 +800,15 @@ top of the trip in `plc_trace.py` (6.8).
 A few more things. `connect` touches the device node's gateway setting only
 when `--gateway` was given; without it the project's own is used, because that
 is an answer somebody else set, and a read-only command should not change it
-in passing. `plc trace` is the exception: without `--gateway` it exits 2.
-A project that finds its controller by device name can reach the wrong one
-(two WSL soft PLCs report the same host name), and the IDE's "the address
-differs from the project" prompt defaults to Yes; a trace recorded from the
-wrong controller looks exactly like a right one. `--port` defaults to 11740. When the project has more than one
+in passing. `plc download` and `plc trace` are the exceptions: without
+`--gateway` they exit 2. A project that finds its controller by device name can
+reach the wrong one (two WSL soft PLCs report the same host name), and the
+IDE's "the address differs from the project" prompt defaults to Yes; a download
+to the wrong controller passes its own read-back, since that controller's CRC
+moves too, and a trace recorded from the wrong controller looks exactly like a
+right one. `--port` defaults to 11740 and is exit 2 without `--gateway`, whose
+port it is; `-y` on `connect` or `trace` is exit 2, since neither has anything
+for it to confirm. When the project has more than one
 device node, both commands refuse and list the names; there is no flag to pick
 one, since guessing a download target is not something that can have a default
 (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;

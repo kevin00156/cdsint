@@ -103,8 +103,39 @@ def test_a_trace_without_a_job_is_refused(runner, capsys):
 @pytest.mark.parametrize("action", ["connect", "download"])
 def test_only_a_trace_takes_a_job(action, tmp_path, runner, capsys):
     said = refused(["plc", action, "--project", "P", "--install", "I",
+                    "--gateway", "192.168.1.5",
                     "--job", write_job(tmp_path, GOOD)], capsys)
     assert "does not take --job" in said
+    assert not runner.started
+
+
+def test_a_download_without_a_gateway_is_refused_with_the_reason(runner,
+                                                                 capsys):
+    # The read-back a download ends in proves only that the controller it
+    # reached changed. Reached by the project's device name, that can be a
+    # different controller from the one the caller meant.
+    said = refused(["plc", "download", "-y", "--project", "P", "--install",
+                    "I"], capsys)
+    assert "needs --gateway" in said and "wrong controller" in said
+    assert not runner.started
+
+
+@pytest.mark.parametrize("action", ["connect", "trace"])
+def test_a_yes_that_confirms_nothing_is_refused(action, tmp_path, runner,
+                                                capsys):
+    job = ["--job", write_job(tmp_path, GOOD)] if action == "trace" else []
+    said = refused(["plc", action, "--project", "P", "--install", "I",
+                    "--gateway", "192.168.1.5", "-y"] + job, capsys)
+    assert "does not take --yes" in said
+    assert not runner.started
+
+
+def test_a_port_without_a_gateway_is_refused(runner, capsys):
+    # Without --gateway the project's own settings are used, so the port
+    # would be dropped without a word.
+    said = refused(["plc", "connect", "--project", "P", "--install", "I",
+                    "--port", "11741"], capsys)
+    assert "--port needs --gateway" in said
     assert not runner.started
 
 
