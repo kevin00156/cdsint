@@ -13,8 +13,7 @@ import os
 import io
 from engine.sync_cache import file_signature, normalize_path
 from engine.ide_hash import get_quick_ide_hash
-from engine.st_text import read_sync_text
-from engine.strings import calculate_hash
+from engine.st_text import read_sync_text, same_file_text
 
 
 class ObjectManager(object):
@@ -121,7 +120,7 @@ class ObjectManager(object):
         is_new = not os.path.exists(file_path)
         if not is_new:
             try:
-                if calculate_hash(read_sync_text(file_path)) == calculate_hash(content):
+                if same_file_text(read_sync_text(file_path), content):
                     return self._tracked(obj, rel_path, file_path, context,
                                          content_hash, "identical")
             except (IOError, OSError, UnicodeDecodeError):

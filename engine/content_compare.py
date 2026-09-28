@@ -15,6 +15,8 @@ from engine import library_refs
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_attrs import read_ide_attrs
 from engine.st_text import (
+    canonical_st,
+    unify_newlines,
     format_st_content,
     format_property_content,
     parse_sync_pragmas,
@@ -120,9 +122,9 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
 
     if not is_xml:
         # For ST files: strip pragmas from disk content for code comparison
-        _, clean_disk_st = parse_sync_pragmas(disk_content)
-        ide_hash = calculate_hash(ide_content)
-        disk_hash = calculate_hash(clean_disk_st)
+        _, clean_disk_st = parse_sync_pragmas(unify_newlines(disk_content))
+        ide_hash = calculate_hash(canonical_st(ide_content))
+        disk_hash = calculate_hash(canonical_st(clean_disk_st))
         if ide_hash != disk_hash:
             log_info("Content mismatch for %s: IDE hash=%s, Disk hash=%s" % (rel_path, ide_hash, disk_hash))
             return False

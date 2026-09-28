@@ -186,6 +186,40 @@ def parse_property_content(content):
     return declaration, get_impl, set_impl
 
 
+def canonical_st(text):
+    """ST text reduced to what import would put into the IDE.
+
+    The one normaliser every comparison of two versions of a file goes
+    through. Line endings, blanks at the end of a line, and blank lines
+    around a section are what an editor or git changes without anybody
+    meaning to, and import throws them away: parse_st_file strips every
+    section. Compared byte for byte instead, a file saved with CRLF or an
+    extra final newline differed from the IDE forever after its import.
+    """
+    markers = (IMPL_MARKER, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER)
+    sections, current = [], []
+    for line in unify_newlines(text).split("\n"):
+        if line.strip() in markers:
+            sections.extend(["\n".join(current).strip(), line.strip()])
+            current = []
+        else:
+            current.append(line.rstrip())
+    sections.append("\n".join(current).strip())
+    return "\n".join(section for section in sections if section)
+
+
+def same_file_text(one, other):
+    """Do two versions of a file say the same thing: same pragmas, same ST?"""
+    one_pragmas, one_st = parse_sync_pragmas(unify_newlines(one))
+    other_pragmas, other_st = parse_sync_pragmas(unify_newlines(other))
+    return (one_pragmas == other_pragmas
+            and canonical_st(one_st) == canonical_st(other_st))
+
+
+def unify_newlines(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def parse_sync_pragmas(content):
     """Parse leading cds-text-sync pragma lines from file content.
 
@@ -329,7 +363,7 @@ def parse_st_file(file_path):
         print("Error reading file " + file_path + ": " + safe_str(e))
         return None, None, {}
 
-    content = content.replace('\r\n', '\n').replace('\r', '\n')
+    content = unify_newlines(content)
 
     # Strip sync pragmas first
     pragmas, clean_content = parse_sync_pragmas(content)
