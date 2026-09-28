@@ -145,12 +145,9 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
     # XML Comparison - use NativeManager's filtering logic. Both sides are
     # already in memory, so hash them directly; this used to write each one to
     # a temp file and read it back purely because _hash_file only took a path.
-    # The two fallback names below are the old temp filenames, kept so that an
-    # object whose content is entirely filtered away still compares as
-    # different exactly like before (see _hash_content).
     try:
-        ide_hash = _NATIVE_MGR._hash_content(ide_content, "cds_comp_ide.xml")
-        disk_hash = _NATIVE_MGR._hash_content(disk_content, "cds_comp_disk.xml")
+        ide_hash = _NATIVE_MGR._hash_content(ide_content)
+        disk_hash = _NATIVE_MGR._hash_content(disk_content)
 
         are_equal = ide_hash == disk_hash
         if not are_equal:

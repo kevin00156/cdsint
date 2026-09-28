@@ -306,7 +306,7 @@ def _compare_file(obj, rel_path, file_path, eff_type, is_xml, scan, project):
         # about a byte-identical object.
         q_hash = scan.hashes[normalize_path(rel_path)]
         if not q_hash:
-            q_hash = (_NATIVE_MGR._hash_content(ide_content, os.path.basename(rel_path))
+            q_hash = (_NATIVE_MGR._hash_content(ide_content)
                       if is_xml else build_state_hash(ide_content, ide_attrs))
         return None, {"ide_hash": q_hash,
                       "disk_hash": calculate_hash(disk_content)}
