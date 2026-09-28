@@ -191,7 +191,12 @@ that it would differ.
   The tick is already on the UI thread; nothing cross-thread is needed.
 - **Two ways to stop**: the CLI's `stop`, and running `Project_watch.py` again.
   Both take the same tear-down: stop the timer, close the status window, delete
-  the registration file and directory, clear the state on `sys`.
+  the registration file and directory, clear the state on `sys`. A stop that
+  arrives while a command is running (the status window's Stop button, or a
+  re-run of the script, both reach the IDE while a command pumps messages)
+  only takes the watcher out of service; the first tick after the command
+  finishes does the tear-down, so the command's directory is still there
+  when it writes its answer.
 - **The heartbeat stays in the tick.** No heartbeat can go out while a command
   runs; the registration file's `busy` state already covers that.
 - **The status window uses `Show()`, not `ShowDialog()`.** A modal window holds

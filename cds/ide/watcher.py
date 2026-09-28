@@ -106,8 +106,6 @@ class Watcher(object):
                 self.run_one(cmd)
             self.beat_if_due()
             self._show()
-        except SystemExit:
-            raise
         except BaseException:
             print("watcher: tick failed\n" + traceback.format_exc())
         finally:

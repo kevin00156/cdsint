@@ -330,6 +330,20 @@ def test_a_tick_never_lets_an_exception_escape(root, capsys):
     assert watch.busy is False  # and the guard was released
 
 
+def test_not_even_system_exit_escapes_a_tick(root, capsys):
+    # "Catch everything inside a tick" (WATCHER.md 5) had one exception, and
+    # it was the one a body's sys.exit() raises.
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+
+    def leave(*args, **kwargs):
+        raise SystemExit(3)
+
+    watch.beat_if_due = leave
+    assert watch.tick() is True
+    assert "tick failed" in capsys.readouterr().out
+
+
 # --- arming and disarming --------------------------------------------------
 
 def test_main_arms_a_timer_and_returns(root):
@@ -381,6 +395,60 @@ def test_the_stop_command_tears_down_on_the_following_tick(root):
     assert timers[0].started is False and timers[0].disposed is True
     assert instances.read(root, watch.instance_id) is None
     assert session.current() is None
+
+
+def armed(root):
+    """A watcher armed through session.main, and the timer it hung."""
+    timers = []
+
+    def factory(interval_ms, handler):
+        timers.append(FakeTimer(interval_ms, handler))
+        return timers[-1]
+
+    return session.main(make_globals(), root, timer_factory=factory), timers
+
+
+def test_stop_mid_command_waits_for_the_command_to_finish(root):
+    # The Stop button and a re-run of the script both arrive while a command
+    # pumps messages. Tearing down there pulled cmd/ and result/ out from
+    # under the command, and its finally then wrote the registration back.
+    watch, timers = armed(root)
+    seen = {}
+
+    def stopped_midway(cmd, started):
+        session.stop(watch)
+        seen["dir"] = os.path.isdir(ipc.result_dir(root, watch.instance_id))
+        timers[0].handler()            # the timer fires inside the command
+        seen["still"] = session.current() is watch
+        return commands.new_result(cmd, True, started_at=started)
+
+    watch.handlers["ping"] = stopped_midway
+    cmd = commands.write_command(root, watch.instance_id, "ping")
+    timers[0].handler()
+    assert seen == {"dir": True, "still": True}
+    assert commands.read_result(root, watch.instance_id, cmd["id"])["ok"]
+
+    timers[0].handler()                # the first tick after it tears down
+    assert session.current() is None
+    assert timers[0].disposed is True
+    assert instances.read(root, watch.instance_id) is None
+    assert not os.path.exists(ipc.instance_dir(root, watch.instance_id))
+
+
+def test_rerunning_the_script_mid_command_stops_after_it(root):
+    watch, timers = armed(root)
+
+    def rerun_midway(cmd, started):
+        assert session.main(make_globals(), root) is None
+        return commands.new_result(cmd, True, started_at=started)
+
+    watch.handlers["ping"] = rerun_midway
+    commands.write_command(root, watch.instance_id, "ping")
+    timers[0].handler()
+    assert watch.running is False and session.current() is watch
+    timers[0].handler()
+    assert session.current() is None
+    assert instances.read(root, watch.instance_id) is None
 
 
 # --- staying answerable when writing the answer fails ----------------------

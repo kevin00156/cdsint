@@ -70,7 +70,19 @@ def _show_status(watcher, ide_globals):
 
 
 def stop(watcher):
-    """The single way out, whether the CLI asked or the script was re-run."""
+    """The single way out, whether the CLI asked or the script was re-run.
+
+    Mid-command it only takes the watcher out of service. The Stop button
+    and a re-run of the script both arrive while a command is pumping
+    messages, and tearing down then pulled cmd/ and result/ out from under
+    that command, whose finally then wrote the registration back: a stopped
+    watcher that looked alive. The tick after the command does the rest
+    (_on_tick).
+    """
+    watcher.running = False
+    if watcher.busy:
+        print("watcher: stopping once %s finishes" % watcher.doing)
+        return
     if watcher.timer is not None:
         watcher.timer.Stop()
         watcher.timer.Dispose()
@@ -80,7 +92,6 @@ def stop(watcher):
         watcher.display_to = None
         watcher.form = None
         form.close()
-    watcher.running = False
     watcher.shutdown()
     if current() is watcher:
         delattr(sys, STATE_ATTR)
@@ -96,11 +107,13 @@ def _on_tick(watcher):
 
     The teardown runs at the *start* of the tick after `stop` was answered,
     which leaves the caller a whole interval to collect that answer before the
-    instance directory goes away.
+    instance directory goes away. A tick that lands inside a command which
+    is still running leaves the teardown to the first one after it.
     """
     def on_tick(sender=None, event_args=None):
         if not watcher.running:
-            stop(watcher)
+            if not watcher.busy:
+                stop(watcher)
             return
         watcher.tick()
     return on_tick
