@@ -756,7 +756,11 @@ top of the trip in `plc_trace.py` (6.8).
   must differ: every compile stamps a new four-byte identifier on every block
   of the boot application, so if the download really landed the value changes;
   unchanged means "no error reported but nothing was written", and the run
-  counts as failed. If it landed, record the new value.
+  counts as failed. If it landed, record the new value. A first pull that
+  fails is "nothing loaded" only when the controller has no `PlcLogic/<app>`
+  directory to list; when the listing names the `.crc` that could not be
+  read, nothing is sent, because a download that writes nothing could not
+  then be told from one that lands.
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the

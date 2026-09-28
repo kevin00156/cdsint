@@ -158,6 +158,40 @@ def test_a_download_that_did_not_take_is_a_failure_not_a_success():
         plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
 
 
+class FirstCrcFetchFails(Device):
+    """A controller whose first .crc fetch fails, as a reset connection does."""
+
+    def upload_file(self, remote, local, overwrite):
+        if remote.endswith(".crc") and remote not in self.uploaded:
+            self.uploaded.append(remote)
+            raise IOError("transient: the connection was reset")
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_a_crc_that_could_not_be_read_before_stops_the_download():
+    # The failed fetch read as "nothing loaded", so a download that wrote
+    # nothing was held against no CRC at all, passed, and was recorded as
+    # cdsint's: the controller's old program written down as this project's.
+    device = FirstCrcFetchFails(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "nothing was sent" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
+def test_a_controller_with_nothing_loaded_still_takes_a_download():
+    # No application directory at all is what a fresh controller says, and
+    # there any CRC afterwards is a change.
+    device = Device(crc=None, app=None)
+    ide_globals = ide(allowed=["download"], device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert outcome.ok() and crc_of(outcome) == "MATCH"
+
+
 def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
     class Wiped(Device):
         def upload_file(self, remote, local, overwrite):

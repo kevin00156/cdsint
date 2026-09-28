@@ -190,9 +190,14 @@ def remote_files(application):
             "app": "%s/%s.app" % (folder, application)}
 
 
+def file_name(remote):
+    """The last part of a controller path: what a listing calls the file."""
+    return remote.rsplit("/", 1)[-1]
+
+
 def local_name(remote):
     """What a file fetched from `remote` is called in the workspace."""
-    return LOCAL_PREFIX + remote.rsplit("/", 1)[-1]
+    return LOCAL_PREFIX + file_name(remote)
 
 
 def judge(recorded, plc, remote_crc):

@@ -177,7 +177,29 @@ class Trip(object):
         the file list and the source archive would be measured twice and
         noted twice, and neither is part of the question being asked here.
         """
-        return self.connected(self._pull_the_crc)
+        return self.connected(self._pull_what_it_holds)
+
+    def _pull_what_it_holds(self):
+        """The CRC before a download, or why no download may follow it.
+
+        No CRC is the right answer for a controller with nothing loaded, and
+        the wrong one for a controller whose fetch failed: landed() would
+        then take any CRC afterwards, the one it already held included, as a
+        change. Only the listing can tell the two apart, so a CRC that could
+        not be read is looked for there.
+        """
+        self._pull_the_crc()
+        if self.found["plc_crc"]:
+            return None
+        listed = plc_link.names_in(self.device, self.remote["dir"])
+        if listed is None:
+            # No such directory: nothing is loaded, so any CRC is a change.
+            return None
+        if plc_crc.file_name(self.remote["crc"]) not in listed:
+            return None
+        return ("the controller lists %s but it could not be read, so a "
+                "download that writes nothing could not be told from one "
+                "that lands; nothing was sent" % self.remote["crc"])
 
     def read_back(self):
         """Connect and fetch everything. None when the controller answered."""
