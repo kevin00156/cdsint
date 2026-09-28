@@ -104,7 +104,11 @@ def _delete_confirmed(export_dir, orphans, auto_delete):
             removed.append(rel_path)
             print("Deleted: " + rel_path)
         except OSError as exc:
-            print("Error deleting " + rel_path + ": " + safe_str(exc))
+            # In the result, not only on screen: the file is still there and
+            # the export said it would go, so the run is not what it says.
+            unhandled.note_file_known(
+                rel_path, "an orphan that could not be deleted: "
+                + safe_str(exc))
     return removed
 
 

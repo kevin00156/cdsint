@@ -116,3 +116,18 @@ def test_an_edit_to_the_file_of_an_unreadable_object_survives_it(
     assert skipped["data"]["pending_import"] == ["A/Bar.st"]
     assert u"precious" in bench.read("A/Bar.st")
     assert again["data"]["pending_import"] == ["A/Bar.st"]
+
+
+def test_an_orphan_that_would_not_go_is_named_in_the_result(bench,
+                                                            monkeypatch):
+    foo(bench)._name = "Foo2"
+
+    def refused(path):
+        raise OSError(13, "Access is denied", path)
+    monkeypatch.setattr("engine.orphan_sweep.os.remove", refused)
+
+    result = bench.export(auto_delete_orphans=True)
+
+    assert result["ok"] is False
+    assert result["data"]["failed_objects"] == ["A/Foo.st"]
+    assert "A/Foo.st" in result["summary"]

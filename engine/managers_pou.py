@@ -17,6 +17,7 @@ from engine.st_text import (
     render_sync_pragmas,
     build_state_hash,
     parse_sync_pragmas,
+    unify_newlines,
     attrs_from_pragmas,
     needs_kind_pragma,
     read_sync_text,
@@ -253,8 +254,7 @@ class PropertyManager(POUManager):
     def update(self, obj, file_path):
         # A file that cannot be read raises, as parse_st_file does.
         raw_content = read_sync_text(file_path)
-        pragmas, clean_content = parse_sync_pragmas(
-            raw_content.replace('\r\n', '\n').replace('\r', '\n'))
+        pragmas, clean_content = parse_sync_pragmas(unify_newlines(raw_content))
 
         declaration, get_impl_combined, set_impl_combined = parse_property_content(clean_content)
         updated = False
@@ -288,8 +288,7 @@ class PropertyManager(POUManager):
 
     def create(self, container, name, file_path, type_guid):
         raw_content = read_sync_text(file_path)
-        pragmas, clean_content = parse_sync_pragmas(
-            raw_content.replace('\r\n', '\n').replace('\r', '\n'))
+        pragmas, clean_content = parse_sync_pragmas(unify_newlines(raw_content))
 
         declaration, get_impl_combined, set_impl_combined = parse_property_content(clean_content)
 

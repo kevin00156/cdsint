@@ -7,7 +7,7 @@ until now it did not claim it either, so the orphan sweep deleted it.
 """
 import pytest
 
-from engine import classify, entry_export
+from engine import classify, entry_export, sync_cache
 from engine.codesys_constants import TYPE_GUIDS
 
 from cds.core import settings
@@ -33,6 +33,11 @@ def test_a_skipped_objects_file_is_not_swept(monkeypatch, tmp_path, reason):
     kept = sync / "MainVisu.visu.xml"
     sync.mkdir()
     kept.write_text(u"<visu/>", encoding="utf-8")
+    # Left by the last sync and untouched since: without the claim this is
+    # an orphan the sweep deletes, so the test fails if the claim goes.
+    mtime, size = sync_cache.file_signature(str(kept))
+    sync_cache.save_sync_cache(str(sync), {"mainvisu.visu.xml": {
+        "disk_mtime": mtime, "disk_size": size}})
     projects = Projects(Project({}, [Visu()], str(tmp_path / "Fake.project")))
     monkeypatch.setattr(entry_export, "system", DeafSystem(), raising=False)
     monkeypatch.setattr(

@@ -74,8 +74,9 @@ def normalize_path(path):
     Lower case because the file system is Windows': renaming an object only
     in case leaves its file under the old case, so a key that kept the case
     called the file an orphan of the object it still belongs to, and the
-    cache entry a stranger. Every comparison of sync-folder paths goes
-    through here, so they all agree with the file system.
+    cache entry a stranger. The comparisons that decide whose a file is --
+    cache entries, claims, the orphan sweep, the new-file scan -- go
+    through here, so those agree with the file system.
     """
     if path is None: return ""
     return path.replace("\\", "/").strip("/").lower()

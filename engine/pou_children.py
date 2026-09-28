@@ -62,12 +62,21 @@ def save_pou_children(pou_obj, project):
 
 
 def _accessors_of(member, project):
-    """A property's GET and SET text, by lower-case name; {} for the rest."""
+    """A property's GET and SET text, by lower-case name; {} for the rest.
+
+    One walk of the member's children for both, not one per accessor
+    (PRINCIPLES 3). A child whose name will not read is named as child_named
+    names it.
+    """
     saved = {}
-    for name in ACCESSORS:
-        accessor = child_named(member, name)
-        if accessor is not None:
-            saved[name] = export_object_content(accessor, project)
+    for child in children_of(member):
+        try:
+            name = safe_str(child.get_name()).lower()
+        except Exception as exc:
+            unhandled.note(child, exc)
+            continue
+        if name in ACCESSORS:
+            saved[name] = export_object_content(child, project)
     return saved
 
 

@@ -3,8 +3,8 @@
 
 Pass 1 of perform_import_items asks these of every item before it sorts
 it: a kind the profile does not import, a file refused by path, an object
-import never deletes. Moved out of import_items.py unchanged, to keep that
-file under the size limit.
+import never deletes. Moved out of import_items.py to keep that file under
+the size limit.
 """
 from __future__ import print_function
 
