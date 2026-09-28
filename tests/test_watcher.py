@@ -209,6 +209,34 @@ def test_a_handler_that_raises_becomes_a_failed_result(root):
     assert "the IDE said no" in result["error"]
 
 
+def test_a_command_its_caller_gave_up_on_is_answered_and_not_run(root):
+    # A CLI killed while it waited cannot take its command back out of the
+    # queue. Without a deadline an import queued yesterday ran whenever the
+    # watcher next got to it, with nobody left to read the answer.
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    ran = []
+    watch.handlers["import"] = lambda cmd, started: ran.append(cmd)
+    cmd = commands.write_command(root, watch.instance_id, "import",
+                                 {"yes": True}, now=ipc.now() - 600.0,
+                                 deadline=ipc.now() - 480.0)
+    watch.tick()
+    result = commands.read_result(root, watch.instance_id, cmd["id"])
+    assert ran == []
+    assert result["ok"] is False
+    assert "stopped waiting" in result["error"] and "not run" in result["error"]
+
+
+def test_a_command_with_no_deadline_still_runs_however_old(root):
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    cmd = commands.write_command(root, watch.instance_id, "ping",
+                                 now=ipc.now() - 86400.0)
+    watch.tick()
+    assert commands.read_result(root, watch.instance_id,
+                                cmd["id"])["ok"] is True
+
+
 def test_a_command_is_claimed_before_it_runs(root):
     # A watcher that dies mid-command must not find it queued again.
     watch = watcher.Watcher(make_globals(), root)

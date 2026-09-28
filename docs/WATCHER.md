@@ -79,7 +79,7 @@ file has the same name and lives in `result\`.
 
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
- "args": {"yes": true}, "created_at": "..."}
+ "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1}
 ```
 
 ```json
@@ -90,6 +90,11 @@ file has the same name and lives in `result\`.
  "denied": null, "data": null}
 ```
 
+- `deadline_epoch` is when the CLI stops waiting: the moment it queued the
+  command plus its `--timeout`. A CLI that times out takes its command back
+  out of the queue, but one that is killed cannot, so a watcher that reaches
+  a command past its deadline does not run it: it answers `ok` false with
+  "the caller stopped waiting at …; not run". `null` means no deadline.
 - When `ok` is false, `error` always carries text.
 - When the engine asked a question and the command's arguments held no answer,
   `ok` is false and `needs_input` carries the question verbatim and the flag

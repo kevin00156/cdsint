@@ -131,9 +131,24 @@ def test_a_queued_command_and_a_headless_one_are_the_same_shape():
     # the record the watcher writes, built from this. Two shapes here would
     # be two shapes there, with only one set of readers.
     queued = commands.new_command("export", {"delete_orphans": True}, now=T0)
-    assert sorted(queued) == ["args", "command", "created_at", "id"]
+    assert sorted(queued) == ["args", "command", "created_at",
+                              "deadline_epoch", "id"]
     assert queued["args"] == {"delete_orphans": True}
     assert queued["command"] == "export"
+    # A headless run waits for as long as its process deadline allows, so
+    # its commands carry no deadline of their own.
+    assert queued["deadline_epoch"] is None
+
+
+def test_a_command_with_no_deadline_is_never_overdue():
+    assert not commands.overdue(commands.new_command("ping", now=T0),
+                                now=T0 + 86400.0)
+
+
+def test_a_command_is_overdue_only_once_its_deadline_has_passed():
+    cmd = commands.new_command("ping", now=T0, deadline=T0 + 120.0)
+    assert not commands.overdue(cmd, now=T0 + 120.0)
+    assert commands.overdue(cmd, now=T0 + 120.5)
 
 
 def test_a_command_keeps_its_own_copy_of_the_args():

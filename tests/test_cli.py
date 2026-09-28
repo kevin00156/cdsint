@@ -237,6 +237,21 @@ def test_a_timed_out_command_is_taken_off_the_queue(watch):
     assert commands.list_command_ids(watch.root, watch.instance_id) == []
 
 
+def test_the_queued_command_says_when_the_caller_stops_waiting(watch,
+                                                                monkeypatch):
+    # Un-queueing on a timeout does not help when this process is killed;
+    # the deadline in the file is what stops the watcher running it later.
+    seen = []
+
+    def look(_seconds):
+        seen.append(commands.next_command(watch.root, watch.instance_id))
+        watch.run_one(seen[-1])
+    monkeypatch.setattr(time, "sleep", look)
+    before = time.time()
+    assert cli.main(["ping", "--timeout", "30"]) == EXIT_OK
+    assert before + 30 <= seen[0]["deadline_epoch"] <= time.time() + 30
+
+
 def test_ctrl_c_while_waiting_leaves_no_command_behind(watch, monkeypatch):
     def interrupt(_seconds):
         raise KeyboardInterrupt()

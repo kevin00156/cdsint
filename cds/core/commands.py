@@ -33,13 +33,16 @@ def new_id(now=None, suffix=None):
     return "%013d-%s" % (int(ipc.now(now) * 1000), suffix)
 
 
-def new_command(command, args=None, now=None, cmd_id=None):
+def new_command(command, args=None, now=None, cmd_id=None, deadline=None):
     """The record that says what to run, whether or not it is ever a file.
 
     A headless run never queues anything — one process runs the whole list —
     but the result it writes is the same record the watcher writes, and that
     record is built from this one. So both callers start here, and neither
     can end up with a command record the other's readers cannot read.
+
+    deadline_epoch is when the caller stops waiting; None means it waits
+    for as long as it takes, which is what a headless run does.
     """
     now = ipc.now(now)
     return {
@@ -47,14 +50,28 @@ def new_command(command, args=None, now=None, cmd_id=None):
         "command": command,
         "args": dict(args or {}),
         "created_at": ipc.iso(now),
+        "deadline_epoch": deadline,
     }
 
 
-def write_command(root, instance_id, command, args=None, now=None, cmd_id=None):
+def write_command(root, instance_id, command, args=None, now=None, cmd_id=None,
+                  deadline=None):
     """Queue one command for an instance. Returns the record as written."""
-    cmd = new_command(command, args, now, cmd_id)
+    cmd = new_command(command, args, now, cmd_id, deadline)
     ipc.write_json(_command_path(root, instance_id, cmd["id"]), cmd)
     return cmd
+
+
+def overdue(cmd, now=None):
+    """Has the caller who queued this stopped waiting for it?
+
+    A CLI that times out takes its command back out of the queue, but one
+    that is killed cannot, and its command would then run whenever the
+    watcher got to it -- an import an hour later, against a project its
+    owner has been editing since. Nobody is left to read that answer.
+    """
+    deadline = cmd.get("deadline_epoch")
+    return deadline is not None and ipc.now(now) > float(deadline)
 
 
 def list_command_ids(root, instance_id):

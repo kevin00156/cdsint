@@ -99,11 +99,13 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     None means it timed out; GONE means the watcher went away. A command that
     times out is un-queued, so it cannot fire later against an IDE whose owner
     has walked away. If the watcher already claimed it, the result it writes
-    is swept by that watcher's next start instead.
+    is swept by that watcher's next start instead. The deadline travels with
+    the command for the case un-queueing cannot cover: this process killed
+    outright, with the command still in the queue.
     """
-    commands.write_command(root, instance_id, cmd["command"], cmd["args"],
-                           cmd_id=cmd["id"])
     deadline = time.time() + timeout
+    commands.write_command(root, instance_id, cmd["command"], cmd["args"],
+                           cmd_id=cmd["id"], deadline=deadline)
     gone_since = None
     try:
         while True:

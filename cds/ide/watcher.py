@@ -203,6 +203,11 @@ class Watcher(object):
                                        error=traceback.format_exc())
 
     def _dispatch(self, cmd, started):
+        if commands.overdue(cmd, started):
+            return commands.new_result(
+                cmd, False, started_at=started,
+                error="the caller stopped waiting at %s; not run"
+                      % ipc.iso(float(cmd["deadline_epoch"])))
         handler = self.handlers.get(cmd.get("command"))
         if handler is None:
             known = ", ".join(sorted(self.handlers))
