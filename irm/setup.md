@@ -96,8 +96,8 @@ To see which IDEs and ScriptDirs it would use, without installing anything:
 .\irm\setup.ps1 -List
 ```
 
-Run from a checkout, `-List` asks that checkout rather than downloading a
-release.
+`-List` never downloads: run from a checkout it asks that checkout, and
+otherwise the body already installed. With neither it says so and stops.
 
 An install counts only when its executable is there. These vendors put
 shared targets, a gateway and an unversioned directory beside the real
@@ -133,7 +133,8 @@ command prints a line on stderr when either is due: a newer release, or an
 IDE whose menu does not reach this body. It checks at most once a day, says
 nothing under `--json` or when it cannot reach GitHub, and never checks from a
 clone. `update` refuses while any CODESYS-family IDE is running: an IDE that
-has run one of the stubs keeps the old engine loaded.
+has run one of the stubs keeps the old engine loaded. Running this script
+again over an install refuses the same way; a first install does not ask.
 
 A clone updates with `git pull`, and `cdsint update` says so. `cdsint link`
 works from a clone too, and points the menus at it.

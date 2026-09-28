@@ -130,3 +130,28 @@ def test_exit_only_when_run_from_a_file(script):
     assert script.rstrip().endswith(
         'if ($code -ne 0) { throw "cdsint setup did not finish; the lines '
         'above say what failed." }')
+
+
+def test_list_never_downloads_a_body(script):
+    """Run from irm there is no checkout, and -List fell through to Get-Body,
+    which replaced the installed body it promised to leave alone."""
+    find = function(script, "Find-Body")
+    assert find.count("Get-Body") == 1
+    assert "if (-not $List) { return Get-Body -Version $Version }" in find
+    assert 'cdsint\\body' in find
+
+
+def test_no_body_is_swapped_under_a_running_ide(script):
+    """cdsint update refuses to; the installer swapped regardless, and an IDE
+    that had run a script mixed the old engine with the new."""
+    body = function(script, "Get-Body")
+    assert body.index("Assert-NoIdeRunning") < body.index(
+        "Rename-Item -Path $root")
+    assert "update.running_ides()" in function(script, "Assert-NoIdeRunning")
+
+
+def test_the_flat_body_goes_only_once_the_new_one_is_in(script):
+    """It was deleted before the move, so a move that failed left no body."""
+    body = function(script, "Get-Body")
+    assert body.index("Move-Item -Path $inner -Destination $root") < \
+        body.index("Remove-FlatBody")

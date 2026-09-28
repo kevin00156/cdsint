@@ -68,9 +68,9 @@ function Get-Body {
         survive an upgrade and keep a stub in the menu that is gone; and
         replaced the way cdsint/update.py does it. The new tree is unpacked
         beside the old one, on the same volume, and swapped in by two
-        renames, so a failed download, a checksum that does not match, or a
-        shell whose current directory is inside the body stops the install
-        with the old body whole.
+        renames, so a failed download, a checksum that does not match, a
+        running IDE, or a shell whose current directory is inside the body
+        stops the install with the old body whole.
     #>
     param([string] $Version)
 
@@ -91,8 +91,11 @@ function Get-Body {
     $zip = Save-Archive -Version $Version -Staging $staging
     $inner = Expand-Tree -Zip $zip -Destination (Join-Path $staging "unpacked")
 
-    Remove-FlatBody -AppDir $appDir -Tree $inner
-
+    # Only an engine already here can be loaded in an IDE; a first install
+    # has nothing to mix with, and must not be refused over an open IDE.
+    if ((Test-Path $root) -or (Test-FlatBody -AppDir $appDir)) {
+        Assert-NoIdeRunning -Tree $inner
+    }
     if (Test-Path $root) {
         try {
             Rename-Item -Path $root -NewName (Split-Path $retired -Leaf)
@@ -106,6 +109,7 @@ function Get-Body {
         if (Test-Path $retired) { Rename-Item -Path $retired -NewName (Split-Path $root -Leaf) }
         throw
     }
+    Remove-FlatBody -AppDir $appDir -Tree $root
     Remove-Leftover -Path $staging
     Remove-Leftover -Path $retired
     Write-Host "[+] Body installed to $root" -ForegroundColor Green
@@ -182,16 +186,45 @@ function Remove-Leftover {
 }
 
 
+function Test-FlatBody {
+    <# Is the 0.0.1 layout, the body straight in %LOCALAPPDATA%\cdsint, here? #>
+    param([string] $AppDir)
+    return (Test-Path (Join-Path $AppDir "cdsint\cli.py"))
+}
+
+
+function Assert-NoIdeRunning {
+    <#
+        The check `cdsint update` makes before its swap: an IDE that has run
+        a cdsint script keeps the old engine loaded, and would mix it with
+        the new one. Asked of the new tree's own cdsint/update.py, so the
+        list of IDE executables is kept in one place; not knowing what runs
+        is a refusal too, never "nothing runs".
+    #>
+    param([string] $Tree)
+
+    $probe = "import sys; sys.path.insert(0, sys.argv[1]); from cdsint import update; print(', '.join(update.running_ides()))"
+    $running = (& python -c $probe $Tree) -join ""
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not check whether a CODESYS-family IDE is running (it said why above), so nothing was changed."
+    }
+    if ($running) {
+        throw "Close every CODESYS-family IDE first (running: $running). One that has run a cdsint script keeps the old engine loaded, and would mix it with the new one. Nothing was changed."
+    }
+}
+
+
 function Remove-FlatBody {
     <#
         0.0.1 unpacked the body straight into %LOCALAPPDATA%\cdsint, beside
         the state. Whatever there has the name of something at the top of a
         release is a leftover of that and goes; everything else is state and
-        stays. Nothing matches once the body has its own directory.
+        stays. Nothing matches once the body has its own directory. Run only
+        once the new body is in place: this deletes, and cannot be put back.
     #>
     param([string] $AppDir, [string] $Tree)
 
-    if (-not (Test-Path (Join-Path $AppDir "cdsint\cli.py"))) { return }
+    if (-not (Test-FlatBody -AppDir $AppDir)) { return }
     Write-Host "[*] Removing the 0.0.1 layout from $AppDir" -ForegroundColor Cyan
     foreach ($entry in Get-ChildItem $Tree -Force) {
         $leftover = Join-Path $AppDir $entry.Name
@@ -248,10 +281,12 @@ function Test-Python {
 
 function Find-Body {
     <#
-        The clone named, the checkout this script sits in when only listing,
-        or a freshly downloaded release. $null when a named clone is not one.
-        -List must not download a release, and a checkout is where it can
-        avoid that.
+        The clone named; when only listing, the checkout this script sits in
+        or else the body already installed; otherwise a freshly downloaded
+        release. $null when a named clone is not one, or -List has nothing
+        to list with. -List promises to change nothing, and downloading a
+        release replaces the installed body, so it never downloads: run as
+        a script block from irm there is no checkout around it.
     #>
     if ($Clone) {
         $found = (Resolve-Path $Clone).Path
@@ -262,13 +297,18 @@ function Find-Body {
         Write-Host "[*] Using the clone at $found" -ForegroundColor Cyan
         return $found
     }
+    if (-not $List) { return Get-Body -Version $Version }
     $checkout = if ($PSScriptRoot) { Join-Path $PSScriptRoot ".." } else { $null }
-    if ($List -and $checkout -and (Test-Path (Join-Path $checkout "stub"))) {
-        $found = (Resolve-Path $checkout).Path
-        Write-Host "[*] Listing from the checkout this script is in: $found" -ForegroundColor Cyan
-        return $found
+    $installed = Join-Path $env:LOCALAPPDATA "cdsint\body"
+    foreach ($candidate in @($checkout, $installed)) {
+        if ($candidate -and (Test-Path (Join-Path $candidate "stub"))) {
+            $found = (Resolve-Path $candidate).Path
+            Write-Host "[*] Listing with the cdsint at $found" -ForegroundColor Cyan
+            return $found
+        }
     }
-    return Get-Body -Version $Version
+    Write-Host "[!] -List changes nothing, so it downloads nothing, and there is no checkout beside this script and no installed body to list with. Install first, or pass -Clone." -ForegroundColor Red
+    return $null
 }
 
 
