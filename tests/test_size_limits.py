@@ -53,9 +53,6 @@ BANNED_MODULE_NAMES = ("utils", "helpers", "common", "misc")
 # What is over 60 lines, by file and then by function. Lower these; do not
 # raise them, and do not add to them.
 ALLOWED_FUNCTION_LINES = {
-    "engine/change_detect.py": {
-        "find_all_changes": 237,
-    },
     # Split out of change_detect.py unchanged; the debt moved with it.
     "engine/move_detect.py": {
         "detect_moved_files": 81,
