@@ -170,7 +170,7 @@ def test_a_dead_instance_is_not_a_target_even_by_exact_id():
                                  "p-1", now=T0)
 
 
-def test_prune_stale_never_touches_a_busy_instance(tmp_path):
+def test_prune_stale_spares_a_busy_instance_far_past_any_timeout(tmp_path):
     # A real import on a real project takes minutes. Tying this to the
     # command timeout only protected commands shorter than that, which is not
     # the interesting case: deleting the directory takes cmd/ and result/ away
@@ -178,12 +178,78 @@ def test_prune_stale_never_touches_a_busy_instance(tmp_path):
     root = str(tmp_path)
     ipc.ensure_dirs(root, "p-1")
     instances.write(root, make_reg("p-1", "p", state=instances.STATE_BUSY))
-    for elapsed in (150.0, 600.0, 86400.0):
+    for elapsed in (150.0, 600.0, 3600.0, instances.ABANDONED_AFTER_S):
         assert instances.prune_stale(root, now=T0 + elapsed) == []
     assert os.path.exists(ipc.instance_dir(root, "p-1"))
+
+
+def test_prune_stale_clears_a_busy_record_an_ide_crashed_on(tmp_path):
+    # An IDE that dies mid-command leaves "busy" behind, and the old rule
+    # spared busy for ever: the record stayed until somebody deleted it by
+    # hand, and re-running Project_watch.py in another IDE did not help.
+    root = str(tmp_path)
+    ipc.ensure_dirs(root, "p-1")
+    instances.write(root, make_reg("p-1", "p", state=instances.STATE_BUSY))
+    later = T0 + instances.ABANDONED_AFTER_S + 1.0
+    assert instances.prune_stale(root, now=later) == ["p-1"]
+    assert not os.path.exists(ipc.instance_dir(root, "p-1"))
+
+
+def test_a_running_mark_older_than_the_cap_does_not_save_an_instance(
+        tmp_path):
+    # A watcher that died mid-command leaves its mark behind. It gets the
+    # same allowance as a busy record, and not for ever.
+    root = str(tmp_path)
+    ipc.ensure_dirs(root, "p-1")
+    instances.write(root, make_reg("p-1", "p"))
+    marked = os.path.join(ipc.command_dir(root, "p-1"), "1-aaaaaa.running")
+    io.open(marked, "w").close()
+    os.utime(marked, (T0, T0))
+    assert instances.prune_stale(root, now=T0 + 300.0) == []
+    later = T0 + instances.ABANDONED_AFTER_S + 1.0
+    assert instances.prune_stale(root, now=later) == ["p-1"]
+
+
+def test_a_busy_instance_whose_process_is_gone_is_dead():
+    busy = make_reg("p-1", "p", state=instances.STATE_BUSY)
+    assert not instances.is_alive(busy, now=T0 + 1.0,
+                                  pid_alive=lambda reg: False)
+
+
+def test_cannot_tell_about_the_process_is_not_dead():
+    idle = make_reg("p-1", "p")
+    assert instances.is_alive(idle, now=T0 + 1.0, pid_alive=lambda reg: None)
+
+
+def test_a_crashed_ide_does_not_hide_the_live_one_for_the_same_project():
+    # The dead one crashed mid-import an hour ago; the caller is willing to
+    # wait two hours, so on time alone both count and the name is ambiguous.
+    dead = make_reg("line-1", "line", state=instances.STATE_BUSY,
+                    busy_at=T0 - 3600.0)
+    live = make_reg("line-2", "line")
+    picked = instances.resolve_target(
+        [dead, live], "line", now=T0, busy_timeout=7200.0,
+        pid_alive=lambda reg: reg["instance_id"] != "line-1")
+    assert picked["instance_id"] == "line-2"
+
+
+def test_a_registration_records_when_it_started_as_a_number():
+    # What lets the CLI tell this IDE from a later process given its pid.
+    assert make_reg("p-1", "p")["started_at_epoch"] == T0
 
 
 def test_prune_stale_still_clears_an_idle_corpse(tmp_path):
     root = str(tmp_path)
     instances.write(root, make_reg("p-1", "p"))
     assert instances.prune_stale(root, now=T0 + 150.0) == ["p-1"]
+
+
+def test_read_all_skips_a_json_that_is_not_a_registration(tmp_path):
+    # The status window's placement file landed in the root when
+    # CDS_INSTANCES_DIR had a trailing separator, and prune_stale then died
+    # on reg["instance_id"] at every watcher start.
+    root = str(tmp_path)
+    instances.write(root, make_reg("p-1", "p", now=T0 - 600.0))
+    ipc.write_json(os.path.join(root, "statusform.json"), {"x": 1, "y": 2})
+    assert [r["instance_id"] for r in instances.read_all(root)] == ["p-1"]
+    assert instances.prune_stale(root, now=T0) == ["p-1"]

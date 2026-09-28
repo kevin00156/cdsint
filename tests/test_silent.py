@@ -134,6 +134,14 @@ def test_stdout_is_restored_even_when_the_script_blows_up(tmp_path, ide):
     assert "boom" in outcome.error and not outcome.ok()
 
 
+def test_a_body_that_calls_sys_exit_is_a_failed_command(tmp_path, ide):
+    # Let through, it unwound the watcher's tick into the IDE's
+    # thread-exception dialog and the caller got no result at all.
+    path = write_script(tmp_path, u"    import sys\n    sys.exit(3)")
+    outcome = silent.run(ide, path, "main", {})
+    assert "SystemExit" in outcome.error and not outcome.ok()
+
+
 # --- answering the dialogs -------------------------------------------------
 
 def yes_no_script(tmp_path, title):

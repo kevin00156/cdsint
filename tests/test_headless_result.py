@@ -12,7 +12,7 @@ import pytest
 from cds.core import ipc
 from cds.ide import headless as ide_side
 from cdsint import headless as cli_side
-from cdsint import report as report_side
+from cdsint import launch_result, run_files
 from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
 from cdsint.exits import Failure
 from tests.headless_fakes import (   # noqa: F401  fixtures
@@ -51,10 +51,10 @@ def test_stdout_counts_as_reached_only_with_both_marks(machine, monkeypatch):
     started.run([("export", {})])
     with open(started.stdout_path(), "w", encoding="utf-8") as handle:
         handle.write(ide_side.BEGIN_MARK)
-    assert started._stdout_reached() is False
+    assert launch_result.stdout_reached(started) is False
     with open(started.stdout_path(), "w", encoding="utf-8") as handle:
         handle.write(ide_side.BEGIN_MARK + "\nwork\n" + ide_side.END_MARK)
-    assert started._stdout_reached() is True
+    assert launch_result.stdout_reached(started) is True
 
 
 def test_the_wait_covers_every_step_not_just_one(machine, monkeypatch):
@@ -120,6 +120,20 @@ def test_a_lock_that_was_there_before_we_started_is_left_alone(machine,
 
     assert os.path.exists(started.project + ".~u")
     assert any("was there before" in note for note in started.notes)
+
+
+def test_a_lock_that_appeared_while_our_ide_never_opened_it_is_left(
+        machine, monkeypatch):
+    # Our IDE hung before it had the project open, and meanwhile somebody
+    # opened it in theirs. The lock is theirs; clearing it lets the next run
+    # open the project beside them.
+    launching(monkeypatch, code=None)
+    leaves_a_lock(monkeypatch, opened=False)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+    assert os.path.exists(started.project + ".~u")
+    assert any("never said it had opened" in note for note in started.notes)
 
 
 def test_a_process_that_survives_its_own_kill_keeps_its_lock(machine,
@@ -261,6 +275,19 @@ def test_the_last_run_report_is_not_read_after_a_silent_exit(machine,
     assert raised.value.code == EXIT_HEADLESS
 
 
+def test_an_ide_that_exited_after_only_saying_it_opened_is_a_failure(
+        machine, monkeypatch):
+    # The report the IDE writes on opening has no intended_exit and no
+    # results: it is not an answer, however the process ended.
+    launching(monkeypatch, code=0)
+    written_report(monkeypatch, {"opened": True, "intended_exit": None,
+                                 "results": [], "error": None})
+    with pytest.raises(Failure) as raised:
+        make(machine, monkeypatch).run([("export", {})])
+    assert raised.value.code == EXIT_HEADLESS
+    assert "did not finish its report" in str(raised.value)
+
+
 def test_an_ide_that_wrote_no_report_is_a_launch_failure(machine, monkeypatch):
     launching(monkeypatch, code=1)
     with pytest.raises(Failure) as raised:
@@ -280,9 +307,97 @@ def test_stdout_and_the_report_share_a_name_so_two_runs_do_not_collide(machine,
 def test_a_report_path_survives_a_project_name_with_spaces_and_chinese(machine):
     # Real project names look like "包裝機 v2.project", and the report file
     # is named after them.
-    made = report_side.default_report(u"C:\\p\\包裝機 v2.project")
+    made = run_files.default_report(u"C:\\p\\包裝機 v2.project")
     assert made.endswith(".json") and " " not in os.path.basename(made)
     assert os.path.basename(made).encode("ascii")
+
+
+def test_two_projects_with_one_file_name_get_two_reports(machine):
+    # CI checks out two branches side by side; both have line.project, and
+    # the second run used to read and overwrite the first one's report.
+    one = run_files.default_report(os.path.join(str(machine), "a",
+                                                "line.project"))
+    two = run_files.default_report(os.path.join(str(machine), "b",
+                                                "line.project"))
+    assert one != two
+    assert os.path.basename(one).startswith("line-")
+
+
+def test_the_job_file_is_this_run_own_and_gone_afterwards(machine,
+                                                          monkeypatch):
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    started.run([("export", {})])
+    started.run([("export", {})])
+    first, second = [l["env"][ide_side.JOB_ENV] for l in launches]
+    assert first != second
+    assert os.path.dirname(first) == os.path.dirname(started.report_path)
+    assert not os.path.exists(first) and not os.path.exists(second)
+
+
+def test_a_second_run_on_the_same_project_is_refused_while_one_runs(
+        machine, monkeypatch):
+    # CODESYS's own .~u appears only once the IDE has the project open,
+    # twenty seconds in; two runs started together both got past it.
+    launching(monkeypatch)
+    started = make(machine, monkeypatch)
+    real = cli_side.Headless._launch
+    refused = []
+
+    def meanwhile(self, job_path, deadline):
+        with pytest.raises(Failure) as raised:
+            make(machine, monkeypatch, report=str(machine / "other.json")).run(
+                [("export", {})])
+        refused.append(raised.value)
+        ipc.write_json(self.report_path, OK_REPORT)
+        return real(self, job_path, deadline)
+
+    monkeypatch.setattr(cli_side.Headless, "_launch", meanwhile)
+    assert started.run([("export", {})])[0]["ok"] is True
+    assert refused[0].code == EXIT_HEADLESS
+    assert "another cdsint run" in str(refused[0])
+    # And it is let go afterwards, however the run ended.
+    monkeypatch.setattr(cli_side.Headless, "_launch", real)
+    written_report(monkeypatch, OK_REPORT)
+    assert started.run([("export", {})])[0]["ok"] is True
+
+
+def test_the_launch_lock_is_let_go_when_the_run_fails(machine, monkeypatch):
+    launching(monkeypatch, code=None)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure):
+        started.run([("export", {})])
+    assert not os.path.exists(run_files.LaunchLock(started.project).path)
+
+
+def test_a_launch_lock_left_by_a_run_that_is_gone_is_cleared(machine,
+                                                             monkeypatch):
+    launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    started = make(machine, monkeypatch)
+    left = run_files.LaunchLock(started.project)
+    os.makedirs(os.path.dirname(left.path))
+    ipc.write_json(left.path, {"pid": 999999, "started_epoch": 1.0})
+    monkeypatch.setattr(run_files.process, "running",
+                        lambda pid, not_after=None: pid != 999999)
+    assert started.run([("export", {})])[0]["ok"] is True
+    assert any("cleared the launch lock" in note for note in started.notes)
+
+
+def test_an_ide_that_cannot_be_tied_to_us_is_said_on_windows(machine,
+                                                              monkeypatch):
+    # Killing cdsint outright then leaves the --noUI IDE running.
+    launches = launching(monkeypatch)
+    written_report(monkeypatch, OK_REPORT)
+    tied = []
+    monkeypatch.setattr(cli_side, "die_with_us",
+                        lambda child: tied.append(child))
+    monkeypatch.setattr(cli_side, "WINDOWS", True)
+    started = make(machine, monkeypatch)
+    started.run([("export", {})])
+    assert tied == [launches[0]["process"]]
+    assert any("could not tie" in note for note in started.notes)
 
 def test_the_report_names_the_folder_the_engine_read(machine, monkeypatch):
     # The CLI used to write its own flag into this field, so the report said

@@ -164,8 +164,15 @@ They are in the record and not only on stderr because the caller reading
 the JSON is exactly the one who needs to hear about a cleared lock.
 Only with `--project`: `--sync-dir D` (optional — this run's sync folder,
 overriding the settings file and never written back), `--profile NAME` when an
-install has several, `--report FILE`, `--force-lock`, and `--answer KEY=VALUE`
-(repeatable) for the IDE's own prompts.
+install has several, `--report FILE` (left out, the report goes to
+`%TEMP%\cdsint\<project name>-<hash of its full path>.json`, so two projects
+that share a file name do not share a report), `--force-lock`, and
+`--answer KEY=VALUE` (repeatable) for the IDE's own prompts. VALUE is a
+`PromptResult` name spelled exactly — `OK`, `Cancel`, `Abort`, `Retry`,
+`Ignore`, `Yes` or `No` — and any other spelling is refused with exit 2 before
+an IDE starts. One `--project` run per project at a time: a second one on the
+same project is refused with exit 4 while the first runs, and a launch lock
+left by a run that was killed is cleared once its process is gone.
 
 There is no `config` command. The settings are a text file next to the
 project; **Settings** below is the whole of it.
@@ -378,7 +385,7 @@ controller you know has the memory.
 | 1 | the command failed, or it needs a flag you did not give |
 | 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (any `plc` command without `--gateway`, `plc trace` without `--job`), a trace job file that is wrong, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
-| 4 | the project is open elsewhere, `--install` matched no IDE, or the IDE would not start |
+| 4 | the project is open elsewhere (another IDE, or another `cdsint --project` run on it), `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
 
 ## Settings

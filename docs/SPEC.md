@@ -676,8 +676,10 @@ into the hole:
 | The project path travels in an environment variable, not in `--project` and not in `--scriptargs` | `--project` under `--noUI` does not actually open the project; `--scriptargs`'s quoting rules cannot take a Chinese path |
 | The command line is assembled as a single string, not an array | PowerShell 5.1's array arguments re-quote and break `--profile="name with spaces"` |
 | stdout and stderr are redirected to a file named after the report | A GUI-subsystem exe gives the shell no output; the file name follows the report so two parallel processes do not fight over the file |
+| The default report is named after the project's full path (its name plus a short hash), the job file is a fresh temporary file deleted after the run, and a launch lock keyed the same way refuses a second run on the project while one runs; a lock whose process is gone is cleared | Two checkouts of one project share a file name; and CODESYS's own `.~u` only appears once the IDE has the project open, so two runs started together both pass that check and then share a report |
+| The IDE is put in a Windows job object that is killed when cdsint's handle to it closes | A launcher killed outright runs no clean-up code, and used to leave a `--noUI` IDE with no window holding the project's lock |
 | On timeout, kill. Only an incomplete report (no `intended_exit`) counts as "a dialog hung"; a complete report is authoritative, and only "the script finished but the IDE did not exit in time" is noted. After the kill, wait until the process is really gone | A hang is ten times harder to diagnose than an error; and a complete report is evidence that a slow shutdown should not override |
-| After a kill, clear only lock files that "did not exist before this run started", and write into `notes` that it did; a lock file that was there before the start (that is, `--force-lock` was used) is left alone, with the reason stated | `--force-lock` means "run anyway", not "that lock is mine". Clearing it could release a project another IDE really has open, and the next run has two IDEs on one project. The same holds when the process was not killed: the lock stays |
+| After a kill, clear only lock files that "did not exist before this run started" and that the killed IDE made — it writes its report, still without `intended_exit`, the moment the project is open, and a lock with no such report behind it is left — and write into `notes` that it did; a lock file that was there before the start (that is, `--force-lock` was used) is left alone, with the reason stated | `--force-lock` means "run anyway", not "that lock is mine". Clearing it could release a project another IDE really has open, and the next run has two IDEs on one project. The same holds when the process was not killed, and when it never opened the project, since then somebody else opened it meanwhile: the lock stays |
 | A kill with no report behind it, or a Ctrl-C, of a run that included `plc download` says the controller may now be stopped or partly written | A full download stops the application before it writes; "a dialog, probably" is not all the reader needs when the machine may be standing still |
 | The script writes the exit code it intends to use into the report, and the CLI compares it with the one actually received | Whether the exit code makes it back has to be verified; if it does not, read the report instead |
 | `system.prompt_handling` turns on `LogMessageKeys`, so an unanswered prompt prints its key; `--answer KEY=VALUE` fills `prompt_answers` | Delta 1.10 opening a 1.8 project asks whether to upgrade, and the default answer is "don't open it". This is the exception D7 spells out |
@@ -692,7 +694,8 @@ environment variable, `CDSINT_HEADLESS_JOB`, pointing at a JSON job file that
 holds the project path, the command list and the `--answer` answers; the
 reason is the same as that row's, and it also spares both sides from growing
 one environment variable per new flag. The IDE side writes a JSON report when
-done, and the CLI side adds what only the outside knows: `stdout_reached`
+done (and a first one without `intended_exit` the moment the project is open),
+and the CLI side adds what only the outside knows: `stdout_reached`
 (only counts when both markers were seen), `exit_code_actual` and
 `exit_code_trusted`, `timed_out`.
 

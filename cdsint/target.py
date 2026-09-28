@@ -13,10 +13,12 @@ has open (SPEC 4.2, cdsint/cli.py show_folder).
 """
 from __future__ import print_function
 
+import os
 import time
 
-from cds.core import commands, instances
+from cds.core import commands, instances, ipc
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
+from cdsint import process
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
 
@@ -31,6 +33,44 @@ GONE = "gone"  # the watcher shut down while we were waiting
 GONE_AFTER_S = 1.0
 
 
+def _resolve(root, target, timeout):
+    """resolve_target, with the same debounce the wait has.
+
+    Every registration goes in, not the live ones: resolve_target decides
+    what "live" means and it needs the timeout to say so. --timeout is how
+    long the caller will wait, so it is also how long a busy instance still
+    counts as alive.
+
+    A registration between its delete and its rename (docs/WATCHER.md 2.1)
+    is not there to be read, and on Windows one being deleted cannot be
+    opened; either used to answer "no live IDE" for an IDE that was fine.
+    Its .json.tmp is there for exactly that moment, so that is what earns
+    another look, for up to GONE_AFTER_S.
+    """
+    give_up = time.time() + GONE_AFTER_S
+    while True:
+        try:
+            return instances.resolve_target(
+                instances.read_all(root), target, busy_timeout=timeout,
+                pid_alive=process.registration_running)
+        except (instances.TargetError, EnvironmentError) as exc:
+            if time.time() >= give_up or not _mid_rewrite(root, exc):
+                raise
+        time.sleep(POLL_S)
+
+
+def _mid_rewrite(root, exc):
+    """Could a registration be missing only because it is being rewritten?"""
+    if getattr(exc, "matches", None):
+        return False    # found several: a blink never adds one
+    if isinstance(exc, EnvironmentError):
+        return True
+    try:
+        return any(n.endswith(".json.tmp") for n in os.listdir(root))
+    except EnvironmentError:
+        return False
+
+
 class Target(object):
     """One live watcher, resolved once and then driven."""
 
@@ -38,16 +78,7 @@ class Target(object):
         self.root = root
         self.timeout = timeout
         try:
-            # Every registration, not the live ones: resolve_target decides
-            # what "live" means and it needs the timeout to say so. Filtering
-            # first put the same judgement in two places, and the copy out
-            # here had no way to explain a candidate it had already dropped.
-            #
-            # --timeout is how long the caller will wait, so it is also how
-            # long a busy instance still counts as alive. Both places, one
-            # meaning.
-            self.reg = instances.resolve_target(instances.read_all(root),
-                                                target, busy_timeout=timeout)
+            self.reg = _resolve(root, target, timeout)
         except instances.TargetError as exc:
             raise Failure(str(exc), EXIT_TARGET,
                           ["%-28s %s" % (r["instance_id"],
@@ -96,52 +127,86 @@ class Target(object):
 def send(root, instance_id, cmd, timeout, poll=POLL_S):
     """Queue a command and wait for its result.
 
-    None means it timed out; GONE means the watcher went away. A command that
-    times out is un-queued, so it cannot fire later against an IDE whose owner
+    None means it timed out; GONE means the watcher went away. Either way the
+    command is un-queued, so it cannot fire later against an IDE whose owner
     has walked away. If the watcher already claimed it, the result it writes
-    is swept by that watcher's next start instead.
+    is swept by that watcher's next start instead. The deadline travels with
+    the command for the case un-queueing cannot cover: this process killed
+    outright, with the command still in the queue.
     """
-    commands.write_command(root, instance_id, cmd["command"], cmd["args"],
-                           cmd_id=cmd["id"])
     deadline = time.time() + timeout
-    gone_since = None
+    commands.write_command(root, instance_id, cmd["command"], cmd["args"],
+                           cmd_id=cmd["id"], deadline=deadline)
+    watching = Watching(root, instance_id)
     try:
         while True:
-            answer, gone_since = _poll_once(root, instance_id, cmd, gone_since)
-            if answer is not None:
-                return answer
-            if time.time() >= deadline:
+            result = commands.take_result(root, instance_id, cmd["id"])
+            if result is not None:
+                return result
+            answer = GONE if watching.gone(time.time()) else None
+            if answer is GONE or time.time() >= deadline:
                 commands.delete_command(root, instance_id, cmd["id"])
-                return None
+                return answer
             time.sleep(poll)
     except KeyboardInterrupt:
         commands.delete_command(root, instance_id, cmd["id"])
         raise
 
 
-def _poll_once(root, instance_id, cmd, gone_since):
-    """One look. Returns (the result, GONE, or None) and the new gone_since.
+class Watching(object):
+    """Is the watcher we are waiting on still there? Asked once per poll.
 
-    The debounce is why this needs a memory. Under IronPython the watcher has
-    no os.replace, so its every-two-second rewrite deletes the registration
-    and renames the new one into place -- for a moment there is no file, and
-    a single missed read would call a healthy IDE dead (docs/WATCHER.md 2.1).
-    The instance directory goes with the registration, so once it has really
-    stayed away the answer is not coming: for `stop` that IS the answer, and
-    for anything else saying so beats waiting out the clock.
+    Cheap every time, a real read now and then. Opening the registration
+    every poll held it open often enough that the watcher's rewrite, which
+    Windows refuses while anyone has the file open, failed -- and the one it
+    lost was the one saying busy (docs/WATCHER.md 5). So each poll only asks
+    whether the file is there, and reads it about as often as it is written.
+
+    Missing is debounced. Under IronPython the watcher has no os.replace, so
+    its rewrite deletes the registration and renames the new one into place
+    -- for a moment there is no file, and one missed look would call a
+    healthy IDE dead (docs/WATCHER.md 2.1). The instance directory goes with
+    the registration, so once it has really stayed away the answer is not
+    coming: for `stop` that IS the answer, and for anything else saying so
+    beats waiting out the clock.
+
+    Present is not proof either: an IDE that died leaves its file behind,
+    and waiting on it used to cost the caller the whole --timeout. The read
+    asks instances.stopped_answering, with the pid check in.
     """
-    result = commands.take_result(root, instance_id, cmd["id"])
-    if result is not None:
-        return result, None
-    if instances.read(root, instance_id) is not None:
-        return None, None
-    gone_since = gone_since or time.time()
-    if time.time() - gone_since >= GONE_AFTER_S:
-        return GONE, gone_since
-    return None, gone_since
+
+    def __init__(self, root, instance_id):
+        self.root = root
+        self.instance_id = instance_id
+        self.missing_since = None
+        self.next_read = 0.0
+
+    def gone(self, now):
+        if not os.path.exists(ipc.registration_path(self.root,
+                                                    self.instance_id)):
+            if self.missing_since is None:
+                self.missing_since = now
+            return now - self.missing_since >= GONE_AFTER_S
+        self.missing_since = None
+        if now < self.next_read:
+            return False
+        self.next_read = now + instances.HEARTBEAT_INTERVAL_S
+        return self._stopped_answering(now)
+
+    def _stopped_answering(self, now):
+        try:
+            reg = instances.read(self.root, self.instance_id)
+        except EnvironmentError:
+            return False    # caught mid-rewrite on Windows; the next read
+        if reg is None:
+            return False    # the same, one step later; the debounce has it
+        working = commands.running_since(self.root, self.instance_id)
+        return instances.stopped_answering(
+            reg, now, process.registration_running, working is not None)
 
 
 def live_instances(root, busy_timeout=DEFAULT_TIMEOUT_S):
     return [r for r in instances.read_all(root)
-            if instances.is_alive(r, busy_timeout=busy_timeout)]
+            if instances.is_alive(r, busy_timeout=busy_timeout,
+                                  pid_alive=process.registration_running)]
 

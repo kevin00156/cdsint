@@ -174,7 +174,13 @@ def _with_stand_ins(namespace, script_path, entry, silent, ui, args):
 
 
 def _call(namespace, script_path, entry, tee, ui, args):
-    """Load the body and press its button, with everything already in place."""
+    """Load the body and press its button, with everything already in place.
+
+    SystemExit is a failure of the command like any other. From the menu a
+    sys.exit() only ends that script; let through here it would unwind the
+    watcher's tick into the IDE's thread-exception dialog, and the caller
+    would get no result at all.
+    """
     try:
         _exec_file(script_path, namespace)
         namespace[ARGS_GLOBAL] = dict(args or {})
@@ -182,7 +188,7 @@ def _call(namespace, script_path, entry, tee, ui, args):
         return Outcome(ui.messages, tee.tail(), result=result)
     except NeedsInput as need:
         return Outcome(ui.messages, tee.tail(), needs=need)
-    except Exception:
+    except (Exception, SystemExit):
         import traceback
         return Outcome(ui.messages, tee.tail(), error=traceback.format_exc())
 
