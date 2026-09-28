@@ -22,8 +22,12 @@ import time
 
 from cds.core import ipc
 from cds.core.exits import EXIT_HEADLESS
-from cdsint import process
 from cdsint.exits import Failure
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 # Report file names come from project names, and those have spaces, Chinese
 # and punctuation in them.
@@ -70,60 +74,94 @@ def write_job(report_path, job):
 
 
 class LaunchLock(object):
-    """One cdsint run per project at a time, for the whole of the run."""
+    """One cdsint run per project at a time, for the whole of the run.
+
+    The lock is the operating system's, taken on an open file and held until
+    the file is closed: the kernel lets go of it when the process dies, so a
+    run that was killed leaves nothing anybody has to judge stale. A lock
+    kept in whether a file exists had to be cleared by whoever found its
+    owner dead, and two runs finding it together could each clear the other.
+
+    The file itself is never deleted. A run that opened it just before the
+    holder deleted it would lock a file nobody else can see any more, and the
+    next run would create and lock a second one: two holders again.
+    """
 
     def __init__(self, project):
         self.project = project
         self.path = os.path.join(runs_dir(), project_key(project) + ".lock")
-        self.held = False
+        self._fd = None
 
     def acquire(self):
-        """Take the lock, or raise a Failure naming who has it.
-
-        Returns a sentence when it had to clear a lock left by a run that
-        is gone, None otherwise.
-        """
+        """Take the lock, or raise a Failure naming who has it."""
         ipc.makedirs(os.path.dirname(self.path))
-        if self._create():
-            return None
-        holder = self._holder()
-        if process.running(holder.get("pid"), holder.get("started_epoch")) \
-                is not False:
-            raise Failure(
-                "another cdsint run is driving %s (pid %s, lock file %s). "
-                "Wait for it to finish; if no such run exists, delete the "
-                "lock file." % (self.project, holder.get("pid"), self.path),
-                EXIT_HEADLESS)
-        ipc.remove_file(self.path)
-        if not self._create():
-            raise Failure("another cdsint run took %s just now (lock file "
-                          "%s)" % (self.project, self.path), EXIT_HEADLESS)
-        return ("cleared the launch lock of a cdsint run that is gone "
-                "(pid %s): %s" % (holder.get("pid"), self.path))
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT)
+        try:
+            if not _lock(fd):
+                raise Failure(
+                    "another cdsint run is driving %s (pid %s, lock file "
+                    "%s). Wait for it to finish."
+                    % (self.project, self._holder().get("pid"), self.path),
+                    EXIT_HEADLESS)
+            _write_holder(fd, self.project)
+        except BaseException:
+            os.close(fd)
+            raise
+        self._fd = fd
 
     def release(self):
-        if self.held:
-            ipc.remove_file(self.path)
-            self.held = False
-
-    def _create(self):
-        """O_EXCL: exactly one of two runs racing for the file gets it."""
-        try:
-            handle = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except OSError as exc:
-            if exc.errno == errno.EEXIST:
-                return False
-            raise
-        with os.fdopen(handle, "w") as out:
-            json.dump({"pid": os.getpid(), "started_epoch": time.time(),
-                       "project": self.project}, out)
-        self.held = True
-        return True
+        if self._fd is not None:
+            _unlock(self._fd)
+            os.close(self._fd)
+            self._fd = None
 
     def _holder(self):
-        """What the lock says. Unreadable counts as held: it may be a run
-        that has created the file and not yet written it."""
+        """What the lock file says about who holds it; only ever shown to a
+        person, so a file the holder has not written yet reads as nobody."""
         try:
             return ipc.read_json(self.path) or {}
         except (ValueError, EnvironmentError):
             return {}
+
+
+# Taken beyond anything the file holds: a Windows lock is mandatory, and a
+# locked byte the holder's pid sits in could not be read by the run it
+# refuses. Locking past the end of a file is allowed there.
+_LOCK_OFFSET = 1 << 20
+
+# What a lock somebody else holds raises as: EACCES and EDEADLOCK from
+# msvcrt.locking, EAGAIN or EWOULDBLOCK from flock. Anything else is a real
+# error and is let out.
+_HELD = frozenset([errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK,
+                   getattr(errno, "EDEADLOCK", errno.EDEADLK)])
+
+
+def _lock(fd):
+    """Take the lock without waiting. False when somebody else has it."""
+    try:
+        if os.name == "nt":
+            os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in _HELD:
+            return False
+        raise
+    return True
+
+
+def _unlock(fd):
+    if os.name == "nt":
+        os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _write_holder(fd, project):
+    """Who holds the lock, for the message a refused run prints."""
+    os.ftruncate(fd, 0)
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.write(fd, json.dumps({"pid": os.getpid(), "started_epoch": time.time(),
+                             "project": project}).encode("utf-8"))

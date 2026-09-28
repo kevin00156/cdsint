@@ -171,8 +171,8 @@ that share a file name do not share a report), `--force-lock`, and
 `PromptResult` name spelled exactly — `OK`, `Cancel`, `Abort`, `Retry`,
 `Ignore`, `Yes` or `No` — and any other spelling is refused with exit 2 before
 an IDE starts. One `--project` run per project at a time: a second one on the
-same project is refused with exit 4 while the first runs, and a launch lock
-left by a run that was killed is cleared once its process is gone.
+same project is refused with exit 4 while the first runs. The launch lock is
+the operating system's, so a run that was killed takes it with it.
 
 There is no `config` command. The settings are a text file next to the
 project; **Settings** below is the whole of it.

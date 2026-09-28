@@ -368,21 +368,41 @@ def test_the_launch_lock_is_let_go_when_the_run_fails(machine, monkeypatch):
     started = make(machine, monkeypatch, timeout=0.01)
     with pytest.raises(Failure):
         started.run([("export", {})])
-    assert not os.path.exists(run_files.LaunchLock(started.project).path)
+    after = run_files.LaunchLock(started.project)
+    after.acquire()
+    after.release()
 
 
-def test_a_launch_lock_left_by_a_run_that_is_gone_is_cleared(machine,
+def test_a_lock_file_left_by_a_run_that_is_gone_stops_nobody(machine,
                                                              monkeypatch):
+    # A killed run leaves its file, but not its lock: the kernel let go of
+    # that with the process, so there is nothing to judge stale or clear.
     launching(monkeypatch)
     written_report(monkeypatch, OK_REPORT)
     started = make(machine, monkeypatch)
     left = run_files.LaunchLock(started.project)
     os.makedirs(os.path.dirname(left.path))
     ipc.write_json(left.path, {"pid": 999999, "started_epoch": 1.0})
-    monkeypatch.setattr(run_files.process, "running",
-                        lambda pid, not_after=None: pid != 999999)
     assert started.run([("export", {})])[0]["ok"] is True
-    assert any("cleared the launch lock" in note for note in started.notes)
+    assert not any("lock" in note for note in started.notes)
+
+
+def test_a_second_launch_lock_is_refused_naming_the_holder(machine,
+                                                            monkeypatch):
+    # Two runs that found a dead holder together used to both clear it, and
+    # each deleted the lock the other had just made: both ran.
+    project = make(machine, monkeypatch).project
+    first, second = run_files.LaunchLock(project), run_files.LaunchLock(project)
+    first.acquire()
+    try:
+        with pytest.raises(Failure) as refused:
+            second.acquire()
+        assert refused.value.code == EXIT_HEADLESS
+        assert "pid %d" % os.getpid() in str(refused.value)
+    finally:
+        first.release()
+    second.acquire()
+    second.release()
 
 
 def test_an_ide_that_cannot_be_tied_to_us_is_said_on_windows(machine,

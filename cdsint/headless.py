@@ -111,7 +111,7 @@ class Headless(object):
         project (cdsint/run_files.py).
         """
         held = run_files.LaunchLock(self.project)
-        self.note(held.acquire())
+        held.acquire()
         job_path = None
         try:
             job_path = run_files.write_job(self.report_path, {
