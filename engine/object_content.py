@@ -11,7 +11,7 @@ from __future__ import print_function
 
 from engine.ide_attrs import ide_flag
 from engine.strings import safe_str
-from engine.sync_log import log_error, log_warning
+from engine.sync_log import log_warning
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_read import name_of
 from engine.object_kind import native_xml_of
@@ -58,38 +58,36 @@ def export_object_content(obj, project):
 
 
 def update_object_code(obj, declaration, implementation):
-    """Update object's textual declaration and/or implementation.
-    
-    Handles multiple CODESYS versions:
-    - Some allow direct .text assignment
-    - Some have read-only .text but support .replace(new_content) with a single string arg
+    """Write the declaration and/or implementation into obj. True when
+    either text changed, False when both already matched.
+
+    A write the IDE refuses raises. It used to be logged and answered False,
+    which every caller reads as "nothing to change", so an import reported
+    success for text that never reached the IDE (PRINCIPLES 6); the import
+    loop names the object instead (SPEC D13).
     """
     updated = False
-    try:
-        if declaration is not None and ide_flag(obj, "has_textual_declaration"):
-            doc = obj.textual_declaration
-            if doc.text != declaration:
-                try:
-                    doc.text = declaration
-                    updated = True
-                except:
-                    # Fallback: ScriptTextDocument.replace(new_content)
-                    # takes a single string argument to replace the entire content
-                    doc.replace(declaration)
-                    updated = True
-
-        if implementation is not None and ide_flag(obj, "has_textual_implementation"):
-            doc = obj.textual_implementation
-            if doc.text != implementation:
-                try:
-                    doc.text = implementation
-                    updated = True
-                except:
-                    doc.replace(implementation)
-                    updated = True
-    except Exception as e:
-        log_error("Error updating " + safe_str(obj.get_name()) + ": " + safe_str(e))
+    if declaration is not None and ide_flag(obj, "has_textual_declaration"):
+        updated = _write_text(obj.textual_declaration, declaration)
+    if implementation is not None and ide_flag(obj, "has_textual_implementation"):
+        updated = _write_text(obj.textual_implementation, implementation) or updated
     return updated
+
+
+def _write_text(doc, text):
+    """Put text into one ScriptTextDocument. True when it changed.
+
+    Some CODESYS versions make .text read-only and take the new content
+    through replace(text) instead, so a refused assignment is expected there
+    and tried the other way; a refused replace() is a real failure.
+    """
+    if doc.text == text:
+        return False
+    try:
+        doc.text = text
+    except Exception:
+        doc.replace(text)
+    return True
 
 
 def parse_accessor_content(combined_content):
