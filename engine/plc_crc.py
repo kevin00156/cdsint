@@ -60,17 +60,12 @@ UNKNOWN = "UNKNOWN"
 # built from two different projects.
 CRC_FIELD = (4, 8)
 
-REMOTE_APP_DIR = "PlcLogic/Application"
-REMOTE_CRC = REMOTE_APP_DIR + "/Application.crc"
-REMOTE_APP = REMOTE_APP_DIR + "/Application.app"
-
-# What a run pulls off the controller, under names of its own so a reader who
-# goes and looks in the workspace knows which side each file came from. Each
-# run overwrites the last rather than leaving a pile nobody reads, and no code
-# here ever deletes a directory it did not create.
-PLC_CRC_NAME = "plc_Application.crc"
-PLC_APP_NAME = "plc_Application.app"
-SOURCE_ARCHIVE_NAME = "plc_source.projectarchive"
+# What a run pulls off the controller goes into the workspace under a name
+# of its own, so a reader who goes and looks knows which side each file came
+# from. Each run overwrites the last rather than leaving a pile nobody reads,
+# and no code here ever deletes a directory it did not create.
+LOCAL_PREFIX = "plc_"
+SOURCE_ARCHIVE_NAME = LOCAL_PREFIX + "source.projectarchive"
 
 # The record lives beside the project rather than in a machine-wide store,
 # because it is a fact about one working copy: it says what a download made
@@ -183,7 +178,24 @@ def remember(path, key, entry):
 # The answer
 # --------------------------------------------------------------------------
 
-def judge(recorded, plc):
+def remote_files(application):
+    """Where the controller keeps the application called `application`.
+
+    {"dir", "crc", "app"}: PlcLogic/<name>/ and the <name>.crc and <name>.app
+    in it. That is the runtime's layout, but the bench has only ever held an
+    application called Application, so it is the only name it was seen for.
+    """
+    folder = "PlcLogic/" + application
+    return {"dir": folder, "crc": "%s/%s.crc" % (folder, application),
+            "app": "%s/%s.app" % (folder, application)}
+
+
+def local_name(remote):
+    """What a file fetched from `remote` is called in the workspace."""
+    return LOCAL_PREFIX + remote.rsplit("/", 1)[-1]
+
+
+def judge(recorded, plc, remote_crc):
     """The verdict and the reason for it. Three answers, and no fourth.
 
     UNKNOWN is not a third shade of DIFFERENT, it is the absence of an
@@ -193,7 +205,7 @@ def judge(recorded, plc):
     """
     if not plc:
         return UNKNOWN, ("the controller has no %s, so there is nothing on it "
-                         "for this to be about" % REMOTE_CRC)
+                         "for this to be about" % remote_crc)
     if not recorded:
         return UNKNOWN, ("cdsint has not downloaded to this controller from "
                          "this project, so there is nothing to compare "

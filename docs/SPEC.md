@@ -744,9 +744,12 @@ top of the trip in `plc_trace.py` (6.8).
   be switched off is a hang, not a failure). Credentials come only from the
   environment variables `CDS_DEV_USER` and `CDS_DEV_PASS` (D14). List the
   gateways, `find_address_by_ip`, `set_gateway_and_ip_address` on the device
-  node, `create_online_device` to connect, list `PlcLogic/Application`, pull
-  `Application.crc` and take bytes 5 to 8. If there is a source archive, pull
-  it back. Compile nothing.
+  node, `create_online_device` to connect, list `PlcLogic/<app>`, pull
+  `<app>.crc` from it and take bytes 5 to 8, `<app>` being the name of the
+  project's active application; a project without one is refused. Every bench
+  so far had one called `Application`, so that is the only name this layout
+  has been seen for, and the rest of this section says `Application.crc` for
+  short. If there is a source archive, pull it back. Compile nothing.
 - `download`: first pull the controller's current `Application.crc`, then
   `login(OnlineChangeOption.Never, False)` for a full download,
   `create_boot_application`, `start`, `logout`, then pull again. The two values

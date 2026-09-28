@@ -15,6 +15,7 @@ from tests.plc_fakes import CRC_A
 # --------------------------------------------------------------------------
 
 RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
+CRC_FILE = "PlcLogic/Application/Application.crc"
 
 
 @pytest.mark.parametrize("record,plc,verdict", [
@@ -25,13 +26,15 @@ RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
     (None, None, "UNKNOWN"),
 ])
 def test_the_comparison_has_three_answers_not_two(record, plc, verdict):
-    assert plc_crc_module.judge(record, plc)[0] == verdict
+    assert plc_crc_module.judge(record, plc, CRC_FILE)[0] == verdict
 
 
 def test_each_answer_says_what_it_is_about_rather_than_just_naming_itself():
     # UNKNOWN twice over is two different situations and two different next
     # steps, so the word on its own is not the answer.
-    judge = plc_crc_module.judge
+    def judge(recorded, plc):
+        return plc_crc_module.judge(recorded, plc, CRC_FILE)
+
     assert "loaded with something else since" in judge(RECORD, "55667788")[1]
     assert "download -y" in judge(None, "11223344")[1]
     assert "nothing on it" in judge(RECORD, None)[1]
@@ -115,3 +118,17 @@ def test_a_file_that_will_not_be_cleared_raises(tmp_path, monkeypatch):
     with pytest.raises(plc_crc_module.Stale) as raised:
         plc_crc_module.forget(str(stale))
     assert str(stale) in str(raised.value)
+
+
+def test_the_files_on_the_controller_are_named_after_the_application():
+    # The paths used to be spelled for an application called Application,
+    # so a project whose application is called anything else read a file
+    # that is not there and answered UNKNOWN for a controller it had loaded.
+    assert plc_crc_module.remote_files("Application") == {
+        "dir": "PlcLogic/Application",
+        "crc": "PlcLogic/Application/Application.crc",
+        "app": "PlcLogic/Application/Application.app"}
+    assert plc_crc_module.remote_files("Line2")["crc"] == \
+        "PlcLogic/Line2/Line2.crc"
+    assert plc_crc_module.local_name("PlcLogic/Line2/Line2.app") == \
+        "plc_Line2.app"

@@ -170,6 +170,35 @@ def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
         outcome.error_text()
 
 
+class KeepsOneApplication(Device):
+    """A controller whose application is called Line2, laid out as the
+    runtime lays one out: PlcLogic/Line2/Line2.crc and .app."""
+
+    def upload_file(self, remote, local, overwrite):
+        if not remote.startswith("PlcLogic/Line2/Line2."):
+            raise IOError("Could not find a part of the path: " + remote)
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_the_crc_is_read_from_where_the_active_application_keeps_it():
+    # The paths were spelled for an application called Application, so any
+    # other name read a file that is not there and answered UNKNOWN about a
+    # controller cdsint had loaded.
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed=["connect"], device=KeepsOneApplication(),
+                      application=plc_fakes.Application("Line2"))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
+
+
+def test_a_project_with_no_active_application_is_refused_by_connect_too():
+    ide_globals = ide(allowed=["connect"])
+    ide_globals["projects"].primary.active_application = None
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert not outcome.ok()
+    assert "no active application" in outcome.error_text()
+
+
 def test_the_source_archive_comes_back_when_the_controller_has_one():
     ide_globals = ide(allowed=["connect"], device=Device(archive=True))
     data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]

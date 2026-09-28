@@ -84,7 +84,14 @@ class Application(object):
     that writes one to a path was how the verdict used to be reached, and
     engine/plc_crc.py records why that could not work; a fake that still
     offered it would keep the idea alive in the one place nobody would look.
+    Its name is where the controller keeps its files, so it has one.
     """
+
+    def __init__(self, name="Application"):
+        self.name = name
+
+    def get_name(self):
+        return self.name
 
 
 class RemoteFile(object):
