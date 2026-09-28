@@ -24,8 +24,7 @@ def path_for(project_path):
 
 def digest(text):
     """Eight hex digits that change when the text does."""
-    data = text if isinstance(text, bytes) else text.encode("utf-8")
-    return "%08X" % (binascii.crc32(data) & 0xFFFFFFFF)
+    return "%08X" % (binascii.crc32(text.encode("utf-8")) & 0xFFFFFFFF)
 
 
 def read(path):
@@ -44,7 +43,5 @@ def read(path):
 
 def write(path, record):
     text = json.dumps(record, indent=2, sort_keys=True)
-    if isinstance(text, bytes):
-        text = text.decode("utf-8")
     with io.open(path, "w", encoding="utf-8") as f:
         f.write(text)

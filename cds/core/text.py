@@ -10,7 +10,7 @@ from __future__ import print_function
 
 
 def as_text(value):
-    """Bytes or unicode in, unicode out. IronPython 2.7 hands back both.
+    """Text, UTF-8 bytes or anything else in, text out.
 
     The unicode check goes first and the order is the whole point. Under
     IronPython 2.7 `str`, `bytes` and `unicode` are one type, so

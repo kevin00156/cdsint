@@ -105,6 +105,17 @@ before tagging to see what the release will say:
 python tools/release_notes.py v0.1.0
 ```
 
+**`tools/py27_compile.py`** compiles every file in `engine/`, `cds/ide/`,
+`cds/core/` and `stub/` with whatever Python runs it, and names each one that
+does not compile by path and line. Plain Python, 2.7 or 3. The py27-grammar
+job in `.github/workflows/ci.yml` runs it in a Python 2.7 container, which is
+the only proof that the IDE side parses under IronPython's grammar. With
+Docker at hand, the same check by hand:
+
+```
+docker run --rm -v "$PWD:/src:ro" <the job's image> python -B /src/tools/py27_compile.py /src
+```
+
 And the one that is not an instrument: **`tools/_root.py`** puts the install
 root on `sys.path` so the others can import `engine/` and `cds/`. Nothing to
 run; it is imported.

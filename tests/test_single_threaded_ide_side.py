@@ -18,7 +18,11 @@ files that actually load into an IDE — asked, not listed: a file that imports
 `engine` or `cds` is loaded by the IDE at some point, and one that imports
 neither cannot be. That keeps `probe_click_menu.py` out, and it has to be out:
 it drives an IDE from a *separate* CPython process over Win32, and sleeping
-between real mouse clicks is its whole method, not a violation.
+between real mouse clicks is its whole method, not a violation. A file that
+says `from __future__ import annotations` is out too, whatever it imports:
+that line is a SyntaxError to IronPython 2.7, so no IDE can load it. That is
+how the call-tree tool and the cache doctor, which import `engine` for a
+constant or a function and run only from a shell, stay CPython's business.
 
 D5 states two exceptions, both a --noUI process held with system.delay()
 because with no window there is no screen to freeze and nothing else holds
@@ -78,19 +82,21 @@ def sources_under(folders):
 
 
 def loads_into_an_ide(path):
-    """Does this file import its way into the IDE-side packages?"""
+    """Does this file import its way into the IDE-side packages, in a form
+    IronPython 2.7 can compile?"""
     with io.open(path, encoding="utf-8") as handle:
         tree = ast.parse(handle.read(), filename=path)
+    imported, future = [], []
     for node in ast.walk(tree):
-        names = []
         if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
+            imported += [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom):
-            names = [node.module or ""]
-        for name in names:
-            if name.split(".")[0] in IDE_SIDE_IMPORTS:
-                return True
-    return False
+            imported.append(node.module or "")
+            if node.module == "__future__":
+                future += [alias.name for alias in node.names]
+    if "annotations" in future:
+        return False
+    return any(name.split(".")[0] in IDE_SIDE_IMPORTS for name in imported)
 
 
 def ide_side_sources():
@@ -167,3 +173,15 @@ def test_a_second_delay_in_a_registered_file_is_still_red(tmp_path):
     twice.write_text(u"def hold(system):\n    system.delay(200)\n"
                      u"    system.delay(200)\n", encoding="utf-8")
     assert offences(str(twice), ALLOWED["cds/ide/hold.py"]) == [(3, "delay")]
+
+
+def test_a_file_2_7_cannot_compile_is_not_ide_side(tmp_path):
+    # tools/call_tree_parse.py imports engine for a constant and runs only
+    # from a shell; its __future__ line is what says so.
+    shell_only = tmp_path / "shell_only.py"
+    shell_only.write_text(u"from __future__ import annotations\n"
+                          u"from engine.codesys_constants import IMPL_MARKER\n",
+                          encoding="utf-8")
+    assert not loads_into_an_ide(str(shell_only))
+    assert not loads_into_an_ide(
+        os.path.join(REPO_ROOT, "tools", "call_tree_parse.py"))
