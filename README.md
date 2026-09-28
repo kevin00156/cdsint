@@ -17,7 +17,7 @@ The command, and an entry in every IDE's **Tools > Scripting > Scripts** menu,
 in one line of PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
+irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1 | iex
 ```
 
 Run it from an elevated shell to include Delta, whose script folder is inside

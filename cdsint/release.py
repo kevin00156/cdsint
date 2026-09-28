@@ -16,7 +16,12 @@ from engine.codesys_constants import SCRIPT_VERSION
 
 REPO = "kevin00156/cdsint"
 LATEST_URL = "https://api.github.com/repos/%s/releases/latest" % REPO
-ARCHIVE_URL = "https://github.com/%s/archive/refs/tags/%%s.zip" % REPO
+# The release job in .github/workflows/ci.yml archives the commit the tests
+# passed on and publishes it with its SHA-256 beside it, as ASSET % tag and
+# ASSET % tag + ".sha256". GitHub's own archive of a tag is whatever the tag
+# points at when somebody asks, and comes with nothing to check it against.
+DOWNLOAD_URL = "https://github.com/%s/releases/download" % REPO
+ASSET = "cdsint-%s.zip"
 
 # A release tag is "v" and SCRIPT_VERSION; the release job in
 # .github/workflows/ci.yml refuses to publish any other.
@@ -26,6 +31,10 @@ _TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # cut short or garbled above it (IncompleteRead is not an OSError), or an
 # answer that is not a release.
 QUERY_ERRORS = (OSError, ValueError, http.client.HTTPException)
+
+
+def asset_url(tag):
+    return "%s/%s/%s" % (DOWNLOAD_URL, tag, ASSET % tag)
 
 
 def tag_of(version):

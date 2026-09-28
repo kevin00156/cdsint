@@ -46,6 +46,20 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md
-      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+      # The archive is of GITHUB_SHA, the commit core-tests ran on, not of
+      # the tag's name: a tag moved since would otherwise publish code nobody
+      # tested. `cdsint update` and irm/setup.ps1 install only this archive,
+      # and only when it matches the checksum beside it (cdsint/release.py
+      # names both files). setup.ps1 goes up too, so that the one-line
+      # install from releases/latest runs the installer of that release.
+      - run: |
+          git archive --format=zip --prefix="cdsint-${GITHUB_REF_NAME#v}/" \
+            -o "cdsint-$GITHUB_REF_NAME.zip" "$GITHUB_SHA"
+          sha256sum "cdsint-$GITHUB_REF_NAME.zip" > "cdsint-$GITHUB_REF_NAME.zip.sha256"
+      - run: >-
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME"
+          --notes-file notes.md
+          "cdsint-$GITHUB_REF_NAME.zip" "cdsint-$GITHUB_REF_NAME.zip.sha256"
+          irm/setup.ps1
         env:
           GH_TOKEN: ${{ github.token }}
