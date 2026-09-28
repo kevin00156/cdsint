@@ -74,7 +74,7 @@ def _running_windows(pid, not_after):
     if not handle:
         return _why_not_opened(_last_error())
     try:
-        code = ctypes.c_ulong()
+        code = ctypes.c_uint32()
         if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
             return None
         # A process that exited with 259 reads as running: the API's own
@@ -113,7 +113,7 @@ def _kernel32():
     handle cut to 32 bits is somebody else's handle.
     """
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle, dword, pointer = ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p
+    handle, dword, pointer = ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p
     kernel.OpenProcess.restype = handle
     kernel.OpenProcess.argtypes = [dword, ctypes.c_int, dword]
     kernel.GetExitCodeProcess.argtypes = [handle, pointer]

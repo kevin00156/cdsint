@@ -16,30 +16,11 @@ elsewhere gets printed here instead.
 from __future__ import print_function
 
 import json
-import os
-import re
 import sys
-import tempfile
 
 # A property or a count that was never set. Printing the word None would read
 # as a value.
 UNSET = "(not set)"
-
-# Report file names come from project names, and those have spaces, Chinese
-# and punctuation in them.
-_SAFE = re.compile(r"[^A-Za-z0-9._-]")
-
-
-def default_report(project):
-    """Somewhere stable to put a run's report when the caller did not say.
-
-    Named after the project so two projects verified side by side do not
-    overwrite each other's answer, and kept rather than deleted because it is
-    the only full record of what the IDE did.
-    """
-    stem = os.path.splitext(os.path.basename(project))[0]
-    return os.path.join(tempfile.gettempdir(), "cdsint",
-                        _SAFE.sub("_", stem) + ".json")
 
 
 def as_json(record):

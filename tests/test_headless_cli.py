@@ -11,7 +11,6 @@ import os
 import pytest
 
 from cds.core import ipc, trace_job
-from cds.ide import headless as ide_side
 from cdsint import headless as cli_side
 from cds.core.exits import EXIT_HEADLESS
 from cdsint.exits import Failure
@@ -88,9 +87,8 @@ def test_the_job_goes_through_the_environment_not_the_command_line(machine,
     written_report(monkeypatch, OK_REPORT)
     started = make(machine, monkeypatch)
     started.run([("export", {"delete_orphans": True})])
-    job_path = launches[0]["env"][ide_side.JOB_ENV]
     assert "--scriptargs" not in launches[0]["command"]
-    sent = ipc.read_json(job_path)
+    sent = launches[0]["job"]
     assert sent["project"] == started.project
     assert sent["commands"] == [{"command": "export",
                                  "args": {"delete_orphans": True}}]

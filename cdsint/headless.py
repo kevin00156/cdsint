@@ -17,14 +17,13 @@ import subprocess
 import time
 
 from cds.core import ipc
-from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
+from cds.core.exits import EXIT_HEADLESS
 from cds.ide.entries import REPO_ROOT
-from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV, also
-from cdsint import installs, lock
+from cds.ide.headless import JOB_ENV
+from cdsint import installs, launch_result, lock, run_files
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
-from cdsint.report import default_report
-from cdsint.report import untrusted_exit as report_untrusted_exit
+from cdsint.job_object import WINDOWS, die_with_us
 
 # The IDE-side script this starts, in the same tree as everything else.
 # REPO_ROOT rather than a second dirname chain off this file: two names for
@@ -64,7 +63,8 @@ class Headless(object):
         self.project = os.path.abspath(project)
         self.install = installs.resolve(installs.find(), install)
         self.profile = installs.profile_of(self.install, profile)
-        self.report_path = os.path.abspath(report or default_report(self.project))
+        self.report_path = os.path.abspath(
+            report or run_files.default_report(self.project))
         self.answers = answers or {}
         # Absolute from here on: the IDE side hands it to every command as an
         # override, and the IDE's working directory is not the shell's.
@@ -81,12 +81,12 @@ class Headless(object):
         self._lock_was_there = lock.held(self.project) is not None
         self._check_install_root()
         self._check_project(force_lock)
-        self._note(installs.elevation_note(self.install))
+        self.note(installs.elevation_note(self.install))
 
     def describe(self):
         return "%s (%s)" % (self.install["name"], self.profile)
 
-    def _note(self, text):
+    def note(self, text):
         """Keep a sentence for the reader, if there is one to keep."""
         if text:
             self.notes.append(text)
@@ -109,24 +109,34 @@ class Headless(object):
         opening a project costs half a minute, and `verify` is four commands.
         The project is deliberately not closed afterwards — closing asks
         whether to save, and headless nobody can answer (SPEC 6.4).
+
+        The launch lock is held for all of it, so a second run on this
+        project is refused rather than sharing its report and its IDE's
+        project (cdsint/run_files.py).
         """
-        job = {"project": self.project, "report": self.report_path,
-               "answers": self.answers, "sync_dir": self._sync_dir,
-               "commands": [{"command": c, "args": a} for c, a in steps]}
-        job_path = self.report_path + ".job.json"
-        ipc.write_json(job_path, job)
-        # The report path is stable across runs on purpose (report
-        # .default_report keeps the file, and --report is often a fixed name
-        # in a Makefile), so anything there now belongs to the last run. Read
-        # as this run's answer it says "finished" for an IDE that hung on a
-        # dialog and wrote nothing. stdout and stderr are already truncated
-        # each launch; this makes the report agree with them.
-        ipc.remove_file(self.report_path)
-        deadline = self.deadline(steps)
-        started = time.time()
-        code, pid = self._launch(job_path, deadline)
-        elapsed = time.time() - started
-        return self._collect(code, pid, elapsed, deadline)
+        held = run_files.LaunchLock(self.project)
+        self.note(held.acquire())
+        job_path = None
+        try:
+            job_path = run_files.write_job(self.report_path, {
+                "project": self.project, "report": self.report_path,
+                "answers": self.answers, "sync_dir": self._sync_dir,
+                "commands": [{"command": c, "args": a} for c, a in steps]})
+            # The report path is stable across runs on purpose (the default
+            # one is kept, and --report is often a fixed name in a Makefile),
+            # so anything there now belongs to the last run. Read as this
+            # run's answer it says "finished" for an IDE that hung on a
+            # dialog and wrote nothing. stdout and stderr are truncated each
+            # launch; this makes the report agree with them.
+            ipc.remove_file(self.report_path)
+            deadline = self.deadline(steps)
+            started = time.time()
+            code, pid = self._launch(job_path, deadline)
+            return self._collect(code, pid, time.time() - started, deadline)
+        finally:
+            if job_path is not None:
+                ipc.remove_file(job_path)
+            held.release()
 
     def deadline(self, steps):
         """How long this whole process may take, from what one step may take.
@@ -170,7 +180,7 @@ class Headless(object):
                 "%s is open in another process (lock file %s). Close it, or "
                 "pass --force-lock if you believe the lock is stale."
                 % (self.project, held), EXIT_HEADLESS)
-        self._note("lock file present, going ahead because --force-lock: "
+        self.note("lock file present, going ahead because --force-lock: "
                    + held)
 
     # -- the launch ---------------------------------------------------------
@@ -197,6 +207,12 @@ class Headless(object):
         finally:
             out.close()
             err.close()
+        # Kept on self: the IDE dies when the last handle to its job closes.
+        self._job = die_with_us(process)
+        if self._job is None and WINDOWS:
+            self.note("could not tie %s (pid %s) to this process, so killing "
+                       "cdsint outright would leave it running"
+                       % (self.install["name"], process.pid))
         try:
             return process.wait(timeout=deadline), process.pid
         except subprocess.TimeoutExpired:
@@ -225,7 +241,7 @@ class Headless(object):
         try:
             process.wait(timeout=KILL_GRACE_S)
         except subprocess.TimeoutExpired:
-            self._note("%s (pid %s) did not die when killed, so its lock file "
+            self.note("%s (pid %s) did not die when killed, so its lock file "
                        "is left alone; the next run needs --force-lock once "
                        "you are sure that process is gone"
                        % (self.install["name"], process.pid))
@@ -240,21 +256,32 @@ class Headless(object):
         opened, so making the caller pass --force-lock next time would be
         asking them to vouch for a mess this made (SPEC 6.4).
 
-        Ours means there was no lock when this object was built. With
-        --force-lock there may have been a real one -- another IDE with the
-        project genuinely open -- and clearing that would let the next run
-        open it alongside, which ends with one of the two saves lost.
+        Ours means there was no lock when this object was built, AND our IDE
+        said it opened the project (cds/ide/headless.py writes the report
+        the moment it has). With --force-lock there may have been a real
+        one; and an IDE that never got the project open did not make the
+        lock that appeared meanwhile -- somebody opened the project in
+        another IDE. Clearing either lets the next run open it alongside,
+        which ends with one of the two saves lost.
         """
+        held = lock.held(self.project)
+        if held is None:
+            return
         if self._lock_was_there:
-            self._note("the lock file was there before we started, so it is "
-                       "not ours to remove: " + (lock.held(self.project) or ""))
+            self.note("the lock file was there before we started, so it is "
+                       "not ours to remove: " + held)
+            return
+        if not (ipc.read_json(self.report_path) or {}).get("opened"):
+            self.note("the IDE we killed never said it had opened the "
+                       "project, so the lock file is not ours to remove: "
+                       + held)
             return
         removed, failures = lock.clear(self.project)
         for path in removed:
-            self._note("removed the lock file left by the IDE we killed: "
+            self.note("removed the lock file left by the IDE we killed: "
                        + path)
         for path, exc in failures:
-            self._note("could not remove the lock file %s left by the IDE we "
+            self.note("could not remove the lock file %s left by the IDE we "
                        "killed: %s" % (path, exc))
 
     # -- afterwards ---------------------------------------------------------
@@ -262,110 +289,10 @@ class Headless(object):
     def _collect(self, code, pid, elapsed, deadline):
         """Read the report, add what only this side knows, write it back."""
         report = ipc.read_json(self.report_path) or {}
-        report.update(self._annotate(report, code, pid, elapsed, deadline))
+        report.update(launch_result.annotate(self, report, code, pid,
+                                             elapsed, deadline))
         ipc.write_json(self.report_path, report)
-        return self._verdict(report, code)
-
-    def _annotate(self, report, code, pid, elapsed, deadline):
-        """The fields only this side of the launch can fill in (SPEC 6.4).
-
-        The IDE side writes its report only after every command has been run,
-        so a report carrying intended_exit is the script's own account of a
-        finished run — and that outranks anything the exit code says
-        afterwards. Whether the exit code can be used as a gate is therefore
-        a fact to measure, not to assume: the script writes down the code it
-        meant to use and this compares.
-        """
-        finished = report.get("intended_exit") is not None
-        added = {
-            "install": self.install["name"], "profile": self.profile,
-            "report_path": self.report_path,
-            # The IDE side's value if it got that far, because that is the
-            # folder the engine read; the flag only says what was asked for.
-            "sync_dir": report.get("sync_dir") or self._sync_dir,
-            "elapsed_s": round(elapsed, 3),
-            "pid": pid, "exit_code_actual": code, "timed_out": code is None,
-            "stdout_path": self.stdout_path(),
-            "stderr_path": self.stderr_path(),
-            "stdout_reached": self._stdout_reached(),
-            "exit_code_trusted": finished and code == report.get("intended_exit"),
-        }
-        if code is None:
-            added["error"] = also(report.get("error"),
-                                   self._late_exit(pid, deadline) if finished
-                                   else self._timed_out(pid, deadline))
-        return added
-
-    def _verdict(self, report, code):
-        """The results, or the reason there are none. Says each thing once.
-
-        A killed run's sentence is either the Failure's message or a note,
-        never both: it used to be printed here and then again by
-        cdsint/exits.py when the Failure carrying the same text was reported.
-        Which of the two it is depends on whether the work got done — a
-        report with an intended_exit is the answer, and a kill that came
-        after it is only a slow shutdown (SPEC 6.4).
-
-        A Failure carries the notes with it. There are no results on that
-        path, so nothing else would ever say them, and they are exactly what
-        the reader needs: a run that was killed is also a run whose lock file
-        somebody has to account for.
-        """
-        if code is None and report.get("intended_exit") is None:
-            raise Failure(report["error"], EXIT_TIMEOUT, self.notes)
-        if code is None:
-            self._note(report["error"])
-        else:
-            self._note(report_untrusted_exit(report))
-        if not report.get("opened"):
-            raise Failure(report.get("error")
-                          or "the IDE ran but wrote no report; see "
-                             + self.stdout_path(), EXIT_HEADLESS, self.notes)
-        for result in report["results"]:
-            # SPEC 4.3: the --project form's record says which IDE ran it,
-            # which folder it took for the truth, and where the rest of the
-            # story is. The notes ride along for the same reason: a --json
-            # caller has no other way to hear about a lock we cleared.
-            result["ide"] = report.get("ide")
-            result["report_path"] = self.report_path
-            result["sync_dir"] = report.get("sync_dir")
-            result["notes"] = list(self.notes)
-        return report["results"]
-
-    def _timed_out(self, pid, deadline):
-        """The conclusion, not just the symptom, and it goes in the report.
-
-        A caller reading only the report file has to find "this hung" there,
-        because the exit code it would otherwise reason from is the one thing
-        a killed process cannot give it. This is the half of the kill with no
-        report behind it, so the work itself is unaccounted for.
-        """
-        return ("%s did not finish within %gs and was killed (pid %s), and it "
-                "wrote no report. Under --noUI that usually means a dialog "
-                "opened with nothing to close it; %s has what it was doing."
-                % (self.install["name"], deadline, pid, self.stdout_path()))
-
-    def _late_exit(self, pid, deadline):
-        """Killed, but the work was already done and written down.
-
-        A report with an intended_exit means every command ran and the script
-        returned; what outlived the deadline was the IDE's own shutdown.
-        Calling that a timeout would throw away the answer the run produced,
-        which is the whole point of writing the report before exiting.
-        """
-        return ("%s finished the work and wrote its report, then did not exit "
-                "within %gs and was killed (pid %s). The report is the answer; "
-                "the exit code is not."
-                % (self.install["name"], deadline, pid))
-
-    def _stdout_reached(self):
-        """Both marks, not just the file: half the output is not the output."""
-        try:
-            with open(self.stdout_path(), "rb") as handle:
-                text = handle.read().decode("utf-8", "replace")
-        except (IOError, OSError):
-            return False
-        return BEGIN_MARK in text and END_MARK in text
+        return launch_result.verdict(self, report, code)
 
     # stdout and stderr are named after the report rather than being fixed in
     # TEMP: two runs at once would otherwise fight over one pair of files, and

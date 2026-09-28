@@ -121,6 +121,23 @@ def test_a_run_that_raises_still_writes_a_report_saying_why(ide, tmp_path):
     assert "yes" in written["error"] and "Traceback" in written["error"]
 
 
+def test_the_report_says_the_project_opened_before_the_commands_run(
+        ide, tmp_path, monkeypatch):
+    # A launcher that has to kill a hung IDE reads this to decide whether
+    # the project's .~u lock is one that IDE made.
+    seen = []
+
+    def look(ide_globals, name, args):
+        seen.append(ipc.read_json(str(tmp_path / "r.json")))
+        return one_step()(ide_globals, name, args)
+
+    monkeypatch.setattr(entries, "run", look)
+    ide_side.run_job(ide, job(tmp_path, commands=[
+        {"command": "export", "args": {}}]))
+    assert seen[0]["opened"] is True
+    assert seen[0]["intended_exit"] is None   # not a finished run
+
+
 def test_a_project_that_will_not_open_names_the_likely_prompt(ide, tmp_path):
     ide["projects"] = OpeningProjects(opens=False)
     report = ide_side.run_job(ide, job(tmp_path))
