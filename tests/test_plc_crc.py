@@ -16,6 +16,7 @@ from tests.plc_fakes import CRC_A
 
 RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
 CRC_FILE = "PlcLogic/Application/Application.crc"
+UNREAD = CRC_FILE + " could not be fetched: Could not find a part of the path"
 
 
 @pytest.mark.parametrize("record,plc,verdict", [
@@ -26,18 +27,22 @@ CRC_FILE = "PlcLogic/Application/Application.crc"
     (None, None, "UNKNOWN"),
 ])
 def test_the_comparison_has_three_answers_not_two(record, plc, verdict):
-    assert plc_crc_module.judge(record, plc, CRC_FILE)[0] == verdict
+    assert plc_crc_module.judge(record, plc, UNREAD)[0] == verdict
 
 
 def test_each_answer_says_what_it_is_about_rather_than_just_naming_itself():
     # UNKNOWN twice over is two different situations and two different next
     # steps, so the word on its own is not the answer.
     def judge(recorded, plc):
-        return plc_crc_module.judge(recorded, plc, CRC_FILE)
+        return plc_crc_module.judge(recorded, plc, UNREAD)
 
     assert "loaded with something else since" in judge(RECORD, "55667788")[1]
     assert "download -y" in judge(None, "11223344")[1]
     assert "nothing on it" in judge(RECORD, None)[1]
+    # In the fetch's own words: "has no .crc" was said of a fetch that
+    # failed on a dropped link too, and sent the reader looking for a
+    # controller with nothing loaded.
+    assert UNREAD in judge(RECORD, None)[1]
     assert "2026-09-06T10:00:00" in judge(RECORD, "11223344")[1]
 
 
@@ -73,7 +78,7 @@ def test_a_controller_is_filed_under_its_address_and_nothing_else():
 
 def test_a_project_that_was_never_saved_has_nowhere_to_keep_a_record():
     assert plc_crc_module.record_path(None) is None
-    assert plc_crc_module.remember(None, "key", {}) is False
+    assert "never been saved" in plc_crc_module.remember(None, "key", {})
 
 
 def test_a_file_too_short_to_hold_the_field_is_no_answer():

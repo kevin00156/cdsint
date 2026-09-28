@@ -380,6 +380,55 @@ def test_a_download_that_fails_after_the_login_says_the_controller_may_stop():
     assert "may now be stopped or partly written" in outcome.error_text()
 
 
+def test_a_record_that_could_not_be_written_fails_the_download(monkeypatch):
+    # The write's failure was a log line and a False nobody read, so the
+    # download exited 0 and the next connect answered UNKNOWN or DIFFERENT
+    # about a controller that did hold it, and sent the reader to download
+    # again.
+    def refused(path, data):
+        raise IOError(13, "Access is denied")
+
+    monkeypatch.setattr(plc_crc_module.ipc, "write_json", refused)
+    outcome = silent.run(ide(allowed=["download"], device=Device(crc=CRC_B)),
+                         PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "was not written down" in outcome.error_text()
+    assert "Access is denied" in outcome.error_text()
+
+
+def test_an_online_application_the_ide_refuses_is_named_not_raised():
+    def refuses(application):
+        raise RuntimeError("no licence for this target")
+
+    ide_globals = ide(allowed=["download"])
+    ide_globals["online"].create_online_application = refuses
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "nothing was sent" in outcome.error_text()
+    assert "no licence" in outcome.error_text()
+
+
+def test_a_state_that_cannot_be_read_is_not_a_download_that_failed():
+    # The download did complete; only the question after it failed, and
+    # that was reported as "the download did not complete".
+    class Mute(Session):
+        @property
+        def application_state(self):
+            raise RuntimeError("the session went away")
+
+        @application_state.setter
+        def application_state(self, value):
+            pass
+
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Mute(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "did not complete" not in outcome.error_text()
+    assert "could not be read: the session went away" in outcome.error_text()
+
+
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
     # The workspace is named after the project so runs overwrite each other,
     # which is exactly what makes a file nobody rewrote dangerous: an upload

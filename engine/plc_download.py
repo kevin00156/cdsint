@@ -13,11 +13,21 @@ from engine.plc_trip import RUNNING, Trip
 from engine.strings import safe_str
 
 
+def state_of(session):
+    """str() of the application's state, or why it could not be read, which
+    left_running then reports as a state that is not running."""
+    try:
+        return safe_str(session.application_state)
+    except Exception as exc:
+        return "unknown (it could not be read: %s)" % safe_str(exc)
+
+
 class DownloadTrip(Trip):
     """One plc download: the trip, and the steps that change the controller."""
 
     def __init__(self, action, args, ide_globals):
         Trip.__init__(self, action, args, ide_globals)
+        self.held_before = None     # the controller's CRC before this download
         self.state_after = None     # the application's state once started
 
     # -- before it ----------------------------------------------------------
@@ -43,7 +53,8 @@ class DownloadTrip(Trip):
         most likely failed on the same dropped link.
         """
         self._pull_the_crc()
-        if self.found["plc_crc"]:
+        self.held_before = self.found["plc_crc"]
+        if self.held_before:
             return None
         try:
             return self._unread_crc()
@@ -90,25 +101,41 @@ class DownloadTrip(Trip):
         if option is None:
             return ("this IDE did not provide OnlineChangeOption, so a full "
                     "download cannot be asked for explicitly")
-        session = self.online.create_online_application(self.application)
+        try:
+            session = self.online.create_online_application(self.application)
+        except Exception as exc:
+            return ("the IDE would not make an online application of %s, so "
+                    "nothing was sent: %s"
+                    % (ide_read.name_of(self.application), safe_str(exc)))
+        try:
+            problem = self._download_on(session, option)
+            if not problem:
+                # Read while logged in: after the logout the session has no
+                # application left to report on.
+                self.state_after = state_of(session)
+        finally:
+            plc_link.logout(session)
+        if problem:
+            return problem
+        self.note("download: application state %s" % self.state_after)
+        return None
+
+    def _download_on(self, session, option):
+        """Log in, write the boot application, start. None when it worked.
+
+        Named rather than let out as a traceback: "the controller refused the
+        login" and "the download stopped halfway" are things that happen on
+        a bench, not bugs in this file. The login is where a full download
+        happens, so any failure from inside it onwards may have left the
+        application stopped.
+        """
         try:
             session.login(option.Never, False)
             session.create_boot_application()
             session.start()
-            # Read while logged in: after the logout the session has no
-            # application left to report on.
-            self.state_after = safe_str(session.application_state)
         except Exception as exc:
-            # Named rather than let out as a traceback: "the controller
-            # refused the login" and "the download stopped halfway" are
-            # things that happen on a bench, not bugs in this file. The
-            # login is where a full download happens, so any failure from
-            # inside it onwards may have left the application stopped.
             return ("the download did not complete, and the controller may "
                     "now be stopped or partly written: " + safe_str(exc))
-        finally:
-            plc_link.logout(session)
-        self.note("download: application state %s" % self.state_after)
         return None
 
     def left_running(self):
@@ -141,9 +168,8 @@ class DownloadTrip(Trip):
         """
         now = self.found["plc_crc"]
         if not now:
-            return ("the download raised nothing, but the controller has no "
-                    "%s afterwards, so there is nothing to show it landed"
-                    % self.remote["crc"])
+            return ("the download raised nothing, but afterwards %s, so there "
+                    "is nothing to show it landed" % self.crc_problem)
         if now == self.held_before:
             return ("the download raised nothing, but the controller still "
                     "holds %s, the same boot application as before, so "
@@ -159,14 +185,19 @@ class DownloadTrip(Trip):
         the moment it left it.
         """
         plc = self.found["plc_crc"]
-        if not plc:
-            self.note("nothing was written down about this download, so a "
-                      "later connect will have nothing to compare against")
-            return
         path = plc_crc.record_path(self.project_path())
         entry_written = {"plc_crc": plc,
                          "device": ide_read.name_of(self.device_node),
                          "downloaded_at": ipc.iso(ipc.now())}
-        if plc_crc.remember(path, self.found["controller"], entry_written):
-            self.note("recorded in %s: %s now holds %s"
-                      % (path, self.found["controller"], plc))
+        problem = plc_crc.remember(path, self.found["controller"],
+                                   entry_written)
+        if problem:
+            # Not a note: a connect after this would answer UNKNOWN, or
+            # DIFFERENT against an older entry, about a controller that does
+            # hold this download, and send the reader to download again.
+            return ("the download landed and reads back as %s, but it was "
+                    "not written down, so a later connect cannot answer "
+                    "MATCH for it: %s" % (plc, problem))
+        self.note("recorded in %s: %s now holds %s"
+                  % (path, self.found["controller"], plc))
+        return None

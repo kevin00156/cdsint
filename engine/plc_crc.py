@@ -148,24 +148,23 @@ def read_records(path):
 
 
 def remember(path, key, entry):
-    """Add one controller's entry to the record. True when it was written.
+    """Add one controller's entry to the record. None when it was written,
+    otherwise why not.
 
     Merged rather than replaced: downloading one copy to a second bench must
     not erase what it knows about the first, or a later connect to the first
     would answer UNKNOWN about a controller cdsint did load.
     """
     if not path:
-        return False
+        return ("the project has never been saved, so there is nowhere "
+                "beside it to write the record")
     records = read_records(path)
     records[key] = entry
     try:
         ipc.write_json(path, records)
     except (IOError, OSError) as exc:
-        log_warning("plc: the download is done but %s could not be written, "
-                    "so a later connect will have nothing to compare "
-                    "against: %s" % (path, safe_str(exc)))
-        return False
-    return True
+        return "%s could not be written: %s" % (path, safe_str(exc))
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -194,17 +193,19 @@ def local_name(remote):
     return LOCAL_PREFIX + file_name(remote)
 
 
-def judge(recorded, plc, remote_crc):
+def judge(recorded, plc, unread):
     """The verdict and the reason for it. Three answers, and no fourth.
 
     UNKNOWN is not a third shade of DIFFERENT, it is the absence of an
     answer, and the two are kept apart because they call for different
     things: DIFFERENT means download, UNKNOWN means find out why there was
-    nothing to compare.
+    nothing to compare. unread is why there is no plc CRC, in the fetch's
+    own words: a file that is not there and a fetch that failed raise alike,
+    and the reader is the one who can tell them apart.
     """
     if not plc:
-        return UNKNOWN, ("the controller has no %s, so there is nothing on it "
-                         "for this to be about" % remote_crc)
+        return UNKNOWN, ("%s, so there is nothing on it for this to be about"
+                         % unread)
     if not recorded:
         return UNKNOWN, ("there is no record of a download from this "
                          "project to this controller, so there is nothing to "

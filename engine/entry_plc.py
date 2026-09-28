@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """plc connect, download and trace: the commands that talk to a controller.
 
-Both commands end in the same question, and it is the only one worth asking:
-**is the machine running what cdsint put on it?** `download` makes the answer
-true, reads it back — a download that reports success without being read back
-is a claim, not a check — and writes down what it left there. `connect`
-measures the same two things again and compares them with that record. The
-one step that differs between the two is `remember`, and it is visible below
-for that reason.
+`connect` and `download` end in the same question, and it is the only one
+worth asking: **is the machine running what cdsint put on it?** `download`
+makes the answer true, reads it back — a download that reports success
+without being read back is a claim, not a check — and writes down what it
+left there. `connect` measures the same things again and compares them with
+that record. The steps only a download takes are listed in download()
+below, beside connect()'s two, so that the difference between the commands
+is the first thing a reader sees.
 
 `trace` leans on the same answer: it records only from a controller that
 MATCHes, because a recording of variables from a program that is not this
@@ -87,17 +88,15 @@ def download():
         return entry.result(False, cancelled, action="download",
                             crc=plc_crc.UNKNOWN)
     trip = a_trip(DownloadTrip, "download")
-    failed = in_order(trip, [
+    return in_order(trip, [
         trip.reach_the_device,   # --gateway, the device, its application
         trip.what_it_holds,      # the CRC on the controller before this run
         trip.send,               # put this project on it
         trip.read_back,          # the CRC, the files and the archive after
         trip.landed,             # and the two CRCs are not the same
-    ])
-    if failed:
-        return failed
-    trip.remember()
-    return in_order(trip, [trip.left_running]) or trip.verdict()
+        trip.remember,           # what it left, for a later connect
+        trip.left_running,       # after the record: it does hold this
+    ]) or trip.verdict()
 
 
 def record():
@@ -117,7 +116,7 @@ def record():
 def traced(trip):
     """The trace steps, in SPEC 6.8's order, on a trip made by the caller.
 
-    Split from trace() so a test can hand in a trip with a fake clock and a
+    Split from record() so a test can hand in a trip with a fake clock and a
     fake buffer setter; record() is the only other caller.
     """
     unhandled.start()

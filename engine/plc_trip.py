@@ -54,7 +54,7 @@ class Trip(object):
         self.application = None     # the project's active application
         self.remote = None          # where the controller keeps its files
         self.notes = []             # what a reader needs to reproduce this
-        self.held_before = None     # the controller's CRC before this download
+        self.crc_problem = None     # why the controller's CRC is not known
         self._workspace = None      # made only once something is written there
         self.found = {"crc": plc_crc.UNKNOWN, "why": None, "plc_crc": None,
                       "plc_files": [], "source_archive": None,
@@ -152,8 +152,7 @@ class Trip(object):
         return self.connected(self._pull_everything)
 
     def _pull_the_crc(self):
-        self.held_before = self.found["plc_crc"]
-        self.found["plc_crc"] = self.pull_plc_crc()
+        self.found["plc_crc"], self.crc_problem = self.pull_plc_crc()
         return None
 
     def _pull_everything(self):
@@ -164,7 +163,8 @@ class Trip(object):
         return None
 
     def pull_plc_crc(self):
-        """The controller's own .crc for this application, as hex, or None.
+        """(the controller's .crc for this application as hex, None), or
+        (None, why there is none).
 
         Absent is an answer, not an error: a controller with nothing loaded
         has no such file. It still fails the command, because "cannot tell"
@@ -173,8 +173,11 @@ class Trip(object):
         local, problem = self.pull(self.remote["crc"])
         if problem:
             self.note(problem)
-            return None
-        return plc_crc.crc_field(plc_crc.read_bytes(local))
+            return None, problem
+        crc = plc_crc.crc_field(plc_crc.read_bytes(local))
+        if crc is None:
+            return None, "%s is too short to hold a CRC" % self.remote["crc"]
+        return crc, None
 
     def pull(self, remote):
         """Fetch one controller file into the workspace (plc_crc.local_name).
@@ -248,7 +251,7 @@ class Trip(object):
         records = plc_crc.read_records(path)
         self.found["recorded"] = records.get(self.found["controller"])
         answer, why = plc_crc.judge(self.found["recorded"],
-                                    self.found["plc_crc"], self.remote["crc"])
+                                    self.found["plc_crc"], self.crc_problem)
         self.found["crc"] = answer
         self.found["why"] = why
         return answer
