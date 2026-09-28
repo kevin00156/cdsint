@@ -181,6 +181,43 @@ def test_a_killed_run_still_says_what_it_did_to_the_lock_file(machine,
     assert "removed the lock file" in printed
 
 
+STOPPED = "the controller may now be stopped or partly written"
+
+
+@pytest.mark.parametrize("steps, warned", [
+    ([("plc download", {"yes": True})], True),
+    ([("plc connect", {}), ("export", {})], False),
+])
+def test_a_download_killed_before_its_report_says_what_it_may_have_left(
+        machine, monkeypatch, steps, warned):
+    # A full download stops the application before it writes. Killed with no
+    # report, "a dialog, probably" is not the whole of what the reader needs:
+    # the machine may be standing still.
+    launching(monkeypatch, code=None)
+    started = make(machine, monkeypatch, timeout=0.01)
+    with pytest.raises(Failure) as raised:
+        started.run(steps)
+    assert (STOPPED in str(raised.value)) is warned
+    assert (STOPPED in ipc.read_json(started.report_path)["error"]) is warned
+
+
+def test_ctrl_c_during_a_download_says_what_it_may_have_left(machine,
+                                                             monkeypatch,
+                                                             capsys):
+    launching(monkeypatch, code=None)
+
+    def interrupted(self, timeout=None):
+        if self.killed:
+            return -1           # the wait after kill() sees it die
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(FakeProcess, "wait", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        make(machine, monkeypatch, timeout=0.01).run(
+            [("plc download", {"yes": True})])
+    assert STOPPED in capsys.readouterr().err
+
+
 def test_a_timeout_is_written_into_the_report(machine, monkeypatch):
     launching(monkeypatch, code=None)
     started = make(machine, monkeypatch, timeout=0.01)
