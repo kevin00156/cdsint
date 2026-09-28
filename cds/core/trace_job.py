@@ -22,11 +22,19 @@ TEXT_TYPES = tuple(set([type(u""), type("")]))
 NUMBER_TYPES = tuple(set([int, float, type(2 ** 64)]))
 INTEGER_TYPES = tuple(set([int, type(2 ** 64)]))
 
+# The longest duration_s. The controller's ring holds the whole recording,
+# and at the default trace_memory_mb even one BOOL sampled every millisecond
+# fills it within a few hours (cds/core/trace_run.py ring_bytes), so a longer
+# job is either sampled very sparsely or a typo -- and a typo costs an IDE
+# held for as long as it says. It also keeps the process deadline
+# cdsint/headless.py adds it to far inside what a wait on Windows accepts.
+MAX_DURATION_S = 24 * 60 * 60
+
 # What a value may be. The name is what a refusal prints, so it reads as the
 # thing a person would type into the file rather than as a Python type.
 TEXT = "a non-empty string"
 NAMES = "a non-empty list of distinct variable paths, without Application."
-SECONDS = "a number greater than 0"
+SECONDS = "a number greater than 0 and at most %d (a day)" % MAX_DURATION_S
 FORMATS = "a non-empty list of distinct words from trace, csv and txt"
 RESOLUTION = 'either "us" or "ms"'
 COUNT = "a whole number of at least 1"
@@ -176,7 +184,10 @@ def _is_number(value):
 
 
 def _seconds(value):
-    if _is_number(value) and value > 0:
+    # Both ends in one chained comparison: json reads Infinity and NaN, and
+    # NaN fails every comparison, so only a test that must hold lets neither
+    # through.
+    if _is_number(value) and 0 < value <= MAX_DURATION_S:
         return float(value), None
     return None, ""
 

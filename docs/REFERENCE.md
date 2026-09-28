@@ -308,7 +308,7 @@ prints, and a test holds this copy to it:
 ```
   task             a non-empty string; required. the cyclic IEC task to sample in
   variables        a non-empty list of distinct variable paths, without Application.; required. paths as read_value() takes them, e.g. PRG_X.var or GVL.var
-  duration_s       a number greater than 0; required. how long to record, in seconds
+  duration_s       a number greater than 0 and at most 86400 (a day); required. how long to record, in seconds
   out              a non-empty string; required. output path without extension; existing files are overwritten
   formats          a non-empty list of distinct words from trace, csv and txt; default ["trace", "csv"]. which files to save
   resolution       either "us" or "ms"; default "us". timestamp unit in the files

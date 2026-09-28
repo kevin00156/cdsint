@@ -938,7 +938,7 @@ refuses the run before any IDE starts.
 |---|---|---|---|
 | `task` | string | yes | the IEC task to sample in; it must be cyclic, since completeness is measured against its period |
 | `variables` | list of strings | yes | paths as `read_value()` takes them (`PRG_X.var`, `GVL.var`), no application prefix |
-| `duration_s` | number | yes | how long to record |
+| `duration_s` | number | yes | how long to record, in seconds; at most a day, since the controller's ring holds the whole recording and a longer job is a sparse sampling or a typo |
 | `out` | string | yes | output path without extension, relative to the working directory; existing files are overwritten |
 | `formats` | list of strings | no, `["trace", "csv"]` | any of `trace`, `csv`, `txt` |
 | `resolution` | `"us"` or `"ms"` | no, `"us"` | timestamp unit in the files |
