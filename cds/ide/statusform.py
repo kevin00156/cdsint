@@ -29,8 +29,14 @@ COLOURS = {
 
 
 def placement_path():
-    """Beside the instances directory, not inside it: this is a preference."""
-    return os.path.join(os.path.dirname(ipc.default_root()), "statusform.json")
+    """Beside the instances directory, not inside it: this is a preference.
+
+    normpath first: CDS_INSTANCES_DIR written with a trailing separator has
+    the root itself as its dirname, and a .json in there reads as one more
+    registration to everything that lists the root.
+    """
+    root = os.path.normpath(ipc.default_root())
+    return os.path.join(os.path.dirname(root), "statusform.json")
 
 
 class StatusForm(object):

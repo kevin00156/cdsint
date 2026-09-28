@@ -107,11 +107,15 @@ def read(root, instance_id):
 
 
 def read_all(root):
-    """Every registration under root, alive or not, sorted by instance id."""
+    """Every registration under root, alive or not, sorted by instance id.
+
+    A .json without an instance_id is not a registration, whoever put it
+    there, and everything downstream indexes that field.
+    """
     out = []
     for name in ipc.json_names(root):
         reg = ipc.read_json(os.path.join(root, name))
-        if reg is not None:
+        if isinstance(reg, dict) and reg.get("instance_id"):
             out.append(reg)
     return out
 

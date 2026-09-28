@@ -187,3 +187,14 @@ def test_prune_stale_still_clears_an_idle_corpse(tmp_path):
     root = str(tmp_path)
     instances.write(root, make_reg("p-1", "p"))
     assert instances.prune_stale(root, now=T0 + 150.0) == ["p-1"]
+
+
+def test_read_all_skips_a_json_that_is_not_a_registration(tmp_path):
+    # The status window's placement file landed in the root when
+    # CDS_INSTANCES_DIR had a trailing separator, and prune_stale then died
+    # on reg["instance_id"] at every watcher start.
+    root = str(tmp_path)
+    instances.write(root, make_reg("p-1", "p", now=T0 - 600.0))
+    ipc.write_json(os.path.join(root, "statusform.json"), {"x": 1, "y": 2})
+    assert [r["instance_id"] for r in instances.read_all(root)] == ["p-1"]
+    assert instances.prune_stale(root, now=T0) == ["p-1"]
