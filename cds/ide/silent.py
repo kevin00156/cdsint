@@ -262,7 +262,9 @@ def _yes_no(args):
         name, default = YES_NO[title]
         given = args.get(name)
         if given is not None:
-            return bool(given)
+            # `is True`, not bool(): a hand-written job's "false" is truthy,
+            # and here truthy would confirm a download.
+            return given is True
         if default is None:
             raise NeedsInput("%s: %s" % (title, message), name)
         return default

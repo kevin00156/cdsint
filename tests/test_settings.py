@@ -197,6 +197,24 @@ def test_the_dialog_writes_one_key_and_only_one(ide, project, tmp_path,
     assert os.path.isdir(folder)
 
 
+def test_the_dialog_keeps_what_the_file_already_says(ide, project, tmp_path,
+                                                    monkeypatch):
+    """A file with a plc list and no folder must not lose the list."""
+    with io.open(settings_file(project), "w", encoding="utf-8") as handle:
+        handle.write(u'{"plc": ["download"], "save_after_import": false}')
+    monkeypatch.setattr(settings, "_ask",
+                        lambda system, path: str(tmp_path / "sync"))
+    values, _folder, error = settings.prepare_asking(ide)
+
+    assert error is None
+    with io.open(settings_file(project), encoding="utf-8") as handle:
+        assert json.loads(handle.read()) == {
+            "plc": ["download"], "save_after_import": False,
+            "sync_folder": "." + os.sep + "sync"}
+    assert values["plc"] == ["download"]
+    assert values["save_after_import"] is False
+
+
 def test_cancelling_the_dialog_writes_nothing(ide, project, monkeypatch):
     monkeypatch.setattr(settings, "_ask", lambda system, path: None)
     values, folder, error = settings.prepare_asking(ide)

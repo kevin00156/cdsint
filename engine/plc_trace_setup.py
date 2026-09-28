@@ -155,6 +155,13 @@ class TraceSetup(Trip):
             return ("this IDE's application object has no is_uptodate, so "
                     "there is no way to tell whether a Keep login would "
                     "download; nothing was logged in to")
+        if not isinstance(uptodate, bool):
+            # A method, or a proxy that is truthy whatever it holds, would
+            # read as "unchanged" to a bare `if not`; the gate only opens on
+            # an answer that can only mean yes.
+            return ("this IDE's is_uptodate is %r, not true or false, so "
+                    "there is no way to tell whether a Keep login would "
+                    "download; nothing was logged in to" % (uptodate,))
         if not uptodate:
             return ("the working copy's program differs from what was last "
                     "downloaded (the IDE's is_uptodate is false): code, IO "

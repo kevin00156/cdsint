@@ -104,10 +104,13 @@ def folder_missing(caller_globals):
 def choose_sync_folder(caller_globals, project_path):
     """Ask where the sync folder is and write it down: (values, error).
 
-    Only `sync_folder` is written. Every other setting stays out of the file
-    until somebody decides it, so a reader can tell what was chosen from what
-    merely defaulted, and changing a default in the code needs no pass over
-    anybody's files (SPEC 4.4).
+    Only `sync_folder` is added. Every key the file already holds stays --
+    a file with a `plc` list and no folder is somebody's decision, and
+    writing the folder over it would take the permission away without a
+    word. Every other setting stays out of the file until somebody decides
+    it, so a reader can tell what was chosen from what merely defaulted, and
+    changing a default in the code needs no pass over anybody's files
+    (SPEC 4.4).
 
     The project's path is passed in rather than looked up: the only caller
     reached this by reading that project's settings file, so asking the IDE
@@ -121,8 +124,9 @@ def choose_sync_folder(caller_globals, project_path):
         return None, "Sync folder setup cancelled; nothing was changed."
 
     written = _as_written(chosen, os.path.dirname(project_path))
+    kept = dict(schema.read(path) or {}, sync_folder=written)
     try:
-        schema.write(path, {"sync_folder": written})
+        schema.write(path, kept)
     except (IOError, OSError) as exc:
         failed = "Could not write %s: %s" % (path, safe_str(exc))
         system.ui.error(failed)
@@ -133,7 +137,7 @@ def choose_sync_folder(caller_globals, project_path):
                    + "\n\nThe other settings and their defaults are in the "
                      "settings table in docs/REFERENCE.md; add a key to that file "
                      "when you want to change one.")
-    return schema.resolve({"sync_folder": written}), None
+    return schema.resolve(kept), None
 
 
 def _ask(system, settings_path):

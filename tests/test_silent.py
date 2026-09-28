@@ -150,6 +150,14 @@ def test_a_yes_no_dialog_is_answered_from_the_arguments(tmp_path, ide,
     assert outcome.messages[0]["text"] == "answered True"
 
 
+@pytest.mark.parametrize("given", ["false", "no", 1, [True]])
+def test_only_a_real_true_confirms(tmp_path, ide, fake_codesys_ui, given):
+    """A hand-written job's "false" is truthy; it must not confirm an import."""
+    path = yes_no_script(tmp_path, "Confirm Import")
+    outcome = silent.run(ide, path, "main", {"yes": given})
+    assert outcome.messages[0]["text"] == "answered False"
+
+
 def test_a_yes_no_dialog_with_no_argument_takes_its_default(tmp_path, ide,
                                                             fake_codesys_ui):
     path = yes_no_script(tmp_path, "Delete Orphaned Files?")

@@ -16,6 +16,8 @@ claimed here.
 """
 import os
 
+import pytest
+
 from cds.core import trace_run
 from cds.ide import headless, hold
 from engine import plc_trace
@@ -324,6 +326,16 @@ def test_an_ide_that_cannot_say_whether_the_program_changed_is_refused():
     del bench.application.is_uptodate
     result = bench.run()
     assert not result["ok"] and "is_uptodate" in result["summary"]
+    assert bench.calls("login") == [] and nothing_was_created(bench)
+
+
+@pytest.mark.parametrize("answer", [lambda: False, "False", 1])
+def test_an_is_uptodate_that_is_not_a_bool_is_refused(answer):
+    """Truthy is not "unchanged": a method or a proxy must not open the gate."""
+    bench = TraceBench()
+    bench.application.is_uptodate = answer
+    result = bench.run()
+    assert not result["ok"] and "not true or false" in result["summary"]
     assert bench.calls("login") == [] and nothing_was_created(bench)
 
 
