@@ -97,6 +97,20 @@ def test_asking_for_a_gateway_this_profile_does_not_have_stops_the_run():
     assert not outcome.ok() and "no gateway defined" in outcome.error_text()
 
 
+def test_two_gateways_are_named_and_nothing_is_aimed():
+    # The first one listed was used, which nobody chose, and the same
+    # address behind the other gateway can be another controller.
+    first, second = Gateway("Gateway-1"), Gateway("Gateway-2")
+    device_node = DeviceNode("Device", DEVICE_GUID)
+    ide_globals = ide(allowed=["connect"], children=[device_node],
+                      gateways=[first, second])
+    outcome = silent.run(ide_globals, PLC_BODY, "connect",
+                         {"gateway": "192.168.1.5"})
+    said = outcome.error_text()
+    assert not outcome.ok() and "Gateway-1, Gateway-2" in said
+    assert device_node.gateway_set_to is None and first.asked == []
+
+
 # --------------------------------------------------------------------------
 # Credentials (SPEC D14)
 # --------------------------------------------------------------------------

@@ -156,6 +156,15 @@ def aim_at_gateway(online_api, device_node, address, port):
         return None, ("--gateway %s was given but this IDE profile has no "
                       "gateway defined, so there is nothing to reach it "
                       "through" % address)
+    if len(gateways) > 1:
+        # The first one listed is not a choice anybody made, and the same
+        # address behind another gateway can be another controller (D7).
+        return None, ("this IDE profile has %d gateways (%s) and there is no "
+                      "flag that says which one reaches %s, so nothing was "
+                      "done; leave one in the profile"
+                      % (len(gateways), ", ".join(
+                          safe_str(getattr(g, "name", g)) for g in gateways),
+                         address))
     gateway = gateways[0]
     try:
         node = gateway.find_address_by_ip(address, port)

@@ -822,10 +822,11 @@ to the wrong controller passes its own read-back, since that controller's CRC
 moves too, and a trace recorded from the wrong controller looks exactly like a
 right one. `--port` defaults to 11740 and is exit 2 without `--gateway`, whose
 port it is; `-y` on `connect` or `trace` is exit 2, since neither has anything
-for it to confirm. When the project has more than one
-device node, both commands refuse and list the names; there is no flag to pick
-one, since guessing a download target is not something that can have a default
-(D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
+for it to confirm. When the project has more than one device node, or
+`--gateway` is given and the IDE profile has more than one gateway to reach it
+through, every `plc` command refuses and lists the names; there is no flag to
+pick one, since guessing a download target is not something that can have a
+default (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,
 because outside these two commands there is nothing like `verify` that turns
 findings into a verdict, so the exit code itself has to be the verdict. The
