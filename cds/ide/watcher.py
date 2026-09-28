@@ -146,7 +146,7 @@ class Watcher(object):
             return None
         result = None
         try:
-            self._beat(started, instances.STATE_BUSY)
+            self._beat(started, instances.STATE_BUSY, cmd.get("command"))
             self.doing = cmd.get("command")
             # Paint BUSY before the work starts: the IDE stops repainting for
             # the whole of an export, so afterwards is too late to say so.
@@ -301,7 +301,7 @@ class Watcher(object):
             return False
         return self._beat(now)
 
-    def _beat(self, now, state=None):
+    def _beat(self, now, state=None, command=None):
         """Write the heartbeat, or shrug and let the next turn try again.
 
         On Windows the registration cannot be replaced while a CLI has it open
@@ -315,7 +315,7 @@ class Watcher(object):
         next turn rather than in two seconds.
         """
         if state is not None:
-            instances.set_state(self.reg, state, now)
+            instances.set_state(self.reg, state, now, command)
         self._refresh_project()
         instances.stamp_heartbeat(self.reg, now)
         failure = None

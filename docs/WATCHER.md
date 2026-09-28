@@ -35,8 +35,10 @@ instances\
 the process id from `os.getpid()`.
 
 The registration file's fields: `instance_id`, `pid`, `ide`, `project_path`,
-`project_name`, `sync_dir`, `state`, `busy_since`, `heartbeat`, `started_at`,
-`watcher_version`. Times come in two copies: the string one is for a person
+`project_name`, `sync_dir`, `state`, `busy_since`, `busy_command`, `heartbeat`,
+`started_at`, `watcher_version`. `busy_command` names what a busy instance is
+running, so a caller whose `--timeout` is shorter than that is told "busy for
+312s running import" rather than "no live IDE found". Times come in two copies: the string one is for a person
 opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
 `started_at_epoch` are for a program to subtract. Storing numbers saves parsing a local-time string and
 sidesteps the ambiguous hour around a daylight-saving change.
@@ -80,8 +82,9 @@ one; it goes by time alone.
 to "delete the target, then rename", which is the path IronPython 2.7 takes. On
 Windows, `os.rename` fails outright when the target exists, and the registration
 file overwrites the same name every two seconds. This is also why the CLI waits
-one extra tick before declaring an instance dead: between the delete and the
-rename there is an instant with no file at all.
+up to a second before declaring an instance dead, and looks again before it
+says no IDE is listening while a `<id>.json.tmp` is present: between the
+delete and the rename there is an instant with no file at all.
 
 ## 3. Command files and result files
 
@@ -163,6 +166,13 @@ from the running command. It spares an instance with a `.running` file for
 the same `ABANDONED_AFTER_S` it gives a busy one. The CLI also no longer
 opens the registration on every poll while it waits (it checks that the file
 exists), which is what made the busy write lose in the first place.
+
+**The waiting CLI gives up early when nobody will answer.** Every couple of
+seconds it reads the registration, and takes the instance for gone when its
+process no longer runs (section 2.1), or when it is idle, has not beaten for
+`ALIVE_TIMEOUT_S`, and no `.running` file says a command is in progress. It
+takes its command back out of the queue and says the watcher stopped before
+answering, instead of waiting out the whole `--timeout`.
 
 **No two watchers in one IDE.** The instance id is the project name plus the
 process id, so two watchers in the same IDE would get the same id and fight

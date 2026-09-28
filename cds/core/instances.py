@@ -81,12 +81,15 @@ def stamp_heartbeat(reg, now=None):
     return reg
 
 
-def set_state(reg, state, now=None):
-    """Switch between idle and busy, recording when a busy stretch began."""
+def set_state(reg, state, now=None, command=None):
+    """Switch between idle and busy, recording when a busy stretch began
+    and on what, so a caller who cannot wait that long is told why."""
     now = ipc.now(now)
+    busy = state == STATE_BUSY
     reg["state"] = state
-    reg["busy_since"] = ipc.iso(now) if state == STATE_BUSY else None
-    reg["busy_since_epoch"] = now if state == STATE_BUSY else None
+    reg["busy_since"] = ipc.iso(now) if busy else None
+    reg["busy_since_epoch"] = now if busy else None
+    reg["busy_command"] = command if busy else None
     return reg
 
 
@@ -112,6 +115,23 @@ def is_alive(reg, now=None, idle_timeout=ALIVE_TIMEOUT_S,
 def process_gone(reg, pid_alive=None):
     """Only a definite no counts: None is "cannot tell", not "dead"."""
     return pid_alive is not None and pid_alive(reg) is False
+
+
+def stopped_answering(reg, now=None, pid_alive=None, working=False):
+    """Has the watcher a caller is waiting on gone, though its file is there?
+
+    The waiting side's question, not is_alive's: the caller already picked
+    this instance, and busy for longer than it will wait is its own timeout
+    to call. What is left is a process that is gone, and an idle watcher
+    that stopped beating -- unless a command of its is running (working),
+    which is what an idle record with a stopped heartbeat also looks like
+    when the busy write was lost (docs/WATCHER.md 5).
+    """
+    if process_gone(reg, pid_alive):
+        return True
+    if reg.get("state") == STATE_BUSY or working:
+        return False
+    return not is_alive(reg, now)
 
 
 # --------------------------------------------------------------------------
@@ -212,20 +232,38 @@ def resolve_target(regs, target=None, now=None, busy_timeout=BUSY_TIMEOUT_S,
     (case-insensitive); with no target at all, a lone live instance is it.
     Anything else raises TargetError so the caller can list the candidates.
     """
+    now = ipc.now(now)
     alive = [r for r in regs if is_alive(r, now, busy_timeout=busy_timeout,
                                          pid_alive=pid_alive)]
-    if target:
-        for reg in alive:
-            if reg.get("instance_id") == target:
-                return reg
-        matches = [r for r in alive
-                   if (r.get("project_name") or "").lower() == target.lower()]
-        nothing = "no live IDE matches %r" % (target,)
-    else:
-        matches = alive
-        nothing = "no live IDE found"
+    matches = _meant(alive, target)
     if len(matches) == 1:
         return matches[0]
-    if not matches:
-        raise TargetError(nothing)
-    raise TargetError("several live IDEs match; pass --target", matches)
+    if matches:
+        raise TargetError("several live IDEs match; pass --target", matches)
+    raise TargetError(_why_none(regs, target, now, busy_timeout, pid_alive))
+
+
+def _meant(regs, target):
+    """The ones target names: its exact id, else its project name."""
+    if not target:
+        return regs
+    exact = [r for r in regs if r.get("instance_id") == target]
+    return exact or [r for r in regs
+                     if (r.get("project_name") or "").lower() == target.lower()]
+
+
+def _why_none(regs, target, now, busy_timeout, pid_alive):
+    """Nothing live matched. Busy for longer than the caller waits is not
+    the same thing as not there, and saying "no live IDE" sent people
+    looking for an IDE that was open in front of them."""
+    busy = [r for r in _meant(regs, target)
+            if r.get("state") == STATE_BUSY and not process_gone(r, pid_alive)]
+    if not busy:
+        return ("no live IDE matches %r" % (target,) if target
+                else "no live IDE found")
+    return "; ".join(
+        "%s has been busy for %ds running %s, longer than the %gs this "
+        "caller waits (--timeout)" % (
+            r["instance_id"], now - float(r.get("busy_since_epoch") or now),
+            r.get("busy_command") or "a command", busy_timeout)
+        for r in busy)

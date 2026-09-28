@@ -297,7 +297,8 @@ def test_ctrl_c_while_waiting_leaves_no_command_behind(watch, monkeypatch):
 def busy_since(root, seconds_ago):
     reg = instances.new_registration("softplc-9", 9, "ide",
                                      r"C:\p\softplc.project")
-    instances.set_state(reg, instances.STATE_BUSY, ipc.now() - seconds_ago)
+    instances.set_state(reg, instances.STATE_BUSY, ipc.now() - seconds_ago,
+                        "import")
     instances.write(root, reg)
     return reg
 
@@ -337,7 +338,11 @@ def test_an_ide_that_crashed_mid_command_is_not_listed(root, capsys,
 def test_the_default_timeout_still_writes_off_a_long_gone_command(root, capsys):
     busy_since(root, 200.0)
     assert cli.main(["ping"]) == EXIT_TARGET
-    assert "no live IDE" in capsys.readouterr().err
+    # ...but says it is busy rather than missing: "no live IDE found" sent
+    # people looking for an IDE that was open in front of them.
+    said = capsys.readouterr().err
+    assert "softplc-9 has been busy for 200s running import" in said
+    assert "--timeout" in said
 
 
 # --- the watcher went away while we waited --------------------------------
@@ -385,6 +390,90 @@ def test_any_other_command_says_the_watcher_died(watch, monkeypatch, capsys):
     gone_after_first_wait(watch, monkeypatch)
     assert cli.main(["export"]) == EXIT_FAILED
     assert "stopped before answering export" in capsys.readouterr().err
+
+
+def gone_quiet(watch, monkeypatch, how):
+    """Resolve the target, then let `how` kill the IDE behind it."""
+    picked = target.Target(watch.root)
+    how()
+    polls = []
+    monkeypatch.setattr(time, "sleep", lambda _seconds: polls.append(1))
+    return picked, polls
+
+
+def test_an_ide_that_died_mid_wait_is_not_waited_on(watch, monkeypatch):
+    # It leaves its registration behind. The caller used to sit out the
+    # whole --timeout on a file nobody would ever answer.
+    picked, polls = gone_quiet(watch, monkeypatch, lambda: monkeypatch.setattr(
+        process, "running", lambda pid, not_after=None: False))
+    picked.timeout = 600.0
+    with pytest.raises(cli.Failure) as raised:
+        picked.run_one("export", {})
+    assert "stopped before answering export" in str(raised.value)
+    assert len(polls) < 5
+    assert commands.list_command_ids(watch.root, watch.instance_id) == []
+
+
+def stale_heartbeat(watch):
+    reg = instances.read(watch.root, watch.instance_id)
+    instances.stamp_heartbeat(reg, ipc.now() - instances.ALIVE_TIMEOUT_S - 5)
+    instances.write(watch.root, reg)
+
+
+def test_an_idle_watcher_that_stopped_beating_is_gone(watch, monkeypatch):
+    picked, polls = gone_quiet(watch, monkeypatch,
+                               lambda: stale_heartbeat(watch))
+    picked.timeout = 600.0
+    with pytest.raises(cli.Failure):
+        picked.run_one("export", {})
+    assert len(polls) < 5
+
+
+def test_a_stopped_heartbeat_with_a_command_running_is_still_waited_on(
+        watch, monkeypatch):
+    # The busy write can be lost (WATCHER.md 5): somebody else's long
+    # command is running, the record says idle and has stopped beating. The
+    # running mark says the watcher is working, and our answer does come.
+    picked = target.Target(watch.root)
+    other = commands.write_command(watch.root, watch.instance_id, "import")
+    commands.claim_command(watch.root, watch.instance_id, other["id"])
+    stale_heartbeat(watch)
+    turns = []
+
+    def answer_later(_seconds):
+        turns.append(1)
+        if len(turns) == 40:
+            commands.release_command(watch.root, watch.instance_id,
+                                     other["id"])
+            watch.run_one(commands.next_command(watch.root, watch.instance_id))
+    monkeypatch.setattr(time, "sleep", answer_later)
+    monkeypatch.setattr(target.instances, "HEARTBEAT_INTERVAL_S", 0.0)
+    assert picked.run_one("ping", {})["ok"] is True
+
+
+def test_a_target_is_found_through_its_rewrite_gap(watch, monkeypatch):
+    # IronPython deletes the registration and renames the new one in; a
+    # lookup landing in between used to say "no live IDE found".
+    path = ipc.registration_path(watch.root, watch.instance_id)
+    saved = ipc.read_json(path)
+    ipc.remove_file(path)
+    ipc.write_json(path + ".tmp.src", saved)
+    open(path + ".tmp", "w").close()
+
+    def rename_lands(_seconds):
+        ipc.write_json(path, saved)
+        ipc.remove_file(path + ".tmp")
+    monkeypatch.setattr(time, "sleep", rename_lands)
+    assert target.Target(watch.root).instance_id == watch.instance_id
+
+
+def test_no_ide_at_all_is_said_at_once(root, monkeypatch):
+    # The retry is for a rewrite in progress, not a tax on every miss.
+    slept = []
+    monkeypatch.setattr(time, "sleep", lambda seconds: slept.append(seconds))
+    with pytest.raises(cli.Failure):
+        target.Target(root)
+    assert slept == []
 
 
 # --- compare's real answer is in data, not in what it printed --------------
