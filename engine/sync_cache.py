@@ -19,6 +19,7 @@ import json
 import os
 import time
 
+from cds.core import ipc
 from engine.strings import calculate_hash, safe_str
 from engine.sync_log import log_info, log_warning
 
@@ -161,12 +162,16 @@ def save_sync_cache(base_dir, objects_cache, folder_hashes=None, type_cache=None
         "objects": objects_cache
     }
     try:
-        with io.open(cache_path, "w", encoding="utf-8", newline="") as f:
-            # Compact, not indented. sync_cache.json is machine-read and
-            # gitignored, and every entry carries an mtime that changes each
-            # run, so it never produces a readable diff anyway. Indenting cost
-            # roughly half a second across the write and the following read,
-            # and doubled a 125 KB file.
-            json.dump(cache_data, f, separators=(",", ":"))
+        # Compact, not indented. sync_cache.json is machine-read and
+        # gitignored, and every entry carries an mtime that changes each
+        # run, so it never produces a readable diff anyway. Indenting cost
+        # roughly half a second across the write and the following read,
+        # and doubled a 125 KB file.
+        #
+        # Serialised whole, then swapped in: the entries are the dirty-file
+        # guard's evidence (SPEC 6.1), and a write that died half way used
+        # to leave a file that loads as no cache at all.
+        ipc.write_atomic(cache_path,
+                         json.dumps(cache_data, separators=(",", ":")))
     except Exception as e:
         log_warning("Could not save sync cache: " + safe_str(e))

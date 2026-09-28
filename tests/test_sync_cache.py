@@ -429,3 +429,21 @@ class TestTheTempFileNeverSurvives:
         mgr.export(self.Node(), "t", "Thing.xml", self.context(tmp_path))
         assert list(tmp_path.glob("*.tmp")) == []
         assert (tmp_path / "Thing.xml").exists()
+
+
+class TestASaveThatDiesKeepsTheOldCache:
+    """The entries are the dirty-file guard's evidence (SPEC 6.1). A save
+    that failed half way through used to leave a truncated sync_cache.json,
+    which loads as no cache at all, and with no entries the guard lets the
+    next export write over an edit nobody imported."""
+
+    def test_the_last_good_cache_survives(self, utils, tmp_path):
+        good = {"A/Foo.st": {"ide_hash": "1", "disk_mtime": 5, "disk_size": 9}}
+        utils.save_sync_cache(str(tmp_path), good, {}, {})
+
+        # Serialising dies on the second entry, after the first was written.
+        utils.save_sync_cache(str(tmp_path), {"A/Bar.st": {"ide_hash": "2"},
+                                              "A/Zed.st": object()}, {}, {})
+
+        assert utils.load_sync_cache(str(tmp_path))["objects"] == good
+        assert os.listdir(str(tmp_path)) == ["sync_cache.json"]

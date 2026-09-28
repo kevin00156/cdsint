@@ -92,8 +92,14 @@ def write_json(path, data):
     files constantly. That raises, and the caller decides — the watcher just
     tries again on its next turn rather than dying over a heartbeat.
     """
+    write_atomic(path, json.dumps(data, indent=2, sort_keys=True))
+
+
+def write_atomic(path, text):
+    """Write text to path via <path>.tmp plus a rename, so a reader, or the
+    next run after a crash, sees the old file or the new one and never half
+    of one. Raises as write_json does."""
     makedirs(os.path.dirname(path))
-    text = json.dumps(data, indent=2, sort_keys=True)
     tmp = path + ".tmp"
     with io.open(tmp, "w", encoding="utf-8") as handle:
         handle.write(text)
