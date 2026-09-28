@@ -62,6 +62,19 @@ def test_the_command_queue_ignores_half_written_tmp_files(tmp_path):
     assert commands.list_command_ids(root, "p-1") == ["1725453665123-a3f9c1"]
 
 
+@pytest.mark.parametrize("text", [u"", u"{half", u"[]", u'{"command": "ping"}'])
+def test_a_file_that_is_not_a_command_does_not_block_the_queue(tmp_path, text):
+    """Raising here failed every tick on the same file, for good."""
+    root = str(tmp_path)
+    queue = ipc.command_dir(root, "p-1")
+    commands.write_command(root, "p-1", "ping", cmd_id="1725453665999-ffffff")
+    bad = os.path.join(queue, "0000000000001-aaaaaa.json")
+    with io.open(bad, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    assert commands.next_command(root, "p-1")["id"] == "1725453665999-ffffff"
+    assert os.path.exists(bad + ".bad") and not os.path.exists(bad)
+
+
 # --- results ---------------------------------------------------------------
 
 def test_a_result_records_how_long_the_command_took():

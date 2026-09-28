@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — fixes from a review of the sync, update, PLC and watcher paths
+
+- **Export no longer deletes the files of objects it skips on purpose.** An
+  import_only kind, or a visualization with `export_xml` off, still has an
+  object in the project; its committed file was swept as an orphan, silently
+  under `auto_delete_orphans`.
+- **`compare` on a project with nothing to sync no longer crashes**, and
+  builds the folder hashes once instead of once per object.
+- **The first-run folder dialog keeps the rest of the settings file.** It
+  used to replace it with the one key it chose, taking a `plc` list with it.
+  A settings file saved with a BOM (Notepad) is read instead of refused.
+- **`plc trace` only trusts an `is_uptodate` that is a real true or false**,
+  and a dialog is only confirmed by a real `true` in a command's arguments,
+  never by a truthy string such as `"false"`.
+- **A command file the watcher cannot read is set aside as `.bad`** instead
+  of blocking every command queued behind it and stopping the heartbeat.
+- **`cdsint update` always relinks the menus once the new body is in place.**
+  A pip failure, or a staging folder that would not delete, used to stop it
+  before `stub\body.path` was written, breaking every Scripts menu. Both are
+  now warnings. A cut download or a corrupt archive is said in words.
+- **The daily release check can no longer fail a command.** A response cut
+  short or an answer that is not a release turned exit 0 into a traceback;
+  a check dated in the future no longer silences it until that date.
+
 ### 0.1.1 (2026-09-25) — one-line install, cdsint link
 
 - **Install is one line and no clone.** `irm .../setup.ps1 | iex` downloads

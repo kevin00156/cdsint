@@ -93,7 +93,9 @@ def read(path):
     lets the first-run dialog write one key and leave the rest alone.
     """
     try:
-        with io.open(path, encoding="utf-8") as handle:
+        # utf-8-sig: Notepad saves with a BOM, and a file somebody wrote by
+        # hand must not be refused for it.
+        with io.open(path, encoding="utf-8-sig") as handle:
             text = handle.read()
     except (IOError, OSError):
         # Missing is the normal state of a project nobody has set up yet.

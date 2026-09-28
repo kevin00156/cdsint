@@ -81,6 +81,12 @@ def test_read_returns_only_the_keys_the_file_holds(tmp_path):
     assert settings.read(path) == {"sync_folder": "./sync"}
 
 
+def test_a_file_saved_with_a_bom_is_read(tmp_path):
+    """Notepad writes one; the file was refused as not valid JSON."""
+    path = write_file(tmp_path, u'\ufeff{"sync_folder": "./sync"}')
+    assert settings.read(path) == {"sync_folder": "./sync"}
+
+
 def test_an_unknown_key_is_refused_and_the_table_is_in_the_message(tmp_path):
     path = write_file(tmp_path, u'{"sync_folder": "./sync", "debgu": true}')
     with pytest.raises(settings.Invalid) as caught:

@@ -64,12 +64,31 @@ def list_command_ids(root, instance_id):
 
 
 def next_command(root, instance_id):
-    """The oldest queued command, or None if the queue is empty."""
+    """The oldest queued command, or None if the queue is empty.
+
+    A file that is not a command is set aside as <name>.bad, not raised.
+    It keeps its place at the head of the queue, so raising would fail every
+    tick on the same file, block every command queued behind it, and stop
+    the heartbeat that tells the CLI this IDE is alive.
+    """
     for cmd_id in list_command_ids(root, instance_id):
-        cmd = ipc.read_json(_command_path(root, instance_id, cmd_id))
-        if cmd is not None:
+        path = _command_path(root, instance_id, cmd_id)
+        try:
+            cmd = ipc.read_json(path)
+        except ValueError as exc:
+            _set_aside(path, exc)
+            continue
+        if isinstance(cmd, dict) and "id" in cmd:
             return cmd
+        if cmd is not None:
+            _set_aside(path, "not a command object")
     return None
+
+
+def _set_aside(path, why):
+    print("watcher: %s is not a command (%s); set aside as .bad"
+          % (os.path.basename(path), why))
+    os.rename(path, path + ".bad")
 
 
 def delete_command(root, instance_id, cmd_id):
