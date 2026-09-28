@@ -132,6 +132,22 @@ def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
 
 
 
+def _claim_unwritten(decided, exported_paths):
+    """Keep the file of an object this run does not write off the orphan list.
+
+    An import_only kind, or an XML kind with export_xml off, still has an
+    object in the project and usually a file somebody committed; left
+    unclaimed, the orphan sweep deletes it. A kind with no path has no file
+    to keep.
+    """
+    if decided.skip_reason == SKIP_SYNC_DIRECTION:
+        log_info("Skipping export of %s (sync_direction=%s)"
+                 % (decided.rel_path,
+                    sync_direction_of(decided.effective_type)))
+    if decided.rel_path:
+        exported_paths.add(decided.rel_path)
+
+
 def _save_cache(export_dir, new_cache, context):
     """Calculate folder hashes (Merkle Tree) and save the updated cache."""
     if not new_cache:
@@ -255,11 +271,8 @@ def export_project(export_dir, values, projects_obj=None):
                     pass  # A cache file of the wrong shape is no cache.
             # ----------------------------------------
 
-            if decided.skip_reason == SKIP_SYNC_DIRECTION:
-                log_info("Skipping export of %s (sync_direction=%s)"
-                         % (rel_path, sync_direction_of(effective_type)))
-                continue
             if decided.skip_reason:
+                _claim_unwritten(decided, exported_paths)
                 continue
 
             manager = manager_for(managers, effective_type, is_xml)

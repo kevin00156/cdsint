@@ -161,7 +161,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
             carry_over(stale[2] if stale else None)
 
     # Build folder hashes (Merkle Tree)
-        ide_folder_hashes = build_folder_hashes(ide_hashes)
+    ide_folder_hashes = build_folder_hashes(ide_hashes)
     log_info("  Pass 1 complete ({} objects, {} path cache hits, {} invalidated) in {:.2f}s".format(
         len(ide_hashes), path_cache_hits, path_invalidations, time.time() - p1_start))
 

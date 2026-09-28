@@ -84,7 +84,7 @@ ALLOWED_FUNCTION_LINES = {
     },
     "engine/entry_export.py": {
         "cleanup_orphaned_files": 96,
-        "export_project": 207,
+        "export_project": 204,
     },
     "engine/entry_import.py": {
         "import_project": 228,

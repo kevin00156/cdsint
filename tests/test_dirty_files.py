@@ -230,3 +230,15 @@ def test_an_object_compare_could_not_read_keeps_its_cache_entry(
 
     assert a_synced_project.file.read_text(encoding="utf-8") == mine
     assert result["data"]["pending_import"] == ["MC_Main.st"]
+
+
+def test_compare_on_a_project_with_nothing_to_sync(monkeypatch, tmp_path):
+    """The folder hashes were built inside the object loop, so a project whose
+    loop never ran had none, and compare died on an UnboundLocalError."""
+    from engine import change_detect
+    sync = tmp_path / "sync"
+    sync.mkdir()
+    projects = Projects(Project({}, [], str(tmp_path / "Fake.project")))
+    results = change_detect.find_all_changes(str(sync), projects,
+                                             export_xml=False)
+    assert results["different"] == [] and results["new_on_disk"] == []
