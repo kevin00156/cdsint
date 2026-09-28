@@ -158,6 +158,40 @@ def test_a_download_that_did_not_take_is_a_failure_not_a_success():
         plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
 
 
+class FirstCrcFetchFails(Device):
+    """A controller whose first .crc fetch fails, as a reset connection does."""
+
+    def upload_file(self, remote, local, overwrite):
+        if remote.endswith(".crc") and remote not in self.uploaded:
+            self.uploaded.append(remote)
+            raise IOError("transient: the connection was reset")
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_a_crc_that_could_not_be_read_before_stops_the_download():
+    # The failed fetch read as "nothing loaded", so a download that wrote
+    # nothing was held against no CRC at all, passed, and was recorded as
+    # cdsint's: the controller's old program written down as this project's.
+    device = FirstCrcFetchFails(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "nothing was sent" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
+def test_a_controller_with_nothing_loaded_still_takes_a_download():
+    # No application directory at all is what a fresh controller says, and
+    # there any CRC afterwards is a change.
+    device = Device(crc=None, app=None)
+    ide_globals = ide(allowed=["download"], device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert outcome.ok() and crc_of(outcome) == "MATCH"
+
+
 def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
     class Wiped(Device):
         def upload_file(self, remote, local, overwrite):
@@ -168,6 +202,35 @@ def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
     outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
     assert not outcome.ok() and "nothing to show it landed" in \
         outcome.error_text()
+
+
+class KeepsOneApplication(Device):
+    """A controller whose application is called Line2, laid out as the
+    runtime lays one out: PlcLogic/Line2/Line2.crc and .app."""
+
+    def upload_file(self, remote, local, overwrite):
+        if not remote.startswith("PlcLogic/Line2/Line2."):
+            raise IOError("Could not find a part of the path: " + remote)
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_the_crc_is_read_from_where_the_active_application_keeps_it():
+    # The paths were spelled for an application called Application, so any
+    # other name read a file that is not there and answered UNKNOWN about a
+    # controller cdsint had loaded.
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed=["connect"], device=KeepsOneApplication(),
+                      application=plc_fakes.Application("Line2"))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
+
+
+def test_a_project_with_no_active_application_is_refused_by_connect_too():
+    ide_globals = ide(allowed=["connect"])
+    ide_globals["projects"].primary.active_application = None
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    assert not outcome.ok()
+    assert "no active application" in outcome.error_text()
 
 
 def test_the_source_archive_comes_back_when_the_controller_has_one():
@@ -235,6 +298,46 @@ def test_a_download_that_throws_is_named_and_still_logs_out():
     assert ("logout",) in ide_globals["online"].session.calls
 
 
+class StaysStopped(Session):
+    """start() returns without error and the application does not run."""
+
+    def start(self):
+        Session.start(self)
+        self.application_state = "stop"
+
+    def logout(self):
+        Session.logout(self)
+        self.application_state = "unknown"   # no application once out
+
+
+def test_a_download_that_leaves_the_application_stopped_fails():
+    # The state was read after the logout and only ever noted, so a download
+    # that left the machine standing still exited 0.
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = StaysStopped(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "in state stop, not run" in outcome.error_text()
+    # It did land, so a later connect should still know it is ours.
+    written = plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))["project"]
+    assert written["plc_crc"] == "55667788"
+
+
+def test_a_download_that_fails_after_the_login_says_the_controller_may_stop():
+    class Halfway(Session):
+        def create_boot_application(self):
+            Session.create_boot_application(self)
+            raise RuntimeError("the connection was lost")
+
+    ide_globals = ide(allowed=["download"])
+    ide_globals["online"].session = Halfway()
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "may now be stopped or partly written" in outcome.error_text()
+
+
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
     # The workspace is named after the project so runs overwrite each other,
     # which is exactly what makes a file nobody rewrote dangerous: an upload
@@ -244,14 +347,37 @@ def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
         def upload_file(self, remote, local, overwrite):
             self.uploaded.append(remote)   # as a controller might, and has
 
-    stale = os.path.join(str(workspace), "cdsint", "plc", "Line")
-    os.makedirs(stale)
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
     with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
         handle.write(CRC_B)
     recorded(plc_crc="11223344")
     outcome = silent.run(ide(allowed=["connect"], device=Silent()),
                          PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
+
+
+def test_a_stale_crc_that_will_not_go_is_a_named_failure(monkeypatch):
+    # Clearing the old copy is the only thing standing between an upload
+    # that wrote nothing and last week's answer. When the clearing failed it
+    # used to be a log line, and the old file was read as this run's CRC.
+    class Silent(Device):
+        def upload_file(self, remote, local, overwrite):
+            self.uploaded.append(remote)
+
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
+    with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
+        handle.write(CRC_B)
+    recorded(plc_crc="11223344")
+
+    def locked(path):
+        raise OSError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(os, "remove", locked)
+    outcome = silent.run(ide(allowed=["connect"], device=Silent()),
+                         PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "UNKNOWN" and not outcome.ok()
+    assert any("could not be removed" in note
+               for note in outcome.result["data"]["notes"])
 
 
 # --------------------------------------------------------------------------

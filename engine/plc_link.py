@@ -156,6 +156,15 @@ def aim_at_gateway(online_api, device_node, address, port):
         return None, ("--gateway %s was given but this IDE profile has no "
                       "gateway defined, so there is nothing to reach it "
                       "through" % address)
+    if len(gateways) > 1:
+        # The first one listed is not a choice anybody made, and the same
+        # address behind another gateway can be another controller (D7).
+        return None, ("this IDE profile has %d gateways (%s) and there is no "
+                      "flag that says which one reaches %s, so nothing was "
+                      "done; leave one in the profile"
+                      % (len(gateways), ", ".join(
+                          safe_str(getattr(g, "name", g)) for g in gateways),
+                         address))
     gateway = gateways[0]
     try:
         node = gateway.find_address_by_ip(address, port)
@@ -168,6 +177,18 @@ def aim_at_gateway(online_api, device_node, address, port):
     return ("gateway: %s -> %s:%d (node address %s)"
             % (safe_str(getattr(gateway, "name", gateway)), address, port,
                safe_str(node))), None
+
+
+def names_in(device, directory):
+    """The names in one controller directory, or None when it cannot be
+    listed at all -- which is what a controller with nothing loaded says
+    about an application's directory, so the caller can tell "not there"
+    from "there, and not read"."""
+    try:
+        items = device.get_file_list_of_directory(directory)
+    except Exception:
+        return None
+    return [safe_str(item.name) for item in items]
 
 
 def list_remote(device, directory):

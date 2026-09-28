@@ -356,7 +356,7 @@ mutually exclusive, and argparse blocks them directly.
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect [--gateway IP --port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc download -y --gateway IP [--port N]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
 | `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
 There is no `config` command. The settings are one text file beside the
@@ -406,7 +406,7 @@ Why `plc` commands refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc trace` without `--gateway`), or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc download` or `plc trace` without `--gateway`), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -678,6 +678,7 @@ into the hole:
 | stdout and stderr are redirected to a file named after the report | A GUI-subsystem exe gives the shell no output; the file name follows the report so two parallel processes do not fight over the file |
 | On timeout, kill. Only an incomplete report (no `intended_exit`) counts as "a dialog hung"; a complete report is authoritative, and only "the script finished but the IDE did not exit in time" is noted. After the kill, wait until the process is really gone | A hang is ten times harder to diagnose than an error; and a complete report is evidence that a slow shutdown should not override |
 | After a kill, clear only lock files that "did not exist before this run started", and write into `notes` that it did; a lock file that was there before the start (that is, `--force-lock` was used) is left alone, with the reason stated | `--force-lock` means "run anyway", not "that lock is mine". Clearing it could release a project another IDE really has open, and the next run has two IDEs on one project. The same holds when the process was not killed: the lock stays |
+| A kill with no report behind it, or a Ctrl-C, of a run that included `plc download` says the controller may now be stopped or partly written | A full download stops the application before it writes; "a dialog, probably" is not all the reader needs when the machine may be standing still |
 | The script writes the exit code it intends to use into the report, and the CLI compares it with the one actually received | Whether the exit code makes it back has to be verified; if it does not, read the report instead |
 | `system.prompt_handling` turns on `LogMessageKeys`, so an unanswered prompt prints its key; `--answer KEY=VALUE` fills `prompt_answers` | Delta 1.10 opening a 1.8 project asks whether to upgrade, and the default answer is "don't open it". This is the exception D7 spells out |
 | No close after opening | close asks whether to save, and nobody can answer under `--noUI` |
@@ -732,8 +733,9 @@ Moved from the probe, placed in the engine next to `codesys_online.py` (D12),
 offered only in the `--project` form (D8). `entry_plc.py` is the front for
 the three `plc` commands, `plc_trip.py` the steps of one run, `plc_link.py`
 the part that connects to the controller, and `plc_crc.py` the verdict itself
-(pure bytes, paths and JSON; no IDE). The trace command adds its own steps on
-top of the trip in `plc_trace.py` (6.8).
+(pure bytes, paths and JSON; no IDE). The download and trace commands add
+their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
+(6.8).
 
 - `connect`: set `online.auth_fallback_modes` to `CredentialSourceKind.None`
   to switch off the credential dialog (on ScriptEngine 4.2.0.0 it is, by
@@ -743,16 +745,28 @@ top of the trip in `plc_trace.py` (6.8).
   be switched off is a hang, not a failure). Credentials come only from the
   environment variables `CDS_DEV_USER` and `CDS_DEV_PASS` (D14). List the
   gateways, `find_address_by_ip`, `set_gateway_and_ip_address` on the device
-  node, `create_online_device` to connect, list `PlcLogic/Application`, pull
-  `Application.crc` and take bytes 5 to 8. If there is a source archive, pull
-  it back. Compile nothing.
+  node, `create_online_device` to connect, list `PlcLogic/<app>`, pull
+  `<app>.crc` from it and take bytes 5 to 8, `<app>` being the name of the
+  project's active application; a project without one is refused. Every bench
+  so far had one called `Application`, so that is the only name this layout
+  has been seen for, and the rest of this section says `Application.crc` for
+  short. If there is a source archive, pull it back. Compile nothing.
 - `download`: first pull the controller's current `Application.crc`, then
   `login(OnlineChangeOption.Never, False)` for a full download,
   `create_boot_application`, `start`, `logout`, then pull again. The two values
   must differ: every compile stamps a new four-byte identifier on every block
   of the boot application, so if the download really landed the value changes;
   unchanged means "no error reported but nothing was written", and the run
-  counts as failed. If it landed, record the new value.
+  counts as failed. If it landed, record the new value. The application's
+  state is read after `start` and before `logout`, and anything but `run`
+  fails the run even so: the record is still written, because the controller
+  does hold this download, but a download that leaves the machine standing
+  still has not done its job. An exception anywhere from the login on says
+  the controller may now be stopped or partly written. A first pull that
+  fails is "nothing loaded" only when the controller has no `PlcLogic/<app>`
+  directory to list; when the listing names the `.crc` that could not be
+  read, nothing is sent, because a download that writes nothing could not
+  then be told from one that lands.
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the
@@ -800,21 +814,29 @@ top of the trip in `plc_trace.py` (6.8).
 A few more things. `connect` touches the device node's gateway setting only
 when `--gateway` was given; without it the project's own is used, because that
 is an answer somebody else set, and a read-only command should not change it
-in passing. `plc trace` is the exception: without `--gateway` it exits 2.
-A project that finds its controller by device name can reach the wrong one
-(two WSL soft PLCs report the same host name), and the IDE's "the address
-differs from the project" prompt defaults to Yes; a trace recorded from the
-wrong controller looks exactly like a right one. `--port` defaults to 11740. When the project has more than one
-device node, both commands refuse and list the names; there is no flag to pick
-one, since guessing a download target is not something that can have a default
-(D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
+in passing. `plc download` and `plc trace` are the exceptions: without
+`--gateway` they exit 2. A project that finds its controller by device name can
+reach the wrong one (two WSL soft PLCs report the same host name), and the
+IDE's "the address differs from the project" prompt defaults to Yes; a download
+to the wrong controller passes its own read-back, since that controller's CRC
+moves too, and a trace recorded from the wrong controller looks exactly like a
+right one. `--port` defaults to 11740 and is exit 2 without `--gateway`, whose
+port it is; `-y` on `connect` or `trace` is exit 2, since neither has anything
+for it to confirm. When the project has more than one device node, or
+`--gateway` is given and the IDE profile has more than one gateway to reach it
+through, every `plc` command refuses and lists the names; there is no flag to
+pick one, since guessing a download target is not something that can have a
+default (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,
 because outside these two commands there is nothing like `verify` that turns
 findings into a verdict, so the exit code itself has to be the verdict. The
-local boot application and the file pulled back from the PLC are written to
-`%TEMP%\cdsint\plc\<project>\`, overwritten on every run of the same project
-and deleted before writing, so that a call that wrote no file cannot have the
-previous run's answer read as this run's.
+files pulled back from the PLC are written to
+`%TEMP%\cdsint\plc\<project>-<hash>\`, the hash being of the project file's
+full path so that two working copies of one project never share it,
+overwritten on every run of the same project and deleted before writing, so
+that a call that wrote no file cannot have the previous run's answer read as
+this run's. A file that cannot be deleted fails that fetch by name rather than
+being left to be read.
 
 ### 6.7 Setup flow
 
@@ -938,7 +960,7 @@ refuses the run before any IDE starts.
 |---|---|---|---|
 | `task` | string | yes | the IEC task to sample in; it must be cyclic, since completeness is measured against its period |
 | `variables` | list of strings | yes | paths as `read_value()` takes them (`PRG_X.var`, `GVL.var`), no application prefix |
-| `duration_s` | number | yes | how long to record |
+| `duration_s` | number | yes | how long to record, in seconds; at most a day, since the controller's ring holds the whole recording and a longer job is a sparse sampling or a typo |
 | `out` | string | yes | output path without extension, relative to the working directory; existing files are overwritten |
 | `formats` | list of strings | no, `["trace", "csv"]` | any of `trace`, `csv`, `txt` |
 | `resolution` | `"us"` or `"ms"` | no, `"us"` | timestamp unit in the files |

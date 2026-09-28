@@ -14,6 +14,7 @@ from __future__ import print_function
 
 import os
 import subprocess
+import sys
 import time
 
 from cds.core import ipc
@@ -40,18 +41,17 @@ INSTALL_ROOT_MARKER = os.path.join(REPO_ROOT, "profiles", "default.json")
 
 KILL_GRACE_S = 5.0
 
-# --timeout bounds one step (SPEC 4.2), so the deadline for the whole process
-# has to add what the IDE spends either side of the work. What that costs is
-# measured, and the numbers live in SPEC section 7 rather than here, because
-# they change when a machine or an IDE version does and a copy in a comment
-# would not.
-#
-# These two are deliberately several times the measured cost: a grace that is
-# too small kills a healthy run, which is the bug this replaced, while one
-# that is too large only delays the report of a launch that hung. Startup
-# also swings by two to three times depending on whether the machine has run
-# an IDE recently (SPEC 7), which is the reason for the margin rather than a
-# tight fit.
+# A full download stops the application before it writes, so a kill anywhere
+# after its login can leave the controller stopped, or holding half a program.
+KILLED_DOWNLOAD = ("plc download was in this run: the controller may now be "
+                   "stopped or partly written; check it before trusting it.")
+
+# --timeout bounds one step (SPEC 4.2), so the process deadline adds what the
+# IDE spends either side of the work. That cost is measured in SPEC 7, where
+# the numbers live because they move with the machine and the IDE version.
+# These are several times it on purpose: a grace too small kills a healthy
+# run, one too large only delays the report of a hung launch, and startup
+# swings two to three times with whether the machine ran an IDE recently.
 STARTUP_GRACE_S = 180.0
 SHUTDOWN_GRACE_S = 60.0
 
@@ -122,6 +122,7 @@ class Headless(object):
         # dialog and wrote nothing. stdout and stderr are already truncated
         # each launch; this makes the report agree with them.
         ipc.remove_file(self.report_path)
+        self._downloading = any(c == "plc download" for c, _a in steps)
         deadline = self.deadline(steps)
         started = time.time()
         code, pid = self._launch(job_path, deadline)
@@ -203,19 +204,19 @@ class Headless(object):
             self._kill(process)
             return None, process.pid   # no exit code: it was killed
         except KeyboardInterrupt:
-            # Leaving it would leave a --noUI process with no window,
-            # holding the project's lock, findable only in Task
-            # Manager. cdsint/target.py un-queues its command for the
-            # same reason.
+            # Left alive it is a --noUI process with no window, holding the
+            # project's lock, findable only in Task Manager; cdsint/target.py
+            # un-queues its command for the same reason.
             self._kill(process)
+            if self._downloading:
+                print(KILLED_DOWNLOAD, file=sys.stderr)
             raise
 
     def _kill(self, process):
         """Stop waiting, and clean up after the process we started.
 
         --noUI does not stop every dialog, and one that opens with nothing to
-        close it holds the process forever. Killing and saying so beats a
-        caller that waits all night.
+        close it holds the process forever: better killed, and said so.
 
         The lock file is cleared only once the process is really gone: while
         it is alive it may still be writing the project, and a cleared lock
@@ -300,11 +301,9 @@ class Headless(object):
         """The results, or the reason there are none. Says each thing once.
 
         A killed run's sentence is either the Failure's message or a note,
-        never both: it used to be printed here and then again by
-        cdsint/exits.py when the Failure carrying the same text was reported.
-        Which of the two it is depends on whether the work got done — a
-        report with an intended_exit is the answer, and a kill that came
-        after it is only a slow shutdown (SPEC 6.4).
+        never both, and which depends on whether the work got done: a report
+        with an intended_exit is the answer, and a kill that came after it is
+        only a slow shutdown (SPEC 6.4).
 
         A Failure carries the notes with it. There are no results on that
         path, so nothing else would ever say them, and they are exactly what
@@ -337,13 +336,14 @@ class Headless(object):
 
         A caller reading only the report file has to find "this hung" there,
         because the exit code it would otherwise reason from is the one thing
-        a killed process cannot give it. This is the half of the kill with no
-        report behind it, so the work itself is unaccounted for.
+        a killed process cannot give it. With no report the work itself is
+        unaccounted for, and a download's work is on a controller.
         """
-        return ("%s did not finish within %gs and was killed (pid %s), and it "
+        said = ("%s did not finish within %gs and was killed (pid %s), and it "
                 "wrote no report. Under --noUI that usually means a dialog "
                 "opened with nothing to close it; %s has what it was doing."
                 % (self.install["name"], deadline, pid, self.stdout_path()))
+        return _also(said, KILLED_DOWNLOAD) if self._downloading else said
 
     def _late_exit(self, pid, deadline):
         """Killed, but the work was already done and written down.

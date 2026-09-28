@@ -62,7 +62,7 @@ def test_a_project_that_forbids_it_comes_back_as_exit_5(monkeypatch, capsys):
     drive(monkeypatch, record(False, error=said,
                               denied=permit.record(projects, "download")))
     code = cli.main(["plc", "download", "-y", "--project", "P", "--install",
-                     "I", "--sync-dir", "S"])
+                     "I", "--sync-dir", "S", "--gateway", "192.168.1.5"])
     assert code == EXIT_DENIED
     assert "plc" in capsys.readouterr().err
 
@@ -75,7 +75,7 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
                               needs_input={"question": question,
                                            "arg": "yes"}))
     code = cli.main(["plc", "download", "--project", "P", "--install", "I",
-                     "--sync-dir", "S"])
+                     "--sync-dir", "S", "--gateway", "192.168.1.5"])
     assert code == EXIT_FAILED
     assert "--yes" in capsys.readouterr().err
 

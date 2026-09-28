@@ -62,11 +62,13 @@ def _project_flags_need_a_project(parser, ns, row):
 
 
 def _action_flags(parser, ns, row):
-    """A flag one action cannot run without, or one it will not take.
+    """A flag one action cannot run without, one it will not take, or one
+    that means nothing without another.
 
     Refused rather than ignored: a -y the trace never reads would tell the
-    caller it had confirmed something, and a --job on connect would read as
-    a trace that silently did not happen.
+    caller it had confirmed something, a --job on connect would read as a
+    trace that silently did not happen, and a --port with no --gateway would
+    name a port nothing connected to.
     """
     said = vars(ns)
     for dest, why in row.needs.get(ns.action, {}).items():
@@ -77,3 +79,6 @@ def _action_flags(parser, ns, row):
         if said[dest]:
             parser.error("%s %s does not take --%s. %s"
                          % (ns.command, ns.action, dest, why))
+    for dest, (other, why) in row.goes_with.items():
+        if said[dest] is not None and not said[other]:
+            parser.error("--%s needs --%s. %s" % (dest, other, why))

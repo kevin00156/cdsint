@@ -84,7 +84,14 @@ class Application(object):
     that writes one to a path was how the verdict used to be reached, and
     engine/plc_crc.py records why that could not work; a fake that still
     offered it would keep the idea alive in the one place nobody would look.
+    Its name is where the controller keeps its files, so it has one.
     """
+
+    def __init__(self, name="Application"):
+        self.name = name
+
+    def get_name(self):
+        return self.name
 
 
 class RemoteFile(object):
@@ -111,7 +118,14 @@ class Device(object):
         self.connected = False
 
     def get_file_list_of_directory(self, directory):
-        return [RemoteFile("Application.crc"), RemoteFile("Application.app")]
+        """What the controller holds, as it would list it. A controller with
+        nothing loaded has no application directory to list at all."""
+        name = directory.rsplit("/", 1)[-1]
+        held = [RemoteFile(name + suffix) for suffix, content
+                in ((".crc", self.crc), (".app", self.app)) if content]
+        if not held:
+            raise IOError("Could not find a part of the path: " + directory)
+        return held
 
     def upload_file(self, remote, local, overwrite):
         self.uploaded.append(remote)

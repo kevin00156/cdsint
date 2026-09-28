@@ -59,7 +59,6 @@ class TraceSetup(Trip):
         self.buffers_for = buffers_for
         self.hold = entry.borrowed(ide_globals, trace_run.HOLD_GLOBAL)
         self.job = None
-        self.application = None
         self.api = None             # the trace object, in memory only
         self.set_buffers = None     # found before login, called after step 5
         self.found.update({"task": None, "period_us": None,
@@ -116,17 +115,12 @@ class TraceSetup(Trip):
 
         MATCH alone does not stop a Keep login downloading: without these
         files beside the project it downloaded the whole application,
-        unasked (engine/plc_identity.py). Also where the application this
-        run traces is resolved. None when they agree.
+        unasked (engine/plc_identity.py). None when they agree.
         """
-        self.application = getattr(self.projects.primary,
-                                   "active_application", None)
-        if self.application is None:
-            return "this project has no active application to trace"
         return self.connected(self._judge_the_identity)
 
     def _judge_the_identity(self):
-        local, problem = self.pull(plc_crc.REMOTE_APP, plc_crc.PLC_APP_NAME)
+        local, problem = self.pull(self.remote["app"])
         if problem:
             return "%s; %s" % (problem, plc_identity.DOWNLOAD)
         code, problem = plc_identity.judged(
