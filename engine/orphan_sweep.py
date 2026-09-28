@@ -45,12 +45,15 @@ def cleanup_orphaned_files(export_dir, claimed, auto_delete, cached, new_cache):
     orphans, kept = _unclaimed(export_dir, claimed, cached)
     if (orphans or kept) and unhandled.any_so_far():
         # An object this run could not classify has no path, so its file is
-        # one of these, and the run cannot say which (SPEC D13).
+        # one of these, and the run cannot say which (SPEC D13). Only the
+        # deletion is skipped: a kept file still carries its entry, or the
+        # edit in it reads as never synced once the object is readable again,
+        # and the export after that writes over it.
         print("Orphan cleanup skipped: " + unhandled.summary())
         log_warning("Not deleting %d orphan(s): this run could not classify "
                     "every object, so some of them may belong to one of those."
                     % len(orphans))
-        removed, kept = [], []
+        removed = []
     else:
         removed = _delete_confirmed(export_dir, orphans, auto_delete)
     for rel_path in kept:

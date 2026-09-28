@@ -9,6 +9,7 @@ orphan now also needs a cache entry its file still matches.
 """
 import pytest
 
+from engine import entry_export
 from tests.sync_bench import Bench, folder, pou
 
 NEW_FB = u"FUNCTION_BLOCK NewFb\nVAR\nEND_VAR\n\n// === IMPLEMENTATION ===\ny := 2;"
@@ -89,3 +90,29 @@ def test_a_compare_in_between_does_not_turn_an_orphan_into_new_work(bench):
 
     assert bench.files() == ["A/Foo2.st"]
     assert result["data"]["pending_import"] == []
+
+
+def test_an_edit_to_the_file_of_an_unreadable_object_survives_it(
+        monkeypatch, tmp_path):
+    # The sweep skipped by an object it could not classify emptied its kept
+    # list with the deletions, so the edited file lost its cache entry, read
+    # as never synced once the object could be read again, and that export
+    # wrote the IDE's text over the edit.
+    bench = Bench(monkeypatch, tmp_path, folder("A", pou("Foo"), pou("Bar")))
+    assert bench.export()["ok"]
+    bench.edit("A/Bar.st", u"x := 1;", u"x := 1; // precious")
+    resolve = entry_export.resolve_object
+
+    def unreadable_bar(obj, *args):
+        if obj.get_name() == "Bar":
+            raise IOError("the plugin for Bar is missing")
+        return resolve(obj, *args)
+
+    monkeypatch.setattr(entry_export, "resolve_object", unreadable_bar)
+    skipped = bench.export(auto_delete_orphans=True)
+    monkeypatch.setattr(entry_export, "resolve_object", resolve)
+    again = bench.export()
+
+    assert skipped["data"]["pending_import"] == ["A/Bar.st"]
+    assert u"precious" in bench.read("A/Bar.st")
+    assert again["data"]["pending_import"] == ["A/Bar.st"]
