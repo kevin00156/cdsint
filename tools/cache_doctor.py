@@ -45,7 +45,7 @@ import _root  # noqa: E402,F401
 
 from engine.codesys_constants import PROFILE_HASH  # noqa: E402
 from engine.sync_cache import CACHE_VERSION
-from engine.sync_cache import file_signature  # noqa: E402
+from engine.sync_cache import file_signature, normalize_path  # noqa: E402
 
 CACHE_NAME = "sync_cache.json"
 
@@ -99,7 +99,8 @@ def load_cache(base_dir):
 
 
 def scan_disk(base_dir):
-    """Every .st/.xml file under base_dir, as normalized relative paths."""
+    """Every .st/.xml file under base_dir, as relative paths in the case the
+    disk has them; normalize_path them before comparing with cache keys."""
     found = set()
     for root, dirs, files in os.walk(base_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
@@ -232,8 +233,8 @@ def main(argv=None):
         print("       every object in those folders loses the Merkle skip.")
 
     # ── 4. coverage vs the actual tree ───────────────────────────────────
-    on_disk = scan_disk(base_dir)
-    cached_paths = set(objects.keys())
+    on_disk = set(normalize_path(path) for path in scan_disk(base_dir))
+    cached_paths = set(normalize_path(path) for path in objects)
     uncached = on_disk - cached_paths
     stale = cached_paths - on_disk
 

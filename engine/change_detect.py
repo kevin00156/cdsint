@@ -324,10 +324,10 @@ def scan_new_disk_files(base_dir, ide_paths):
         list of {"name": str, "path": rel_path, "file_path": abs_path}
     """
     new_files = []
-    known_paths = set(ide_paths.keys())
+    known_paths = set(normalize_path(path) for path in ide_paths)
 
     for rel_path, abs_path in sync_files(base_dir):
-        if rel_path in known_paths:
+        if normalize_path(rel_path) in known_paths:
             continue
         name = os.path.splitext(os.path.basename(rel_path))[0]
         if rel_path.endswith(".xml") and "." in name:

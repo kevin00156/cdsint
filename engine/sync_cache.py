@@ -69,9 +69,16 @@ def signature_matches(entry, file_path):
 
 
 def normalize_path(path):
-    """Normalize path separators to forward slashes for cross-platform consistency in cache keys."""
+    """The key a sync-folder path is known by: forward slashes, lower case.
+
+    Lower case because the file system is Windows': renaming an object only
+    in case leaves its file under the old case, so a key that kept the case
+    called the file an orphan of the object it still belongs to, and the
+    cache entry a stranger. Every comparison of sync-folder paths goes
+    through here, so they all agree with the file system.
+    """
     if path is None: return ""
-    return path.replace("\\", "/").strip("/")
+    return path.replace("\\", "/").strip("/").lower()
 
 
 def build_folder_hashes(object_hashes):
@@ -123,6 +130,11 @@ def cached_classification(entry):
     return tuple(padded[:3])
 
 
+def _rekeyed(section):
+    return dict((normalize_path(key), value)
+                for key, value in (section or {}).items())
+
+
 def load_sync_cache(base_dir):
     """Load the synchronization cache from sync_cache.json in the base directory.
 
@@ -152,9 +164,11 @@ def load_sync_cache(base_dir):
                     shaped = cached_classification(entry)
                     if shaped is not None:
                         types[guid] = shaped
+                # Re-keyed, so a cache written before the keys were lower
+                # case still answers for its files.
                 return {
-                    "objects": data.get("objects", {}),
-                    "folders": data.get("folders", {}),
+                    "objects": _rekeyed(data.get("objects")),
+                    "folders": _rekeyed(data.get("folders")),
                     "types": types,
                     "version": cache_version
                 }

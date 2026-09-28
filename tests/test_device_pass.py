@@ -10,6 +10,7 @@ from engine import (classify, device_changes, device_pass, device_params,
                     import_items, unhandled)
 from engine.codesys_constants import TYPE_GUIDS
 from engine.managers_device import DeviceManager
+from engine.sync_cache import normalize_path
 from tests.device_fakes import Device, Ident, a_master, a_slave
 
 PLC = "CODESYS_Control_for_Linux_SL"
@@ -187,7 +188,8 @@ def test_export_writes_one_file_per_device_and_keeps_an_unimported_edit(tmp_path
     rel = PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device"
     with io.open(str(tmp_path / rel), encoding="utf-8") as f:
         assert dt.same(f.read(), device_params.render(slave))
-    context["cache_data"] = {"objects": {rel: {"disk_mtime": 1, "disk_size": 1}}}
+    context["cache_data"] = {"objects": {normalize_path(rel): {"disk_mtime": 1,
+                                                              "disk_size": 1}}}
     write(str(tmp_path / rel), device_params.render(slave).replace(
         "c1/1627394048/Value = 6", "c1/1627394048/Value = 8"))
     assert device_pass.export_devices(project, str(tmp_path), context,

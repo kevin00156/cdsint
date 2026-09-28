@@ -438,7 +438,7 @@ class TestASaveThatDiesKeepsTheOldCache:
     next export write over an edit nobody imported."""
 
     def test_the_last_good_cache_survives(self, utils, tmp_path):
-        good = {"A/Foo.st": {"ide_hash": "1", "disk_mtime": 5, "disk_size": 9}}
+        good = {"a/foo.st": {"ide_hash": "1", "disk_mtime": 5, "disk_size": 9}}
         utils.save_sync_cache(str(tmp_path), good, {}, {})
 
         # Serialising dies on the second entry, after the first was written.
