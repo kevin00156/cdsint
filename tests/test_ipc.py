@@ -118,17 +118,3 @@ def test_the_rename_fallback_works_without_os_replace(tmp_path, monkeypatch):
     ipc.write_json(path, {"beat": 2})
     assert ipc.read_json(path) == {"beat": 2}
     assert not os.path.exists(path + ".tmp")
-
-
-def test_a_bytes_payload_from_json_dumps_is_decoded(tmp_path, monkeypatch):
-    # IronPython 2.7's json.dumps hands back bytes; io.open in text mode will
-    # not take those.
-    real_dumps = ipc.json.dumps
-
-    def bytes_dumps(*args, **kwargs):
-        return real_dumps(*args, **kwargs).encode("utf-8")
-
-    monkeypatch.setattr(ipc.json, "dumps", bytes_dumps)
-    path = str(tmp_path / "reg.json")
-    ipc.write_json(path, {"a": 1})
-    assert ipc.read_json(path) == {"a": 1}

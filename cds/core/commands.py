@@ -126,8 +126,8 @@ def message(level, text):
     Two producers write these — the stand-in UI recording a dialog nobody saw,
     and the watcher's own notes — and a reader of `messages` cannot tell which
     made a given line, so they had better be the same shape. The text is
-    converted here because IronPython 2.7 hands back bytes and unicode from
-    the same API and only one of them survives being printed.
+    converted here because what the stand-in UI is handed is whatever the IDE
+    passed to a dialog, which need not be text yet.
     """
     return {"level": level, "text": as_text(text)}
 

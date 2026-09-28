@@ -20,9 +20,9 @@ import io
 import json
 import os
 
-# IronPython 2.7 has two string types and json hands back the unicode one;
-# CPython 3 has one. The set collapses to whichever this interpreter has.
-TEXT_TYPES = tuple(set([type(u""), type("")]))
+# The one text type: `unicode` on IronPython 2.7, where `str` and `bytes` are
+# that same type, and `str` on CPython 3. json hands back this one on both.
+STRING = type(u"")
 
 # What a value may be. The name is what a refusal prints, so it reads as the
 # thing a person would type into the file rather than as a Python type.
@@ -132,8 +132,6 @@ def write(path, values):
     """
     text = json.dumps(_plain(values), ensure_ascii=False, indent=2,
                       sort_keys=True)
-    if not isinstance(text, type(u"")):  # IronPython 2.7 hands back bytes
-        text = text.decode("utf-8")
     with io.open(path, "w", encoding="utf-8") as handle:
         handle.write(text + u"\n")
 
@@ -215,7 +213,7 @@ def _count(path, key, value):
 
 
 def _text(path, key, value):
-    if not isinstance(value, TEXT_TYPES):
+    if not isinstance(value, STRING):
         raise Invalid(_wrong_type(path, key, value))
     return value
 
@@ -230,7 +228,7 @@ def _actions(path, key, value):
     if not isinstance(value, list):
         raise Invalid(_wrong_type(path, key, value))
     for word in value:
-        if not isinstance(word, TEXT_TYPES):
+        if not isinstance(word, STRING):
             raise Invalid(_wrong_type(path, key, value))
         if word.strip().lower() not in PLC_ACTIONS:
             raise Invalid(_refusal(

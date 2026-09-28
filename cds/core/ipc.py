@@ -94,8 +94,6 @@ def write_json(path, data):
     """
     makedirs(os.path.dirname(path))
     text = json.dumps(data, indent=2, sort_keys=True)
-    if not isinstance(text, type(u"")):  # IronPython 2.7 hands back bytes
-        text = text.decode("utf-8")
     tmp = path + ".tmp"
     with io.open(tmp, "w", encoding="utf-8") as handle:
         handle.write(text)

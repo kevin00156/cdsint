@@ -72,7 +72,7 @@ def name_of(obj):
     included, so each attempt stands on its own and the last resort is a
     sentence rather than another exception.
     """
-    if isinstance(obj, bytes) or isinstance(obj, type(u"")):
+    if isinstance(obj, type(u"")):
         return _text(obj)
     try:
         return _text(obj.get_name())
