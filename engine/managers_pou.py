@@ -107,7 +107,7 @@ class POUManager(ObjectManager):
                 if obj is None:
                     return None
             elif special_kind in self.MEMBER_CREATORS:
-                obj = self._create_member(container, name, special_kind)
+                obj = self.create_member(container, name, special_kind)
                 if obj is None:
                     return None
             elif (special_kind in self.TOPLEVEL_CREATORS
@@ -139,7 +139,7 @@ class POUManager(ObjectManager):
             log_error("Failed to create " + name + ": " + safe_str(e))
         return None
 
-    def _create_member(self, container, name, kind):
+    def create_member(self, container, name, kind):
         """Create a method/action/property on its parent POU or interface.
 
         Fails loud instead of falling through to create_pou(). A container that

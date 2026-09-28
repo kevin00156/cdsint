@@ -282,7 +282,7 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
                             try:
                                 restore_pou_children(pou_obj, children, import_managers, project)
                             except Exception as e:
-                                log_warning("Could not restore children for POU " + name + ": " + safe_str(e))
+                                unhandled.note(name, "its members could not be restored: " + safe_str(e))
                 
                 for rel_path, file_path, name, type_guid, is_new, item in items:
                     res = child_named(container, name)
