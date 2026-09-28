@@ -36,7 +36,7 @@ from engine.st_text import (
 from engine.strings import safe_str, calculate_hash
 from engine.sync_log import log_info, log_error, log_warning
 from engine.object_paths import clear_path_caches
-from engine.classify import collect_accessors, resolve_object
+from engine.classify import PathClaims, collect_accessors, resolve_object
 from engine import unhandled
 from engine.sync_dir import sync_files
 from engine.content_compare import (
@@ -73,6 +73,7 @@ class _Scan(object):
         self.carried = {}
         self.path_cache_hits = 0
         self.path_invalidations = 0
+        self.claims = PathClaims()
 
     def carry_over(self, path):
         if not path:
@@ -112,7 +113,8 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     log_info("  Pass 2 complete in {:.2f}s".format(time.time() - p2_start))
 
     # Pass 3: Disk Scan
-    new_on_disk = scan_new_disk_files(base_dir, scan.paths)
+    new_on_disk = scan_new_disk_files(base_dir,
+                                      list(scan.paths) + list(scan.claims.shared))
     # A file no object claims keeps its entry too: that entry is what lets
     # the next export tell an orphan from somebody's new file (orphan_sweep).
     for item in new_on_disk:
@@ -178,6 +180,11 @@ def _scan_ide(project, cache_data, export_xml):
             # to keep the old entry alive.
             stale = scan.cached_types.get(obj_guid) if obj_guid else None
             scan.carry_over(stale[2] if stale else None)
+    # A shared file is compared for neither object: whichever came first
+    # would stand for both.
+    for rel_path in list(scan.paths):
+        if normalize_path(rel_path) in scan.claims.shared:
+            del scan.paths[rel_path]
     return scan
 
 
@@ -206,6 +213,8 @@ def _scan_one(obj, obj_guid, scan, export_xml, project):
     collect_accessors(obj, obj_guid, eff_type, scan.accessors)
 
     scan.types[obj_guid] = (eff_type, is_xml, rel_path)
+    if not scan.claims.claim(rel_path, obj_guid, obj):
+        return
 
     norm_path = normalize_path(rel_path)
     scan.paths[rel_path] = obj
@@ -318,7 +327,7 @@ def _compare_file(obj, rel_path, file_path, eff_type, is_xml, scan, project):
 def scan_new_disk_files(base_dir, ide_paths):
     """
     Walk the export directory and find .st / .xml files that are
-    NOT matching any IDE object path.
+    NOT matching any IDE object path. ide_paths is any iterable of them.
 
     Returns:
         list of {"name": str, "path": rel_path, "file_path": abs_path}

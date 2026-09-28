@@ -80,7 +80,7 @@ ALLOWED_FUNCTION_LINES = {
         "compare_project": 87,
     },
     "engine/entry_export.py": {
-        "export_project": 199,
+        "export_project": 173,
     },
     "engine/entry_import.py": {
         "import_project": 228,

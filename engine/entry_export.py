@@ -18,8 +18,8 @@ from engine.sync_log import (
 )
 from engine.object_paths import clear_path_caches
 from engine.classify import (
-    SKIP_SYNC_DIRECTION, collect_accessors, create_import_managers,
-    manager_for, resolve_object
+    SKIP_SYNC_DIRECTION, PathClaims, collect_accessors,
+    create_import_managers, manager_for, resolve_object
 )
 from engine.backup import finalize_sync_operation
 from engine.device_pass import export_devices
@@ -53,6 +53,33 @@ def _carry_entry(cache_data, norm_path, new_cache):
         return  # A cache file of the wrong shape is no cache.
     if norm_path and cached_obj:
         new_cache[norm_path] = cached_obj
+
+
+def _export_one(obj, context, managers, project):
+    """Export one object: (what the manager did, its path). Raises whatever
+    the object raises; the caller names it (SPEC D13)."""
+    cache_data = context['cache_data']
+    obj_guid = safe_str(obj.guid)
+    decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
+                             context['export_xml'], project)
+    effective_type = decided.effective_type
+    rel_path = decided.rel_path
+
+    # Stored for the next run whatever was decided, skips included:
+    # a "no path here" answer is worth as much as a path next time.
+    context['new_types'][obj_guid] = (effective_type, decided.is_xml, rel_path)
+    collect_accessors(obj, obj_guid, effective_type,
+                      context['property_accessors'])
+    _carry_entry(cache_data, normalize_path(rel_path) if rel_path else None,
+                 context['new_cache'])
+
+    if decided.skip_reason:
+        _claim_unwritten(decided, context['exported_paths'])
+        return None, rel_path
+    if not context['claims'].claim(rel_path, obj_guid, obj):
+        return None, rel_path
+    manager = manager_for(managers, effective_type, decided.is_xml)
+    return manager.export(obj, effective_type, rel_path, context), rel_path
 
 
 def _save_cache(export_dir, new_cache, context):
@@ -121,9 +148,6 @@ def export_project(export_dir, values, projects_obj=None):
     all_objects = projects_obj.primary.get_children(recursive=True)
     print("Found " + str(len(all_objects)) + " total objects")
     
-    exported_new = 0
-    exported_updated = 0
-    exported_identical = 0
     exported_failed = 0
     pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
     
@@ -146,56 +170,33 @@ def export_project(export_dir, values, projects_obj=None):
         'exported_paths': exported_paths,
         'cache_data': cache_data,
         'new_cache': new_cache,
-        'new_types': {}
+        'new_types': {},
+        'claims': PathClaims(),
     }
 
     # Every object, in the order the tree gave them
+    counts = {"new": 0, "updated": 0, "identical": 0}
     for obj in all_objects:
         try:
-            obj_guid = safe_str(obj.guid)
-            decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
-                                     export_xml, project)
-            effective_type = decided.effective_type
-            is_xml = decided.is_xml
-            rel_path = decided.rel_path
-
-            # Stored for the next run whatever was decided, skips included:
-            # a "no path here" answer is worth as much as a path next time.
-            context['new_types'][obj_guid] = (effective_type, is_xml, rel_path)
-
-            norm_path = normalize_path(rel_path) if rel_path else None
-            
-            collect_accessors(obj, obj_guid, effective_type,
-                              context['property_accessors'])
-
-            _carry_entry(cache_data, norm_path, new_cache)
-
-            if decided.skip_reason:
-                _claim_unwritten(decided, exported_paths)
-                continue
-
-            manager = manager_for(managers, effective_type, is_xml)
-            wrote = manager.export(obj, effective_type, rel_path, context)
-            if wrote == "new":
-                exported_new += 1
-            elif wrote == "updated":
-                exported_updated += 1
-            elif wrote == "identical":
-                exported_identical += 1
-            elif wrote == "pending":
-                # Left alone on purpose: the file holds an edit nobody has
-                # imported yet (SPEC 6.1). Not a failure of this object, so
-                # it stays out of the unhandled register and gets its own
-                # list -- what the reader has to do about it is different.
-                pending_import.append(rel_path)
-                log_warning("Not overwriting " + rel_path + ": it has been "
-                            "edited on disk since the last sync. Import it "
-                            "first, or delete it and export again.")
-
+            wrote, rel_path = _export_one(obj, context, managers, project)
         except Exception as e:
             exported_failed += 1
             unhandled.note(obj, e)
             log_error("Error exporting " + unhandled.name_of(obj) + ": " + safe_str(e))
+            continue
+        if wrote in counts:
+            counts[wrote] += 1
+        elif wrote == "pending":
+            # Left alone on purpose: the file holds an edit nobody has
+            # imported yet (SPEC 6.1). Not a failure of this object, so
+            # it stays out of the unhandled register and gets its own
+            # list -- what the reader has to do about it is different.
+            pending_import.append(rel_path)
+            log_warning("Not overwriting " + rel_path + ": it has been "
+                        "edited on disk since the last sync. Import it "
+                        "first, or delete it and export again.")
+    exported_new, exported_updated, exported_identical = (
+        counts["new"], counts["updated"], counts["identical"])
 
     # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
     pending_import.extend(export_devices(project, export_dir, context, managers))
