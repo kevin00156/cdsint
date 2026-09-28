@@ -86,8 +86,8 @@ class Trip(object):
         return self.name_the_application() or self.point_at_gateway()
 
     def name_the_application(self):
-        """The active application, and its files on the controller. None if
-        there is one: its name is where the controller keeps them."""
+        """Find the active application, and so where the controller keeps
+        its files, which are named after it. None when there is one."""
         self.application = getattr(self.projects.primary,
                                    "active_application", None)
         if self.application is None:

@@ -81,15 +81,15 @@ class DownloadTrip(Trip):
             session.login(option.Never, False)
             session.create_boot_application()
             session.start()
-            # Read while logged in: after the logout it was read as "unknown"
-            # and nothing held that against the download.
+            # Read while logged in: after the logout the session has no
+            # application left to report on.
             self.state_after = safe_str(session.application_state)
         except Exception as exc:
             # Named rather than let out as a traceback: "the controller
             # refused the login" and "the download stopped halfway" are
             # things that happen on a bench, not bugs in this file. The
-            # login is where a full download happens, so from inside it on
-            # the application may already have been stopped.
+            # login is where a full download happens, so any failure from
+            # inside it onwards may have left the application stopped.
             return ("the download did not complete, and the controller may "
                     "now be stopped or partly written: " + safe_str(exc))
         finally:
