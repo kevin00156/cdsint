@@ -35,6 +35,10 @@ CHECK_EVERY_S = 24 * 60 * 60
 
 # Long enough for a slow line, short enough that an offline machine whose
 # firewall drops packets rather than refusing them loses little, once a day.
+# It bounds the connection and each read, not the name lookup before them:
+# urllib has no timeout for getaddrinfo, so a machine whose DNS server does
+# not answer waits out the resolver's own timeout instead, once a day. Only a
+# thread could cut that short, and a daily courtesy does not earn one.
 QUERY_TIMEOUT_S = 2.0
 
 # The commands that have just said everything there is to say about this.

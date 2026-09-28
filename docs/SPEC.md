@@ -346,7 +346,7 @@ mutually exclusive, and argparse blocks them directly.
 |---|---|---|---|
 | `installs` | n/a | n/a | list the IDEs on this machine, their profile names, and whether they need admin |
 | `list` | n/a | n/a | list the IDEs that are listening. It asks "who is listening", not about one IDE, so it takes neither form |
-| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, then `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
+| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, checked against its published SHA-256 (8), then run the new body's own `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
 | `link [--script-dir D]` | n/a | n/a | junction every IDE's `ScriptDir\cdsint` onto this body's `stub\` and write `stub\body.path` (5.3). A ScriptDir needing an elevated shell is skipped without one, and a real directory in the way is left alone; either makes it exit 1 |
 | `ping`, `status`, `stop` | yes | n/a | the watcher's lifecycle, not under permission control |
 | `export [--delete-orphans]` | yes | yes | write the IDE project out as `.st` |
@@ -1389,8 +1389,17 @@ There is no release script and none is needed: a release is changing that
 line, dating its section in `CHANGELOG.md`, and pushing the tag `v` plus that
 number. CI's release job publishes the GitHub release once the tests pass, and
 refuses a tag that is not the version or a section that is not dated
-(`tools/release_notes.py`); `cdsint update` and `irm/setup.ps1` install the
-newest published release.
+(`tools/release_notes.py`). It attaches three files to the release: an
+archive of the commit the tests ran on, `cdsint-<tag>.zip`; its SHA-256,
+`cdsint-<tag>.zip.sha256`; and `irm/setup.ps1`, so that the one-line install
+from `releases/latest/download/setup.ps1` runs the installer of the release it
+installs. `cdsint update` and `irm/setup.ps1` install the newest published
+release from that archive, and only when it matches its checksum; a mismatch
+or a missing checksum is refused with the old body untouched. GitHub's own
+archive of a tag is not used: it is whatever the tag points at when somebody
+asks, not what was tested, and has nothing to check it against. The one
+unverified install is `setup.ps1 -Version main`, the branch as it stands,
+which says so.
 
 ---
 

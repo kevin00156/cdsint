@@ -27,13 +27,15 @@
 
 .PARAMETER Version
     Which release tag to download, "latest" for the newest release, or
-    "main" for the branch as it stands. Ignored with -Clone.
+    "main" for the branch as it stands. A release is installed only when its
+    archive matches the checksum published with it; main has none and is
+    installed unverified. Ignored with -Clone.
 
 .PARAMETER List
     Print the IDEs and ScriptDirs found, and change nothing.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
+    irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1 | iex
 
 .EXAMPLE
     .\setup.ps1 -Clone C:\path\to\cdsint
@@ -46,11 +48,9 @@ param(
     [switch] $List
 )
 
-$ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 $RepoUrl = "https://github.com/kevin00156/cdsint"
 $LatestUrl = "https://api.github.com/repos/kevin00156/cdsint/releases/latest"
+$DownloadUrl = "https://github.com/kevin00156/cdsint/releases/download"
 
 
 function Get-Body {
@@ -63,45 +63,122 @@ function Get-Body {
         listening and the status window's position live there too, and
         replacing the body must not take them with it. cdsint/release.py
         names the same path; `cdsint update` replaces what is here.
+
+        Replaced rather than merged, since a file deleted upstream must not
+        survive an upgrade and keep a stub in the menu that is gone; and
+        replaced the way cdsint/update.py does it. The new tree is unpacked
+        beside the old one, on the same volume, and swapped in by two
+        renames, so a failed download, a checksum that does not match, or a
+        shell whose current directory is inside the body stops the install
+        with the old body whole.
     #>
     param([string] $Version)
 
     $appDir = Join-Path $env:LOCALAPPDATA "cdsint"
     $root = Join-Path $appDir "body"
+    $staging = "$root.new"
+    $retired = "$root.old"
 
     if ($Version -eq "latest") {
         $Version = (Invoke-RestMethod -Uri $LatestUrl -UseBasicParsing).tag_name
     }
-    if ($Version -eq "main") {
-        $url = "$RepoUrl/archive/refs/heads/main.zip"
-    } else {
-        $url = "$RepoUrl/archive/refs/tags/$Version.zip"
+    foreach ($leftover in @($staging, $retired)) {
+        if (Test-Path $leftover) { Remove-Item $leftover -Recurse -Force }
     }
-    $zip = Join-Path $env:TEMP "cdsint-$Version.zip"
-    $unpacked = Join-Path $env:TEMP "cdsint-unpacked-$Version"
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
     Write-Host "[*] Downloading $Version from $RepoUrl" -ForegroundColor Cyan
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-        if (Test-Path $unpacked) { Remove-Item $unpacked -Recurse -Force }
-        Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+    $zip = Save-Archive -Version $Version -Staging $staging
+    $inner = Expand-Tree -Zip $zip -Destination (Join-Path $staging "unpacked")
 
-        # GitHub wraps the tree in one directory named after the ref.
-        $inner = Get-ChildItem $unpacked -Directory | Select-Object -First 1
+    Remove-FlatBody -AppDir $appDir -Tree $inner
 
-        Remove-FlatBody -AppDir $appDir -Tree $inner.FullName
-
-        # Replace rather than merge: a file deleted upstream must not survive
-        # an upgrade, or the Scripts menu keeps showing a stub that is gone.
-        New-Item -ItemType Directory -Force -Path $appDir | Out-Null
-        if (Test-Path $root) { Remove-Item $root -Recurse -Force }
-        Move-Item -Path $inner.FullName -Destination $root
-    } finally {
-        if (Test-Path $zip) { Remove-Item $zip -Force }
-        if (Test-Path $unpacked) { Remove-Item $unpacked -Recurse -Force }
+    if (Test-Path $root) {
+        try {
+            Rename-Item -Path $root -NewName (Split-Path $retired -Leaf)
+        } catch {
+            throw "Could not move $root aside, so nothing was changed: $($_.Exception.Message) Close whatever has a file open in it (a shell whose current directory is inside it, an editor) and run this again."
+        }
     }
+    try {
+        Move-Item -Path $inner -Destination $root
+    } catch {
+        if (Test-Path $retired) { Rename-Item -Path $retired -NewName (Split-Path $root -Leaf) }
+        throw
+    }
+    Remove-Leftover -Path $staging
+    Remove-Leftover -Path $retired
     Write-Host "[+] Body installed to $root" -ForegroundColor Green
     return $root
+}
+
+
+function Save-Archive {
+    <#
+        The archive of $Version, downloaded into $Staging and, for a release,
+        checked against the SHA-256 the release job published beside it;
+        cdsint/release.py names the same two files. GitHub's own archive of
+        a tag is whatever the tag points at when somebody asks, with nothing
+        to check it against, so a release without the checksum is refused
+        rather than installed from there. main is a branch, which no release
+        job archived: it is the one download that goes unchecked, and it
+        says so.
+    #>
+    param([string] $Version, [string] $Staging)
+
+    $zip = Join-Path $Staging "cdsint-$Version.zip"
+    if ($Version -eq "main") {
+        Write-Host "[!] main is not a release and has no checksum; installing it unverified." -ForegroundColor Yellow
+        Invoke-WebRequest -Uri "$RepoUrl/archive/refs/heads/main.zip" -OutFile $zip -UseBasicParsing
+        return $zip
+    }
+    $url = "$DownloadUrl/$Version/cdsint-$Version.zip"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+        Invoke-WebRequest -Uri "$url.sha256" -OutFile "$zip.sha256" -UseBasicParsing
+    } catch {
+        throw "Could not download $url and its .sha256: $($_.Exception.Message) Only a release published with its checksum is installed, and releases older than that have none. -Version main installs the branch as it stands, unverified."
+    }
+    $published = [string] (Get-Content -Path "$zip.sha256" -Raw)
+    $expected = @($published.Trim() -split '\s+')[0]
+    $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash
+    if ($actual -ne $expected) {
+        throw "$url does not match the SHA-256 published beside it; nothing was installed."
+    }
+    return $zip
+}
+
+
+function Expand-Tree {
+    <#
+        The one directory the archive holds, unpacked under $Destination.
+        The release job and GitHub both wrap the tree in a directory named
+        after the version; anything else is not an archive of this repo.
+    #>
+    param([string] $Zip, [string] $Destination)
+
+    Expand-Archive -Path $Zip -DestinationPath $Destination -Force
+    $top = @(Get-ChildItem $Destination -Force)
+    if ($top.Count -ne 1 -or -not $top[0].PSIsContainer) {
+        throw "$Zip does not hold one tree: $($top.Name -join ', ')"
+    }
+    return $top[0].FullName
+}
+
+
+function Remove-Leftover {
+    <#
+        Once the new body is in place the install stands. A copy that will
+        not delete, held open by a virus scanner say, is named, not fatal.
+    #>
+    param([string] $Path)
+
+    if (-not (Test-Path $Path)) { return }
+    try {
+        Remove-Item $Path -Recurse -Force -ErrorAction Stop
+    } catch {
+        Write-Host "[!] Could not delete $Path; delete it by hand." -ForegroundColor Yellow
+    }
 }
 
 
@@ -146,6 +223,29 @@ function Invoke-Cdsint {
 }
 
 
+function Test-Python {
+    <#
+        Is the `python` on PATH one that can run cdsint? Asked of python
+        itself, because being found proves nothing: a stock Windows has a
+        python.exe in WindowsApps that only opens the Microsoft Store. Asked
+        before anything is downloaded, so that a machine without it is told
+        so rather than left with a body it cannot run.
+
+        Get-Command first because with $ErrorActionPreference = "Stop" a
+        missing command throws CommandNotFound. stderr is not redirected:
+        in Windows PowerShell 5.1 a redirected native stderr line becomes an
+        error record, which "Stop" turns into a throw.
+    #>
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) { return $false }
+    try {
+        & python -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" | Out-Null
+    } catch {
+        return $false
+    }
+    return ($LASTEXITCODE -eq 0)
+}
+
+
 function Find-Body {
     <#
         The clone named, the checkout this script sits in when only listing,
@@ -180,11 +280,9 @@ function Install-Cdsint {
     #>
     Write-Host "--- cdsint setup ---" -ForegroundColor Cyan
 
-    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-        # Checked rather than caught: with $ErrorActionPreference = "Stop" the
-        # call throws CommandNotFound, and the sentence about needing Python
-        # is never reached.
-        Write-Host "[!] cdsint needs Python 3.11 or later on PATH; 'python' was not found." -ForegroundColor Red
+    if (-not (Test-Python)) {
+        Write-Host "[!] cdsint needs Python 3.11 or later as 'python' on PATH, and the one there is missing, older, or the Microsoft Store alias." -ForegroundColor Red
+        Write-Host "    Install Python 3.11 or later from https://www.python.org/downloads/ with 'Add python.exe to PATH' ticked, and turn 'python.exe' off under Settings > Apps > Advanced app settings > App execution aliases." -ForegroundColor Red
         return 1
     }
     $body = Find-Body
@@ -201,13 +299,32 @@ function Install-Cdsint {
         Write-Host "[!] pip failed; run: python -m pip install -e `"$body`"" -ForegroundColor Red
         return 1
     }
+    if ($linked -ne 0) {
+        Write-Host "[!] The cdsint command is installed, but 'cdsint link' did not put it in every IDE's Scripts menu; it said why above. Run 'cdsint link' again once that is fixed." -ForegroundColor Red
+        return $linked
+    }
     Write-Host "[+] 'cdsint --help' to start; restart any IDE that was open." -ForegroundColor Green
     if (-not $Clone) {
         Write-Host "Later, 'cdsint update' replaces the body with the newest release." -ForegroundColor Cyan
     }
-    return $linked
+    return 0
 }
 
 
-$code = Install-Cdsint
+# A script block of its own, because `irm ... | iex` runs this in the
+# caller's shell and a preference set out here would stay set there after
+# the install. The console's encoding belongs to the process, not to a scope,
+# so it is put back by hand. A failure under iex is thrown rather than
+# exited: the shell stays open, and $? says it failed.
+$code = & {
+    $ErrorActionPreference = "Stop"
+    $encoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        Install-Cdsint
+    } finally {
+        [Console]::OutputEncoding = $encoding
+    }
+}
 if ($PSCommandPath) { exit $code }
+if ($code -ne 0) { throw "cdsint setup did not finish; the lines above say what failed." }

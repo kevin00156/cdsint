@@ -137,7 +137,7 @@ Every command that touches a project takes one of two forms, and never both:
 |---|---|---|---|
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
 | `list` | — | — | which IDEs are listening; it asks about this machine, not about one IDE |
-| `update` | — | — | replace a downloaded install with the newest release, and link any IDE added since |
+| `update` | — | — | replace a downloaded install with the newest release, once it matches its published SHA-256, and link any IDE added since |
 | `link [--script-dir D]` | — | — | put this install in every IDE's Scripts menu |
 | `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
