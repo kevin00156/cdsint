@@ -420,7 +420,7 @@ like this is complete:
 | `backup_retention_count` | integer | how many timestamped backups to keep | `10` |
 | `save_after_import` | boolean | save the project after an import | `true` |
 | `save_after_export` | boolean | save the project after an export | `true` |
-| `auto_delete_orphans` | boolean | delete `.st` files with no object behind them, without asking | `false` |
+| `auto_delete_orphans` | boolean | delete orphans without asking, as `--delete-orphans` does. An orphan is a file with no object behind it that the last sync here wrote and nobody has touched since; any other such file is kept and reported as waiting for import, and a fresh clone, with no sync cache yet, has no orphans | `false` |
 | `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for | `256` |
 
 **A file that is wrong stops the command.** A key cdsint does not know, a

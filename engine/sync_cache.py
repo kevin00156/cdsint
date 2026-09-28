@@ -54,6 +54,20 @@ def file_signature(file_path, stat_info=None):
     return int(s.st_mtime * 1000), s.st_size
 
 
+def signature_matches(entry, file_path):
+    """Is the file exactly as the sync that wrote this cache entry left it?
+
+    No entry is not "unchanged", it is "no idea", and the answer is False.
+    """
+    if not entry:
+        return False
+    try:
+        signature = file_signature(file_path)
+    except OSError:
+        return False
+    return signature == (entry.get("disk_mtime"), entry.get("disk_size"))
+
+
 def normalize_path(path):
     """Normalize path separators to forward slashes for cross-platform consistency in cache keys."""
     if path is None: return ""

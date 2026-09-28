@@ -71,7 +71,7 @@ def _find_function(name):
     has one.
 
     Anything under engine/, which is both the codesys_* modules and the entry
-    bodies: cleanup_orphaned_files lives in entry_export. What identifies the
+    bodies: cleanup_orphaned_files lives in orphan_sweep. What identifies the
     engine's own is not where the name is found but who it says it belongs to.
     """
     for module in list(sys.modules.values()):

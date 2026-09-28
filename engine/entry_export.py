@@ -23,113 +23,8 @@ from engine.classify import (
 )
 from engine.backup import finalize_sync_operation
 from engine.device_pass import export_devices
-from engine.sync_dir import sync_files
+from engine.orphan_sweep import cleanup_orphaned_files
 from engine import entry, settings, unhandled
-
-from cds.core import dialogs
-
-# Shared constants and utilities imported from modules
-
-
-def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
-    """Delete the files in export_dir no object claims. Returns how many.
-
-    The dialog has two buttons, so there are two answers and both are a
-    number. It used to carry a third branch for a Cancel button that no
-    version of this dialog has ever had, and export read the None it
-    would have returned as "cancelled" -- a state nothing could reach.
-
-    auto_delete is the settings file's answer to the same question, so it is
-    passed in rather than read here: one read of the settings per command,
-    and the caller already did it.
-    """
-    # Everything first, so the preview can show the whole list. The walk and
-    # its skip rules are sync_dir's, the same ones the new-file scan uses:
-    # this sweep offers files for deletion, so it must not see a file the
-    # scan refuses to look at (and therefore never claims).
-    orphaned_items = [rel_path for rel_path, _abs in sync_files(export_dir)
-                      if rel_path not in current_objects]
-
-    if not orphaned_items:
-        return 0
-
-    # An object this run could not classify has no path, so its .st file looks
-    # like an orphan and deleting it would throw away a file the project still
-    # needs. The run does not know which files those are -- that is what "could
-    # not classify" means -- so it deletes none of them.
-    if unhandled.any_so_far():
-        print("Orphan cleanup skipped: " + unhandled.summary())
-        log_warning("Not deleting %d orphan(s): this run could not classify "
-                    "every object, so some of them may belong to one of those."
-                    % len(orphaned_items))
-        return 0
-
-    if auto_delete:
-        delete_them = True
-    else:
-        # Prompt user
-        message = "The following files exist in the export directory but are NOT in the CODESYS project (orphans):\n\n"
-        # Show first 15 files as preview
-        for item in orphaned_items[:15]:
-            message += "- " + item + "\n"
-        if len(orphaned_items) > 15:
-            message += "... and " + str(len(orphaned_items) - 15) + " more.\n"
-        
-        message += "\nWould you like to delete these orphaned files?"
-        
-        # buttons: Delete (Yes), Ignore (No)
-        from engine.codesys_ui import ask_yes_no
-        from engine.sync_log import timed_prompt
-        delete_them = timed_prompt(ask_yes_no, dialogs.DELETE_ORPHANS,
-                                   message)
-    
-    removed_count = 0
-    if not delete_them:
-        print("Orphaned files ignored.")
-        return 0
-
-    print("Cleaning up orphaned files...")
-    for rel_path in orphaned_items:
-        full_path = os.path.join(export_dir, rel_path.replace("/", os.sep))
-        try:
-            if os.path.exists(full_path):
-                os.remove(full_path)
-                removed_count += 1
-                print("Deleted: " + rel_path)
-        except Exception as e:
-            print("Error deleting " + rel_path + ": " + safe_str(e))
-    
-    # Now clean up empty directories
-    # Use topdown=False to delete subdirectories before parents
-    for root, dirs, files in os.walk(export_dir, topdown=False):
-        # Also skip hidden dirs here
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        
-        rel_root = os.path.relpath(root, export_dir)
-        if rel_root == "." or not rel_root:
-            continue
-        
-        rel_path = rel_root.replace("\\", "/")
-        
-        # Check if this folder or any of its children should exist
-        folder_needed = False
-        for obj_path in current_objects:
-            if obj_path.startswith(rel_path + "/"):
-                folder_needed = True
-                break
-        
-        if not folder_needed and rel_path not in current_objects:
-            # If directory is empty, delete it
-            try:
-                if not os.listdir(root):
-                    os.rmdir(root)
-                    print("Deleted empty folder: " + rel_path)
-            except OSError:
-                pass  # Not empty, or gone already. Either way, leave it.
-    return removed_count
-
-
-
 
 
 def _claim_unwritten(decided, exported_paths):
@@ -146,6 +41,18 @@ def _claim_unwritten(decided, exported_paths):
                     sync_direction_of(decided.effective_type)))
     if decided.rel_path:
         exported_paths.add(decided.rel_path)
+
+
+def _carry_entry(cache_data, norm_path, new_cache):
+    """Start this object's entry from the last sync's, so an object this run
+    skips or leaves pending keeps what the dirty-file guard reads (SPEC 6.1).
+    A manager that writes the file replaces it."""
+    try:
+        cached_obj = cache_data.get('objects', {}).get(norm_path)
+    except (AttributeError, TypeError):
+        return  # A cache file of the wrong shape is no cache.
+    if norm_path and cached_obj:
+        new_cache[norm_path] = cached_obj
 
 
 def _save_cache(export_dir, new_cache, context):
@@ -261,15 +168,7 @@ def export_project(export_dir, values, projects_obj=None):
             collect_accessors(obj, obj_guid, effective_type,
                               context['property_accessors'])
 
-            # --- PERSIST CACHE FOR SKIPPED OBJECTS ---
-            if cache_data and norm_path:
-                try:
-                    cached_obj = cache_data.get('objects', {}).get(norm_path)
-                    if cached_obj:
-                        new_cache[norm_path] = cached_obj
-                except (AttributeError, TypeError):
-                    pass  # A cache file of the wrong shape is no cache.
-            # ----------------------------------------
+            _carry_entry(cache_data, norm_path, new_cache)
 
             if decided.skip_reason:
                 _claim_unwritten(decided, exported_paths)
@@ -300,9 +199,12 @@ def export_project(export_dir, values, projects_obj=None):
 
     # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
     pending_import.extend(export_devices(project, export_dir, context, managers))
-    # Orphan cleanup now uses exported_paths set directly
-    removed_count = cleanup_orphaned_files(export_dir, exported_paths,
-                                           values["auto_delete_orphans"])
+    # A file no object claims that the last sync did not leave that way is
+    # somebody's work, so it waits for import rather than being deleted.
+    removed_count, unsynced = cleanup_orphaned_files(
+        export_dir, exported_paths, values["auto_delete_orphans"],
+        cache_data.get('objects', {}), new_cache)
+    pending_import.extend(unsynced)
     _save_cache(export_dir, new_cache, context)
 
     # Save and back up BEFORE stopping the clock and announcing completion.

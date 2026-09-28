@@ -467,7 +467,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `backup_name` | string | the backup file name | empty |
 | `backup_retention_count` | integer | how many backups to keep | 10 |
 | `save_after_import`, `save_after_export` | boolean | save after a sync | true |
-| `auto_delete_orphans` | boolean | delete orphans on disk automatically on export | false |
+| `auto_delete_orphans` | boolean | delete orphans on disk automatically on export (an orphan is defined in 6.1) | false |
 | `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for, see 6.8 | 256 |
 
 The one function that reads the file is the only validation: an unknown key, a
@@ -620,6 +620,13 @@ What is required of it:
   it saw as identical, so any `compare`, `verify`, or unconfirmed `import`
   (the comparison runs before the confirmation dialog) would let the next
   export overwrite that edit outright.
+- **Orphans are files the last sync left**. The same evidence decides what
+  export may delete (`engine/orphan_sweep.py`): a file no object claims is an
+  orphan only when the cache has an entry for it and its mtime and size still
+  match that entry. Any other unclaimed file is a file written for import to
+  create, or an edit made after its object went, so it is kept, goes into
+  `data.pending_import`, and `ok` is False. With no cache, as in a fresh
+  clone, nothing is an orphan and `--delete-orphans` deletes nothing.
 - **One save backup per operation.**
 - **Time spent waiting for a person to press a button is not counted in the
   elapsed time.**
@@ -1073,7 +1080,8 @@ order changes by itself. The kind therefore leaves `XML_KINDS`, is written
 and read as text built from the script API, and its `sync_direction` becomes
 `bidirectional`. `export_xml` does not gate it. An old
 `Library Manager.library_manager.xml` in a sync folder is an orphan after the
-first export and is swept like any other.
+first export when the sync cache recorded it (6.1); without that record it is
+kept and listed as waiting for import, and has to be deleted by hand.
 
 **The file.** Beside where the XML was, one per application:
 `.../Plc Logic/Application/Library Manager.libraries`, UTF-8, one entry per

@@ -124,7 +124,7 @@ def _is_import_allowed(item):
 LEGACY_LIBRARY_XML = (
     "an old Library Manager XML; it is not imported, because it would put "
     "back libraries removed since. Run export first: it writes Library "
-    "Manager.libraries and this file becomes an orphan")
+    "Manager.libraries, and then delete this file")
 
 
 def _refused_by_path(item, tally):

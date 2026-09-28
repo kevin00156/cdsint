@@ -83,8 +83,7 @@ ALLOWED_FUNCTION_LINES = {
         "compare_project": 87,
     },
     "engine/entry_export.py": {
-        "cleanup_orphaned_files": 96,
-        "export_project": 204,
+        "export_project": 199,
     },
     "engine/entry_import.py": {
         "import_project": 228,

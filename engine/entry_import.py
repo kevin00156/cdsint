@@ -102,7 +102,7 @@ def import_project(base_dir, values, projects_obj=None):
     # it duplicates something the project already has, or -- paired with a
     # real orphan by filename -- moves the wrong one. Export refuses to
     # delete orphans for the same reason and in the same words
-    # (entry_export.cleanup_orphaned_files); this is that rule pointed the
+    # (engine/orphan_sweep.py); this is that rule pointed the
     # other way. Updates and deletions still run: each names an IDE object
     # this run did read.
     not_created = []

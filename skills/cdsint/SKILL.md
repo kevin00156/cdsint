@@ -117,7 +117,7 @@ it; the rest take their default:
 | `backup_name` | string — what to call those backups | `""` |
 | `backup_retention_count` | integer — how many backups to keep | `10` |
 | `save_after_import`, `save_after_export` | boolean | `true` |
-| `auto_delete_orphans` | boolean — delete orphaned `.st` files without asking | `false` |
+| `auto_delete_orphans` | boolean — delete orphaned files without asking; only a file the last sync wrote and nobody touched since counts | `false` |
 | `trace_memory_mb` | integer — the most controller memory one `plc trace` may ask for | `256` |
 
 A key cdsint does not know, a wrong type, a word `plc` does not recognise, or
