@@ -53,12 +53,9 @@ BANNED_MODULE_NAMES = ("utils", "helpers", "common", "misc")
 # What is over 60 lines, by file and then by function. Lower these; do not
 # raise them, and do not add to them.
 ALLOWED_FUNCTION_LINES = {
-    "engine/change_detect.py": {
-        "find_all_changes": 237,
-    },
     # Split out of change_detect.py unchanged; the debt moved with it.
     "engine/move_detect.py": {
-        "detect_moved_files": 81,
+        "detect_moved_files": 79,
     },
     "engine/device_remap.py": {
         "build_device_remap": 75,
@@ -83,11 +80,7 @@ ALLOWED_FUNCTION_LINES = {
         "compare_project": 87,
     },
     "engine/entry_export.py": {
-        "cleanup_orphaned_files": 96,
-        "export_project": 204,
-    },
-    "engine/entry_import.py": {
-        "import_project": 228,
+        "export_project": 173,
     },
     "tools/cache_doctor.py": {
         "main": 176,

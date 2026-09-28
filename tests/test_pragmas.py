@@ -124,5 +124,6 @@ class TestParseStFile:
         assert impl is None
 
     def test_missing_file(self, utils, tmp_path):
-        decl, impl, pragmas = utils.parse_st_file(str(tmp_path / "nope.st"))
-        assert (decl, impl, pragmas) == (None, None, {})
+        # Raises: (None, None) read downstream as "nothing to change".
+        with pytest.raises((IOError, OSError)):
+            utils.parse_st_file(str(tmp_path / "nope.st"))

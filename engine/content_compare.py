@@ -15,6 +15,8 @@ from engine import library_refs
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_attrs import read_ide_attrs
 from engine.st_text import (
+    canonical_st,
+    unify_newlines,
     format_st_content,
     format_property_content,
     parse_sync_pragmas,
@@ -120,9 +122,9 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
 
     if not is_xml:
         # For ST files: strip pragmas from disk content for code comparison
-        _, clean_disk_st = parse_sync_pragmas(disk_content)
-        ide_hash = calculate_hash(ide_content)
-        disk_hash = calculate_hash(clean_disk_st)
+        _, clean_disk_st = parse_sync_pragmas(unify_newlines(disk_content))
+        ide_hash = calculate_hash(canonical_st(ide_content))
+        disk_hash = calculate_hash(canonical_st(clean_disk_st))
         if ide_hash != disk_hash:
             log_info("Content mismatch for %s: IDE hash=%s, Disk hash=%s" % (rel_path, ide_hash, disk_hash))
             return False
@@ -143,12 +145,9 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
     # XML Comparison - use NativeManager's filtering logic. Both sides are
     # already in memory, so hash them directly; this used to write each one to
     # a temp file and read it back purely because _hash_file only took a path.
-    # The two fallback names below are the old temp filenames, kept so that an
-    # object whose content is entirely filtered away still compares as
-    # different exactly like before (see _hash_content).
     try:
-        ide_hash = _NATIVE_MGR._hash_content(ide_content, "cds_comp_ide.xml")
-        disk_hash = _NATIVE_MGR._hash_content(disk_content, "cds_comp_disk.xml")
+        ide_hash = _NATIVE_MGR._hash_content(ide_content)
+        disk_hash = _NATIVE_MGR._hash_content(disk_content)
 
         are_equal = ide_hash == disk_hash
         if not are_equal:

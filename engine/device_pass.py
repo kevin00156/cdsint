@@ -20,7 +20,7 @@ from engine.codesys_constants import TYPE_GUIDS, kind_of
 from engine.ide_read import children_of
 from engine.st_text import read_sync_text
 from engine.strings import clean_filename, safe_str
-from engine.sync_cache import load_sync_cache, save_sync_cache
+from engine.sync_cache import load_sync_cache, normalize_path, save_sync_cache
 from engine.sync_log import log_info
 
 MASTER_TYPE = 64
@@ -54,9 +54,9 @@ def ethercat_devices(project):
 
 
 def _device_files(base_dir):
-    """{lower-case rel path: rel path as on disk}. Windows keeps a file's old
+    """{normalized rel path: rel path as on disk}. Windows keeps a file's old
     case when export rewrites it for a device renamed only in case, so the
-    match is case-insensitive, as the file system's is."""
+    match is case-insensitive, as the file system's is (normalize_path)."""
     found = {}
     for root, dirs, files in os.walk(base_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")
@@ -65,7 +65,7 @@ def _device_files(base_dir):
             if name.endswith(device_text.SUFFIX):
                 rel = os.path.relpath(os.path.join(root, name), base_dir)
                 rel = rel.replace(os.sep, "/")
-                found[rel.lower()] = rel
+                found[normalize_path(rel)] = rel
     return found
 
 
@@ -107,7 +107,7 @@ def with_device_changes(results, base_dir, project, values):
     on_disk = _device_files(base_dir)
     missing = []
     for device, rel in ethercat_devices(project):
-        found = on_disk.pop(rel.lower(), None)
+        found = on_disk.pop(normalize_path(rel), None)
         if found is None:
             missing.append(rel)
             continue
@@ -161,8 +161,9 @@ def export_devices(project, export_dir, context, managers):
         # Carried first, as export_project does for objects: a file left
         # pending writes no entry, and without the old one the next export
         # overwrote the edit (measured on 3.5.21.40).
-        if rel in cached:
-            context["new_cache"][rel] = cached[rel]
+        key = normalize_path(rel)
+        if key in cached:
+            context["new_cache"][key] = cached[key]
         try:
             if manager.export(device, None, rel, context) == "pending":
                 pending.append(rel)

@@ -26,6 +26,7 @@ from engine.managers_pou import POUManager, PropertyManager
 from engine.object_kind import classify_object
 from engine.object_paths import build_expected_path
 from engine.strings import safe_str
+from engine.sync_cache import normalize_path
 from engine.sync_log import log_info, log_warning
 
 
@@ -163,6 +164,35 @@ def _gated(effective_type, is_xml, rel_path, export_xml, cache):
         # pass 2 calls them orphans and import removes them.
         return Resolved(effective_type, is_xml, rel_path, SKIP_XML_GATE, cache)
     return Resolved(effective_type, is_xml, rel_path, None, cache)
+
+
+class PathClaims(object):
+    """Which object each file belongs to, for one run.
+
+    Two objects can resolve to one path: an application inside another adds
+    no folder of its own, so a POU in each lands on the same file. Export
+    wrote both into it, the second over the first, and compare kept
+    whichever it met last. Neither can be synced through a shared file, so
+    both are named (SPEC D13) and only the first claimant is handled.
+    """
+
+    def __init__(self):
+        self._owners = {}
+        self.shared = set()
+
+    def claim(self, rel_path, obj_guid, obj):
+        """True when obj may have this path; False when another object has it."""
+        key = normalize_path(rel_path)
+        owner = self._owners.setdefault(key, (obj_guid, obj))
+        if owner[0] == obj_guid:
+            return True
+        if key not in self.shared:
+            self.shared.add(key)
+            unhandled.note(owner[1], "resolves to %s, as another object does"
+                           % rel_path)
+        unhandled.note(obj, "resolves to %s, which %s already has"
+                       % (rel_path, unhandled.name_of(owner[1])))
+        return False
 
 
 def create_import_managers(project, pou_type=None):

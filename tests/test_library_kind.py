@@ -9,6 +9,7 @@ from engine import (classify, content_compare, import_items, object_paths,
 from engine.codesys_constants import (TYPE_GUIDS, XML_TYPES,
                                       kind_allows_import)
 from engine.managers_library import LibraryManager
+from engine.sync_cache import normalize_path
 from tests.fakes import Node
 from tests.library_fakes import a_project_libman
 
@@ -143,7 +144,8 @@ def export_context(tmp_path, rel):
     # what makes an ordinary text kind refuse to overwrite it (SPEC 6.1).
     return {"export_dir": str(tmp_path), "exported_paths": set(),
             "new_cache": {}, "cache_data": {"objects": {
-                rel: {"disk_mtime": 1, "disk_size": 1, "ide_hash": "x"}}}}
+                normalize_path(rel): {"disk_mtime": 1, "disk_size": 1,
+                                      "ide_hash": "x"}}}}
 
 
 def test_export_rewrites_a_file_that_only_differs_in_form(tmp_path):
