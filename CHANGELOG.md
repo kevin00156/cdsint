@@ -57,14 +57,19 @@ All notable changes to this project will be documented in this file.
 - **Paths are compared ignoring case**, as Windows does, so a case-only
   rename no longer offers its own file for deletion.
 - **The sync cache is written atomically**, and an alarm group or alarm
-  configuration is hashed on what it says, not only its name.
+  configuration is hashed on what it says, not only its name. Inside the
+  IDE the old cache is set aside rather than deleted while the new one goes
+  in, so a save a virus scanner blocks or a crash cuts short keeps it.
+- **An edit to the file of an object export could not read survives** the
+  export after the object is readable again; it used to lose its cache
+  entry and be written over.
 - **`compare` on a project with nothing to sync no longer crashes**, and
   builds the folder hashes once instead of once per object.
 
 **Controller**
 
 - **A download refuses to run when it cannot read what the controller holds
-  first**, fails when the application is not running afterwards, and says
+  first** -- a listing that fails too is not "nothing loaded" -- fails when the application is not running afterwards, and says
   the controller may be stopped when anything fails after the login -- or
   when a headless run with a download in it is killed.
 - **Controller files are read under the active application's name**, and
@@ -89,6 +94,8 @@ All notable changes to this project will be documented in this file.
 - **A headless IDE dies with the cdsint that started it** (a Windows job
   object), and after a kill the `.~u` lock is cleared only when that IDE
   opened the project.
+- **The launch lock is the operating system's**, so a killed run takes it
+  with it, and two runs that find it free can no longer both take it.
 
 **Install and update**
 
