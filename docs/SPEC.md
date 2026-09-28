@@ -733,8 +733,9 @@ Moved from the probe, placed in the engine next to `codesys_online.py` (D12),
 offered only in the `--project` form (D8). `entry_plc.py` is the front for
 the three `plc` commands, `plc_trip.py` the steps of one run, `plc_link.py`
 the part that connects to the controller, and `plc_crc.py` the verdict itself
-(pure bytes, paths and JSON; no IDE). The trace command adds its own steps on
-top of the trip in `plc_trace.py` (6.8).
+(pure bytes, paths and JSON; no IDE). The download and trace commands add
+their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
+(6.8).
 
 - `connect`: set `online.auth_fallback_modes` to `CredentialSourceKind.None`
   to switch off the credential dialog (on ScriptEngine 4.2.0.0 it is, by

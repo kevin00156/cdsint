@@ -15,8 +15,9 @@ working copy's cannot be read against it (SPEC 6.8).
 
 This file is only the surface: the three names cds/ide/entries.py presses,
 the question -y answers, and the order the steps run in. The steps themselves
-are engine/plc_trip.py and, for trace, engine/plc_trace_setup.py (offline)
-and engine/plc_trace.py (online); reaching a controller is
+are engine/plc_trip.py, with download's own in engine/plc_download.py and
+trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
+(online); reaching a controller is
 engine/plc_link.py, and how the question is actually answered —
 why the offline CRC alone cannot answer it, what the record holds, and the
 three verdicts — is engine/plc_crc.py.
@@ -36,6 +37,7 @@ ask_yes_no the import confirmation does.
 from __future__ import print_function
 
 from engine import entry, plc_crc, unhandled
+from engine.plc_download import DownloadTrip
 from engine.plc_trace import TraceTrip
 from engine.plc_trip import Trip, first_problem
 
@@ -66,7 +68,7 @@ def connect():
     is mine", which is the one answer this command must never invent.
     """
     unhandled.start()
-    trip = a_trip("connect")
+    trip = a_trip(Trip, "connect")
     return in_order(trip, [
         trip.reach_the_device,   # build the boot application, aim the device
         trip.read_back,          # what the controller holds, and its files
@@ -84,7 +86,7 @@ def download():
     if cancelled:
         return entry.result(False, cancelled, action="download",
                             crc=plc_crc.UNKNOWN)
-    trip = a_trip("download")
+    trip = a_trip(DownloadTrip, "download")
     failed = in_order(trip, [
         trip.reach_the_device,   # build the boot application, aim the device
         trip.what_it_holds,      # the CRC on the controller before this run
@@ -161,7 +163,7 @@ def confirm():
     return "PLC download cancelled: not confirmed."
 
 
-def a_trip(action):
+def a_trip(kind, action):
     """Both of this run's inputs from the IDE, handed to the trip.
 
     globals() is this body's namespace, which under cds/ide/silent.py is the
@@ -170,4 +172,4 @@ def a_trip(action):
     where they exist, rather than inside the trip, where they would resolve
     against an ordinary imported module and come back empty.
     """
-    return Trip(action, command_args, globals())
+    return kind(action, command_args, globals())
