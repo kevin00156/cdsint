@@ -131,7 +131,7 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
 
     # Pass 4: Detect moved/renamed files
     moved, new_in_ide, new_on_disk = detect_moved_files(found["new_in_ide"],
-                                                        new_on_disk)
+                                                        new_on_disk, project)
     if moved:
         log_info("  Detected %d moved/renamed objects" % len(moved))
 

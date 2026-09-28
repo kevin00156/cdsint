@@ -111,3 +111,24 @@ def test_a_run_that_could_not_read_every_object_moves_nothing(bench):
     assert result["ok"] is False and result["data"]["moved"] == 0
     assert result["data"]["not_created"] == ["B/Foo.st"]
     assert foo(bench).parent.get_name() == "A"
+
+
+def test_a_device_renamed_since_the_export_keeps_its_objects(
+        monkeypatch, tmp_path):
+    # The folder names the device the export saw, and the application check
+    # read that name as another application: no object paired with its own
+    # file, so import deleted every one of them and made them again.
+    old = pou("Foo")
+    device = Item("PLC_A", "device", [Item("Application", "application",
+                                           [old])])
+    bench = Bench(monkeypatch, tmp_path, device)
+    assert bench.export()["ok"]
+    unhandled.start()
+    device._name = "PLC_B"
+    bench.edit("PLC_A/Application/Foo.st", u"x := 1;", u"x := 42;")
+
+    result = bench.import_()
+
+    assert result["ok"] is True and result["data"]["deleted"] == 0
+    assert old.removed is False
+    assert old.textual_implementation.text == u"x := 42;"

@@ -102,5 +102,6 @@ def test_an_import_that_changed_libraries_makes_the_next_build_clean(tmp_path):
 def test_library_manager_files_are_never_paired_as_moves():
     ide = [{"path": "A/App1/Library Manager.libraries", "name": "Library Manager"}]
     disk = [{"path": "A/App0/Library Manager.libraries", "name": "Library Manager"}]
-    moved, new_in_ide, new_on_disk = move_detect.detect_moved_files(ide, disk)
+    moved, new_in_ide, new_on_disk = move_detect.detect_moved_files(
+        ide, disk, Project("Line.project"))
     assert moved == [] and new_in_ide == ide and new_on_disk == disk
