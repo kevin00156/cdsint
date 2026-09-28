@@ -59,9 +59,10 @@ jobs:
   release:
     # Here rather than in a workflow of its own so that it can wait for the
     # tests: a release is what `cdsint update` installs on every machine
-    # that asks, so one whose tests failed must not be published at all.
+    # that asks, so one whose tests failed must not be published at all --
+    # and that includes a body IronPython 2.7 cannot compile.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: core-tests
+    needs: [core-tests, py27-grammar]
     runs-on: ubuntu-latest
     permissions:
       contents: write
