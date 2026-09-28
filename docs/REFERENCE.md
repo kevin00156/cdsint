@@ -165,7 +165,9 @@ the JSON is exactly the one who needs to hear about a cleared lock.
 Only with `--project`: `--sync-dir D` (optional — this run's sync folder,
 overriding the settings file and never written back), `--profile NAME` when an
 install has several, `--report FILE`, `--force-lock`, and `--answer KEY=VALUE`
-(repeatable) for the IDE's own prompts.
+(repeatable) for the IDE's own prompts. VALUE is a `PromptResult` name spelled
+exactly — `OK`, `Cancel`, `Abort`, `Retry`, `Ignore`, `Yes` or `No` — and any
+other spelling is refused with exit 2 before an IDE starts.
 
 There is no `config` command. The settings are a text file next to the
 project; **Settings** below is the whole of it.

@@ -39,6 +39,13 @@ EITHER = "both"
 HEADLESS = "project"
 
 
+# What an --answer may say: the members of the IDE's PromptResult enum, which
+# are the WinForms DialogResult names. The IDE side looks the value up by
+# exact name, so "yes" is not Yes -- and a name it cannot find used to be an
+# exception after the IDE had started, with no report written at all.
+PROMPT_RESULTS = ("OK", "Cancel", "Abort", "Retry", "Ignore", "Yes", "No")
+
+
 def key_value(text):
     """One --answer, as the (key, value) pair the IDE side wants.
 
@@ -53,6 +60,10 @@ def key_value(text):
     if not separator:
         raise argparse.ArgumentTypeError(
             "wants KEY=VALUE, not %r" % (text,))
+    if value not in PROMPT_RESULTS:
+        raise argparse.ArgumentTypeError(
+            "%r is not a prompt answer; VALUE is one of %s"
+            % (value, ", ".join(PROMPT_RESULTS)))
     return (key, value)
 
 
@@ -223,8 +234,9 @@ PROJECT_FLAGS = (
     ("--sync-dir", NAME,
      "use this folder for this run instead of the sync_folder in the "
      "project's settings file; nothing is written back"),
-    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE; "
-                        "repeatable"),
+    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE "
+                        "with VALUE one of " + ", ".join(PROMPT_RESULTS)
+                        + "; repeatable"),
 )
 
 PROJECT_ONLY = tuple(_dest(spelling)

@@ -108,6 +108,19 @@ def test_an_answer_reaches_the_prompt_table(ide):
         "UpgradeProjectConfirmation": "PromptResult.Yes"}
 
 
+def test_a_run_that_raises_still_writes_a_report_saying_why(ide, tmp_path):
+    # Anything raised out of run_job used to skip the report entirely, and
+    # the launcher could only say "the IDE wrote no report". A value the
+    # IDE's PromptResult has no member for is one way to get there.
+    record = job(tmp_path, answers={"UpgradeProjectConfirmation": "yes"})
+    path = str(tmp_path / "job.json")
+    ipc.write_json(path, record)
+    assert ide_side.main(ide, path) == ide_side.EXIT_FAILED
+    written = ipc.read_json(record["report"])
+    assert written["intended_exit"] == ide_side.EXIT_FAILED
+    assert "yes" in written["error"] and "Traceback" in written["error"]
+
+
 def test_a_project_that_will_not_open_names_the_likely_prompt(ide, tmp_path):
     ide["projects"] = OpeningProjects(opens=False)
     report = ide_side.run_job(ide, job(tmp_path))

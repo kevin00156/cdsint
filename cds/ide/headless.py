@@ -79,7 +79,9 @@ def run_job(ide_globals, job):
 
     One exit. Every field below is in the record whichever way the run ended,
     because an incomplete report is the one thing the launcher cannot tell
-    apart from an IDE that hung on a dialog (SPEC 6.4).
+    apart from an IDE that hung on a dialog (SPEC 6.4). That includes an
+    exception out of anything here: raised past this point it left no report
+    at all, and the launcher could only say the IDE wrote none.
     """
     report = {
         "ide": project.ide_name(),
@@ -90,25 +92,35 @@ def run_job(ide_globals, job):
         "sync_dir": None,
         "intended_exit": EXIT_FAILED,
     }
+    try:
+        _run(ide_globals, job, report)
+    except BaseException:
+        import traceback
+        report["error"] = also(report["error"], "the run stopped on an "
+                                "exception:\n" + traceback.format_exc())
+    if report["opened"] and report["error"] is None and \
+            all(result["ok"] for result in report["results"]):
+        report["intended_exit"] = EXIT_OK
+    return report
+
+
+def _run(ide_globals, job, report):
+    """Fill in the report as the run goes, so a crash keeps what it got."""
     answer_prompts(ide_globals, job.get("answers"))
     opened, report["error"] = _open(ide_globals, job)
-    if opened is not None:
-        report["opened"] = True
-        report["project"] = _text(getattr(opened, "path", job.get("project")))
-        report["results"] = run_commands(ide_globals,
-                                         job.get("commands") or [],
-                                         job.get("sync_dir"))
-        # What the engine actually read, as opposed to what the caller asked
-        # for: --sync-dir if this run carried one, otherwise whatever the
-        # settings file beside the project says (SPEC 4.2). Read after the
-        # commands, because a first run writes that file and this should
-        # report the folder it chose.
-        report["sync_dir"] = _text(
-            job.get("sync_dir")
-            or project.sync_dir(ide_globals.get("projects")))
-        if all(result["ok"] for result in report["results"]):
-            report["intended_exit"] = EXIT_OK
-    return report
+    if opened is None:
+        return
+    report["opened"] = True
+    report["project"] = _text(getattr(opened, "path", job.get("project")))
+    report["results"] = run_commands(ide_globals, job.get("commands") or [],
+                                     job.get("sync_dir"))
+    # What the engine actually read, as opposed to what the caller asked
+    # for: --sync-dir if this run carried one, otherwise whatever the
+    # settings file beside the project says (SPEC 4.2). Read after the
+    # commands, because a first run writes that file and this should
+    # report the folder it chose.
+    report["sync_dir"] = _text(
+        job.get("sync_dir") or project.sync_dir(ide_globals.get("projects")))
 
 
 def _open(ide_globals, job):
@@ -207,6 +219,16 @@ def _why_nothing_opened(job):
             "format so that older IDE can no longer open it, which is why "
             "nothing here answers it for you."
             % (job.get("project"),))
+
+
+def also(existing, more):
+    """Add a fact to error without losing the one already there.
+
+    Two things can be wrong at once -- the project never opened AND the run
+    raised, or AND the launcher had to kill the process -- and the second
+    must not overwrite the first. The launcher uses this one too.
+    """
+    return more if not existing else existing + "\n\n" + more
 
 
 def _text(value):

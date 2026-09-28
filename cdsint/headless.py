@@ -19,7 +19,7 @@ import time
 from cds.core import ipc
 from cds.core.exits import EXIT_HEADLESS, EXIT_TIMEOUT
 from cds.ide.entries import REPO_ROOT
-from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV
+from cds.ide.headless import BEGIN_MARK, END_MARK, JOB_ENV, also
 from cdsint import installs, lock
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
@@ -291,7 +291,7 @@ class Headless(object):
             "exit_code_trusted": finished and code == report.get("intended_exit"),
         }
         if code is None:
-            added["error"] = _also(report.get("error"),
+            added["error"] = also(report.get("error"),
                                    self._late_exit(pid, deadline) if finished
                                    else self._timed_out(pid, deadline))
         return added
@@ -386,14 +386,4 @@ def waits_s(args):
     """
     job = args.get("job")
     return job["duration_s"] if job else 0.0
-
-
-def _also(existing, note):
-    """Add a fact to error without losing the one already there.
-
-    Two things can be wrong at once — the project never opened AND the
-    process had to be killed — and the second must not overwrite the first.
-    """
-    return note if not existing else existing + "\n\n" + note
-
 
