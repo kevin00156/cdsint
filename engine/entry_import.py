@@ -8,8 +8,7 @@ applies all disk-side changes to IDE (equivalent to Compare -> Select All -> Imp
 Also detects new files on disk (e.g. from git pull) not yet tracked in metadata.
 
 import_project reads as the steps of one import: refuse what cannot land,
-plan from the comparison, confirm, back up, apply, report. The steps were
-one 228-line function; they were split out of it unchanged.
+plan from the comparison, confirm, back up, apply, record, report.
 """
 from __future__ import print_function
 

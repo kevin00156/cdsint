@@ -5,8 +5,8 @@ find_all_changes() is the one walk both compare and import start from:
 changed, new on disk, orphaned in the IDE, and -- when a file left one
 place and turned up in another with the same content -- moved.
 
-Moved out of codesys_compare_engine.py unchanged, and later split into one
-function per pass without changing what any pass does.
+Moved out of codesys_compare_engine.py, and split into one function per
+pass here.
 """
 from __future__ import print_function
 
