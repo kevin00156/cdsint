@@ -78,6 +78,11 @@ def launching(monkeypatch, code=0, dies=True):
         return launches[-1]["process"]
 
     monkeypatch.setattr(subprocess, "Popen", popen)
+    # A fake process has no handle for Windows to put in a job object, and
+    # these tests are about the launch, not the job (tests/test_job_object.py
+    # is). Off Windows die_with_us never gets that far, which is how this
+    # passed on Linux and failed on the Windows runner.
+    monkeypatch.setattr(cli_side, "die_with_us", lambda process: object())
     return launches
 
 
