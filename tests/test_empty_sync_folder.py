@@ -40,7 +40,7 @@ def importer(monkeypatch, tmp_path):
 
     def spy(base_dir, projects_obj, values):
         compared.append(base_dir)
-        return {"different": [], "new_in_ide": [], "new_on_disk": [],
+        return {"different": [], "new_in_ide": [], "new_on_disk": [], "moved": [],
                 "unchanged_count": 0}
 
     monkeypatch.setattr(body, "find_changes", spy)

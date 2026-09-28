@@ -48,6 +48,7 @@ class _Plan(object):
         self.different = results["different"]
         self.new_in_ide = results["new_in_ide"]
         self.new_on_disk = results["new_on_disk"]
+        self.moved = results["moved"]
         self.unchanged_count = results["unchanged_count"]
         self.not_created = []
         self.withheld = ""
@@ -159,10 +160,12 @@ def _plan(results):
     # (engine/orphan_sweep.py); this is that rule pointed the
     # other way. Updates and deletions still run: each names an IDE object
     # this run did read.
-    if unhandled.any_so_far() and plan.new_on_disk:
-        plan.not_created = [item["path"] for item in plan.new_on_disk]
-        plan.new_on_disk = []
-        plan.withheld = ("Not creating %d file(s) this run cannot account for: it "
+    if unhandled.any_so_far() and (plan.new_on_disk or plan.moved):
+        plan.not_created = ([item["path"] for item in plan.new_on_disk]
+                            + [move["disk_path"] for move in plan.moved])
+        plan.new_on_disk, plan.moved = [], []
+        plan.withheld = ("Not creating or moving objects for %d file(s) this "
+                         "run cannot account for: it "
                          "could not read every object, so some of those files may "
                          "already belong to one of them. %s"
                          % (len(plan.not_created), ", ".join(plan.not_created)))
@@ -170,9 +173,13 @@ def _plan(results):
         log_warning(plan.withheld)
 
     # For import, we care about ANY difference (disk or ide side) — disk wins.
-    # Modified objects, then new files on disk not yet in metadata, then the
-    # objects whose file is gone, which are deleted from the IDE.
+    # Modified objects, objects whose file moved, then new files on disk not
+    # yet in metadata, then the objects whose file is gone, which are deleted
+    # from the IDE.
     plan.items.extend(plan.different)
+    for move in plan.moved:
+        plan.items.append(dict(move, path=move["disk_path"], type="moved",
+                               is_moved=True))
     for item in plan.new_on_disk:
         plan.items.append({
             "name": item["name"],
@@ -187,6 +194,7 @@ def _plan(results):
     print("")
     print("Changes found:")
     print("  Modified (IDE<>Disk): " + str(len(plan.different)))
+    print("  Moved on disk: " + str(len(plan.moved)))
     print("  New on disk: " + str(len(plan.new_on_disk)))
     print("  Missing on disk (delete): " + str(len(plan.new_in_ide)))
     print("  Unchanged: " + str(plan.unchanged_count))
@@ -230,8 +238,9 @@ def _confirm(plan, projects_obj):
         log_warning("Device remap on import: " + "; ".join(remap_lines))
 
     from engine.codesys_ui import ask_yes_no
-    confirm_msg = "Ready to import {} changes into the IDE.\n\nModified: {}\nNew on disk: {}\nDelete orphans: {}\n\nProceed?".format(
-        len(plan.items), len(plan.different), len(plan.new_on_disk), len(plan.new_in_ide)
+    confirm_msg = "Ready to import {} changes into the IDE.\n\nModified: {}\nMoved: {}\nNew on disk: {}\nDelete orphans: {}\n\nProceed?".format(
+        len(plan.items), len(plan.different), len(plan.moved),
+        len(plan.new_on_disk), len(plan.new_in_ide)
     )
     if remap_lines:
         confirm_msg += "\n\n[!] Device remap (export -> IDE):\n  " + "\n  ".join(remap_lines)

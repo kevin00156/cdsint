@@ -55,7 +55,7 @@ BANNED_MODULE_NAMES = ("utils", "helpers", "common", "misc")
 ALLOWED_FUNCTION_LINES = {
     # Split out of change_detect.py unchanged; the debt moved with it.
     "engine/move_detect.py": {
-        "detect_moved_files": 81,
+        "detect_moved_files": 79,
     },
     "engine/device_remap.py": {
         "build_device_remap": 75,

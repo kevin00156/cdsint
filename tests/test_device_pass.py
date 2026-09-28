@@ -44,7 +44,7 @@ def write(path, text):
 
 
 def empty_results():
-    return {"different": [], "new_in_ide": [], "new_on_disk": [],
+    return {"different": [], "new_in_ide": [], "new_on_disk": [], "moved": [],
             "unchanged_count": 0}
 
 

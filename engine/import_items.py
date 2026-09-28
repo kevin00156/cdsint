@@ -37,7 +37,8 @@ from engine.object_create import (
     update_existing_object,
 )
 from engine.pou_children import save_pou_children
-from engine.codesys_constants import TYPE_GUIDS
+from engine.codesys_constants import TYPE_GUIDS, kind_of
+from engine.managers_pou import POUManager
 from engine.ide_tree import ensure_folder_path, find_object_by_path
 from engine.strings import safe_str
 from engine.sync_log import log_error, log_info, log_warning
@@ -71,8 +72,13 @@ def move_if_needed(item, obj, project):
     not the object's current parent means somebody moved the file and the IDE
     has to follow. Written out twice, once for the XML pass and once for the
     ST pass, with the two copies differing only in one word of a log line.
+
+    A method, action or property is not moved on its own: its file sits
+    beside its POU's, and it goes where the POU goes. Moving it into the
+    folder would tear it off the POU.
     """
-    if not item.get("is_moved"):
+    if not item.get("is_moved") or kind_of(item.get("type_guid") or "") in \
+            POUManager.MEMBER_CREATORS:
         return False
     disk_path = item.get("disk_path")
     if not disk_path or "/" not in disk_path:
