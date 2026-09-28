@@ -4,6 +4,8 @@
 No IDE and no trip — pure bytes, paths and JSON, which is the reason that
 module was split out of the trip in the first place.
 """
+import os
+
 import pytest
 
 from engine import plc_crc as plc_crc_module
@@ -81,3 +83,35 @@ def test_a_file_too_short_to_hold_the_field_is_no_answer():
 
 def test_the_field_is_bytes_five_to_eight():
     assert plc_crc_module.crc_field(CRC_A) == "DEADBEEF"
+
+
+def test_two_copies_of_one_project_do_not_share_a_workspace(tmp_path,
+                                                            monkeypatch):
+    # Named after the project alone, two working copies of Line.project
+    # fetched into one directory, and a run of one could read the other's
+    # files as its own.
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    first = os.path.join(str(tmp_path), "a", "Line.project")
+    second = os.path.join(str(tmp_path), "b", "Line.project")
+    assert (plc_crc_module.workspace(first)
+            != plc_crc_module.workspace(second))
+    # The same file is the same workspace every time, so runs still overwrite
+    # rather than pile up, and the name is still one a reader recognises.
+    assert (plc_crc_module.workspace(first)
+            == plc_crc_module.workspace(os.path.join(str(tmp_path), "a", ".",
+                                                     "Line.project")))
+    assert os.path.basename(plc_crc_module.workspace(first)).startswith(
+        "Line-")
+
+
+def test_a_file_that_will_not_be_cleared_raises(tmp_path, monkeypatch):
+    stale = tmp_path / "plc_Application.crc"
+    stale.write_bytes(CRC_A)
+
+    def locked(path):
+        raise OSError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(os, "remove", locked)
+    with pytest.raises(plc_crc_module.Stale) as raised:
+        plc_crc_module.forget(str(stale))
+    assert str(stale) in str(raised.value)

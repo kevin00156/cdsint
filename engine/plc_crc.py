@@ -44,6 +44,7 @@ from __future__ import print_function
 
 import os
 import tempfile
+import zlib
 
 from cds.core import ipc
 from engine.strings import safe_str
@@ -216,15 +217,22 @@ def verdict_line(action, found):
 # Where the files go
 # --------------------------------------------------------------------------
 
+class Stale(Exception):
+    """An earlier run's file is where this run writes, and would not go."""
+
+
 def workspace(project_path):
     """Make and return where this run's .crc and archive go.
 
     Named after the project rather than made fresh each time, so a second run
     overwrites the first instead of leaving a numbered trail in TEMP, and so
-    the path in the report is one a reader can go and look at.
+    the path in the report is one a reader can go and look at. The name alone
+    is not enough: two working copies of one project share it, and a run of
+    one would read the other's files as its own, so a hash of the full path
+    follows it.
     """
     path = os.path.join(tempfile.gettempdir(), "cdsint", "plc",
-                        _safe_name(_project_stem(project_path)))
+                        _workspace_name(project_path))
     if not os.path.isdir(path):
         os.makedirs(path)
     return path
@@ -236,14 +244,17 @@ def forget(path):
     The workspace is named after the project so that runs overwrite each
     other rather than pile up, and that is exactly what makes a stale file
     dangerous: a call that returns without writing would otherwise be read
-    as last week's answer to this week's question.
+    as last week's answer to this week's question. So a file that will not
+    go raises Stale, and the caller names the failure, rather than carrying
+    on beside it.
     """
     try:
         if os.path.isfile(path):
             os.remove(path)
     except (IOError, OSError) as exc:
-        log_warning("plc: could not clear %s before writing it: %s"
-                    % (path, safe_str(exc)))
+        raise Stale("%s is left from an earlier run and could not be "
+                    "removed, so what this run fetches could not be told "
+                    "from it: %s" % (path, safe_str(exc)))
     return path
 
 
@@ -252,10 +263,20 @@ def _byte(value):
     return value if isinstance(value, int) else ord(value)
 
 
-def _project_stem(project_path):
+def _workspace_name(project_path):
+    """The project's name, and a hash of where it is, as one directory name.
+
+    normcase and abspath so one file reached two ways is one workspace; crc32
+    because it is deterministic across runs and interpreters, which Python's
+    own hash() is not.
+    """
     if not project_path:
         return "unsaved"
-    return os.path.splitext(os.path.basename(safe_str(project_path)))[0]
+    path = safe_str(project_path)
+    where = os.path.normcase(os.path.abspath(path))
+    return "%s-%08x" % (
+        _safe_name(os.path.splitext(os.path.basename(path))[0]),
+        zlib.crc32(where.encode("utf-8")) & 0xFFFFFFFF)
 
 
 def _safe_name(stem):

@@ -244,14 +244,37 @@ def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
         def upload_file(self, remote, local, overwrite):
             self.uploaded.append(remote)   # as a controller might, and has
 
-    stale = os.path.join(str(workspace), "cdsint", "plc", "Line")
-    os.makedirs(stale)
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
     with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
         handle.write(CRC_B)
     recorded(plc_crc="11223344")
     outcome = silent.run(ide(allowed=["connect"], device=Silent()),
                          PLC_BODY, "connect", {})
     assert crc_of(outcome) == "UNKNOWN"
+
+
+def test_a_stale_crc_that_will_not_go_is_a_named_failure(monkeypatch):
+    # Clearing the old copy is the only thing standing between an upload
+    # that wrote nothing and last week's answer. When the clearing failed it
+    # used to be a log line, and the old file was read as this run's CRC.
+    class Silent(Device):
+        def upload_file(self, remote, local, overwrite):
+            self.uploaded.append(remote)
+
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
+    with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
+        handle.write(CRC_B)
+    recorded(plc_crc="11223344")
+
+    def locked(path):
+        raise OSError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(os, "remove", locked)
+    outcome = silent.run(ide(allowed=["connect"], device=Silent()),
+                         PLC_BODY, "connect", {})
+    assert crc_of(outcome) == "UNKNOWN" and not outcome.ok()
+    assert any("could not be removed" in note
+               for note in outcome.result["data"]["notes"])
 
 
 # --------------------------------------------------------------------------

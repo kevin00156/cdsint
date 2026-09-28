@@ -816,10 +816,13 @@ one, since guessing a download target is not something that can have a default
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,
 because outside these two commands there is nothing like `verify` that turns
 findings into a verdict, so the exit code itself has to be the verdict. The
-local boot application and the file pulled back from the PLC are written to
-`%TEMP%\cdsint\plc\<project>\`, overwritten on every run of the same project
-and deleted before writing, so that a call that wrote no file cannot have the
-previous run's answer read as this run's.
+files pulled back from the PLC are written to
+`%TEMP%\cdsint\plc\<project>-<hash>\`, the hash being of the project file's
+full path so that two working copies of one project never share it,
+overwritten on every run of the same project and deleted before writing, so
+that a call that wrote no file cannot have the previous run's answer read as
+this run's. A file that cannot be deleted fails that fetch by name rather than
+being left to be read.
 
 ### 6.7 Setup flow
 

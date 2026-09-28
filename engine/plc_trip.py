@@ -228,7 +228,10 @@ class Trip(object):
         copy is removed first, so a call that returns without writing reads
         as "nothing", not as the last run's file.
         """
-        local = plc_crc.forget(os.path.join(self.workspace(), name))
+        try:
+            local = plc_crc.forget(os.path.join(self.workspace(), name))
+        except plc_crc.Stale as exc:
+            return None, safe_str(exc)
         try:
             self.device.upload_file(remote, local, True)
         except Exception as exc:
@@ -244,8 +247,12 @@ class Trip(object):
         read has proved the whole claim without writing a byte, so it is
         worth the one call and the path is reported.
         """
-        target = plc_crc.forget(os.path.join(self.workspace(),
-                                             plc_crc.SOURCE_ARCHIVE_NAME))
+        try:
+            target = plc_crc.forget(os.path.join(self.workspace(),
+                                                 plc_crc.SOURCE_ARCHIVE_NAME))
+        except plc_crc.Stale as exc:
+            self.note("the source archive was not fetched: " + safe_str(exc))
+            return None
         try:
             self.device.upload_source(target)
         except Exception as exc:
