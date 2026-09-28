@@ -110,8 +110,9 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
     p2_start = time.time()
     found = _compare_all(scan, base_dir, project, ide_folder_hashes)
 
-    # Finalize cache with newly built folder hashes and types
-    save_sync_cache(base_dir, found["cache"], ide_folder_hashes, scan.types)
+    save_sync_cache(base_dir, found["cache"],
+                    _recorded_folder_hashes(found["cache"], scan.hashes),
+                    scan.types)
 
     log_info("  Pass 2 complete in {:.2f}s".format(time.time() - p2_start))
     log_info("  Sync cache updated: %d hits, %d entries total"
@@ -134,6 +135,19 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
         "moved": moved,
         "unchanged_count": found["unchanged_count"]
     }
+
+
+def _recorded_folder_hashes(cache, ide_hashes):
+    """The folder hashes to save: of the entries this run recorded.
+
+    Not of what the IDE holds now. An object compare found different keeps
+    its old entry, and a folder hash that already covered its new state
+    matched the next compare's, whose fast path then reported it unchanged.
+    Only paths Pass 1 hashes count, so both sides hash the same set.
+    """
+    return build_folder_hashes(dict(
+        (path, entry.get("ide_hash")) for path, entry in cache.items()
+        if ide_hashes.get(path)))
 
 
 def _scan_ide(project, cache_data, export_xml):
@@ -192,15 +206,7 @@ def _scan_one(obj, obj_guid, scan, export_xml, project):
     scan.paths[rel_path] = obj
     scan.metadata[norm_path] = (eff_type, is_xml)
 
-    q_hash = get_quick_ide_hash(obj, is_xml)
-
-    # For XML objects: use cached ide_hash to allow Merkle skip for mixed folders
-    if not q_hash and is_xml:
-        cached_entry = scan.cached_objects.get(norm_path)
-        if cached_entry:
-            q_hash = cached_entry.get("ide_hash")
-
-    scan.hashes[norm_path] = q_hash
+    scan.hashes[norm_path] = get_quick_ide_hash(obj, is_xml)
 
 
 def _compare_all(scan, base_dir, project, ide_folder_hashes):
@@ -224,9 +230,10 @@ def _compare_all(scan, base_dir, project, ide_folder_hashes):
 
         # ── Fast path: Folder-level check ──
         # If parent folder hash matches, IDE hasn't changed.
-        # We only need to check if disk file changed (mtime).
+        # We only need to check if disk file changed (mtime). An XML object
+        # has no quick hash, so its folder's hash says nothing about it.
         parent_folder = "/".join(norm_path.split("/")[:-1])
-        folder_match = bool(parent_folder) and \
+        folder_match = not is_xml and bool(parent_folder) and \
             parent_folder in ide_folder_hashes and \
             ide_folder_hashes[parent_folder] == scan.cached_folders.get(parent_folder)
 
@@ -280,11 +287,9 @@ def _compare_file(obj, rel_path, file_path, eff_type, is_xml, scan, project):
                         % (rel_path, disk_kind, kind_of(eff_type) or eff_type))
 
     if contents_are_equal(ide_content, disk_content, is_xml, rel_path, ide_attrs, disk_attrs):
-        # An XML object's ide_hash must be written in the same form
-        # NativeManager.export() writes it, or the two sides disagree about
-        # a byte-identical object and the folder hash it feeds stops
-        # matching -- which costs every OTHER object in that folder its
-        # Merkle skip too.
+        # An XML object's ide_hash is written in the same form
+        # NativeManager.export() writes it, so the two sides' entries agree
+        # about a byte-identical object.
         q_hash = scan.hashes[normalize_path(rel_path)]
         if not q_hash:
             q_hash = (_NATIVE_MGR._hash_content(ide_content, os.path.basename(rel_path))
