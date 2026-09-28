@@ -6,6 +6,7 @@ CLI's wait is made to answer itself by running the real watcher's run_one, so
 these cover the whole round trip minus the IDE.
 """
 import json
+import os
 import time
 
 import pytest
@@ -14,13 +15,18 @@ from cds.core import commands, instances, ipc
 from cds.core.exits import (EXIT_FAILED, EXIT_OK, EXIT_TARGET,
                             EXIT_TIMEOUT)
 from cds.ide import watcher
-from cdsint import cli, flags, target
+from cdsint import cli, flags, process, target
 from tests.fakes import make_globals
 
 
 @pytest.fixture
 def root(tmp_path, monkeypatch):
     monkeypatch.setenv(ipc.ROOT_ENV, str(tmp_path))
+    # The registrations these tests make up carry pids like 9, which may or
+    # may not be running on the machine the tests run on. Only this process
+    # is known to be there; the tests about a dead one say so themselves.
+    monkeypatch.setattr(process, "running", lambda pid, not_after=None:
+                        True if pid == os.getpid() else None)
     return str(tmp_path)
 
 
@@ -289,6 +295,18 @@ def test_timeout_stretches_how_long_a_busy_ide_counts_as_alive(root, capsys,
     monkeypatch.setattr(target, "send", fake_send)
     assert cli.main(["ping", "--timeout", "600"]) == EXIT_OK
     assert reached == ["softplc-9"]
+
+
+def test_an_ide_that_crashed_mid_command_is_not_listed(root, capsys,
+                                                       monkeypatch):
+    # Its registration says busy for ever. The pid is the evidence the
+    # heartbeat cannot be: a busy watcher never beats anyway.
+    busy_since(root, 5.0)
+    monkeypatch.setattr(process, "running", lambda pid, not_after=None:
+                        False if pid == 9 else None)
+    cli.main(["list", "--timeout", "600"])
+    assert "softplc-9" not in capsys.readouterr().out
+    assert cli.main(["ping", "--timeout", "600"]) == EXIT_TARGET
 
 
 def test_the_default_timeout_still_writes_off_a_long_gone_command(root, capsys):

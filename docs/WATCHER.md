@@ -36,13 +36,13 @@ the process id from `os.getpid()`.
 The registration file's fields: `instance_id`, `pid`, `ide`, `project_path`,
 `project_name`, `sync_dir`, `state`, `busy_since`, `heartbeat`, `started_at`,
 `watcher_version`. Times come in two copies: the string one is for a person
-opening the file, and `heartbeat_epoch` and `busy_since_epoch` are for a
-program to subtract. Storing numbers saves parsing a local-time string and
+opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
+`started_at_epoch` are for a program to subtract. Storing numbers saves parsing a local-time string and
 sidesteps the ambiguous hour around a daylight-saving change.
 
 ### 2.1 A few time constants
 
-The code is in `cds/core/instances.py`. These four numbers are starting points,
+The code is in `cds/core/instances.py`. These numbers are starting points,
 not settled values:
 
 | Constant | Value | Meaning |
@@ -51,17 +51,28 @@ not settled values:
 | `ALIVE_TIMEOUT_S` | 10 s | how long an idle instance's heartbeat may go without an update before it counts as dead |
 | `BUSY_TIMEOUT_S` | 120 s | how long a busy instance may stay busy and still count as alive; the CLI's `--timeout` overrides it |
 | `STALE_TIMEOUT_S` | 60 s | at start-up, idle registration files quiet for longer than this are cleared |
+| `ABANDONED_AFTER_S` | 6 h | at start-up, busy registration files busy for longer than this are cleared |
 
-**A `busy` registration file is never cleared.** "Clean up the files a dead
-process left behind" and "decide that a command has run too long" are two
-different things. Tied to one number, the protection only holds while a command
-runs shorter than the timeout, and an import of a real project takes more than
-two minutes as a matter of course. An instance stuck in `busy` is cleared by
-running `Project_watch.py` again.
+**A `busy` registration file is not cleared on the command timeout.** "Clean
+up the files a dead process left behind" and "decide that a command has run
+too long" are two different things. Tied to one number, the protection only
+holds while a command runs shorter than the timeout, and an import of a real
+project takes more than two minutes as a matter of course. A watcher's
+start-up has only time to go on, so it clears a busy record only after
+`ABANDONED_AFTER_S`, which no real command comes near. Re-running
+`Project_watch.py` does not clear one: it stops or starts the watcher of the
+IDE it runs in, and a busy record left by an IDE that crashed belongs to a
+different process id.
 
-**Do not use `os.kill(pid, 0)` to check whether a process is alive.** On
-Windows, CPython's `os.kill` terminates the target process outright. To check,
-use `ctypes` and `OpenProcess`, or simply trust the heartbeat.
+**The CLI also asks whether the pid still runs** (`cdsint/process.py`). A
+registration whose process is gone is dead whatever its state says, which is
+what an IDE that crashed mid-command leaves behind. On Windows that is
+`OpenProcess` plus `GetExitCodeProcess` through `ctypes`, and the process's
+creation time is compared with `started_at_epoch`, so a pid Windows has since
+handed to another program does not keep the record alive. **Do not use
+`os.kill(pid, 0)` there:** on Windows, CPython's `os.kill` terminates the
+target process outright. The IDE side has no such check and does not need
+one; it goes by time alone.
 
 **How the registration file is overwritten depends on the runtime.** With
 `os.replace` available, use it; the overwrite is atomic. Without it, fall back

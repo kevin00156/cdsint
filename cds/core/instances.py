@@ -2,10 +2,12 @@
 """Which IDEs are running a watcher, and which one did the caller mean.
 
 Each watcher keeps a registration file beside its instance directory and
-rewrites it every couple of seconds. That heartbeat is the only evidence the
-CLI has that an IDE is still there, and it is enough — do NOT reach for
-os.kill(pid, 0) to double-check, because on Windows CPython that call
-terminates the target process instead of probing it.
+rewrites it every couple of seconds. The heartbeat says the watcher is
+answering; it cannot say an IDE is gone while that IDE is busy, because a
+busy watcher cannot beat. The CLI can also ask whether the pid still runs
+(cdsint/process.py) and hands the answer in here as pid_alive: a function
+from a registration to True, False, or None for "cannot tell". The IDE side
+has no such function, so everything here also works without one.
 
 Timestamps are stored twice: an ISO string for whoever opens the file, and an
 epoch number for the arithmetic here. Deriving one from the other would mean
@@ -29,6 +31,11 @@ HEARTBEAT_INTERVAL_S = 2.0
 ALIVE_TIMEOUT_S = 10.0
 BUSY_TIMEOUT_S = 120.0
 STALE_TIMEOUT_S = 60.0
+# Busy for longer than this, and a starting watcher takes the IDE for one
+# that crashed mid-command. The IDE side cannot ask whether a pid runs, so
+# this is its only way to clear such a record; it has to be long enough that
+# no real command gets near it.
+ABANDONED_AFTER_S = 6 * 3600.0
 
 
 # --------------------------------------------------------------------------
@@ -37,7 +44,11 @@ STALE_TIMEOUT_S = 60.0
 
 def new_registration(instance_id, pid, ide, project_path,
                      sync_dir=None, watcher_version=None, now=None):
-    """Build the registration record for a watcher that just started."""
+    """Build the registration record for a watcher that just started.
+
+    started_at_epoch is what lets a reader tell this IDE from a later
+    process that was handed the same pid (cdsint/process.py).
+    """
     now = ipc.now(now)
     reg = {
         "instance_id": instance_id,
@@ -45,6 +56,7 @@ def new_registration(instance_id, pid, ide, project_path,
         "ide": ide,
         "sync_dir": sync_dir,
         "started_at": ipc.iso(now),
+        "started_at_epoch": now,
         "watcher_version": watcher_version,
     }
     set_project(reg, project_path)
@@ -79,19 +91,27 @@ def set_state(reg, state, now=None):
 
 
 def is_alive(reg, now=None, idle_timeout=ALIVE_TIMEOUT_S,
-             busy_timeout=BUSY_TIMEOUT_S):
+             busy_timeout=BUSY_TIMEOUT_S, pid_alive=None):
     """Is this instance still there?
 
     An idle watcher must have beaten recently. A busy one cannot beat at all
     while a command holds the main thread, so it is trusted for as long as the
-    caller is willing to wait for that command.
+    caller is willing to wait for that command -- unless its process is gone,
+    which is what an IDE that crashed mid-command leaves behind.
     """
     now = ipc.now(now)
+    if process_gone(reg, pid_alive):
+        return False
     if reg.get("state") == STATE_BUSY:
         started = reg.get("busy_since_epoch")
         return started is not None and (now - float(started)) <= busy_timeout
     beat = reg.get("heartbeat_epoch")
     return beat is not None and (now - float(beat)) <= idle_timeout
+
+
+def process_gone(reg, pid_alive=None):
+    """Only a definite no counts: None is "cannot tell", not "dead"."""
+    return pid_alive is not None and pid_alive(reg) is False
 
 
 # --------------------------------------------------------------------------
@@ -126,33 +146,41 @@ def delete(root, instance_id):
     shutil.rmtree(ipc.instance_dir(root, instance_id), ignore_errors=True)
 
 
-def prune_stale(root, now=None, max_age=STALE_TIMEOUT_S):
+def prune_stale(root, now=None, max_age=STALE_TIMEOUT_S,
+                abandoned_after=ABANDONED_AFTER_S):
     """Delete registrations left behind by watchers that died.
 
-    Only idle instances are ever pruned. A busy one is running a command and
-    cannot beat while it does; a real import on a real project takes minutes,
-    and deleting its directory pulls cmd/ and result/ out from under a live
-    process — queued commands vanish and the caller waits for an answer that
-    can no longer be written.
+    Runs inside the IDE, where nothing can ask whether a pid still runs, so
+    the only evidence is time. A busy instance is running a command and
+    cannot beat while it does; a real import on a real project takes
+    minutes, and deleting its directory pulls cmd/ and result/ out from
+    under a live process. So busy is spared for abandoned_after, which no
+    real command comes near, and only then taken for an IDE that crashed.
 
     Tying this to the command timeout (the CLI's 120 seconds) looked like
     protection but only covered commands shorter than that, which is not the
     interesting case. Cleaning up after a dead watcher and deciding a command
     has taken too long are different jobs; they do not get to share a number.
-    An instance stuck in busy is cleared by re-running Project_watch.py.
 
     Returns the instance ids that were removed.
     """
     now = ipc.now(now)
     removed = []
     for reg in read_all(root):
-        if reg.get("state") == STATE_BUSY:
-            continue
-        if now - float(reg.get("heartbeat_epoch") or 0.0) <= max_age:
+        if _recent(reg, now, max_age, abandoned_after):
             continue
         delete(root, reg["instance_id"])
         removed.append(reg["instance_id"])
     return removed
+
+
+def _recent(reg, now, max_age, abandoned_after):
+    """Has this instance shown a sign of life recently enough to be spared?"""
+    if reg.get("state") == STATE_BUSY:
+        since, allowed = reg.get("busy_since_epoch"), abandoned_after
+    else:
+        since, allowed = reg.get("heartbeat_epoch"), max_age
+    return now - float(since or 0.0) <= allowed
 
 
 # --------------------------------------------------------------------------
@@ -167,14 +195,16 @@ class TargetError(Exception):
         self.matches = list(matches or [])
 
 
-def resolve_target(regs, target=None, now=None, busy_timeout=BUSY_TIMEOUT_S):
+def resolve_target(regs, target=None, now=None, busy_timeout=BUSY_TIMEOUT_S,
+                   pid_alive=None):
     """Pick the one live instance the caller meant.
 
     An exact instance id wins. Otherwise target is read as a project name
     (case-insensitive); with no target at all, a lone live instance is it.
     Anything else raises TargetError so the caller can list the candidates.
     """
-    alive = [r for r in regs if is_alive(r, now, busy_timeout=busy_timeout)]
+    alive = [r for r in regs if is_alive(r, now, busy_timeout=busy_timeout,
+                                         pid_alive=pid_alive)]
     if target:
         for reg in alive:
             if reg.get("instance_id") == target:

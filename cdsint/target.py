@@ -17,6 +17,7 @@ import time
 
 from cds.core import commands, instances
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
+from cdsint import process
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
 
@@ -46,8 +47,9 @@ class Target(object):
             # --timeout is how long the caller will wait, so it is also how
             # long a busy instance still counts as alive. Both places, one
             # meaning.
-            self.reg = instances.resolve_target(instances.read_all(root),
-                                                target, busy_timeout=timeout)
+            self.reg = instances.resolve_target(
+                instances.read_all(root), target, busy_timeout=timeout,
+                pid_alive=process.registration_running)
         except instances.TargetError as exc:
             raise Failure(str(exc), EXIT_TARGET,
                           ["%-28s %s" % (r["instance_id"],
@@ -145,5 +147,6 @@ def _poll_once(root, instance_id, cmd, gone_since):
 
 def live_instances(root, busy_timeout=DEFAULT_TIMEOUT_S):
     return [r for r in instances.read_all(root)
-            if instances.is_alive(r, busy_timeout=busy_timeout)]
+            if instances.is_alive(r, busy_timeout=busy_timeout,
+                                  pid_alive=process.registration_running)]
 
