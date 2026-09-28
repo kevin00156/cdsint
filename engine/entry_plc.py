@@ -97,7 +97,7 @@ def download():
     if failed:
         return failed
     trip.remember()
-    return trip.verdict()
+    return in_order(trip, [trip.left_running]) or trip.verdict()
 
 
 def record():

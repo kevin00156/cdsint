@@ -147,7 +147,8 @@ downloaded to it from this project. `download` writes the controller's CRC into
 `connect` holds the controller against that. `data.crc` is `MATCH` (exit 0),
 `DIFFERENT` (exit 1: something else has been downloaded to it since) or `UNKNOWN`
 (exit 1: nothing was ever downloaded there from here, or the controller holds
-nothing — neither is agreement). It does not answer "has the project changed
+nothing — neither is agreement). A download that leaves the application not
+running is exit 1 too, though it is recorded. It does not answer "has the project changed
 since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 `compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.

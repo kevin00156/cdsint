@@ -24,16 +24,12 @@ import os
 from cds.core import settings, trace_job, trace_run, trace_types
 from engine import entry, plc_crc, plc_link, plc_trace_verdict, unhandled
 from engine.plc_trace_setup import TraceSetup
-from engine.plc_trip import Trip, first_problem, one_line
+from engine.plc_trip import RUNNING, Trip, first_problem, one_line
 from engine.strings import safe_str
 
 # D7's one self-answered prompt: "The trace already exists on the device.
 # Delete?" (research 7.1). Safe only while the trace's name is cdsint's alone.
 OVERWRITE_PROMPT = "Strings.OverwriteExistingOnlineTrace"
-
-# str() of session.application_state for a running application; the bench
-# showed `run` and `stop`.
-RUNNING = "run"
 
 # str() of the trace editor's packet and trigger states (research 13.4).
 # Only a Started trace takes stop(); a trigger's trace goes to Stopped itself.

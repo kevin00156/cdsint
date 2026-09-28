@@ -22,6 +22,10 @@ from engine import entry, plc_crc, plc_link, unhandled
 from engine import ide_read
 from engine.strings import safe_str
 
+# str() of session.application_state for a running application; the bench
+# showed `run` and `stop`. A download must leave it so, and a trace needs it.
+RUNNING = "run"
+
 
 class Trip(object):
     """One plc command: the objects it needs, and what it found out.

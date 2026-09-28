@@ -268,7 +268,9 @@ controller still holds what cdsint last put on it from here. `DIFFERENT`
 means something else has been loaded since. `UNKNOWN` means there is no
 record for this controller (never downloaded from this machine, or the
 project was copied without its record) or its CRC could not be read, which
-is not the same as agreement. Whether the *source* on disk still matches the
+is not the same as agreement. A download that leaves the application anything
+but running is exit 1 as well, though its CRC is still recorded, since the
+controller does hold it. Whether the *source* on disk still matches the
 project is `compare`'s question, not this one's; a boot application built
 offline changes its CRC on every compile, so it cannot serve as that answer.
 

@@ -9,12 +9,16 @@ from __future__ import print_function
 
 from cds.core import ipc
 from engine import ide_read, plc_crc, plc_link
-from engine.plc_trip import Trip
+from engine.plc_trip import RUNNING, Trip
 from engine.strings import safe_str
 
 
 class DownloadTrip(Trip):
     """One plc download: the trip, and the steps that change the controller."""
+
+    def __init__(self, action, args, ide_globals):
+        Trip.__init__(self, action, args, ide_globals)
+        self.state_after = None     # the application's state once started
 
     # -- before it ----------------------------------------------------------
 
@@ -77,16 +81,35 @@ class DownloadTrip(Trip):
             session.login(option.Never, False)
             session.create_boot_application()
             session.start()
+            # Read while logged in: after the logout it was read as "unknown"
+            # and nothing held that against the download.
+            self.state_after = safe_str(session.application_state)
         except Exception as exc:
             # Named rather than let out as a traceback: "the controller
             # refused the login" and "the download stopped halfway" are
-            # things that happen on a bench, not bugs in this file.
-            return "the download did not complete: " + safe_str(exc)
+            # things that happen on a bench, not bugs in this file. The
+            # login is where a full download happens, so from inside it on
+            # the application may already have been stopped.
+            return ("the download did not complete, and the controller may "
+                    "now be stopped or partly written: " + safe_str(exc))
         finally:
             plc_link.logout(session)
-        self.note("download: application state %s"
-                  % safe_str(getattr(session, "application_state", "unknown")))
+        self.note("download: application state %s" % self.state_after)
         return None
+
+    def left_running(self):
+        """The application runs after the download. None if it does.
+
+        Asked after the read-back and the record, not instead of them: the
+        controller does hold this download, and a later connect should say
+        so; but a download that leaves the machine standing still has not
+        done its job, and must not exit 0.
+        """
+        if self.state_after == RUNNING:
+            return None
+        return ("the download landed but the application is in state %s, "
+                "not %s, after start(): the controller is not running it"
+                % (self.state_after, RUNNING))
 
     # -- what came of it ----------------------------------------------------
 

@@ -757,7 +757,12 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
   must differ: every compile stamps a new four-byte identifier on every block
   of the boot application, so if the download really landed the value changes;
   unchanged means "no error reported but nothing was written", and the run
-  counts as failed. If it landed, record the new value. A first pull that
+  counts as failed. If it landed, record the new value. The application's
+  state is read after `start` and before `logout`, and anything but `run`
+  fails the run even so: the record is still written, because the controller
+  does hold this download, but a download that leaves the machine standing
+  still has not done its job. An exception anywhere from the login on says
+  the controller may now be stopped or partly written. A first pull that
   fails is "nothing loaded" only when the controller has no `PlcLogic/<app>`
   directory to list; when the listing names the `.crc` that could not be
   read, nothing is sent, because a download that writes nothing could not

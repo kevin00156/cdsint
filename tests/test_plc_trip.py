@@ -298,6 +298,46 @@ def test_a_download_that_throws_is_named_and_still_logs_out():
     assert ("logout",) in ide_globals["online"].session.calls
 
 
+class StaysStopped(Session):
+    """start() returns without error and the application does not run."""
+
+    def start(self):
+        Session.start(self)
+        self.application_state = "stop"
+
+    def logout(self):
+        Session.logout(self)
+        self.application_state = "unknown"   # no application once out
+
+
+def test_a_download_that_leaves_the_application_stopped_fails():
+    # The state was read after the logout and only ever noted, so a download
+    # that left the machine standing still exited 0.
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = StaysStopped(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "in state stop, not run" in outcome.error_text()
+    # It did land, so a later connect should still know it is ours.
+    written = plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))["project"]
+    assert written["plc_crc"] == "55667788"
+
+
+def test_a_download_that_fails_after_the_login_says_the_controller_may_stop():
+    class Halfway(Session):
+        def create_boot_application(self):
+            Session.create_boot_application(self)
+            raise RuntimeError("the connection was lost")
+
+    ide_globals = ide(allowed=["download"])
+    ide_globals["online"].session = Halfway()
+    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    assert not outcome.ok()
+    assert "may now be stopped or partly written" in outcome.error_text()
+
+
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
     # The workspace is named after the project so runs overwrite each other,
     # which is exactly what makes a file nobody rewrote dangerous: an upload
