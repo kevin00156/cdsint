@@ -25,7 +25,8 @@ environment variable `CDS_INSTANCES_DIR`. Each open IDE gets one subdirectory:
 instances\
   <instance-id>.json          the instance's registration file, heartbeat included
   <instance-id>\
-    cmd\                      command files the CLI writes in
+    cmd\                      command files the CLI writes in, and the
+                              <id>.running of the one being run
     result\                   result files the watcher writes back
 ```
 
@@ -140,15 +141,28 @@ CPython, because it takes the IDE's globals as parameters.
 
 1. Still running? Busy right now? `silent.running()`? If any one of the three
    holds, return at once.
-2. Pick up one command file and **delete it before running it**.
-3. Before running, set `state` to `busy` and write `busy_since`.
+2. Pick up one command file and **claim it before running it**: rename
+   `<id>.json` to `<id>.running`. If it is already gone, its caller took it
+   back, and it is neither run nor answered.
+3. Before running, set `state` to `busy` and write `busy_since`. On Windows
+   that write fails while a CLI has the registration open, so it is tried
+   again at once, a few times, with no sleep in between.
 4. Run, write the result file.
-5. In `finally`, write `state` back to `idle`.
+5. In `finally`, write `state` back to `idle` and remove `<id>.running`.
 
-**The command file is deleted before it runs.** If the watcher dies halfway
+**The command file is claimed before it runs.** If the watcher dies halfway
 through an import, the next start-up would pick that import up and run it a
 second time. Losing one result only makes the caller wait until the timeout;
 running an import twice touches the project.
+
+**`<id>.running` is the evidence that does not depend on the registration.**
+If every retry of the busy write loses, the registration still says idle and
+its heartbeat stops for as long as the command runs. Another IDE's start-up
+would then prune this instance as dead and take `cmd\` and `result\` away
+from the running command. It spares an instance with a `.running` file for
+the same `ABANDONED_AFTER_S` it gives a busy one. The CLI also no longer
+opens the registration on every poll while it waits (it checks that the file
+exists), which is what made the busy write lose in the first place.
 
 **No two watchers in one IDE.** The instance id is the project name plus the
 process id, so two watchers in the same IDE would get the same id and fight
@@ -209,7 +223,8 @@ that it would differ.
   finishes does the tear-down, so the command's directory is still there
   when it writes its answer.
 - **The heartbeat stays in the tick.** No heartbeat can go out while a command
-  runs; the registration file's `busy` state already covers that.
+  runs; the registration file's `busy` state, and the command's `.running`
+  file when the busy write was lost, already cover that (section 5).
 - **The status window uses `Show()`, not `ShowDialog()`.** A modal window holds
   the main thread and puts the IDE right back into the state this whole design
   exists to avoid. The window is owned by the IDE's main window and is not

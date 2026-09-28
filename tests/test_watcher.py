@@ -252,6 +252,91 @@ def test_a_command_is_claimed_before_it_runs(root):
     assert seen["queued"] == []
 
 
+def test_a_running_command_leaves_its_mark_until_it_is_answered(root):
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    seen = {}
+
+    def check(cmd, started):
+        seen["since"] = commands.running_since(root, watch.instance_id)
+        return commands.new_result(cmd, True, started_at=started)
+
+    watch.handlers["ping"] = check
+    run(watch, "ping")
+    assert seen["since"] is not None
+    assert commands.running_since(root, watch.instance_id) is None
+
+
+def test_a_command_taken_back_before_the_claim_is_not_run(root):
+    # The CLI timed out and deleted it between next_command and the claim.
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    ran = []
+    watch.handlers["ping"] = lambda cmd, started: ran.append(cmd)
+    cmd = commands.write_command(root, watch.instance_id, "ping")
+    queued = commands.next_command(root, watch.instance_id)
+    commands.delete_command(root, watch.instance_id, cmd["id"])
+    assert watch.run_one(queued) is None
+    assert ran == [] and watch.done == 0
+    assert commands.read_result(root, watch.instance_id, cmd["id"]) is None
+
+
+def test_a_busy_beat_the_cli_got_in_the_way_of_is_tried_again_at_once(
+        root, monkeypatch):
+    # The next turn is after the command. Losing this one write left the
+    # record idle with a heartbeat that stopped for the whole of an import,
+    # and another IDE's start-up pruned the directory out from under it.
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    real = instances.write
+    refused = []
+
+    def open_elsewhere_once(root_, reg):
+        if reg["state"] == instances.STATE_BUSY and not refused:
+            refused.append(reg["state"])
+            raise OSError(13, "used by another process")
+        return real(root_, reg)
+
+    monkeypatch.setattr(instances, "write", open_elsewhere_once)
+    seen = {}
+
+    def long_import(cmd, started):
+        seen["state"] = instances.read(root, watch.instance_id)["state"]
+        seen["pruned"] = instances.prune_stale(root, now=ipc.now() + 300.0)
+        return commands.new_result(cmd, True, started_at=started)
+
+    watch.handlers["import"] = long_import
+    run(watch, "import", {"yes": True})
+    assert refused and seen == {"state": instances.STATE_BUSY, "pruned": []}
+
+
+def test_a_command_in_progress_is_spared_even_if_busy_never_got_written(
+        root, monkeypatch):
+    # Every retry refused: the record says idle, the heartbeat stops. The
+    # running mark is what another IDE's start-up still sees.
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    real = instances.write
+
+    def never_busy(root_, reg):
+        if reg["state"] == instances.STATE_BUSY:
+            raise OSError(13, "used by another process")
+        return real(root_, reg)
+
+    monkeypatch.setattr(instances, "write", never_busy)
+    seen = {}
+
+    def long_import(cmd, started):
+        seen["state"] = instances.read(root, watch.instance_id)["state"]
+        seen["pruned"] = instances.prune_stale(root, now=ipc.now() + 300.0)
+        seen["dir"] = os.path.isdir(ipc.result_dir(root, watch.instance_id))
+        return commands.new_result(cmd, True, started_at=started)
+
+    watch.handlers["import"] = long_import
+    assert run(watch, "import", {"yes": True})["ok"] is True
+    assert seen == {"state": instances.STATE_IDLE, "pruned": [], "dir": True}
+
+
 def test_the_instance_goes_busy_while_a_command_runs(root):
     watch = watcher.Watcher(make_globals(), root)
     watch.start()

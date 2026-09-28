@@ -195,6 +195,21 @@ def test_prune_stale_clears_a_busy_record_an_ide_crashed_on(tmp_path):
     assert not os.path.exists(ipc.instance_dir(root, "p-1"))
 
 
+def test_a_running_mark_older_than_the_cap_does_not_save_an_instance(
+        tmp_path):
+    # A watcher that died mid-command leaves its mark behind. It gets the
+    # same allowance as a busy record, and not for ever.
+    root = str(tmp_path)
+    ipc.ensure_dirs(root, "p-1")
+    instances.write(root, make_reg("p-1", "p"))
+    marked = os.path.join(ipc.command_dir(root, "p-1"), "1-aaaaaa.running")
+    io.open(marked, "w").close()
+    os.utime(marked, (T0, T0))
+    assert instances.prune_stale(root, now=T0 + 300.0) == []
+    later = T0 + instances.ABANDONED_AFTER_S + 1.0
+    assert instances.prune_stale(root, now=later) == ["p-1"]
+
+
 def test_a_busy_instance_whose_process_is_gone_is_dead():
     busy = make_reg("p-1", "p", state=instances.STATE_BUSY)
     assert not instances.is_alive(busy, now=T0 + 1.0,

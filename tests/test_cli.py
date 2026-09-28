@@ -258,6 +258,31 @@ def test_the_queued_command_says_when_the_caller_stops_waiting(watch,
     assert before + 30 <= seen[0]["deadline_epoch"] <= time.time() + 30
 
 
+def test_waiting_does_not_hold_the_registration_open(watch, monkeypatch):
+    # Windows refuses the watcher's rewrite while anyone has the file open,
+    # and reading it every 50 ms was often enough to lose the busy beat.
+    opened = []
+    real = ipc.read_json
+
+    def counting(path):
+        if path == ipc.registration_path(watch.root, watch.instance_id):
+            opened.append(path)
+        return real(path)
+
+    turns = []
+
+    def slow(_seconds):
+        turns.append(1)
+        if len(turns) == 40:
+            watch.run_one(commands.next_command(watch.root, watch.instance_id))
+
+    monkeypatch.setattr(time, "sleep", slow)
+    target_ = target.Target(watch.root)
+    monkeypatch.setattr(ipc, "read_json", counting)
+    assert target_.run_one("ping", {})["ok"] is True
+    assert len(opened) < 5
+
+
 def test_ctrl_c_while_waiting_leaves_no_command_behind(watch, monkeypatch):
     def interrupt(_seconds):
         raise KeyboardInterrupt()

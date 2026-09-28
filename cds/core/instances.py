@@ -21,7 +21,7 @@ import ntpath
 import os
 import shutil
 
-from cds.core import ipc
+from cds.core import commands, ipc
 
 STATE_IDLE = "idle"
 STATE_BUSY = "busy"
@@ -157,6 +157,12 @@ def prune_stale(root, now=None, max_age=STALE_TIMEOUT_S,
     under a live process. So busy is spared for abandoned_after, which no
     real command comes near, and only then taken for an IDE that crashed.
 
+    The state field is not enough on its own. On Windows the watcher's
+    rewrite to busy can fail while a CLI has the file open, and then the
+    record says idle, with a heartbeat that stops for as long as the command
+    runs. The command's .running file is the evidence that does not depend
+    on that write (cds/core/commands.py), and it gets the same allowance.
+
     Tying this to the command timeout (the CLI's 120 seconds) looked like
     protection but only covered commands shorter than that, which is not the
     interesting case. Cleaning up after a dead watcher and deciding a command
@@ -168,6 +174,9 @@ def prune_stale(root, now=None, max_age=STALE_TIMEOUT_S,
     removed = []
     for reg in read_all(root):
         if _recent(reg, now, max_age, abandoned_after):
+            continue
+        claimed = commands.running_since(root, reg["instance_id"])
+        if claimed is not None and now - claimed <= abandoned_after:
             continue
         delete(root, reg["instance_id"])
         removed.append(reg["instance_id"])

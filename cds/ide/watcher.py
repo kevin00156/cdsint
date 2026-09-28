@@ -11,10 +11,10 @@ Ticks land on the UI thread, so object-model calls from them are legal and no
 cross-thread machinery is needed. No threads, no time.sleep(), no
 execute_on_primary_thread (SP21 removed it).
 
-A command is claimed by deleting its file *before* running it. The plan had
-the delete last, but a watcher that dies mid-import would then find the same
-import queued again on restart. A lost result costs the caller a timeout; a
-repeated import costs it a project.
+A command is claimed by renaming its file out of the queue *before* running
+it. The plan had the delete last, but a watcher that dies mid-import would
+then find the same import queued again on restart. A lost result costs the
+caller a timeout; a repeated import costs it a project.
 """
 from __future__ import print_function
 
@@ -23,6 +23,8 @@ import traceback
 
 from cds.core import commands, instances, ipc
 from cds.ide import display, entries, messages, project, silent
+
+BEAT_ATTEMPTS = 5
 
 
 class Watcher(object):
@@ -134,13 +136,16 @@ class Watcher(object):
         same Windows sharing violation as the heartbeat (WATCHER.md 2.1),
         and an instance left stuck in `busy` is worse than a lost answer. Once
         busy_since goes stale the CLI stops seeing the instance, while
-        prune_stale keeps sparing it because the heartbeat is fresh — nothing
-        recovers from that but restarting the script by hand.
+        prune_stale keeps sparing it because it is busy, for hours.
+
+        A command its caller took back before we could claim it is not run
+        and not answered: nobody is waiting for either.
         """
         started = ipc.now()
+        if not self._claim(cmd):
+            return None
         result = None
         try:
-            commands.delete_command(self.root, self.instance_id, cmd["id"])
             self._beat(started, instances.STATE_BUSY)
             self.doing = cmd.get("command")
             # Paint BUSY before the work starts: the IDE stops repainting for
@@ -159,8 +164,27 @@ class Watcher(object):
         finally:
             self._finished(cmd, result, started)
             self._beat(ipc.now(), instances.STATE_IDLE)
+            self._release(cmd)
             self._show()
         return result
+
+    def _claim(self, cmd):
+        """Take the command off the queue. False: do not run it."""
+        try:
+            return commands.claim_command(self.root, self.instance_id,
+                                          cmd["id"])
+        except EnvironmentError:
+            print("watcher: could not claim %s\n%s"
+                  % (cmd.get("id"), traceback.format_exc()))
+            return False
+
+    def _release(self, cmd):
+        """Take the running mark away. Left behind, it only delays pruning."""
+        try:
+            commands.release_command(self.root, self.instance_id, cmd["id"])
+        except EnvironmentError as exc:
+            print("watcher: could not clear the mark of %s (%s)"
+                  % (cmd.get("id"), exc))
 
     def _finished(self, cmd, result, started):
         """Remember how that one went, for the status window and the log."""
@@ -281,22 +305,30 @@ class Watcher(object):
         """Write the heartbeat, or shrug and let the next turn try again.
 
         On Windows the registration cannot be replaced while a CLI has it open
-        for reading, and the CLI opens it on every command. The window is
-        microseconds and the next attempt is one loop turn away, so a missed
-        beat is not worth ending a watcher over. _last_beat is left alone so
-        the retry happens on the next turn rather than in two seconds.
+        for reading. A CLI holds it for the length of one read, so the write
+        is tried again at once, a few times, before it is given up -- no
+        sleep, there is none on this thread (SPEC D5). It matters most for
+        the beat that says busy: the next turn is after the command, and
+        without it the record says idle while the heartbeat stops for the
+        whole of a long import. Past that, a missed beat is not worth ending
+        a watcher over. _last_beat is left alone so the retry happens on the
+        next turn rather than in two seconds.
         """
         if state is not None:
             instances.set_state(self.reg, state, now)
         self._refresh_project()
         instances.stamp_heartbeat(self.reg, now)
-        try:
-            instances.write(self.root, self.reg)
-        except EnvironmentError as exc:
-            if not self._deferring:  # once per episode, not once per turn
-                print("watcher: heartbeat deferred (%s)" % exc)
-                self._deferring = True
-            return False
-        self._deferring = False
-        self._last_beat = now
-        return True
+        failure = None
+        for _attempt in range(BEAT_ATTEMPTS):
+            try:
+                instances.write(self.root, self.reg)
+            except EnvironmentError as exc:
+                failure = exc
+                continue
+            self._deferring = False
+            self._last_beat = now
+            return True
+        if not self._deferring:  # once per episode, not once per turn
+            print("watcher: heartbeat deferred (%s)" % failure)
+            self._deferring = True
+        return False

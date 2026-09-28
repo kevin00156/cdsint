@@ -13,9 +13,10 @@ has open (SPEC 4.2, cdsint/cli.py show_folder).
 """
 from __future__ import print_function
 
+import os
 import time
 
-from cds.core import commands, instances
+from cds.core import commands, instances, ipc
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
 from cdsint import process
 from cdsint.exits import Failure
@@ -137,7 +138,11 @@ def _poll_once(root, instance_id, cmd, gone_since):
     result = commands.take_result(root, instance_id, cmd["id"])
     if result is not None:
         return result, None
-    if instances.read(root, instance_id) is not None:
+    # Only whether it is there, not what it says. Opening it every poll held
+    # it open often enough that the watcher's rewrite, which Windows refuses
+    # while anyone has the file open, failed -- and the rewrite it lost was
+    # the one saying busy, for the whole of a long command.
+    if os.path.exists(ipc.registration_path(root, instance_id)):
         return None, None
     gone_since = gone_since or time.time()
     if time.time() - gone_since >= GONE_AFTER_S:

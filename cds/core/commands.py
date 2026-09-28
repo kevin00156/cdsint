@@ -3,8 +3,11 @@
 
 A command file name is "<13-digit millisecond stamp>-<6 hex>.json", so plain
 alphabetical order is oldest-first and two commands issued in the same
-millisecond still get separate files. The watcher takes one at a time, writes
-the result under the same id, then deletes the command.
+millisecond still get separate files. The watcher takes one at a time by
+renaming it to "<id>.running" before it runs it, writes the result under the
+same id, then removes the .running file. That file is the one sign on disk
+that a command is in progress which does not depend on the registration being
+rewritten -- and on Windows that rewrite can fail (docs/WATCHER.md 2.1).
 
 The CLI deletes each result once it has read it. Results nobody came back for
 (the CLI was killed, say) are swept by the watcher on its next start.
@@ -13,6 +16,7 @@ Pure Python (PRINCIPLES.md 4): no CODESYS imports.
 """
 from __future__ import print_function
 
+import errno
 import os
 import random
 
@@ -110,6 +114,60 @@ def _set_aside(path, why):
 
 def delete_command(root, instance_id, cmd_id):
     ipc.remove_file(_command_path(root, instance_id, cmd_id))
+
+
+RUNNING = ".running"
+
+
+def claim_command(root, instance_id, cmd_id):
+    """Take a command off the queue, leaving the mark that it is running.
+
+    A rename, so there is no moment with neither file. Touched afterwards:
+    the file's age has to be how long the command has run, not how long
+    ago the CLI queued it.
+
+    False when the command is no longer there: its caller timed out and
+    took it back between our reading it and claiming it, and a command
+    nobody is waiting for is not run.
+    """
+    path = _running_path(root, instance_id, cmd_id)
+    try:
+        os.rename(_command_path(root, instance_id, cmd_id), path)
+    except (IOError, OSError) as exc:
+        if getattr(exc, "errno", None) == errno.ENOENT:
+            return False
+        raise
+    os.utime(path, None)
+    return True
+
+
+def release_command(root, instance_id, cmd_id):
+    ipc.remove_file(_running_path(root, instance_id, cmd_id))
+
+
+def running_since(root, instance_id):
+    """When the command in progress was claimed, or None if none is.
+
+    The oldest, should there be several: a watcher that died mid-command
+    leaves its mark behind, and that one is the one that says how long.
+    """
+    directory = ipc.command_dir(root, instance_id)
+    try:
+        names = os.listdir(directory)
+    except (IOError, OSError):
+        return None
+    stamps = []
+    for name in names:
+        if name.endswith(RUNNING):
+            try:
+                stamps.append(os.path.getmtime(os.path.join(directory, name)))
+            except (IOError, OSError):
+                continue    # released between the listing and the look
+    return min(stamps) if stamps else None
+
+
+def _running_path(root, instance_id, cmd_id):
+    return os.path.join(ipc.command_dir(root, instance_id), cmd_id + RUNNING)
 
 
 def _command_path(root, instance_id, cmd_id):
