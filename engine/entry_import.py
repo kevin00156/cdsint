@@ -13,9 +13,13 @@ one 228-line function; they were split out of it unchanged.
 """
 from __future__ import print_function
 
+import os
 import time
 
+from engine.ide_hash import get_quick_ide_hash
 from engine.strings import safe_str
+from engine.sync_cache import (
+    file_signature, load_sync_cache, normalize_path, save_sync_cache)
 from engine.sync_log import (
     init_logging,
     log_info,
@@ -86,6 +90,7 @@ def import_project(base_dir, values, projects_obj=None):
         projects_obj.primary, base_dir, plan.items,
         entry.borrowed(globals(), "PouType")
     )
+    _record_cache(base_dir, plan.items)
 
     # Save and back up BEFORE stopping the clock and announcing completion,
     # so the reported figure covers the whole wait rather than ending at the
@@ -235,6 +240,35 @@ def _confirm(plan, projects_obj):
         system.ui.warning(cancelled)
         return entry.result(False, cancelled)
     return None
+
+
+def _record_cache(base_dir, items):
+    """Write down that each file that landed now matches its object.
+
+    The compare this import started from saved the cache before anything
+    was applied, so a file edited on disk and imported kept the entry from
+    before the edit. The next export read its signature as "edited since the
+    last sync" and left it pending; an import after that wrote the file back
+    over whatever had been changed in the IDE meanwhile (SPEC 6.1). The entry
+    has the shape export writes. A failed item keeps its old entry.
+    """
+    cache = load_sync_cache(base_dir)
+    for item in items:
+        obj = item.get("landed")
+        if obj is None:
+            continue
+        abs_path = item.get("file_path") or os.path.join(
+            base_dir, item["path"].replace("/", os.sep))
+        try:
+            disk_mtime, disk_size = file_signature(abs_path)
+        except OSError:
+            continue
+        rel_path = os.path.relpath(abs_path, base_dir)
+        cache["objects"][normalize_path(rel_path)] = {
+            "ide_hash": get_quick_ide_hash(obj, abs_path.endswith(".xml")),
+            "disk_mtime": disk_mtime, "disk_size": disk_size}
+    save_sync_cache(base_dir, cache["objects"], cache["folders"],
+                    cache["types"])
 
 
 def _report(plan, counts, save_error, backup_filename, start_time, base_dir,
