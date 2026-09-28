@@ -18,7 +18,7 @@ from engine.codesys_constants import (
     PROPERTY_SET_MARKER,
 )
 from engine.text_kind import determine_object_type
-from engine.strings import calculate_hash, safe_str
+from engine.strings import calculate_hash
 from engine.sync_log import log_error, log_warning
 
 
@@ -356,14 +356,13 @@ def parse_st_file(file_path):
     Returns tuple (declaration, implementation, pragmas).
     pragmas is the dict from parse_sync_pragmas (may be empty); use
     attrs_from_pragmas() to get the boolean build attributes.
-    """
-    try:
-        content = read_sync_text(file_path)
-    except Exception as e:
-        print("Error reading file " + file_path + ": " + safe_str(e))
-        return None, None, {}
 
-    content = unify_newlines(content)
+    A file that cannot be read raises. It used to print and hand back
+    (None, None), which the update read as "nothing to change", so an import
+    of a file saved in another encoding reported success and left the IDE
+    as it was (PRINCIPLES 6). The import loop names the file (SPEC D13).
+    """
+    content = unify_newlines(read_sync_text(file_path))
 
     # Strip sync pragmas first
     pragmas, clean_content = parse_sync_pragmas(content)

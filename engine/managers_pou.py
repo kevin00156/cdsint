@@ -89,8 +89,6 @@ class POUManager(ObjectManager):
     def update(self, obj, file_path):
         from engine.st_text import parse_st_file
         declaration, implementation, pragmas = parse_st_file(file_path)
-        if declaration is None and implementation is None:
-            return False
 
         # We assume the engine already decided we need to update based on content hash
         updated = update_object_code(obj, declaration, implementation)
@@ -253,10 +251,8 @@ class PropertyManager(POUManager):
                                 content_hash, context)
 
     def update(self, obj, file_path):
-        try:
-            raw_content = read_sync_text(file_path)
-        except: return False
-
+        # A file that cannot be read raises, as parse_st_file does.
+        raw_content = read_sync_text(file_path)
         pragmas, clean_content = parse_sync_pragmas(
             raw_content.replace('\r\n', '\n').replace('\r', '\n'))
 
@@ -291,10 +287,7 @@ class PropertyManager(POUManager):
         return updated
 
     def create(self, container, name, file_path, type_guid):
-        try:
-            raw_content = read_sync_text(file_path)
-        except: return None
-
+        raw_content = read_sync_text(file_path)
         pragmas, clean_content = parse_sync_pragmas(
             raw_content.replace('\r\n', '\n').replace('\r', '\n'))
 

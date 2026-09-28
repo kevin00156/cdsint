@@ -32,7 +32,6 @@ ALLOWED = {
     "engine/ide_tree.py": 5,
     "engine/managers_base.py": 1,
     "engine/managers_native.py": 1,
-    "engine/managers_pou.py": 2,
     "engine/object_content.py": 4,
     "engine/object_kind.py": 4,
     "engine/object_paths.py": 6,
