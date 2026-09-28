@@ -76,3 +76,16 @@ def test_a_folder_with_no_cache_has_no_orphans(bench):
 
     assert bench.files() == ["A/Foo.st", "A/Foo2.st"]
     assert result["data"]["pending_import"] == ["A/Foo.st"]
+
+
+def test_a_compare_in_between_does_not_turn_an_orphan_into_new_work(bench):
+    # Compare rewrites the cache from what it walked. The orphan's file has
+    # no object, so its entry used to be dropped, and the export after it
+    # kept the file as unknown and reported it as waiting for import.
+    foo(bench)._name = "Foo2"
+    bench.compare()
+
+    result = bench.export(auto_delete_orphans=True)
+
+    assert bench.files() == ["A/Foo2.st"]
+    assert result["data"]["pending_import"] == []

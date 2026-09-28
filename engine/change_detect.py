@@ -109,18 +109,23 @@ def find_all_changes(base_dir, projects_obj, export_xml=False):
 
     p2_start = time.time()
     found = _compare_all(scan, base_dir, project, ide_folder_hashes)
+    log_info("  Pass 2 complete in {:.2f}s".format(time.time() - p2_start))
+
+    # Pass 3: Disk Scan
+    new_on_disk = scan_new_disk_files(base_dir, scan.paths)
+    # A file no object claims keeps its entry too: that entry is what lets
+    # the next export tell an orphan from somebody's new file (orphan_sweep).
+    for item in new_on_disk:
+        key = normalize_path(item["path"])
+        if key in scan.cached_objects:
+            found["cache"][key] = scan.cached_objects[key]
 
     save_sync_cache(base_dir, found["cache"],
                     _recorded_folder_hashes(found["cache"], scan.hashes),
                     scan.types)
-
-    log_info("  Pass 2 complete in {:.2f}s".format(time.time() - p2_start))
     log_info("  Sync cache updated: %d hits, %d entries total"
              % (found["cache_hits"], len(found["cache"])))
     print("  Compare engine finished in {:.2f}s".format(time.time() - total_start))
-
-    # Pass 3: Disk Scan
-    new_on_disk = scan_new_disk_files(base_dir, scan.paths)
 
     # Pass 4: Detect moved/renamed files
     moved, new_in_ide, new_on_disk = detect_moved_files(found["new_in_ide"],
