@@ -139,7 +139,7 @@ def read_records(path):
     if not path:
         return {}
     try:
-        found = ipc.read_json(path)
+        found = ipc.read_json(ipc.last_written(path))
     except (IOError, OSError, ValueError) as exc:
         log_warning("plc: %s could not be read, so this run has nothing to "
                     "compare against: %s" % (path, safe_str(exc)))

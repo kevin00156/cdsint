@@ -160,15 +160,45 @@ def _discard(path):
         pass
 
 
+# Where _replace keeps the old file while the new one is renamed in.
+ASIDE = ".old"
+
+
 def _replace(src, dst):
-    """Rename src over dst. os.rename cannot overwrite on Windows."""
+    """Rename src over dst. os.rename cannot overwrite on Windows.
+
+    Without os.replace -- IronPython 2.7, which is where the sync cache and
+    the plc record are written -- the old file is renamed aside rather than
+    deleted: a rename a virus scanner blocks puts it back, and a process that
+    dies between the two renames leaves it for last_written() to find. Only
+    a stale aside is ever deleted before a new one is made, never the only
+    copy there is.
+    """
     replace = getattr(os, "replace", None)  # CPython 3 only, atomic
     if replace is not None:
         replace(src, dst)
         return
+    aside = dst + ASIDE
     if os.path.exists(dst):
-        os.remove(dst)
-    os.rename(src, dst)
+        _discard(aside)
+        os.rename(dst, aside)
+    try:
+        os.rename(src, dst)
+    except EnvironmentError:
+        if os.path.exists(aside) and not os.path.exists(dst):
+            os.rename(aside, dst)
+        raise
+    _discard(aside)
+
+
+def last_written(path):
+    """path, or what _replace set aside when the process died between its
+    two renames. For the files whose loss loses work -- the sync cache and
+    the plc record -- not for this protocol's files, where a file the other
+    side deleted is an answer and must not come back."""
+    if not os.path.exists(path) and os.path.exists(path + ASIDE):
+        return path + ASIDE
+    return path
 
 
 # --------------------------------------------------------------------------

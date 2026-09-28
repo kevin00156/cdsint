@@ -118,3 +118,47 @@ def test_the_rename_fallback_works_without_os_replace(tmp_path, monkeypatch):
     ipc.write_json(path, {"beat": 2})
     assert ipc.read_json(path) == {"beat": 2}
     assert not os.path.exists(path + ".tmp")
+
+
+class _Died(BaseException):
+    """The IDE going away mid-call: nothing after it runs, not even except."""
+
+
+def _renames_of_tmp(monkeypatch, raised):
+    real = os.rename
+
+    def rename(src, dst):
+        if src.endswith(".tmp"):
+            raise raised
+        real(src, dst)
+    monkeypatch.delattr(os, "replace", raising=False)
+    monkeypatch.setattr(os, "rename", rename)
+
+
+def test_a_blocked_rename_without_os_replace_keeps_the_old_file(
+        tmp_path, monkeypatch):
+    # The old file was deleted before the rename, so a scanner holding the
+    # fresh .tmp left no file at all: the sync cache gone, and with it the
+    # evidence that keeps an export off a file somebody edited.
+    path = str(tmp_path / "sync_cache.json")
+    ipc.write_json(path, {"beat": 1})
+    _renames_of_tmp(monkeypatch, OSError(13, "held by a scanner"))
+    with pytest.raises(OSError):
+        ipc.write_json(path, {"beat": 2})
+    assert ipc.read_json(path) == {"beat": 1}
+    assert sorted(os.listdir(str(tmp_path))) == ["sync_cache.json"]
+
+
+def test_a_death_between_the_renames_leaves_the_old_file_to_be_found(
+        tmp_path, monkeypatch):
+    path = str(tmp_path / "sync_cache.json")
+    ipc.write_json(path, {"beat": 1})
+    _renames_of_tmp(monkeypatch, _Died())
+    with pytest.raises(_Died):
+        ipc.write_json(path, {"beat": 2})
+    assert ipc.read_json(ipc.last_written(path)) == {"beat": 1}
+    monkeypatch.undo()
+    monkeypatch.delattr(os, "replace", raising=False)
+    ipc.write_json(path, {"beat": 3})
+    assert ipc.last_written(path) == path
+    assert sorted(os.listdir(str(tmp_path))) == ["sync_cache.json"]

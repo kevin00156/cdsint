@@ -143,7 +143,7 @@ def load_sync_cache(base_dir):
     sync direction) changes PROFILE_HASH and forces a full re-classification.
     """
     from engine.codesys_constants import PROFILE_HASH
-    cache_path = os.path.join(base_dir, "sync_cache.json")
+    cache_path = ipc.last_written(os.path.join(base_dir, "sync_cache.json"))
     empty = {"objects": {}, "folders": {}, "types": {}, "version": CACHE_VERSION}
     if os.path.exists(cache_path):
         try:
@@ -197,8 +197,9 @@ def save_sync_cache(base_dir, objects_cache, folder_hashes=None, type_cache=None
         # and doubled a 125 KB file.
         #
         # Serialised whole, then swapped in: the entries are the dirty-file
-        # guard's evidence (SPEC 6.1), and a write that died half way used
-        # to leave a file that loads as no cache at all.
+        # guard's evidence (SPEC 6.1), and a file that died half way loads
+        # as no cache at all. load_sync_cache reads through last_written for
+        # the same reason.
         ipc.write_atomic(cache_path,
                          json.dumps(cache_data, separators=(",", ":")))
     except Exception as e:

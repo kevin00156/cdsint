@@ -14,6 +14,7 @@ import os
 
 import pytest
 
+from cds.core import ipc
 from engine import classify, managers_native, object_create, sync_cache
 
 
@@ -194,6 +195,19 @@ class TestCachedClassification:
         assert types["short"] == ("t", True, None)
         assert types["full"] == ("t", False, "A.st")
         assert "junk" not in types
+
+    def test_load_finds_the_cache_a_save_set_aside(self, utils, tmp_path):
+        # A save that died between its two renames leaves the old cache
+        # under its aside name and none under its own.
+        from engine.codesys_constants import PROFILE_HASH
+        aside = tmp_path / ("sync_cache.json" + ipc.ASIDE)
+        aside.write_text(json.dumps({
+            "version": sync_cache.CACHE_VERSION,
+            "profile_hash": PROFILE_HASH, "folders": {}, "types": {},
+            "objects": {"a/foo.st": ["hash", 1, 2]},
+        }), encoding="utf-8")
+        loaded = sync_cache.load_sync_cache(str(tmp_path))
+        assert "a/foo.st" in loaded["objects"]
 
 
 class TestManagerDispatch:
