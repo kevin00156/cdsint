@@ -43,7 +43,7 @@ def cleanup_orphaned_files(export_dir, claimed, auto_delete, cached, new_cache):
     settings are read once per command.
     """
     orphans, kept = _unclaimed(export_dir, claimed, cached)
-    if (orphans or kept) and unhandled.any_so_far():
+    if (orphans or kept) and unhandled.any_file_unaccounted():
         # An object this run could not classify has no path, so its file is
         # one of these, and the run cannot say which (SPEC D13). Only the
         # deletion is skipped: a kept file still carries its entry, or the

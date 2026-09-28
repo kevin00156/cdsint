@@ -159,7 +159,7 @@ def _plan(results):
     # (engine/orphan_sweep.py); this is that rule pointed the
     # other way. Updates and deletions still run: each names an IDE object
     # this run did read.
-    if unhandled.any_so_far() and (plan.new_on_disk or plan.moved):
+    if unhandled.any_file_unaccounted() and (plan.new_on_disk or plan.moved):
         plan.not_created = ([item["path"] for item in plan.new_on_disk]
                             + [move["disk_path"] for move in plan.moved])
         plan.new_on_disk, plan.moved = [], []

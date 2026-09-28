@@ -172,8 +172,10 @@ class PathClaims(object):
     Two objects can resolve to one path: an application inside another adds
     no folder of its own, so a POU in each lands on the same file. Export
     wrote both into it, the second over the first, and compare kept
-    whichever it met last. Neither can be synced through a shared file, so
-    both are named (SPEC D13) and only the first claimant is handled.
+    whichever it met last. A shared file cannot speak for both, so both are
+    named (SPEC D13): export writes the first claimant's text and no other,
+    and compare compares neither. The file itself is claimed, so it is no
+    reason to stop creating or deleting other files.
     """
 
     def __init__(self):
@@ -188,10 +190,10 @@ class PathClaims(object):
             return True
         if key not in self.shared:
             self.shared.add(key)
-            unhandled.note(owner[1], "resolves to %s, as another object does"
-                           % rel_path)
-        unhandled.note(obj, "resolves to %s, which %s already has"
-                       % (rel_path, unhandled.name_of(owner[1])))
+            unhandled.note_file_known(
+                owner[1], "resolves to %s, as another object does" % rel_path)
+        unhandled.note_file_known(obj, "resolves to %s, which %s already has"
+                                  % (rel_path, unhandled.name_of(owner[1])))
         return False
 
 
