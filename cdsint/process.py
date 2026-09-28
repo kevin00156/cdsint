@@ -34,9 +34,10 @@ ERROR_INVALID_PARAMETER = 87
 # FILETIME counts 100 ns ticks from 1601; this many seconds lie between that
 # and the Unix epoch.
 _EPOCH_DIFFERENCE_S = 11644473600
-# A registration is stamped a moment after its process began; this is how
-# far that stamp may lag without calling the process a newcomer. Generous,
-# because the stamp is the watcher's start, not the IDE's.
+# A process created after a registration's stamp is a newcomer on a reused
+# pid. The two times come from different clocks -- the kernel's record of
+# when the process was created, and time.time() when the watcher stamped --
+# so a creation this far past the stamp is still taken for the same process.
 CLOCK_SLACK_S = 2.0
 
 

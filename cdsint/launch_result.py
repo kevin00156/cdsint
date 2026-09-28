@@ -8,8 +8,7 @@ whether the process had to be killed, whether stdout came back at all -- is
 added here, and then the whole is turned into results or into the Failure
 that says why there are none (SPEC 6.4).
 
-Split out of cdsint/headless.py, where these were methods; `launch` is the
-Headless whose run this is.
+`launch`, wherever it is taken, is the Headless whose run this is.
 """
 from __future__ import print_function
 
@@ -59,8 +58,8 @@ def verdict(launch, report, code):
     """The results, or the reason there are none. Says each thing once.
 
     A killed run's sentence is either the Failure's message or a note,
-    never both: it used to be printed here and then again by
-    cdsint/exits.py when the Failure carrying the same text was reported.
+    never both: cdsint/exits.py prints a Failure's message, so a note with
+    the same text would be read twice.
     Which of the two it is depends on whether the work got done — a
     report with an intended_exit is the answer, and a kill that came
     after it is only a slow shutdown (SPEC 6.4).

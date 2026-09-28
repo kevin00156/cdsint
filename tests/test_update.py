@@ -318,3 +318,20 @@ def test_running_ides_reads_tasklist(monkeypatch):
         return subprocess.CompletedProcess(args, 0, stdout=listing)
     monkeypatch.setattr(update.subprocess, "run", run)
     assert update.running_ides() == ["CODESYS.exe", "DIADesigner-AX.exe"]
+
+
+@pytest.mark.parametrize("raised", [
+    FileNotFoundError(2, "No such file or directory", "tasklist"),
+    subprocess.CalledProcessError(1, ["tasklist"]),
+])
+def test_a_tasklist_that_fails_is_a_failure_not_a_traceback(monkeypatch,
+                                                            raised):
+    # Neither is an error update caught, so the user got a traceback -- and
+    # not knowing what runs must not read as "nothing runs".
+    def run(*args, **kwargs):
+        raise raised
+    monkeypatch.setattr(update.subprocess, "run", run)
+    with pytest.raises(Failure) as failed:
+        update.running_ides()
+    assert failed.value.code == EXIT_FAILED
+    assert "nothing was changed" in str(failed.value)

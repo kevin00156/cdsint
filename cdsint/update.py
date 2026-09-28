@@ -79,9 +79,16 @@ def _check_downloaded():
 def running_ides():
     """The CODESYS-family executables running now, by image name."""
     wanted = set(vendor["exe"].lower() for vendor in installs.VENDORS)
-    listing = subprocess.run(["tasklist", "/fo", "csv", "/nh"],
-                             capture_output=True, text=True, errors="replace",
-                             check=True).stdout
+    try:
+        listing = subprocess.run(["tasklist", "/fo", "csv", "/nh"],
+                                 capture_output=True, text=True,
+                                 errors="replace", check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        # Not knowing is not "none running": a swap under a running IDE is
+        # the one thing this check is for.
+        raise Failure("could not list the running programs to check that no "
+                      "CODESYS-family IDE is open, so nothing was changed: %s"
+                      % exc, EXIT_FAILED)
     return sorted(set(row[0] for row in csv.reader(io.StringIO(listing))
                       if row and row[0].lower() in wanted))
 
