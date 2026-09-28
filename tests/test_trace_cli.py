@@ -130,12 +130,16 @@ def test_a_yes_that_confirms_nothing_is_refused(action, tmp_path, runner,
     assert not runner.started
 
 
-def test_a_port_without_a_gateway_is_refused(runner, capsys):
-    # Without --gateway the project's own settings are used, so the port
-    # would be dropped without a word.
-    said = refused(["plc", "connect", "--project", "P", "--install", "I",
-                    "--port", "11741"], capsys)
-    assert "--port needs --gateway" in said
+@pytest.mark.parametrize("more", [[], ["--port", "11741"]])
+def test_a_connect_without_a_gateway_is_refused_with_the_reason(more, runner,
+                                                                capsys):
+    # Found by the project's device name, the controller can be the wrong
+    # one, and the wrong one can answer MATCH for a download that went to it.
+    # A --port on its own was dropped without a word, and is refused the same
+    # way: it is the port behind --gateway.
+    said = refused(["plc", "connect", "--project", "P", "--install", "I"]
+                   + more, capsys)
+    assert "needs --gateway" in said and "wrong controller" in said
     assert not runner.started
 
 

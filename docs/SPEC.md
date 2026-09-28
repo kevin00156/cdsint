@@ -355,7 +355,7 @@ mutually exclusive, and argparse blocks them directly.
 | `discover` | yes | yes | name every object and the kind it counted as, and list the type GUIDs no kind recognises (`data.unknown`). Read-only, no permission needed |
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
-| `plc connect [--gateway IP --port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
+| `plc connect --gateway IP [--port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
 | `plc download -y --gateway IP [--port N]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
 | `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
@@ -406,7 +406,7 @@ Why `plc` commands refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc download` or `plc trace` without `--gateway`), or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (any `plc` command without `--gateway`), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -770,11 +770,13 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the
-  project file, one entry per controller (the key is `IP:port`; a run without
-  `--gateway` uses the key `project`), so one working copy can serve two rigs
-  at once without them overwriting each other. Copy the project elsewhere and
-  the record does not follow, which is right: it describes what this working
-  copy has done.
+  project file, one entry per controller, keyed `IP:port`, so one working
+  copy can serve two rigs at once without them overwriting each other. Copy
+  the project elsewhere and the record does not follow, which is right: it
+  describes what this working copy has done. An entry under any other key is
+  never read: a download without `--gateway` once filed its CRC under
+  `project`, which names no controller, so a record holding only that answers
+  `UNKNOWN` until one download to the named address writes an `IP:port` entry.
 - **The locally built boot application is not compared.** That was the
   original approach, and on the rig two independent reasons for it were
   measured and both fail (2026-09-06, 3.5.21.40 / ScriptEngine 4.2.0.0). One:
@@ -811,20 +813,20 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
 - The report of both commands has to contain the comparison result, `MATCH`
   or `DIFFERENT`; the pipeline uses it as the gate.
 
-A few more things. `connect` touches the device node's gateway setting only
-when `--gateway` was given; without it the project's own is used, because that
-is an answer somebody else set, and a read-only command should not change it
-in passing. `plc download` and `plc trace` are the exceptions: without
-`--gateway` they exit 2. A project that finds its controller by device name can
-reach the wrong one (two WSL soft PLCs report the same host name), and the
-IDE's "the address differs from the project" prompt defaults to Yes; a download
-to the wrong controller passes its own read-back, since that controller's CRC
-moves too, and a trace recorded from the wrong controller looks exactly like a
-right one. `--port` defaults to 11740 and is exit 2 without `--gateway`, whose
-port it is; `-y` on `connect` or `trace` is exit 2, since neither has anything
-for it to confirm. When the project has more than one device node, or
-`--gateway` is given and the IDE profile has more than one gateway to reach it
-through, every `plc` command refuses and lists the names; there is no flag to
+A few more things. Every `plc` command needs `--gateway` and exits 2 without
+it; the IDE side refuses it again before anything is switched or connected.
+A project that finds its controller by device name can reach the wrong one
+(two WSL soft PLCs report the same host name), and the IDE's "the address
+differs from the project" prompt defaults to Yes. What the wrong controller
+answers passes every check: a download to it passes its own read-back, since
+that controller's CRC moves too; a connect to it answers `MATCH` if a download
+went there; and a trace recorded from it looks exactly like a right one. So
+the device node is always aimed at the address given, which changes that
+setting in the open project; the project is never saved by a `plc` command.
+`--port` defaults to 11740; `-y` on `connect` or `trace` is exit 2, since
+neither has anything for it to confirm. When the project has more than one
+device node, or the IDE profile has more than one gateway to reach the
+address through, every `plc` command refuses and lists the names; there is no flag to
 pick one, since guessing a download target is not something that can have a
 default (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,

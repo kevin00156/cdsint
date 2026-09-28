@@ -73,12 +73,6 @@ SOURCE_ARCHIVE_NAME = LOCAL_PREFIX + "source.projectarchive"
 # rightly starts out knowing nothing.
 RECORD_SUFFIX = ".cdsint-plc.json"
 
-# The record is keyed by the controller a download went to, so one working
-# copy can serve two benches without either answer overwriting the other.
-# This is the key for a run that was given no --gateway and used whatever
-# address the project already carried.
-PROJECT_GATEWAY = "project"
-
 
 # --------------------------------------------------------------------------
 # The bytes
@@ -124,14 +118,14 @@ def record_path(project_path):
 
 
 def controller_key(address, port):
-    """The name a controller is filed under: "host:port", or PROJECT_GATEWAY.
+    """The name a controller is filed under in the record: "host:port".
 
-    A run given no --gateway used whatever the project carried, and this
-    module has no way to find out what that was -- so it is filed under a
-    name that says exactly that, rather than under a guess.
+    Keyed by the address a download went to, so one working copy can serve
+    two benches without either answer overwriting the other. Every plc
+    command names its address (--gateway), so there is no other key; an
+    entry under any other name, such as the "project" a download without
+    --gateway once wrote, names no controller and is never read.
     """
-    if not address:
-        return PROJECT_GATEWAY
     return "%s:%s" % (address, port)
 
 
@@ -212,9 +206,9 @@ def judge(recorded, plc, remote_crc):
         return UNKNOWN, ("the controller has no %s, so there is nothing on it "
                          "for this to be about" % remote_crc)
     if not recorded:
-        return UNKNOWN, ("cdsint has not downloaded to this controller from "
-                         "this project, so there is nothing to compare "
-                         "against; run plc download -y")
+        return UNKNOWN, ("there is no record of a download from this "
+                         "project to this controller, so there is nothing to "
+                         "compare against; run plc download -y once")
     when = recorded.get("downloaded_at", "an unrecorded date")
     if plc != recorded.get("plc_crc"):
         return DIFFERENT, ("the controller holds %s and the download from "

@@ -20,8 +20,7 @@ USER_ENV = "CDS_DEV_USER"
 PASS_ENV = "CDS_DEV_PASS"
 
 # What every CODESYS runtime listens on for device connections unless
-# somebody moved it. Only used when --gateway was given: without that flag
-# nothing here touches the project's own gateway settings.
+# somebody moved it: the port behind --gateway when no --port is given.
 DEFAULT_DEVICE_PORT = 11740
 
 
@@ -144,12 +143,11 @@ def find_device(project):
 def aim_at_gateway(online_api, device_node, address, port):
     """Point the device at `address`. Returns (note, problem); one is None.
 
-    Only called when --gateway was given. The gateway belongs to the IDE
-    profile, not to the project, so the same project opened in another
-    install can come back "Gateway not configured properly", and this is the
-    way past that. Its absence is not a reason to guess one: what the project
-    already carries is somebody's answer, and overwriting it would be a
-    change to the project made in passing by a read-only command.
+    Every plc command calls it: the address the project carries was found
+    by device name, which can reach the wrong controller (SPEC 6.6). The
+    gateway belongs to the IDE profile, not to the project, so the same
+    project opened in another install can come back "Gateway not configured
+    properly", and naming it is also the way past that.
     """
     gateways = list(getattr(online_api, "gateways", []) or [])
     if not gateways:

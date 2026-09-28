@@ -69,12 +69,10 @@ class TraceSetup(Trip):
     # -- before anything is touched ----------------------------------------
 
     def may_run(self):
-        """--gateway given, and a wait lent to this run. None if both."""
-        if not self.args.get("gateway"):
-            return ("--gateway is required. A project that finds its "
-                    "controller by name can reach the wrong one, and a trace "
-                    "from the wrong controller looks exactly like a right "
-                    "one, so the project's own gateway is not used (SPEC 6.6)")
+        """A wait lent to this run. None if there is one.
+
+        --gateway is reach_the_device's check, as for every plc command.
+        """
         if self.hold is None:
             return ("this run cannot wait: a recording holds the script for "
                     "duration_s, and that is only allowed in a --noUI run, "

@@ -146,7 +146,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `discover` | yes | yes | name every object and the kind it counted as; run it when something reports `failed_objects` |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
-| `plc connect [--gateway IP --port N]` | — | yes | is the controller still holding the last download from here |
+| `plc connect --gateway IP [--port N]` | — | yes | is the controller still holding the last download from here |
 | `plc download -y --gateway IP [--port N]` | — | yes | download to the controller, read the CRC back, write it down |
 | `plc trace --gateway IP --job FILE` | — | yes | record the variables a job file names, without downloading anything |
 
@@ -249,12 +249,12 @@ cannot stand in for each other.
   as `import` and `verify`. Without it: what the download would do,
   `needs_input`, exit 1, controller untouched.
 
-`plc download` also needs `--gateway`, and is exit 2 without it: a controller
-found by the project's device name can be the wrong one, and a download to the
-wrong controller passes its own read-back. `connect` may leave it out and use
-whatever the project holds. `--port` means the port behind `--gateway`, so it
-is exit 2 without one; `-y` on `connect` or `trace` is exit 2 as well, since
-neither has anything to confirm.
+Every `plc` command also needs `--gateway`, and is exit 2 without it: a
+controller found by the project's device name can be the wrong one, and the
+wrong controller passes every check — a download's read-back, a connect's
+`MATCH`, a trace's samples. `--port` is the port behind it (11740 when left
+out). `-y` on `connect` or `trace` is exit 2, since neither has anything to
+confirm.
 
 `plc` has no `--target` form at all. The watcher lives inside an IDE somebody
 is using, and a PLC login would take their online session away from them, so a
@@ -266,9 +266,11 @@ project, kept in `<project>.cdsint-plc.json` beside the project, one entry
 per controller. `MATCH` is the only answer that exits 0 — it means the
 controller still holds what cdsint last put on it from here. `DIFFERENT`
 means something else has been loaded since. `UNKNOWN` means there is no
-record for this controller (never downloaded from this machine, or the
-project was copied without its record) or its CRC could not be read, which
-is not the same as agreement. A download that leaves the application anything
+record for this controller's `IP:port` (never downloaded to it from here,
+the project was copied without its record, or the only record is an old
+`project` entry from a download made without `--gateway`, which names no
+controller and is ignored; one download to the address fixes it) or its CRC
+could not be read, which is not the same as agreement. A download that leaves the application anything
 but running is exit 1 as well, though its CRC is still recorded, since the
 controller does hold it. Whether the *source* on disk still matches the
 project is `compare`'s question, not this one's; a boot application built
@@ -374,7 +376,7 @@ controller you know has the memory.
 |---|---|
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (`plc download` without `--gateway`, `plc trace` without `--gateway` or `--job`), a trace job file that is wrong, or no single live IDE matched |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (any `plc` command without `--gateway`, `plc trace` without `--job`), a trace job file that is wrong, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere, `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |

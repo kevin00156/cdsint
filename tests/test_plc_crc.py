@@ -65,12 +65,10 @@ def test_a_record_nobody_can_read_is_no_record_rather_than_a_crash(tmp_path):
     assert plc_crc.read_records(path) == {}
 
 
-def test_a_run_with_no_gateway_flag_is_filed_under_its_own_name():
-    # "whatever the project already carried" is not an address, and filing it
-    # under a guessed one would let two different controllers share a record.
-    plc_crc = plc_crc_module
-    assert plc_crc.controller_key(None, 11740) == plc_crc.PROJECT_GATEWAY
-    assert plc_crc.controller_key("127.0.0.1", 11740) == "127.0.0.1:11740"
+def test_a_controller_is_filed_under_its_address_and_nothing_else():
+    assert plc_crc_module.controller_key("127.0.0.1", 11740) == \
+        "127.0.0.1:11740"
+    assert not hasattr(plc_crc_module, "PROJECT_GATEWAY")
 
 
 def test_a_project_that_was_never_saved_has_nowhere_to_keep_a_record():

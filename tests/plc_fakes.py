@@ -252,6 +252,19 @@ class OnlineChangeOption(object):
     Keep = "keep"
 
 
+# Where every connect and download here is aimed: every plc command names its
+# controller (SPEC 6.6), and a record is filed under that name.
+ADDRESS = "192.168.1.5"
+CONTROLLER = "%s:%d" % (ADDRESS, 11740)
+
+
+def at(**more):
+    """A plc command's args, aimed at ADDRESS, plus whatever else it takes."""
+    args = {"gateway": ADDRESS}
+    args.update(more)
+    return args
+
+
 # --------------------------------------------------------------------------
 # Fixtures
 # --------------------------------------------------------------------------
@@ -309,7 +322,7 @@ def workspace(tmp_path, monkeypatch):
 
 
 def ide(allowed=("connect", "download", "trace"), device=None, application=None,
-        children=None, gateways=()):
+        children=None, gateways=None):
     """The IDE globals a plc body reads, with the settings file written.
 
     The list goes on disk rather than into the fake project, because that is
@@ -323,7 +336,8 @@ def ide(allowed=("connect", "download", "trace"), device=None, application=None,
     children = children if children is not None else [DeviceNode("Device",
                                                            DEVICE_GUID)]
     project = Project(values, children, PROJECT_PATH, application)
-    online = Online(device=device, gateways=gateways)
+    online = Online(device=device, gateways=[Gateway()] if gateways is None
+                    else gateways)
     return {"system": FakeSystem(), "projects": Projects(project),
             "online": online, "CredentialSourceKind": CredentialSourceKind,
             "OnlineChangeOption": OnlineChangeOption}
@@ -346,7 +360,7 @@ def download_info(guids=BOOTINFO_GUIDS, compileinfo=True, guid=BOOTINFO_GUID,
     return prefix + ".bootinfo_guids"
 
 
-def recorded(plc_crc="11223344", controller=plc_crc_module.PROJECT_GATEWAY):
+def recorded(plc_crc="11223344", controller=CONTROLLER):
     """Write the record a download would have left, and hand back its path."""
     path = plc_crc_module.record_path(PROJECT_PATH)
     plc_crc_module.remember(path, controller,

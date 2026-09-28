@@ -83,7 +83,7 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
 def test_a_match_comes_back_as_exit_0(monkeypatch):
     runner = drive(monkeypatch, record(True, data={"crc": "MATCH"}))
     assert cli.main(["plc", "connect", "--project", "P", "--install", "I",
-                     "--sync-dir", "S"]) == EXIT_OK
+                     "--sync-dir", "S", "--gateway", "192.168.1.5"]) == EXIT_OK
     assert runner.asked[0][0] == "plc connect"
 
 

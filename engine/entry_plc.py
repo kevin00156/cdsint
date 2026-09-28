@@ -70,7 +70,7 @@ def connect():
     unhandled.start()
     trip = a_trip(Trip, "connect")
     return in_order(trip, [
-        trip.reach_the_device,   # the device, its application, the gateway
+        trip.reach_the_device,   # --gateway, the device, its application
         trip.read_back,          # what the controller holds, and its files
     ]) or trip.verdict()
 
@@ -88,7 +88,7 @@ def download():
                             crc=plc_crc.UNKNOWN)
     trip = a_trip(DownloadTrip, "download")
     failed = in_order(trip, [
-        trip.reach_the_device,   # the device, its application, the gateway
+        trip.reach_the_device,   # --gateway, the device, its application
         trip.what_it_holds,      # the CRC on the controller before this run
         trip.send,               # put this project on it
         trip.read_back,          # the CRC, the files and the archive after
@@ -122,9 +122,9 @@ def traced(trip):
     """
     unhandled.start()
     return in_order(trip, [
-        trip.may_run,             # --gateway given, and a wait lent to us
+        trip.may_run,             # a wait lent to us
         trip.read_the_job,        # checked again: the wire is not trusted
-        trip.reach_the_device,    # the device, its application, --gateway
+        trip.reach_the_device,    # --gateway, the device, its application
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y
         trip.the_ide_agrees,      # the IDE's download info names it too
         trip.the_program_is_unchanged,  # or Keep would download the change

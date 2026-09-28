@@ -127,7 +127,7 @@ guessed and nothing is silently ignored.
 ## Talking to a controller: `plc`
 
 ```
-cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --gateway 192.168.1.5
 cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --gateway 192.168.1.5
 ```
 
@@ -146,17 +146,16 @@ downloaded to it from this project. `download` writes the controller's CRC into
 `<project>.cdsint-plc.json` beside the project, one entry per controller, and
 `connect` holds the controller against that. `data.crc` is `MATCH` (exit 0),
 `DIFFERENT` (exit 1: something else has been downloaded to it since) or `UNKNOWN`
-(exit 1: nothing was ever downloaded there from here, or the controller holds
-nothing — neither is agreement). A download that leaves the application not
+(exit 1: nothing was ever downloaded to that address from here, or the
+controller holds nothing — neither is agreement; an old `project` entry in the
+record, from a download without `--gateway`, is ignored, so download once). A download that leaves the application not
 running is exit 1 too, though it is recorded. It does not answer "has the project changed
 since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 `compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
-`--gateway IP [--port N]` overrides the project's own gateway settings; without it
-the project's are left alone. `plc download` needs `--gateway` (exit 2 without
-one): found by the project's device name, the controller can be the wrong one,
-and a download to it passes its own read-back. `--port` without `--gateway`, and
-`-y` on `connect` or `trace`, are exit 2 too.
+Every `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
+by the project's device name, the controller can be the wrong one, and the
+wrong one passes every check. `-y` on `connect` or `trace` is exit 2 too.
 
 `plc trace` records variables from a controller that is at `MATCH`, without
 downloading anything. It also refuses a working copy that differs from its last
@@ -193,8 +192,8 @@ has stops its application.
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
-itself is wrong — flags that do not go together, a flag or job file `plc download`
-or `plc trace` needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
+itself is wrong — flags that do not go together, `--gateway` on any `plc`
+command, a job file `plc trace` needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
 report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`

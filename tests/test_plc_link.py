@@ -12,7 +12,8 @@ import pytest
 from cds.ide import silent
 from engine import plc_link
 from tests.plc_fakes import (CredentialSourceKind, DEVICE_GUID, Device,
-                             Gateway, DeviceNode, NoSwitch, Online, PLC_BODY, ide)
+                             Gateway, DeviceNode, NoSwitch, Online, PLC_BODY,
+                             at, ide)
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
 
@@ -21,7 +22,7 @@ from tests.plc_fakes import (   # noqa: F401  autouse fixtures
 
 def test_a_project_with_no_device_says_so_rather_than_connecting():
     ide_globals = ide(allowed=["connect"], children=[DeviceNode("Application")])
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert not outcome.ok() and "no device node" in outcome.error_text()
 
 
@@ -31,19 +32,27 @@ def test_two_devices_are_named_and_nothing_is_picked():
     ide_globals = ide(allowed=["download"],
                       children=[DeviceNode("Left", DEVICE_GUID),
                                 DeviceNode("Right", DEVICE_GUID)])
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     said = outcome.error_text()
     assert "Left" in said and "Right" in said
     assert ide_globals["online"].session.calls == []
 
 
-def test_without_the_gateway_flag_the_projects_own_settings_are_left_alone():
-    # A read-only command that rewrote the project's gateway on its way past
-    # would be changing the project to answer a question about it.
+@pytest.mark.parametrize("action, args", [("connect", {}),
+                                          ("download", {"yes": True})])
+def test_without_a_gateway_no_plc_command_touches_anything(action, args):
+    # The project's own address was found by device name, which can reach
+    # the wrong controller, and the wrong one answers like a right one: a
+    # connect's MATCH, a download's read-back (SPEC 6.6). The IDE side checks
+    # it again, before credentials or a device are touched.
+    device = Device()
     device_node = DeviceNode("Device", DEVICE_GUID)
-    ide_globals = ide(allowed=["connect"], children=[device_node])
-    silent.run(ide_globals, PLC_BODY, "connect", {})
-    assert device_node.gateway_set_to is None
+    ide_globals = ide(allowed=[action], children=[device_node], device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, action, args)
+    assert not outcome.ok() and "--gateway is required" in outcome.error_text()
+    assert device_node.gateway_set_to is None and not device.connected
+    assert ide_globals["online"].credentials is None
+    assert ide_globals["online"].session.calls == []
 
 
 def test_the_gateway_flag_aims_the_device_and_says_where():
@@ -161,7 +170,7 @@ def test_an_ide_that_cannot_switch_the_dialog_off_never_connects():
     device = Device()
     ide_globals = ide(allowed=["connect"], device=device)
     ide_globals["online"] = NoSwitch(device=device)
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert not outcome.ok()
     assert outcome.denied is None
     assert device.connected is False
@@ -196,7 +205,7 @@ def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
     monkeypatch.setenv(plc.USER_ENV, "dev")
     monkeypatch.setenv(plc.PASS_ENV, "s3cret-do-not-print")
     ide_globals = ide(allowed=["download"])
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     written = repr(outcome.result) + outcome.stdout_tail + repr(
         outcome.messages)
     assert "s3cret-do-not-print" not in written

@@ -22,6 +22,14 @@ from engine import entry, plc_crc, plc_link, unhandled
 from engine import ide_read
 from engine.strings import safe_str
 
+# Every plc command names its controller. One found by the project's device
+# name can be the wrong one (two soft PLCs can report the same host name),
+# and what the wrong one answers passes every check made of it: a download's
+# read-back, a connect's MATCH, a trace's samples (SPEC 6.6).
+NO_GATEWAY = ("--gateway is required. A controller found by the project's "
+              "device name can be the wrong one, and what the wrong one "
+              "answers looks exactly like a right one (SPEC 6.6)")
+
 # str() of session.application_state for a running application; the bench
 # showed `run` and `stop`. A download must leave it so, and a trace needs it.
 RUNNING = "run"
@@ -50,7 +58,7 @@ class Trip(object):
         self._workspace = None      # made only once something is written there
         self.found = {"crc": plc_crc.UNKNOWN, "why": None, "plc_crc": None,
                       "plc_files": [], "source_archive": None,
-                      "controller": plc_crc.PROJECT_GATEWAY, "recorded": None}
+                      "controller": None, "recorded": None}
 
     def note(self, text):
         """Record one step, and say it now rather than at the end.
@@ -67,7 +75,13 @@ class Trip(object):
     # -- getting there ------------------------------------------------------
 
     def reach_the_device(self):
-        """Resolve everything a controller conversation needs. None if ready."""
+        """Resolve everything a controller conversation needs. None if ready.
+
+        --gateway is checked first, before anything is switched or aimed:
+        the CLI refuses it too, but the IDE side does not trust the wire.
+        """
+        if not self.args.get("gateway"):
+            return NO_GATEWAY
         self.projects = entry.borrowed(self.globals, "projects")
         if self.projects is None or not getattr(self.projects, "primary", None):
             return "no project is open, so there is no device to talk to"
@@ -97,13 +111,10 @@ class Trip(object):
         return None
 
     def point_at_gateway(self):
-        """Aim the device at --gateway, or leave the project's own settings."""
+        """Aim the device at --gateway. None when it is aimed."""
         address = self.args.get("gateway")
         port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
         self.found["controller"] = plc_crc.controller_key(address, port)
-        if not address:
-            self.note("gateway: whatever the project already holds")
-            return None
         note, problem = plc_link.aim_at_gateway(self.online, self.device_node,
                                                 address, port)
         if problem:

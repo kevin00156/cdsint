@@ -99,7 +99,7 @@ class Command(object):
     """One subcommand, and everything the command line knows about it."""
 
     def __init__(self, summary, form, flags=(), action=None, one_form=None,
-                 needs=None, refuses=None, goes_with=None):
+                 needs=None, refuses=None):
         self.summary = summary
         self.form = form
         self.flags = tuple(flags)
@@ -115,9 +115,6 @@ class Command(object):
         # and the ones it will not take, each with the sentence that refuses.
         self.needs = needs or {}
         self.refuses = refuses or {}
-        # {dest: (other dest, why)}: a flag that means nothing without
-        # another one, whichever action it is given to.
-        self.goes_with = goes_with or {}
 
     def dests(self):
         """What argparse will call each of this command's flags."""
@@ -196,14 +193,16 @@ COMMANDS = {
         flags=[("-y/--yes", CONFIRM,
                 "confirm the download; only plc download takes it"),
                ("--gateway", NAME,
-                "reach the controller through this address instead of "
-                "whatever the project already holds; download and trace "
-                "need it", "IP"),
+                "reach the controller through this address; every plc "
+                "action needs it", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),
                ("--job", JOB, "the trace job file; only plc trace takes it")],
         needs={
+            "connect": {"gateway": WRONG_CONTROLLER
+                        % "the wrong controller can answer MATCH for a "
+                          "download that went to it"},
             "download": {"gateway": WRONG_CONTROLLER
                          % "a download to the wrong controller passes its "
                            "own read-back"},
@@ -216,9 +215,6 @@ COMMANDS = {
             "connect": {"job": ONLY_TRACE, "yes": ONLY_DOWNLOAD},
             "download": {"job": ONLY_TRACE},
             "trace": {"yes": ONLY_DOWNLOAD}},
-        goes_with={"port": ("gateway", "--port is the port behind --gateway; "
-                            "without --gateway the project's own settings "
-                            "are used and the port would be ignored.")},
         one_form="The watcher runs inside an IDE somebody is using, and "
                  "logging into a controller would take their online session "
                  "away from them (SPEC D8)."),
