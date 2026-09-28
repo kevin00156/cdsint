@@ -49,8 +49,8 @@ All notable changes to this project will be documented in this file.
   silently writing over the other.
 - **A second `compare` still reports an IDE-side edit**, XML objects
   included.
-- **A `.st` that cannot be read fails its import by name**; it used to count
-  as unchanged. So does a graphical POU member that could not be recreated,
+- **A `.st` that cannot be read, or text the IDE refuses to take, fails its
+  import by name**; both used to count as unchanged. So does a graphical POU member that could not be recreated,
   and a property's GET/SET bodies now survive a native re-import.
 - **A file that differs from the IDE only in form** (CRLF, a trailing
   newline) is no longer Modified on every run.
