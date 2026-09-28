@@ -4,6 +4,7 @@
 The download is replaced by a zip built here, shaped like a GitHub archive:
 one directory at the top, the tree under it.
 """
+import http.client
 import io
 import json
 import os
@@ -51,14 +52,17 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(release, "latest_tag", lambda timeout: NEWER)
     monkeypatch.setattr(update, "running_ides", lambda: [])
     reinstalled = []
-    monkeypatch.setattr(update, "_reinstall", reinstalled.append)
+
+    def reinstall(body):
+        reinstalled.append(body)
+    monkeypatch.setattr(update, "_reinstall", reinstall)
     monkeypatch.setattr(link, "link_all", lambda: [])
     return body, reinstalled
 
 
 def test_the_new_release_replaces_the_body(machine):
     body, _ = machine
-    assert update.replace_body(NEWER, body) is None
+    assert update.replace_body(NEWER, body) == []
     assert which(body) == "new"
     assert not os.path.exists(body + ".new")
     assert not os.path.exists(body + ".old")
@@ -100,6 +104,49 @@ def test_a_failed_download_leaves_the_old_body_alone(machine, monkeypatch):
     assert which(body) == "old"
 
 
+@pytest.mark.parametrize("cut", [
+    http.client.IncompleteRead(b"PK", 4096),
+    zipfile.zlib.error("invalid stored block lengths")])
+def test_a_download_cut_or_corrupt_is_said_not_a_traceback(machine,
+                                                           monkeypatch, cut):
+    body, _ = machine
+
+    def download(tag, staging):
+        raise cut
+    monkeypatch.setattr(update, "_download", download)
+    with pytest.raises(Failure) as caught:
+        update._replace(NEWER, body)
+    assert "still at" in str(caught.value)
+    assert which(body) == "old"
+
+
+def test_a_staging_folder_that_will_not_go_is_a_leftover(machine,
+                                                         monkeypatch):
+    """The swap is done by then; the update stands and the folder is named."""
+    body, _ = machine
+    real_rmtree = update.shutil.rmtree
+
+    def rmtree(path, *args, **kwargs):
+        if path == body + ".new" and os.path.exists(body):
+            raise PermissionError("held by a virus scanner")
+        return real_rmtree(path, *args, **kwargs)
+    monkeypatch.setattr(update.shutil, "rmtree", rmtree)
+    assert update.replace_body(NEWER, body) == [body + ".new"]
+    assert which(body) == "new"
+
+
+def test_a_pip_failure_still_links_the_menus(machine, monkeypatch, capsys):
+    """Without link the new tree has no stub\\body.path: every menu breaks."""
+    body, _ = machine
+    linked = []
+    monkeypatch.setattr(update, "_reinstall", lambda body: "pip said no")
+    monkeypatch.setattr(link, "link_all", lambda: linked.append(1) or [])
+    assert cli.main(["update"]) == 0
+    assert linked == [1]
+    assert which(body) == "new"
+    assert "pip said no" in capsys.readouterr().err
+
+
 def test_leftovers_of_an_interrupted_run_are_cleared(machine):
     body, _ = machine
     tree(body + ".new", "half")
@@ -121,8 +168,8 @@ def test_update_under_json(machine, capsys):
     assert cli.main(["update", "--json"]) == 0
     record = json.loads(capsys.readouterr().out)
     assert record == {"from": release.tag_of(SCRIPT_VERSION),
-                      "latest": NEWER, "updated": True, "left_behind": None,
-                      "menus": []}
+                      "latest": NEWER, "updated": True, "left_behind": [],
+                      "pip": None, "menus": []}
 
 
 def test_nothing_to_do_on_the_newest_release(machine, monkeypatch, capsys):

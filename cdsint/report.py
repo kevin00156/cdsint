@@ -207,9 +207,12 @@ def show_update(record, want_json=False):
     else:
         print("cdsint %s -> %s; restart any IDE to load it"
               % (record["from"], record["latest"]))
-    if record.get("left_behind"):
-        print("warning: could not delete the old copy at %s; delete it by "
-              "hand" % record["left_behind"], file=sys.stderr)
+    for leftover in record.get("left_behind", ()):
+        print("warning: could not delete %s; delete it by hand" % leftover,
+              file=sys.stderr)
+    if record.get("pip"):
+        print("warning: the new release is in place, but pip's record of it "
+              "is not; %s" % record["pip"], file=sys.stderr)
     changed = [row for row in record["menus"] if row["state"] != "already"]
     if changed:
         show_links(changed)

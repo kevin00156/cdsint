@@ -4,7 +4,9 @@
 No test reaches GitHub or scans Program Files: latest_tag and
 link.unlinked are replaced wherever they would be called.
 """
+import http.client
 import io
+import json
 import os
 
 import pytest
@@ -126,6 +128,23 @@ def test_a_clone_never_asks(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr() == ("", "")
 
 
+def test_a_check_dated_in_the_future_is_done_again(downloaded, monkeypatch):
+    """A clock that was once ahead must not silence the check until then."""
+    calls = asked(monkeypatch, bumped())
+    reminders.due(10 * DAY)
+    assert reminders.due(DAY) == [reminders.release_line(bumped())]
+    assert len(calls) == 2
+
+
+def test_a_state_file_that_is_not_an_object_is_asked_again(downloaded,
+                                                           monkeypatch):
+    with io.open(os.path.join(release.home(), "update_check.json"), "w",
+                 encoding="utf-8") as handle:
+        handle.write(u"[]")
+    asked(monkeypatch, bumped())
+    assert reminders.due(DAY) == [reminders.release_line(bumped())]
+
+
 def test_a_broken_state_file_is_asked_again(downloaded, monkeypatch):
     with io.open(os.path.join(release.home(), "update_check.json"), "w",
                  encoding="utf-8") as handle:
@@ -148,3 +167,12 @@ def test_every_command_ends_with_the_reminder(downloaded, monkeypatch,
     monkeypatch.setattr(cli.installs, "find", lambda: [])
     assert cli.main(["installs"]) == 0
     assert bumped() in capsys.readouterr().err
+
+
+def test_a_cut_off_answer_does_not_change_the_exit_code(downloaded,
+                                                        monkeypatch, capsys):
+    """IncompleteRead is not an OSError; it once turned exit 0 into 1."""
+    asked(monkeypatch, http.client.IncompleteRead(b"{", 10))
+    monkeypatch.setattr(cli.installs, "find", lambda: [])
+    assert cli.main(["installs"]) == 0
+    assert "Traceback" not in capsys.readouterr().err

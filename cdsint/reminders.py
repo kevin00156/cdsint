@@ -48,9 +48,10 @@ def _state_path():
 def _remembered():
     try:
         with io.open(_state_path(), encoding="utf-8") as handle:
-            return json.load(handle)
+            state = json.load(handle)
     except (OSError, ValueError):
         return {}
+    return state if isinstance(state, dict) else {}
 
 
 def _remember(state):
@@ -62,7 +63,7 @@ def _newest(known):
     """The newest release's tag, or known when GitHub does not answer."""
     try:
         return release.latest_tag(QUERY_TIMEOUT_S)
-    except (OSError, ValueError, KeyError):
+    except release.QUERY_ERRORS:
         return known
 
 
@@ -89,7 +90,9 @@ def due(now):
     """
     state = _remembered()
     missing = []
-    if now - state.get("checked", 0) >= CHECK_EVERY_S:
+    # A check dated in the future is from a clock that was once ahead; left
+    # alone it would silence the check until that date comes round.
+    if not 0 <= now - state.get("checked", 0) < CHECK_EVERY_S:
         state["checked"] = now
         state["latest"] = _newest(state.get("latest"))
         _remember(state)

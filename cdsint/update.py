@@ -7,10 +7,14 @@ nobody here knows what else depends on that.
 
 The junctions in each IDE's ScriptDir and the editable pip install both name
 the body by its path, and the path does not change, so replacing the
-directory is the whole upgrade; then cdsint/link.py rewrites stubody.path
-in the new tree and adds any IDE installed since, updated or not. The new tree is unpacked beside the old one
-first and only then swapped in by two renames, so a failed download or a
-full disk leaves the old body exactly as it was.
+directory is the whole upgrade; then cdsint/link.py writes stub\\body.path
+into the new tree and adds any IDE installed since, updated or not. The new
+tree is unpacked beside the old one first and only then swapped in by two
+renames, so a failed download or a full disk leaves the old body exactly as
+it was. Once the swap is done nothing undoes it: what fails after that is a
+leftover to report, not a reason to stop before the menus are linked,
+because a new tree without its body.path is a Scripts menu that fails on
+every click.
 
 It refuses while any CODESYS-family IDE is running. An IDE that has run one
 of the stubs holds the old engine in memory, and after the swap its next
@@ -30,6 +34,7 @@ import subprocess
 import sys
 import urllib.request
 import zipfile
+import zlib
 
 from cds.core.exits import EXIT_FAILED, EXIT_OK
 from cds.ide.entries import REPO_ROOT
@@ -45,7 +50,7 @@ def run(ns):
     _check_downloaded()
     try:
         tag = release.latest_tag(ns.timeout)
-    except (OSError, ValueError, KeyError) as error:
+    except release.QUERY_ERRORS as error:
         raise Failure("could not ask GitHub for the newest release: %s"
                       % error, EXIT_FAILED)
     record = {"from": release.tag_of(SCRIPT_VERSION), "latest": tag,
@@ -53,7 +58,7 @@ def run(ns):
     if record["updated"]:
         _check_no_ide_running()
         record["left_behind"] = _replace(tag, release.body_root())
-        _reinstall(release.body_root())
+        record["pip"] = _reinstall(release.body_root())
     record["menus"] = link.link_all()
     report.show_update(record, ns.json)
     return EXIT_OK
@@ -90,7 +95,7 @@ def _replace(tag, body):
     """replace_body, with a failure said in words and where the old body is."""
     try:
         return replace_body(tag, body)
-    except (OSError, zipfile.BadZipFile) as error:
+    except release.QUERY_ERRORS + (zipfile.BadZipFile, zlib.error) as error:
         where = ("still at " + body if os.path.isdir(body)
                  else "at " + body + ".old; rename it back")
         raise Failure("could not replace the body with %s: %s. The old one "
@@ -100,9 +105,10 @@ def _replace(tag, body):
 def replace_body(tag, body):
     """Unpack tag beside body, then swap it in by two renames.
 
-    The retired copy is deleted last and a failure to delete it does not undo
-    the update: the new body is already the one in use. Its path comes back
-    so the caller can say it is still there, or None when it is gone.
+    The staging directory and the retired copy are deleted last, and a
+    failure to delete either does not undo the update: the new body is
+    already the one in use. The paths still there come back so the caller
+    can say so.
     """
     staging = body + ".new"
     retired = body + ".old"
@@ -116,12 +122,15 @@ def replace_body(tag, body):
     except OSError:
         os.rename(retired, body)
         raise
-    shutil.rmtree(staging)
+    return [path for path in (staging, retired) if not _deleted(path)]
+
+
+def _deleted(path):
     try:
-        shutil.rmtree(retired)
+        shutil.rmtree(path)
     except OSError:
-        return retired
-    return None
+        return False
+    return True
 
 
 def _download(tag, staging):
@@ -149,13 +158,13 @@ def _reinstall(body):
     """Refresh the editable install's metadata, so `pip show` has the new number.
 
     The body is already in place and working when this runs; a failure here
-    leaves only the metadata behind, so it is reported, not rolled back.
+    leaves only the metadata behind, so it is reported, not rolled back. What
+    to run by hand comes back, or None when pip managed.
     """
     done = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet",
                            "-e", body], capture_output=True, text=True,
                           errors="replace")
     if done.returncode:
-        raise Failure(
-            "the new release is in place, but pip could not refresh its "
-            "record of it; run `%s -m pip install -e \"%s\"`. pip said:\n%s"
-            % (sys.executable, body, done.stderr.strip()), EXIT_FAILED)
+        return ("run `%s -m pip install -e \"%s\"`; pip said:\n%s"
+                % (sys.executable, body, done.stderr.strip()))
+    return None

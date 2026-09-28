@@ -5,6 +5,7 @@ CPython only: the CLI side never runs inside the IDE.
 """
 from __future__ import print_function
 
+import http.client
 import json
 import os
 import re
@@ -21,6 +22,11 @@ ARCHIVE_URL = "https://github.com/%s/archive/refs/tags/%%s.zip" % REPO
 # .github/workflows/ci.yml refuses to publish any other.
 _TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
+# What asking GitHub can raise: a network that failed below HTTP, a response
+# cut short or garbled above it (IncompleteRead is not an OSError), or an
+# answer that is not a release.
+QUERY_ERRORS = (OSError, ValueError, http.client.HTTPException)
+
 
 def tag_of(version):
     return "v" + version
@@ -28,7 +34,7 @@ def tag_of(version):
 
 def parse(tag):
     """"v1.2.3" as (1, 2, 3), so that v0.10.0 sorts after v0.9.0."""
-    match = _TAG.match(tag)
+    match = _TAG.match(tag) if isinstance(tag, str) else None
     if not match:
         raise ValueError("not a release tag: %r" % (tag,))
     return tuple(int(part) for part in match.groups())
@@ -66,11 +72,12 @@ def is_downloaded():
 
 
 def latest_tag(timeout):
-    """The newest published release's tag. Raises OSError or ValueError."""
+    """The newest published release's tag. Raises one of QUERY_ERRORS."""
     request = urllib.request.Request(LATEST_URL, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "cdsint/" + SCRIPT_VERSION})
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        tag = json.loads(response.read().decode("utf-8"))["tag_name"]
+        answer = json.loads(response.read().decode("utf-8"))
+    tag = answer.get("tag_name") if isinstance(answer, dict) else None
     parse(tag)
     return tag
