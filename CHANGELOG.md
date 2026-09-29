@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — a relative sync folder outside the project
+### 0.2.1 (2026-09-29) — a relative sync folder outside the project
 
 - **Every relative `sync_folder` is relative to the project file's
   directory.** Only `./...` used to be; `../export`, `..` or `sync` was
@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file.
   path is denied" when it was started from the Start menu. `cdsint status`
   reports the resolved folder instead of the path as written. What the
   first-run dialog writes is unchanged.
+- **The skill had exit 2 for `plc` backwards.** It said passing
+  `--gateway` was the mistake; leaving it out is.
 
 ### 0.2.0 (2026-09-28) — fixes from a review of the sync, update, PLC and watcher paths
 
