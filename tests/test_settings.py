@@ -137,6 +137,28 @@ def test_prepare_resolves_a_relative_folder_and_creates_it(ide, project,
     assert os.path.isdir(folder)
 
 
+def test_prepare_resolves_a_parent_folder_against_the_project_not_the_ide(
+        tmp_path, monkeypatch):
+    # The IDE started from the Start menu runs in Program Files, where
+    # "../export" is a folder nobody may create. What the file means is the
+    # folder beside the project's own directory.
+    line = tmp_path / "line"
+    line.mkdir()
+    ide_cwd = tmp_path / "ide" / "bin"
+    ide_cwd.mkdir(parents=True)
+    monkeypatch.chdir(str(ide_cwd))
+    nested = FakeProject(os.path.join(str(line), "App.project"))
+    write(nested, {"sync_folder": "../export"})
+
+    _values, folder, error = settings.prepare(
+        {"projects": FakeProjects(nested), "system": RecordedSystem()})
+
+    assert error is None
+    assert folder == os.path.join(str(tmp_path), "export")
+    assert os.path.isdir(folder)
+    assert not os.path.exists(str(tmp_path / "ide" / "export"))
+
+
 def test_prepare_gives_the_new_folder_its_git_rules(ide, project):
     write(project, {"sync_folder": "./sync"})
     _values, folder, _error = settings.prepare(ide)
@@ -270,6 +292,22 @@ def test_a_folder_outside_the_project_directory_stays_absolute(tmp_path,
 def test_a_path_the_user_typed_relative_is_left_alone(project):
     assert settings._as_written("./sync/", project_dir(project)) == \
         "." + os.sep + "sync" + os.sep
+
+
+@pytest.mark.parametrize("where", [("src",), (), ("plc", "src")])
+def test_what_the_dialog_writes_inside_reads_back_as_the_folder_chosen(
+        tmp_path, project, where):
+    chosen = os.path.join(str(tmp_path), *where)
+    written = settings._as_written(chosen, project_dir(project))
+    assert (schema.folder(written, project_dir(project))
+            == os.path.normpath(chosen))
+
+
+def test_what_the_dialog_writes_outside_reads_back_as_the_folder_chosen(
+        tmp_path, project):
+    chosen = os.path.join(os.path.dirname(str(tmp_path)), "shared")
+    written = settings._as_written(chosen, project_dir(project))
+    assert schema.folder(written, project_dir(project)) == chosen
 
 
 def test_no_project_directory_means_no_relative_form(tmp_path):

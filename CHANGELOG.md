@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — a relative sync folder outside the project
+
+- **Every relative `sync_folder` is relative to the project file's
+  directory.** Only `./...` used to be; `../export`, `..` or `sync` was
+  resolved against the IDE's working directory, so it worked when the IDE was
+  opened by double-clicking the `.project` and failed with "Access to the
+  path is denied" when it was started from the Start menu. `cdsint status`
+  reports the resolved folder instead of the path as written. What the
+  first-run dialog writes is unchanged.
+
 ### 0.2.0 (2026-09-28) — fixes from a review of the sync, update, PLC and watcher paths
 
 **What changes for you**

@@ -107,7 +107,7 @@ it; the rest take their default:
 
 | Key | Type | Default |
 |---|---|---|
-| `sync_folder` | string, `./` is relative to the `.project`'s directory | none — the first export asks |
+| `sync_folder` | string; a relative path (`./sync`, `../export`) is relative to the `.project`'s directory | none — the first export asks |
 | `plc` | list of `connect`, `download` and `trace` | `[]` |
 | `debug` | boolean — write `sync_metadata.json` and the `*.log` files | `false` |
 | `devices` | boolean — let `import` apply EtherCAT `.device` files | `false` |

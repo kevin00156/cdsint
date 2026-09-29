@@ -270,3 +270,40 @@ def test_nothing_set_means_nowhere_to_point():
 
 def test_a_relative_path_with_no_project_directory_has_no_answer():
     assert settings.folder("./sync", None) is None
+
+
+# Every path that does not name its own root is the project's: the IDE's
+# working directory is wherever it was started from -- the project folder
+# when somebody double-clicked the .project, Program Files from the Start
+# menu -- so resolving against it is never what the file meant.
+
+NESTED_DIR = os.path.join(os.sep + "work", "line")
+
+
+def test_a_parent_relative_folder_resolves_against_the_project():
+    assert (settings.folder("../codesys_export", NESTED_DIR)
+            == os.path.join(os.sep + "work", "codesys_export"))
+
+
+def test_a_backslash_parent_relative_folder_resolves_the_same_way():
+    assert (settings.folder("..\\codesys_export", NESTED_DIR)
+            == os.path.join(os.sep + "work", "codesys_export"))
+
+
+def test_a_bare_parent_is_the_directory_above_the_project():
+    assert settings.folder("..", NESTED_DIR) == os.sep + "work"
+
+
+def test_a_folder_named_without_a_dot_resolves_against_the_project():
+    assert (settings.folder("sub/sync", NESTED_DIR)
+            == os.path.join(NESTED_DIR, "sub", "sync"))
+
+
+def test_a_unc_path_is_used_as_written():
+    share = "\\\\server\\share\\sync"
+    assert settings.folder(share, NESTED_DIR) == share
+
+
+def test_a_parent_relative_path_with_no_project_directory_has_no_answer():
+    assert settings.folder("../sync", None) is None
+    assert settings.folder("sync", None) is None

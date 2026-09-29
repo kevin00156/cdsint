@@ -412,7 +412,7 @@ like this is complete:
 
 | Key | Type | Meaning | Default |
 |---|---|---|---|
-| `sync_folder` | string | where the `.st` files live. Starting with `./` it is relative to the directory holding the `.project`; anything else is used as written | none — the first export asks |
+| `sync_folder` | string | where the `.st` files live. A relative path (`./sync`, `../export`, `sync`) is relative to the directory holding the `.project`, however the IDE was started; an absolute path (a drive, a UNC share) is used as written | none — the first export asks |
 | `plc` | list of strings | which PLC commands this project allows; only `connect`, `download` and `trace` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
 | `devices` | boolean | let `import` apply EtherCAT device settings (`.device` files) | `false` |
