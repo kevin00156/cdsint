@@ -952,7 +952,11 @@ measurements behind every rule here are in `docs/trace-research.md`.
    these names; the controller is the only thing that does, and `start()`
    failing on a bad name names nothing. The types read here size the
    controller's ring, which is checked against `trace_memory_mb` now, before
-   anything reaches the controller ("The controller's memory", below).
+   anything reaches the controller ("The controller's memory", below). A
+   member of an enumeration reads back as `Type.MEMBER`, which names no base
+   type, so the trace's configuration is saved here too, with an editor of
+   its own, and each variable's class and size are read from it
+   ("Enumerations", below).
 6. Refuse if the application is not running. Starting it is a change to the
    controller's state the caller did not ask for.
 7. Download the trace (the trace editor's own download, not an application
@@ -984,7 +988,20 @@ Linux SL, it kept allocating until the operating system killed it, stopping
 the application. So the command bounds the ring itself. Its cost is estimated
 as entries × (12 + the size of each variable; 12 because the bench measured 22.5 bytes an entry for 12 bytes of values), the sizes coming from the types
 `read_value()` reports (step 5); a variable whose type has no known size is
-refused by name. An estimate over the settings file's `trace_memory_mb` (4.4)
+refused by name.
+
+**Enumerations.** A member's literal names its type but not the base type
+that sizes it, and the type may be a library's, which has no declaration in
+the project. The trace's configuration, saved before the download, gives
+every variable the class and size the IDE is about to send; for a member of
+an enumeration the class is looked up among the twelve base types an
+enumeration may have (CODESYS: `INT` when none is written) and has to agree
+with that type's size, or the variable is refused by name, as an
+enumeration whose base type is not known. The editor that saves it is not
+the one that downloads: an editor keeps the buffer sizes it was opened with,
+and one opened before the buffers are set downloads the default ring. The
+saved files hold an enumeration's numbers, not its members' names. An
+enumeration is neither a `trigger` nor a `record_condition`. An estimate over the settings file's `trace_memory_mb` (4.4)
 refuses the run before the trace is downloaded, naming the estimate, the limit
 and the key. The default is small on purpose: cdsint does not know the
 controller, and a limit too high for it stops a machine, while one too low
@@ -1082,8 +1099,8 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
 ```
 
 `gaps` are `[from, to]` pairs and `longest_interval` a single interval, both
-in the file's timestamp unit, which `resolution` names. `type` is what
-`read_value()` reported. A run with a `trigger` also carries `"trigger":
+in the file's timestamp unit, which `resolution` names. `type` is the type
+`read_value()` reported, or for a member of an enumeration its base type. A run with a `trigger` also carries `"trigger":
 {"reached": true}` (or `false`), from the editor's own trigger state; its
 samples are continuous, so completeness is judged as for any other run.
 

@@ -378,7 +378,7 @@ has one row per variable with `samples`, `expected`, `complete` and `gaps`;
 `data.files` names what was written.
 
 A `trigger` records from the start, fires when its variable (a numeric one;
-a BOOL is refused) crosses `level` on the `edge`, keeps `post_samples` more
+a BOOL or an enumeration is refused) crosses `level` on the `edge`, keeps `post_samples` more
 samples and stops by itself; `duration_s` is then the longest the run waits
 for that. A trigger that has not stopped the trace by then is exit 1, with
 what was recorded still written, and `data.trigger.reached` says whether it
@@ -403,6 +403,16 @@ the types the controller reports, and a run over the settings file's
 `trace_memory_mb` (default 256) is refused before anything is downloaded;
 `data.buffer.controller_bytes` is the estimate. Raise the key only for a
 controller you know has the memory.
+
+A variable of an enumeration is recorded as its base type: `INT` unless the
+declaration says otherwise (`) DINT;`), and the same for a library's type
+such as `SMC_AXIS_STATE`. The base type comes from the trace configuration
+the IDE saves before the download, since the value the controller reads back
+(`E_Mode.RUN`) does not name it; `data.variables[].type` shows it, and a note
+says which variables were enumerations. The files hold the numbers, not the
+members' names. An enumeration whose base type the IDE does not report as
+one of the twelve integer types is refused by name, and an enumeration cannot
+be the `trigger` or the `record_condition`.
 
 ### Exit codes
 

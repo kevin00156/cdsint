@@ -186,6 +186,10 @@ with the files written, and `data.trigger.reached` says whether it fired.
 only the cycles where it is TRUE; completeness is then not judged
 (`data.complete` is `null`) and `min_complete`/`max_gap_periods` are refused.
 
+An enumeration records like any integer: its base type (`data.variables[].type`)
+sizes it, and the files hold numbers, not member names, so map them back with
+the type's declaration. It cannot be the trigger or the record condition.
+
 The controller's ring holds the whole recording, and a ring estimated over
 `trace_memory_mb` is refused before download (`data.buffer.controller_bytes`).
 Do not raise that key without the user's word: a controller given more than it

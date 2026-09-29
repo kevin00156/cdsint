@@ -24,6 +24,7 @@ dialog left open.
 | D. Do trace objects upset `discover`, `export`, `verify`? | No. They are recognised as kind `trace`, exported as `<name>.trace.xml` when `export_xml` is on, and survive `verify` | 6 |
 | D. Does a GUID have to be added to `profiles/default.json`? | No, it is already there | 6 |
 | D. Can an edited trace XML be imported? | It could not: every edited native-XML object failed to import headless, a cdsint bug rather than a trace one. Fixed since (section 6.3) | 6 |
+| Can an enumeration be recorded, and what sizes it? | Yes. `read_value()` names the type but not its base; the trace's own configuration, saved before the download, gives every variable's class and size, a library's type included. Values are saved as numbers | 14 |
 
 ---
 
@@ -779,3 +780,114 @@ recorded every cycle that ran. With the IDE unable to lose samples any more
 bench does (`DisableOmittedCycleWatchdog=1`, and a time base 10% slow, 13.3).
 The failed two-variable run is presumably the same, with some stretches of up
 to 36 ms without a cycle; it had no counter to show it.
+
+## 14. Enumerations (2026-09-29)
+
+ck_cutter's job named `PLC_PRG.fbCrosscutter.DiagStatus.eMarkLockState`, an
+enumeration with `) INT;` and `{attribute 'qualified_only'}`, and the run
+refused it: `read_value()` answered
+`enumCK_Crosscutter_MarkLockState.NOT_APPLICABLE`, which has no `#`, so no type
+and no size. Measured on the same kind of bench as section 1 (CODESYS
+3.5.21.40, CODESYS Control for Linux SL in WSL), with a project that has one
+enumeration per base type in `PLC_PRG`, one without a base type, and a
+SoftMotion axis whose `nAxisState` is the library type
+`SM3_Basic.SMC_AXIS_STATE`.
+
+### 14.1 What an enumeration's base type is when none is written
+
+`INT`. The CODESYS help says so ("The basic data type for an enumeration
+declaration is INT by default", page *Enumerations*,
+content.helpme-codesys.com, `_cds_datatype_enum.html`), and allows exactly
+twelve base types: `INT UINT SINT USINT DINT UDINT LINT ULINT BYTE WORD DWORD
+LWORD`, every one of which `SIZES` has. The controller agrees (14.2): a value
+of an enumeration with no base type that is no member reads back as `INT#3`,
+and the IDE reports it as class 7, size 2.
+
+### 14.2 What `read_value()` answers
+
+| Variable | Answer |
+|---|---|
+| a member, the project's own type | `E_TraceInt.LOCKED` |
+| a member, a library's type | `SMC_AXIS_STATE.power_off`, with no `SM3_Basic.` in front |
+| a value that is no member (a non-strict type set to 3) | `INT#3`, the base type's literal |
+
+So the answer says "enumeration" and names the type, but never its base
+type, except when the value is no member, and then it does not say
+"enumeration". A run cannot tell from the answer alone.
+
+### 14.3 Where the base type can come from
+
+| Source | Tried | What it gave |
+|---|---|---|
+| the DUT's declaration in the project | `projects.primary.find(type, True)`, then `textual_declaration.text` | the whole declaration, `) INT;`, `) DINT;` or nothing, before login. Nothing for a library's type: `SMC_AXIS_STATE` is not an object of the project. It would also need ST parsing (comments, pragmas) and a rule for two types of one name |
+| the trace's own configuration, saved before the download | `editor.save("x.csv")` after the variables are added and the login, before `download()` | every variable's `N.Class` and `N.Size`, a library's type included, identical to the file saved after recording |
+| the online application's symbols | not tried | the script API exposes no symbol table; reflection would be a second private dependency |
+
+The second is what the IDE itself is about to send to the controller, needs
+no parsing and no name lookup, and covers library types, so `plc trace` uses
+it. The class names the type and is checked against the size, so neither is
+taken on its own.
+
+Class and size of every base type, before the download and after the
+recording (the same both times):
+
+| Base type | Class | Size |
+|---|---|---|
+| BYTE | 2 | 1 |
+| WORD | 3 | 2 |
+| DWORD | 4 | 4 |
+| LWORD | 5 | 8 |
+| SINT | 6 | 1 |
+| INT | 7 | 2 |
+| DINT | 8 | 4 |
+| LINT | 9 | 8 |
+| USINT | 10 | 1 |
+| UINT | 11 | 2 |
+| UDINT | 12 | 4 |
+| ULINT | 13 | 8 |
+| none written | 7 | 2 |
+
+A `UDINT` variable that is not an enumeration has the same class 12, size 4:
+the class is the IDE's type class, not something enumerations have of their
+own.
+
+### 14.4 An editor keeps the buffers it was opened with
+
+The first version opened the trace editor once, before the buffers were set,
+saved the configuration with it, and downloaded with it. That run recorded
+completely, but its CSV said `BufferEntries; 100` where 1250 had been set:
+the editor had kept the sizes it was opened with, so the controller got the
+default ring, and a longer recording would have lost samples (section 2).
+Opening a second editor after the buffers are set gives `BufferEntries` what
+was set (1250, and 7500 for a 30 s run). The configuration is now read with
+an editor of its own, and the one that downloads is opened after the buffers.
+
+### 14.5 What the files hold
+
+The number, not the member's name, in all three formats: the CSV's rows
+(`; 2791; 3`), the `.txt` columns, and the `.trace` file's `<Values>`, where
+every variable, enumerations included, is `Type="System.Double"`. The
+completeness check reads only the timestamps and keeps values as text, so
+nothing in it depends on them being numbers.
+
+### 14.6 Acceptance
+
+| Job | Exit | Result |
+|---|---|---|
+| 5 s: a UDINT counter, the twelve base types, no base type, a library type | 0 | 1147 of 1147 each; each reported as its base type; ring estimate 1250 × (12 + 53) bytes |
+| 30 s: counter, `INT`, no base type, `DINT`, library type | 0 | 6775 of 6775 each; the counter steps by exactly 1 on every row, and every enumeration's value is the one the program computes from it, the no-member 3 included |
+| an enumeration as the trigger | 1 | refused before download, "a member of enumeration E_TraceInt ... a trigger needs a numeric type" |
+| an enumeration as the record condition | 1 | refused before download, "not a BOOL" |
+
+### 14.7 Still refused
+
+- An enumeration as `trigger` or `record_condition`. The IDE converts a
+  trigger level to the variable's type (section 4), and no run has shown what
+  it does with an enumeration's; a condition has to be a BOOL.
+- A variable whose class in the saved configuration is not one of the twelve
+  in 14.3, or whose size is not that class's: none was seen, and neither is
+  guessed at.
+- An enumeration whose value, when step 5 reads it, is no member, is taken
+  as the base type its literal names. That sizes it correctly, but the run
+  cannot say it is an enumeration, and as a trigger it would be accepted as
+  a number.
