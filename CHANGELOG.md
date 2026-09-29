@@ -12,7 +12,6 @@ All notable changes to this project will be documented in this file.
   so a library's enumeration works too, and the variable is recorded and
   reported as that type. The files hold the numbers. An enumeration still
   cannot be the trigger or the record condition.
-
 - **`cdsint version`** prints which cdsint this is, where it runs from and
   whether `setup.ps1` put it there, and the Python and Windows versions. The
   bug report template asks for that one paste instead of three commands.
