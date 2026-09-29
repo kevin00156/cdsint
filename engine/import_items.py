@@ -22,6 +22,11 @@ from engine.device_remap import (
     build_device_remap,
     summarize_device_remap,
 )
+from engine.import_gates import (
+    is_import_allowed,
+    never_deleted,
+    refused_by_path,
+)
 from engine.import_order import (
     order_st_files_parents_first,
     orphans_their_parent_takes,
@@ -32,9 +37,8 @@ from engine.object_create import (
     update_existing_object,
 )
 from engine.pou_children import save_pou_children
-from engine.codesys_constants import (
-    TYPE_GUIDS, kind_allows_import, kind_of, sync_direction_of,
-)
+from engine.codesys_constants import TYPE_GUIDS, kind_of
+from engine.managers_pou import POUManager
 from engine.ide_tree import ensure_folder_path, find_object_by_path
 from engine.strings import safe_str
 from engine.sync_log import log_error, log_info, log_warning
@@ -68,8 +72,13 @@ def move_if_needed(item, obj, project):
     not the object's current parent means somebody moved the file and the IDE
     has to follow. Written out twice, once for the XML pass and once for the
     ST pass, with the two copies differing only in one word of a log line.
+
+    A method, action or property is not moved on its own: its file sits
+    beside its POU's, and it goes where the POU goes. Moving it into the
+    folder would tear it off the POU.
     """
-    if not item.get("is_moved"):
+    if not item.get("is_moved") or kind_of(item.get("type_guid") or "") in \
+            POUManager.MEMBER_CREATORS:
         return False
     disk_path = item.get("disk_path")
     if not disk_path or "/" not in disk_path:
@@ -105,58 +114,6 @@ def move_if_needed(item, obj, project):
 def _abs_path(item, base_dir):
     return item.get("file_path") or os.path.join(
         base_dir, item["path"].replace("/", os.sep))
-
-
-def _is_import_allowed(item):
-    """Kinds the profile marks export_only or disabled are never imported,
-    overwritten or DELETED: their disk file is a projection for Git to see,
-    not a source of truth."""
-    kind = kind_of(item.get("type_guid") or "")
-    if item.get("device_pass") or not kind or kind_allows_import(kind):
-        return True
-    msg = ("Skipping import of '%s' (%s): sync_direction=%s"
-           % (item.get("name"), kind, sync_direction_of(kind)))
-    print("  [!] " + msg)
-    log_warning(msg)
-    return False
-
-
-LEGACY_LIBRARY_XML = (
-    "an old Library Manager XML; it is not imported, because it would put "
-    "back libraries removed since. Run export first: it writes Library "
-    "Manager.libraries and this file becomes an orphan")
-
-
-def _refused_by_path(item, tally):
-    """An item this import must not apply, recorded by path.
-
-    Two kinds: a Library Manager's XML from before SPEC 6.9, which imported as
-    native XML merges back libraries removed since (research 4.2); and a
-    device item the device pass refused, because the settings file does not
-    allow device settings (SPEC 6.10).
-    """
-    path = item.get("path", "")
-    why = item.get("refused")
-    if (not why and path.endswith(".library_manager.xml")
-            and not item.get("is_orphan")):
-        why = LEGACY_LIBRARY_XML
-    if not why:
-        return False
-    log_error("%s: %s" % (path, why))
-    unhandled.note(path, why)
-    tally.failed += 1
-    return True
-
-
-def _never_deleted(item):
-    """A Library Manager or an EtherCAT device with no file is kept: import
-    never deletes either, and a missing file means "not synchronised yet"
-    (SPEC 6.9, 6.10)."""
-    if (not item.get("device_pass")
-            and kind_of(item.get("type_guid") or "") != "library_manager"):
-        return False
-    log_info("Kept %s: import never deletes it" % item.get("name"))
-    return True
 
 
 def _delete_orphan(item, taken_by_parent, tally):
@@ -210,12 +167,12 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
     st_files = []
     for item in to_sync:
         try:
-            if _refused_by_path(item, tally):
+            if refused_by_path(item, tally):
                 continue
-            if not _is_import_allowed(item):
+            if not is_import_allowed(item):
                 continue
             if item.get("is_orphan"):
-                if _never_deleted(item):
+                if never_deleted(item):
                     continue
                 _delete_orphan(item, taken_by_parent, tally)
                 continue
@@ -231,7 +188,7 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
             container, is_new = _xml_container(item, rel_path, project, tally)
             native_batches.setdefault(container, []).append((
                 rel_path, abs_path, item.get("name", os.path.basename(rel_path)),
-                item.get("type_guid"), is_new))
+                item.get("type_guid"), is_new, item))
         except Exception as exc:
             log_error("Failed to process " + item.get("path", "unknown")
                       + ": " + safe_str(exc))
@@ -249,7 +206,7 @@ def _save_pou_children(native_batches, project):
     """
     saved = {}
     for container, items in native_batches.items():
-        for _rel_path, _abs_path, name, type_guid, is_new in items:
+        for _rel_path, _abs_path, name, type_guid, is_new, _item in items:
             if type_guid != TYPE_GUIDS.get("pou") or is_new:
                 continue
             existing = child_named(container, name)
@@ -273,7 +230,7 @@ def _import_xml(native_batches, import_managers, project, pou_children, name_map
     tally.failed += failed
 
     for container, items in native_batches.items():
-        for _rel_path, _abs_path, name, type_guid, is_new in items:
+        for _rel_path, _abs_path, name, type_guid, is_new, _item in items:
             if not is_new or type_guid != TYPE_GUIDS.get("pou"):
                 continue
             fresh = child_named(container, name)
@@ -303,8 +260,10 @@ def _create_st(item, rel_path, abs_path, import_managers, name_map,
         raise RuntimeError(NOT_CREATED % rel_path)
     if rel_path.endswith(DEVICE_SUFFIX):
         raise RuntimeError(DEVICE_NOT_CREATED % rel_path)
-    if create_new_object(rel_path, abs_path, import_managers, name_map,
-                         folder_cache, project):
+    made = create_new_object(rel_path, abs_path, import_managers, name_map,
+                             folder_cache, project)
+    if made:
+        item["landed"] = made
         tally.created += 1
         return
     unhandled.note(item.get("path", "unknown"),
@@ -333,6 +292,7 @@ def _import_st(st_files, base_dir, import_managers, project, name_map,
             if update_existing_object(obj, rel_path, abs_path, import_managers):
                 tally.updated += 1
                 log_info("Updated " + item["name"])
+            item["landed"] = obj
         except Exception as exc:
             log_error("Failed to import ST " + item.get("path", "unknown")
                       + ": " + safe_str(exc))
@@ -373,6 +333,10 @@ def perform_import_items(primary_project, base_dir, to_sync, pou_type=None):
     Nothing is saved here. The caller finishes with finalize_sync_operation(),
     which owns saving and backup; doing it in both places saved the project
     twice per import.
+
+    Every item whose file is now what the IDE holds -- updated, created, or
+    found to hold it already -- gets the object under item["landed"], so the
+    caller can record that in the sync cache.
 
     Returns (updated, created, failed, deleted, moved).
     """

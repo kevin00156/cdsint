@@ -13,7 +13,7 @@ import io
 from cds.core import settings
 from cds.ide import entries, permit, silent
 import tests.plc_fakes as plc_fakes
-from tests.plc_fakes import OnlineChangeOption, PLC_BODY, ide, press
+from tests.plc_fakes import OnlineChangeOption, PLC_BODY, at, ide, press
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
 
@@ -52,7 +52,7 @@ def test_a_settings_file_that_cannot_be_read_is_a_failure_not_a_refusal():
                  encoding="utf-8") as handle:
         handle.write(u'{"plc": ["downlaod"]}')
 
-    outcome = press(ide_globals, "connect", {})
+    outcome = press(ide_globals, "connect", at())
 
     assert outcome.denied is None
     assert not outcome.ok()
@@ -77,7 +77,7 @@ def test_the_refusal_says_which_file_and_what_to_write():
 
 def test_a_project_that_allows_nothing_refuses_download_before_any_login():
     ide_globals = ide(allowed=None)
-    outcome = press(ide_globals, "download", {"yes": True})
+    outcome = press(ide_globals, "download", at(yes=True))
     assert outcome.denied == {"file": settings.path_for(plc_fakes.PROJECT_PATH),
                               "key": "plc", "action": "download"}
     assert not outcome.ok()
@@ -90,14 +90,14 @@ def test_the_refused_command_does_not_even_load_the_engine(monkeypatch):
     ran = []
     monkeypatch.setattr(silent, "run",
                         lambda *args, **kwargs: ran.append(args))
-    press(ide(allowed=None), "download", {"yes": True})
+    press(ide(allowed=None), "download", at(yes=True))
     assert ran == []
 
 
 def test_allowing_download_does_not_allow_connect():
     # Two names, two decisions. Reading a controller and writing to one are
     # not the same permission, whichever way round somebody expects.
-    outcome = press(ide(allowed=["download"]), "connect", {})
+    outcome = press(ide(allowed=["download"]), "connect", at())
     assert outcome.denied["action"] == "connect"
 
 
@@ -105,7 +105,7 @@ def test_an_allowed_command_gets_through_to_the_engine(monkeypatch):
     ran = []
     monkeypatch.setattr(silent, "run",
                         lambda *args, **kwargs: ran.append(args[2]))
-    press(ide(allowed=["connect"]), "connect", {})
+    press(ide(allowed=["connect"]), "connect", at())
     assert ran == ["connect"]
 
 
@@ -121,13 +121,13 @@ def test_the_other_commands_are_not_gated(monkeypatch):
 
 def test_without_yes_the_download_asks_and_nothing_logs_in():
     ide_globals = ide(allowed=["download"])
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at())
     assert outcome.needs is not None and outcome.needs.arg == "yes"
     assert ide_globals["online"].session.calls == []
 
 
 def test_the_question_says_what_the_download_will_do():
-    outcome = silent.run(ide(allowed=["download"]), PLC_BODY, "download", {})
+    outcome = silent.run(ide(allowed=["download"]), PLC_BODY, "download", at())
     asked = outcome.needs.question.lower()
     for promised in ("stop", "boot application", "start"):
         assert promised in asked
@@ -136,13 +136,13 @@ def test_the_question_says_what_the_download_will_do():
 def test_connect_never_asks_for_yes():
     # Reading a controller changes nothing, so a confirmation would be a
     # question with one useful answer.
-    outcome = silent.run(ide(allowed=["connect"]), PLC_BODY, "connect", {})
+    outcome = silent.run(ide(allowed=["connect"]), PLC_BODY, "connect", at())
     assert outcome.needs is None
 
 
 def test_with_yes_the_download_is_a_full_one_and_writes_a_boot_application():
     ide_globals = ide(allowed=["download"])
-    silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     calls = ide_globals["online"].session.calls
     assert [name for name, _rest in [(c[0], c[1:]) for c in calls]] == [
         "login", "create_boot_application", "start", "logout"]
@@ -153,7 +153,7 @@ def test_with_yes_the_download_is_a_full_one_and_writes_a_boot_application():
 
 def test_saying_no_outright_is_not_the_same_as_not_being_asked():
     ide_globals = ide(allowed=["download"])
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": False})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=False))
     assert outcome.needs is None and not outcome.ok()
     assert "cancelled" in outcome.error_text().lower()
     assert ide_globals["online"].session.calls == []

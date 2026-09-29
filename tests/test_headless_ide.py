@@ -108,6 +108,36 @@ def test_an_answer_reaches_the_prompt_table(ide):
         "UpgradeProjectConfirmation": "PromptResult.Yes"}
 
 
+def test_a_run_that_raises_still_writes_a_report_saying_why(ide, tmp_path):
+    # Anything raised out of run_job used to skip the report entirely, and
+    # the launcher could only say "the IDE wrote no report". A value the
+    # IDE's PromptResult has no member for is one way to get there.
+    record = job(tmp_path, answers={"UpgradeProjectConfirmation": "yes"})
+    path = str(tmp_path / "job.json")
+    ipc.write_json(path, record)
+    assert ide_side.main(ide, path) == ide_side.EXIT_FAILED
+    written = ipc.read_json(record["report"])
+    assert written["intended_exit"] == ide_side.EXIT_FAILED
+    assert "yes" in written["error"] and "Traceback" in written["error"]
+
+
+def test_the_report_says_the_project_opened_before_the_commands_run(
+        ide, tmp_path, monkeypatch):
+    # A launcher that has to kill a hung IDE reads this to decide whether
+    # the project's .~u lock is one that IDE made.
+    seen = []
+
+    def look(ide_globals, name, args):
+        seen.append(ipc.read_json(str(tmp_path / "r.json")))
+        return one_step()(ide_globals, name, args)
+
+    monkeypatch.setattr(entries, "run", look)
+    ide_side.run_job(ide, job(tmp_path, commands=[
+        {"command": "export", "args": {}}]))
+    assert seen[0]["opened"] is True
+    assert seen[0]["intended_exit"] is None   # not a finished run
+
+
 def test_a_project_that_will_not_open_names_the_likely_prompt(ide, tmp_path):
     ide["projects"] = OpeningProjects(opens=False)
     report = ide_side.run_job(ide, job(tmp_path))

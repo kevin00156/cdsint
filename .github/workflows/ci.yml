@@ -17,26 +17,52 @@ jobs:
     # target: the IDE only exists there. ubuntu-latest is the portability
     # guard -- it is the only thing that catches a Windows path handled with
     # os.path, because on Windows that mistake cannot fail.
-    name: core unit tests (${{ matrix.os }})
+    #
+    # And two Pythons: the newest one we build on, and the floor that
+    # pyproject.toml's requires-python promises cdsint/ runs on. The floor
+    # only needs one OS to be honest about it.
+    name: core unit tests (${{ matrix.os }}, ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest tests -q
+
+  py27-grammar:
+    # Everything above runs on CPython 3, which parses code IronPython 2.7
+    # rejects. tests/test_py2_runtime.py reads for the py3-only syntax it
+    # knows of; this asks a real 2.7 parser, which knows all of it. The
+    # checkout is mounted read-only and the container has no network: it
+    # compiles, and it can do nothing else. Pinned by digest: 2.7 has no
+    # releases left to follow, and a digest, unlike a tag, cannot be moved.
+    name: IDE side compiles under Python 2.7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          docker run --rm --network none
+          -v "$GITHUB_WORKSPACE:/src:ro"
+          python:2.7.18-slim@sha256:6c1ffdff499e29ea663e6e67c9b6b9a3b401d554d2c9f061f9a45344e3992363
+          python -B /src/tools/py27_compile.py /src
 
   release:
     # Here rather than in a workflow of its own so that it can wait for the
     # tests: a release is what `cdsint update` installs on every machine
-    # that asks, so one whose tests failed must not be published at all.
+    # that asks, so one whose tests failed must not be published at all --
+    # and that includes a body IronPython 2.7 cannot compile.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: core-tests
+    needs: [core-tests, py27-grammar]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,6 +72,20 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md
-      - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+      # The archive is of GITHUB_SHA, the commit core-tests ran on, not of
+      # the tag's name: a tag moved since would otherwise publish code nobody
+      # tested. `cdsint update` and irm/setup.ps1 install only this archive,
+      # and only when it matches the checksum beside it (cdsint/release.py
+      # names both files). setup.ps1 goes up too, so that the one-line
+      # install from releases/latest runs the installer of that release.
+      - run: |
+          git archive --format=zip --prefix="cdsint-${GITHUB_REF_NAME#v}/" \
+            -o "cdsint-$GITHUB_REF_NAME.zip" "$GITHUB_SHA"
+          sha256sum "cdsint-$GITHUB_REF_NAME.zip" > "cdsint-$GITHUB_REF_NAME.zip.sha256"
+      - run: >-
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME"
+          --notes-file notes.md
+          "cdsint-$GITHUB_REF_NAME.zip" "cdsint-$GITHUB_REF_NAME.zip.sha256"
+          irm/setup.ps1
         env:
           GH_TOKEN: ${{ github.token }}

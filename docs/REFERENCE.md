@@ -137,7 +137,7 @@ Every command that touches a project takes one of two forms, and never both:
 |---|---|---|---|
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
 | `list` | — | — | which IDEs are listening; it asks about this machine, not about one IDE |
-| `update` | — | — | replace a downloaded install with the newest release, and link any IDE added since |
+| `update` | — | — | replace a downloaded install with the newest release, once it matches its published SHA-256, and link any IDE added since |
 | `link [--script-dir D]` | — | — | put this install in every IDE's Scripts menu |
 | `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
@@ -146,9 +146,9 @@ Every command that touches a project takes one of two forms, and never both:
 | `discover` | yes | yes | name every object and the kind it counted as; run it when something reports `failed_objects` |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
-| `plc connect [--gateway IP --port N]` | — | yes | is the controller still holding the last download from here |
-| `plc download -y` | — | yes | download to the controller, read the CRC back, write it down |
-| `plc trace --gateway IP --job FILE` | — | yes | record the variables a job file names, without downloading anything |
+| `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
+| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | — | yes | record the variables a job file names, without downloading anything |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
@@ -164,8 +164,15 @@ They are in the record and not only on stderr because the caller reading
 the JSON is exactly the one who needs to hear about a cleared lock.
 Only with `--project`: `--sync-dir D` (optional — this run's sync folder,
 overriding the settings file and never written back), `--profile NAME` when an
-install has several, `--report FILE`, `--force-lock`, and `--answer KEY=VALUE`
-(repeatable) for the IDE's own prompts.
+install has several, `--report FILE` (left out, the report goes to
+`%TEMP%\cdsint\<project name>-<hash of its full path>.json`, so two projects
+that share a file name do not share a report), `--force-lock`, and
+`--answer KEY=VALUE` (repeatable) for the IDE's own prompts. VALUE is a
+`PromptResult` name spelled exactly — `OK`, `Cancel`, `Abort`, `Retry`,
+`Ignore`, `Yes` or `No` — and any other spelling is refused with exit 2 before
+an IDE starts. One `--project` run per project at a time: a second one on the
+same project is refused with exit 4 while the first runs. The launch lock is
+the operating system's, so a run that was killed takes it with it.
 
 There is no `config` command. The settings are a text file next to the
 project; **Settings** below is the whole of it.
@@ -249,6 +256,16 @@ cannot stand in for each other.
   as `import` and `verify`. Without it: what the download would do,
   `needs_input`, exit 1, controller untouched.
 
+Every `plc` command also needs `--gateway`, and is exit 2 without it: a
+controller found by the project's device name can be the wrong one, and the
+wrong controller passes every check — a download's read-back, a connect's
+`MATCH`, a trace's samples. `--port` is the port behind it (11740 when left
+out). The address is reached through one of the IDE profile's gateways:
+`--gateway-name NAME` says which, and it is needed only when the profile has
+more than one. Without it such a profile is refused with the names listed,
+and a name the profile does not have is refused too. `-y` on `connect` or
+`trace` is exit 2, since neither has anything to confirm.
+
 `plc` has no `--target` form at all. The watcher lives inside an IDE somebody
 is using, and a PLC login would take their online session away from them, so a
 PLC command always starts an IDE of its own.
@@ -259,9 +276,13 @@ project, kept in `<project>.cdsint-plc.json` beside the project, one entry
 per controller. `MATCH` is the only answer that exits 0 — it means the
 controller still holds what cdsint last put on it from here. `DIFFERENT`
 means something else has been loaded since. `UNKNOWN` means there is no
-record for this controller (never downloaded from this machine, or the
-project was copied without its record) or its CRC could not be read, which
-is not the same as agreement. Whether the *source* on disk still matches the
+record for this controller's `gateway/IP:port` (never downloaded to it that way from here,
+the project was copied without its record, or the only record is an old
+`project` entry from a download made without `--gateway`, which names no
+controller and is ignored; one download to the address fixes it) or its CRC
+could not be read, which is not the same as agreement. A download that leaves the application anything
+but running is exit 1 as well, though its CRC is still recorded, since the
+controller does hold it. Whether the *source* on disk still matches the
 project is `compare`'s question, not this one's; a boot application built
 offline changes its CRC on every compile, so it cannot serve as that answer.
 
@@ -286,7 +307,7 @@ as above; anything else stops the run and points at `plc download -y`), and
 whose program has not been edited since (a working copy that differs from its
 last download is refused the same way, because the login would put the edit
 on the controller). It logs in without downloading, never starts or stops the application and never
-writes a variable, so it needs no `-y` (one given is ignored); the `trace` word in
+writes a variable, so it takes no `-y` (one given is exit 2); the `trace` word in
 the `plc` list is its whole gate. `--gateway` is compulsory: a controller
 found by the project's device name can be the wrong one, and a trace from the
 wrong controller looks exactly like a right one.
@@ -308,7 +329,7 @@ prints, and a test holds this copy to it:
 ```
   task             a non-empty string; required. the cyclic IEC task to sample in
   variables        a non-empty list of distinct variable paths, without Application.; required. paths as read_value() takes them, e.g. PRG_X.var or GVL.var
-  duration_s       a number greater than 0; required. how long to record, in seconds
+  duration_s       a number greater than 0 and at most 86400 (a day); required. how long to record, in seconds
   out              a non-empty string; required. output path without extension; existing files are overwritten
   formats          a non-empty list of distinct words from trace, csv and txt; default ["trace", "csv"]. which files to save
   resolution       either "us" or "ms"; default "us". timestamp unit in the files
@@ -365,9 +386,9 @@ controller you know has the memory.
 |---|---|
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (`plc trace` without `--gateway` or `--job`), a trace job file that is wrong, or no single live IDE matched |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (any `plc` command without `--gateway`, `plc trace` without `--job`), a trace job file that is wrong, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
-| 4 | the project is open elsewhere, `--install` matched no IDE, or the IDE would not start |
+| 4 | the project is open elsewhere (another IDE, or another `cdsint --project` run on it), `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
 
 ## Settings
@@ -402,7 +423,7 @@ like this is complete:
 | `backup_retention_count` | integer | how many timestamped backups to keep | `10` |
 | `save_after_import` | boolean | save the project after an import | `true` |
 | `save_after_export` | boolean | save the project after an export | `true` |
-| `auto_delete_orphans` | boolean | delete `.st` files with no object behind them, without asking | `false` |
+| `auto_delete_orphans` | boolean | delete orphans without asking, as `--delete-orphans` does. An orphan is a file with no object behind it that the last sync here wrote and nobody has touched since; any other such file is kept and reported as waiting for import, and a fresh clone, with no sync cache yet, has no orphans | `false` |
 | `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for | `256` |
 
 **A file that is wrong stops the command.** A key cdsint does not know, a

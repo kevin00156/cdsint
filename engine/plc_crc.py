@@ -44,6 +44,7 @@ from __future__ import print_function
 
 import os
 import tempfile
+import zlib
 
 from cds.core import ipc
 from engine.strings import safe_str
@@ -59,29 +60,18 @@ UNKNOWN = "UNKNOWN"
 # built from two different projects.
 CRC_FIELD = (4, 8)
 
-REMOTE_APP_DIR = "PlcLogic/Application"
-REMOTE_CRC = REMOTE_APP_DIR + "/Application.crc"
-REMOTE_APP = REMOTE_APP_DIR + "/Application.app"
-
-# What a run pulls off the controller, under names of its own so a reader who
-# goes and looks in the workspace knows which side each file came from. Each
-# run overwrites the last rather than leaving a pile nobody reads, and no code
-# here ever deletes a directory it did not create.
-PLC_CRC_NAME = "plc_Application.crc"
-PLC_APP_NAME = "plc_Application.app"
-SOURCE_ARCHIVE_NAME = "plc_source.projectarchive"
+# What a run pulls off the controller goes into the workspace under a name
+# of its own, so a reader who goes and looks knows which side each file came
+# from. Each run overwrites the last rather than leaving a pile nobody reads,
+# and no code here ever deletes a directory it did not create.
+LOCAL_PREFIX = "plc_"
+SOURCE_ARCHIVE_NAME = LOCAL_PREFIX + "source.projectarchive"
 
 # The record lives beside the project rather than in a machine-wide store,
 # because it is a fact about one working copy: it says what a download made
 # from these files put on a machine. Copy the project elsewhere and the copy
 # rightly starts out knowing nothing.
 RECORD_SUFFIX = ".cdsint-plc.json"
-
-# The record is keyed by the controller a download went to, so one working
-# copy can serve two benches without either answer overwriting the other.
-# This is the key for a run that was given no --gateway and used whatever
-# address the project already carried.
-PROJECT_GATEWAY = "project"
 
 
 # --------------------------------------------------------------------------
@@ -127,16 +117,19 @@ def record_path(project_path):
     return os.path.splitext(safe_str(project_path))[0] + RECORD_SUFFIX
 
 
-def controller_key(address, port):
-    """The name a controller is filed under: "host:port", or PROJECT_GATEWAY.
+def controller_key(gateway, address, port):
+    """The name a controller is filed under in the record:
+    "gateway/host:port".
 
-    A run given no --gateway used whatever the project carried, and this
-    module has no way to find out what that was -- so it is filed under a
-    name that says exactly that, rather than under a guess.
+    Keyed by the route a download took, so one working copy can serve two
+    benches without either answer overwriting the other -- two identical
+    rigs often share an address, each behind a gateway of its own. The
+    gateway is the one actually used, named or not, so a gateway added to
+    the profile later leaves the existing keys alone. An entry under any
+    other name, such as "host:port" or the "project" an older download
+    wrote, names no route and is never read.
     """
-    if not address:
-        return PROJECT_GATEWAY
-    return "%s:%s" % (address, port)
+    return "%s/%s:%s" % (gateway, address, port)
 
 
 def read_records(path):
@@ -149,7 +142,7 @@ def read_records(path):
     if not path:
         return {}
     try:
-        found = ipc.read_json(path)
+        found = ipc.read_json(ipc.last_written(path))
     except (IOError, OSError, ValueError) as exc:
         log_warning("plc: %s could not be read, so this run has nothing to "
                     "compare against: %s" % (path, safe_str(exc)))
@@ -158,45 +151,68 @@ def read_records(path):
 
 
 def remember(path, key, entry):
-    """Add one controller's entry to the record. True when it was written.
+    """Add one controller's entry to the record. None when it was written,
+    otherwise why not.
 
     Merged rather than replaced: downloading one copy to a second bench must
     not erase what it knows about the first, or a later connect to the first
     would answer UNKNOWN about a controller cdsint did load.
     """
     if not path:
-        return False
+        return ("the project has never been saved, so there is nowhere "
+                "beside it to write the record")
     records = read_records(path)
     records[key] = entry
     try:
         ipc.write_json(path, records)
     except (IOError, OSError) as exc:
-        log_warning("plc: the download is done but %s could not be written, "
-                    "so a later connect will have nothing to compare "
-                    "against: %s" % (path, safe_str(exc)))
-        return False
-    return True
+        return "%s could not be written: %s" % (path, safe_str(exc))
+    return None
 
 
 # --------------------------------------------------------------------------
 # The answer
 # --------------------------------------------------------------------------
 
-def judge(recorded, plc):
+def remote_files(application):
+    """Where the controller keeps the application called `application`.
+
+    {"dir", "crc", "app"}: PlcLogic/<name>/ and the <name>.crc and <name>.app
+    in it. That is the runtime's layout, but the bench has only ever held an
+    application called Application, so it is the only name it was seen for.
+    """
+    folder = "PlcLogic/" + application
+    return {"dir": folder, "crc": "%s/%s.crc" % (folder, application),
+            "app": "%s/%s.app" % (folder, application)}
+
+
+def file_name(remote):
+    """The last part of a controller path: what a listing calls the file."""
+    return remote.rsplit("/", 1)[-1]
+
+
+def local_name(remote):
+    """What a file fetched from `remote` is called in the workspace."""
+    return LOCAL_PREFIX + file_name(remote)
+
+
+def judge(recorded, plc, unread):
     """The verdict and the reason for it. Three answers, and no fourth.
 
     UNKNOWN is not a third shade of DIFFERENT, it is the absence of an
     answer, and the two are kept apart because they call for different
     things: DIFFERENT means download, UNKNOWN means find out why there was
-    nothing to compare.
+    nothing to compare. unread is why there is no plc CRC, in the fetch's
+    own words: a file that is not there and a fetch that failed raise alike,
+    and the reader is the one who can tell them apart.
     """
     if not plc:
-        return UNKNOWN, ("the controller has no %s, so there is nothing on it "
-                         "for this to be about" % REMOTE_CRC)
+        return UNKNOWN, ("%s, so there is nothing on it for this to be about"
+                         % unread)
     if not recorded:
-        return UNKNOWN, ("cdsint has not downloaded to this controller from "
-                         "this project, so there is nothing to compare "
-                         "against; run plc download -y")
+        return UNKNOWN, ("there is no record of a download from this "
+                         "project to this controller, so there is nothing to "
+                         "compare against; run plc download -y once")
     when = recorded.get("downloaded_at", "an unrecorded date")
     if plc != recorded.get("plc_crc"):
         return DIFFERENT, ("the controller holds %s and the download from "
@@ -216,15 +232,22 @@ def verdict_line(action, found):
 # Where the files go
 # --------------------------------------------------------------------------
 
+class Stale(Exception):
+    """An earlier run's file is where this run writes, and would not go."""
+
+
 def workspace(project_path):
     """Make and return where this run's .crc and archive go.
 
     Named after the project rather than made fresh each time, so a second run
     overwrites the first instead of leaving a numbered trail in TEMP, and so
-    the path in the report is one a reader can go and look at.
+    the path in the report is one a reader can go and look at. The name alone
+    is not enough: two working copies of one project share it, and a run of
+    one would read the other's files as its own, so a hash of the full path
+    follows it.
     """
     path = os.path.join(tempfile.gettempdir(), "cdsint", "plc",
-                        _safe_name(_project_stem(project_path)))
+                        _workspace_name(project_path))
     if not os.path.isdir(path):
         os.makedirs(path)
     return path
@@ -236,14 +259,17 @@ def forget(path):
     The workspace is named after the project so that runs overwrite each
     other rather than pile up, and that is exactly what makes a stale file
     dangerous: a call that returns without writing would otherwise be read
-    as last week's answer to this week's question.
+    as last week's answer to this week's question. So a file that will not
+    go raises Stale, and the caller names the failure, rather than carrying
+    on beside it.
     """
     try:
         if os.path.isfile(path):
             os.remove(path)
     except (IOError, OSError) as exc:
-        log_warning("plc: could not clear %s before writing it: %s"
-                    % (path, safe_str(exc)))
+        raise Stale("%s is left from an earlier run and could not be "
+                    "removed, so what this run fetches could not be told "
+                    "from it: %s" % (path, safe_str(exc)))
     return path
 
 
@@ -252,10 +278,20 @@ def _byte(value):
     return value if isinstance(value, int) else ord(value)
 
 
-def _project_stem(project_path):
+def _workspace_name(project_path):
+    """The project's name, and a hash of where it is, as one directory name.
+
+    normcase and abspath so one file reached two ways is one workspace; crc32
+    because it is deterministic across runs and interpreters, which Python's
+    own hash() is not.
+    """
     if not project_path:
         return "unsaved"
-    return os.path.splitext(os.path.basename(safe_str(project_path)))[0]
+    path = safe_str(project_path)
+    where = os.path.normcase(os.path.abspath(path))
+    return "%s-%08x" % (
+        _safe_name(os.path.splitext(os.path.basename(path))[0]),
+        zlib.crc32(where.encode("utf-8")) & 0xFFFFFFFF)
 
 
 def _safe_name(stem):

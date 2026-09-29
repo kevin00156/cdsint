@@ -50,6 +50,27 @@ def test_an_answer_without_an_equals_sign_is_refused(capsys):
     assert "KEY=VALUE" in capsys.readouterr().err
 
 
+def test_an_answer_the_ide_has_no_name_for_is_refused_before_it_starts(
+        capsys):
+    # The IDE side looks the value up on PromptResult by exact name. "yes"
+    # used to get as far as a started IDE, raise there, and leave no report:
+    # exit 4 and nothing to read.
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["export", "--project", "P", "--install", "I",
+                  "--answer", "UpgradeProjectConfirmation=yes"])
+    assert raised.value.code == EXIT_TARGET
+    said = capsys.readouterr().err
+    assert "'yes'" in said and "Yes" in said and "Cancel" in said
+
+
+def test_every_prompt_answer_name_parses():
+    parser = flags.build_parser()
+    for name in flags.PROMPT_RESULTS:
+        given = parser.parse_args(["export", "--project", "P",
+                                   "--answer", "K=" + name])
+        assert given.answer == [("K", name)]
+
+
 @pytest.mark.parametrize("argv", [
     ["export", "--project", "P", "--install", "I"],
     ["import", "-y", "--project", "P", "--install", "I"],

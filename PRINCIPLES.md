@@ -160,6 +160,20 @@ four directories, with no carve-out for the docstring-only `__init__.py`
 files: a rule with an exception is one every future author has to
 remember.
 
+The rest of the test suite runs on CPython 3, where every py3-only call
+passes. `tests/test_py2_runtime.py` reads the four directories for the
+ones 2.7 does not have — `exist_ok=`, `FileNotFoundError`, zero-arg
+`super()`, `import pathlib`, f-strings, annotations and the rest of its
+list. Its syntax half is the cheap copy of the py27-grammar job in
+`.github/workflows/ci.yml`, which compiles all four directories with a
+real Python 2.7 through `tools/py27_compile.py`;
+`tests/test_py27_compile.py` holds that script to the same file list.
+
+Under IronPython `str`, `bytes` and `unicode` are one type, so asking
+whether a string is bytes is true of every string there, text included.
+`tests/test_text.py` holds `cds/core/text.py`, which asks only after
+asking whether it is text, as the one file that asks.
+
 `cdsint/` is CPython 3.11+ and has none of these restrictions.
 
 ## 9. One concurrency model inside the IDE, and it is the message loop.

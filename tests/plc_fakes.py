@@ -84,7 +84,14 @@ class Application(object):
     that writes one to a path was how the verdict used to be reached, and
     engine/plc_crc.py records why that could not work; a fake that still
     offered it would keep the idea alive in the one place nobody would look.
+    Its name is where the controller keeps its files, so it has one.
     """
+
+    def __init__(self, name="Application"):
+        self.name = name
+
+    def get_name(self):
+        return self.name
 
 
 class RemoteFile(object):
@@ -97,9 +104,11 @@ class RemoteFile(object):
 class Device(object):
     """A live device connection: lists files and hands them over."""
 
-    def __init__(self, crc=CRC_B, archive=True, app=APP_HEADER):
+    def __init__(self, crc=CRC_B, archive=True, app=APP_HEADER,
+                 application="Application"):
         self.crc = crc
         self.app = app
+        self.application = application
         self.archive = archive
         self.connected = False
         self.uploaded = []
@@ -111,7 +120,19 @@ class Device(object):
         self.connected = False
 
     def get_file_list_of_directory(self, directory):
-        return [RemoteFile("Application.crc"), RemoteFile("Application.app")]
+        """What the controller holds, as it would list it. A controller with
+        nothing loaded has no application directory to list at all, but its
+        PlcLogic is there, empty."""
+        loaded = self.crc or self.app
+        if directory == "PlcLogic":
+            return [RemoteFile(self.application, is_directory=True)] \
+                if loaded else []
+        name = directory.rsplit("/", 1)[-1]
+        held = [RemoteFile(name + suffix) for suffix, content
+                in ((".crc", self.crc), (".app", self.app)) if content]
+        if not held:
+            raise IOError("Could not find a part of the path: " + directory)
+        return held
 
     def upload_file(self, remote, local, overwrite):
         self.uploaded.append(remote)
@@ -238,6 +259,19 @@ class OnlineChangeOption(object):
     Keep = "keep"
 
 
+# Where every connect and download here is aimed: every plc command names its
+# controller (SPEC 6.6), and a record is filed under that name.
+ADDRESS = "192.168.1.5"
+CONTROLLER = "Gateway-1/%s:%d" % (ADDRESS, 11740)
+
+
+def at(**more):
+    """A plc command's args, aimed at ADDRESS, plus whatever else it takes."""
+    args = {"gateway": ADDRESS}
+    args.update(more)
+    return args
+
+
 # --------------------------------------------------------------------------
 # Fixtures
 # --------------------------------------------------------------------------
@@ -295,7 +329,7 @@ def workspace(tmp_path, monkeypatch):
 
 
 def ide(allowed=("connect", "download", "trace"), device=None, application=None,
-        children=None, gateways=()):
+        children=None, gateways=None):
     """The IDE globals a plc body reads, with the settings file written.
 
     The list goes on disk rather than into the fake project, because that is
@@ -309,7 +343,8 @@ def ide(allowed=("connect", "download", "trace"), device=None, application=None,
     children = children if children is not None else [DeviceNode("Device",
                                                            DEVICE_GUID)]
     project = Project(values, children, PROJECT_PATH, application)
-    online = Online(device=device, gateways=gateways)
+    online = Online(device=device, gateways=[Gateway()] if gateways is None
+                    else gateways)
     return {"system": FakeSystem(), "projects": Projects(project),
             "online": online, "CredentialSourceKind": CredentialSourceKind,
             "OnlineChangeOption": OnlineChangeOption}
@@ -332,7 +367,7 @@ def download_info(guids=BOOTINFO_GUIDS, compileinfo=True, guid=BOOTINFO_GUID,
     return prefix + ".bootinfo_guids"
 
 
-def recorded(plc_crc="11223344", controller=plc_crc_module.PROJECT_GATEWAY):
+def recorded(plc_crc="11223344", controller=CONTROLLER):
     """Write the record a download would have left, and hand back its path."""
     path = plc_crc_module.record_path(PROJECT_PATH)
     plc_crc_module.remember(path, controller,
@@ -645,7 +680,8 @@ class TraceBench(object):
                              gateways=[Gateway()])
         self.online.session = TraceSession(self.log, **session)
         if record:
-            recorded(plc_crc=record, controller="%s:%d" % (GATEWAY, PORT))
+            recorded(plc_crc=record,
+                     controller="Gateway-1/%s:%d" % (GATEWAY, PORT))
         if guids is not None:
             download_info(guids)
 

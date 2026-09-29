@@ -19,6 +19,7 @@ import json
 import os
 import time
 
+from cds.core import ipc
 from engine.strings import calculate_hash, safe_str
 from engine.sync_log import log_info, log_warning
 
@@ -53,10 +54,32 @@ def file_signature(file_path, stat_info=None):
     return int(s.st_mtime * 1000), s.st_size
 
 
+def signature_matches(entry, file_path):
+    """Is the file exactly as the sync that wrote this cache entry left it?
+
+    No entry is not "unchanged", it is "no idea", and the answer is False.
+    """
+    if not entry:
+        return False
+    try:
+        signature = file_signature(file_path)
+    except OSError:
+        return False
+    return signature == (entry.get("disk_mtime"), entry.get("disk_size"))
+
+
 def normalize_path(path):
-    """Normalize path separators to forward slashes for cross-platform consistency in cache keys."""
+    """The key a sync-folder path is known by: forward slashes, lower case.
+
+    Lower case because the file system is Windows': renaming an object only
+    in case leaves its file under the old case, so a key that kept the case
+    called the file an orphan of the object it still belongs to, and the
+    cache entry a stranger. The comparisons that decide whose a file is --
+    cache entries, claims, the orphan sweep, the new-file scan -- go
+    through here, so those agree with the file system.
+    """
     if path is None: return ""
-    return path.replace("\\", "/").strip("/")
+    return path.replace("\\", "/").strip("/").lower()
 
 
 def build_folder_hashes(object_hashes):
@@ -108,6 +131,11 @@ def cached_classification(entry):
     return tuple(padded[:3])
 
 
+def _rekeyed(section):
+    return dict((normalize_path(key), value)
+                for key, value in (section or {}).items())
+
+
 def load_sync_cache(base_dir):
     """Load the synchronization cache from sync_cache.json in the base directory.
 
@@ -116,7 +144,7 @@ def load_sync_cache(base_dir):
     sync direction) changes PROFILE_HASH and forces a full re-classification.
     """
     from engine.codesys_constants import PROFILE_HASH
-    cache_path = os.path.join(base_dir, "sync_cache.json")
+    cache_path = ipc.last_written(os.path.join(base_dir, "sync_cache.json"))
     empty = {"objects": {}, "folders": {}, "types": {}, "version": CACHE_VERSION}
     if os.path.exists(cache_path):
         try:
@@ -137,9 +165,11 @@ def load_sync_cache(base_dir):
                     shaped = cached_classification(entry)
                     if shaped is not None:
                         types[guid] = shaped
+                # Re-keyed, so a cache written before the keys were lower
+                # case still answers for its files.
                 return {
-                    "objects": data.get("objects", {}),
-                    "folders": data.get("folders", {}),
+                    "objects": _rekeyed(data.get("objects")),
+                    "folders": _rekeyed(data.get("folders")),
                     "types": types,
                     "version": cache_version
                 }
@@ -161,12 +191,17 @@ def save_sync_cache(base_dir, objects_cache, folder_hashes=None, type_cache=None
         "objects": objects_cache
     }
     try:
-        with io.open(cache_path, "w", encoding="utf-8", newline="") as f:
-            # Compact, not indented. sync_cache.json is machine-read and
-            # gitignored, and every entry carries an mtime that changes each
-            # run, so it never produces a readable diff anyway. Indenting cost
-            # roughly half a second across the write and the following read,
-            # and doubled a 125 KB file.
-            json.dump(cache_data, f, separators=(",", ":"))
+        # Compact, not indented. sync_cache.json is machine-read and
+        # gitignored, and every entry carries an mtime that changes each
+        # run, so it never produces a readable diff anyway. Indenting cost
+        # roughly half a second across the write and the following read,
+        # and doubled a 125 KB file.
+        #
+        # Serialised whole, then swapped in: the entries are the dirty-file
+        # guard's evidence (SPEC 6.1), and a file that died half way loads
+        # as no cache at all. load_sync_cache reads through last_written for
+        # the same reason.
+        ipc.write_atomic(cache_path,
+                         json.dumps(cache_data, separators=(",", ":")))
     except Exception as e:
         log_warning("Could not save sync cache: " + safe_str(e))

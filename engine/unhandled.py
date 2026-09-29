@@ -37,12 +37,24 @@ def note(obj, reason):
     `obj` may be an IDE object or a name that is already a string — some
     failures happen after the object has gone, with only its path left.
     """
-    _REGISTER.append({"name": name_of(obj), "reason": _text(reason)})
+    _REGISTER.append({"name": name_of(obj), "reason": _text(reason),
+                      "file_known": False})
+
+
+def note_file_known(obj, reason):
+    """note(), for an object whose file this run still knows and claims.
+
+    Named like any other, but it leaves no file unaccounted for, so it is
+    no reason for the gates on creating and deleting files to hold.
+    """
+    _REGISTER.append({"name": name_of(obj), "reason": _text(reason),
+                      "file_known": True})
 
 
 def records():
     """[{"name", "reason"}], in the order they were hit."""
-    return list(_REGISTER)
+    return [{"name": record["name"], "reason": record["reason"]}
+            for record in _REGISTER]
 
 
 def names():
@@ -52,6 +64,13 @@ def names():
 
 def any_so_far():
     return bool(_REGISTER)
+
+
+def any_file_unaccounted():
+    """Could a file in the sync folder belong to an object this run could
+    not handle? Asked before creating an object for an unclaimed file, or
+    deleting one: an object with no path could own either."""
+    return any(not record["file_known"] for record in _REGISTER)
 
 
 def summary():
@@ -72,7 +91,7 @@ def name_of(obj):
     included, so each attempt stands on its own and the last resort is a
     sentence rather than another exception.
     """
-    if isinstance(obj, bytes) or isinstance(obj, type(u"")):
+    if isinstance(obj, type(u"")):
         return _text(obj)
     try:
         return _text(obj.get_name())

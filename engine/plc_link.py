@@ -20,8 +20,7 @@ USER_ENV = "CDS_DEV_USER"
 PASS_ENV = "CDS_DEV_PASS"
 
 # What every CODESYS runtime listens on for device connections unless
-# somebody moved it. Only used when --gateway was given: without that flag
-# nothing here touches the project's own gateway settings.
+# somebody moved it: the port behind --gateway when no --port is given.
 DEFAULT_DEVICE_PORT = 11740
 
 
@@ -141,33 +140,64 @@ def find_device(project):
     return devices[0], None
 
 
-def aim_at_gateway(online_api, device_node, address, port):
-    """Point the device at `address`. Returns (note, problem); one is None.
+def gateway_name(gateway):
+    return safe_str(getattr(gateway, "name", gateway))
 
-    Only called when --gateway was given. The gateway belongs to the IDE
-    profile, not to the project, so the same project opened in another
-    install can come back "Gateway not configured properly", and this is the
-    way past that. Its absence is not a reason to guess one: what the project
-    already carries is somebody's answer, and overwriting it would be a
-    change to the project made in passing by a read-only command.
+
+def pick_gateway(gateways, name, address):
+    """The profile's gateway to reach `address` through. (gateway, problem).
+
+    A name that was given is the only answer, even when the profile has one
+    gateway: a flag that is quietly overruled is a skip wearing another hat.
+    Without one, a lone gateway is the only one there is, and of several the
+    first listed is not a choice anybody made -- the same address behind
+    another gateway can be another controller (D7).
     """
-    gateways = list(getattr(online_api, "gateways", []) or [])
     if not gateways:
         return None, ("--gateway %s was given but this IDE profile has no "
                       "gateway defined, so there is nothing to reach it "
                       "through" % address)
-    gateway = gateways[0]
+    names = [gateway_name(g) for g in gateways]
+    if name is not None:
+        if name not in names:
+            return None, ("this IDE profile has no gateway called %s (it has "
+                          "%s), so nothing was done"
+                          % (name, ", ".join(names)))
+        return gateways[names.index(name)], None
+    if len(gateways) > 1:
+        return None, ("this IDE profile has %d gateways (%s) and none was "
+                      "named, so nothing was done; pass --gateway-name with "
+                      "the one that reaches %s"
+                      % (len(gateways), ", ".join(names), address))
+    return gateways[0], None
+
+
+def aim_at_gateway(device_node, gateway, address, port):
+    """Point the device at `address`. Returns (note, problem); one is None.
+
+    Every plc command calls it: the address the project carries was found
+    by device name, which can reach the wrong controller (SPEC 6.6). The
+    gateway belongs to the IDE profile, not to the project, so the same
+    project opened in another install can come back "Gateway not configured
+    properly", and naming it is also the way past that.
+    """
     try:
         node = gateway.find_address_by_ip(address, port)
         device_node.set_gateway_and_ip_address(gateway, address, port)
     except Exception as exc:
         return None, ("%s:%d could not be reached through gateway %s: %s"
-                      % (address, port,
-                         safe_str(getattr(gateway, "name", gateway)),
+                      % (address, port, gateway_name(gateway),
                          safe_str(exc)))
     return ("gateway: %s -> %s:%d (node address %s)"
-            % (safe_str(getattr(gateway, "name", gateway)), address, port,
-               safe_str(node))), None
+            % (gateway_name(gateway), address, port, safe_str(node))), None
+
+
+def names_in(device, directory):
+    """The names in one controller directory. What the listing raised is
+    let out: a directory that is not there and a link that dropped raise
+    alike, so only a listing that worked can say what is absent."""
+    items = device.get_file_list_of_directory(directory)
+    return [safe_str(item.name) for item in items]
 
 
 def list_remote(device, directory):

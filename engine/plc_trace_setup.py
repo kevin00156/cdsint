@@ -59,7 +59,6 @@ class TraceSetup(Trip):
         self.buffers_for = buffers_for
         self.hold = entry.borrowed(ide_globals, trace_run.HOLD_GLOBAL)
         self.job = None
-        self.application = None
         self.api = None             # the trace object, in memory only
         self.set_buffers = None     # found before login, called after step 5
         self.found.update({"task": None, "period_us": None,
@@ -70,12 +69,10 @@ class TraceSetup(Trip):
     # -- before anything is touched ----------------------------------------
 
     def may_run(self):
-        """--gateway given, and a wait lent to this run. None if both."""
-        if not self.args.get("gateway"):
-            return ("--gateway is required. A project that finds its "
-                    "controller by name can reach the wrong one, and a trace "
-                    "from the wrong controller looks exactly like a right "
-                    "one, so the project's own gateway is not used (SPEC 6.6)")
+        """A wait lent to this run. None if there is one.
+
+        --gateway is reach_the_device's check, as for every plc command.
+        """
         if self.hold is None:
             return ("this run cannot wait: a recording holds the script for "
                     "duration_s, and that is only allowed in a --noUI run, "
@@ -116,17 +113,12 @@ class TraceSetup(Trip):
 
         MATCH alone does not stop a Keep login downloading: without these
         files beside the project it downloaded the whole application,
-        unasked (engine/plc_identity.py). Also where the application this
-        run traces is resolved. None when they agree.
+        unasked (engine/plc_identity.py). None when they agree.
         """
-        self.application = getattr(self.projects.primary,
-                                   "active_application", None)
-        if self.application is None:
-            return "this project has no active application to trace"
         return self.connected(self._judge_the_identity)
 
     def _judge_the_identity(self):
-        local, problem = self.pull(plc_crc.REMOTE_APP, plc_crc.PLC_APP_NAME)
+        local, problem = self.pull(self.remote["app"])
         if problem:
             return "%s; %s" % (problem, plc_identity.DOWNLOAD)
         code, problem = plc_identity.judged(
@@ -155,6 +147,13 @@ class TraceSetup(Trip):
             return ("this IDE's application object has no is_uptodate, so "
                     "there is no way to tell whether a Keep login would "
                     "download; nothing was logged in to")
+        if not isinstance(uptodate, bool):
+            # A method, or a proxy that is truthy whatever it holds, would
+            # read as "unchanged" to a bare `if not`; the gate only opens on
+            # an answer that can only mean yes.
+            return ("this IDE's is_uptodate is %r, not true or false, so "
+                    "there is no way to tell whether a Keep login would "
+                    "download; nothing was logged in to" % (uptodate,))
         if not uptodate:
             return ("the working copy's program differs from what was last "
                     "downloaded (the IDE's is_uptodate is false): code, IO "

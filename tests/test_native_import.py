@@ -99,7 +99,7 @@ def test_the_script_engine_assembly_is_found_by_name():
 
 def _batch(container):
     item = ("Application/T_slot1.trace.xml", "T_slot1.trace.xml", "T_slot1",
-            "f7aa3620-8073-4c91-b6ec-86ed9eb60303", False)
+            "f7aa3620-8073-4c91-b6ec-86ed9eb60303", False, {})
     return {container: [item]}
 
 

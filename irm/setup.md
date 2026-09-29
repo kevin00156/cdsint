@@ -6,27 +6,66 @@ of every CODESYS-family IDE, and pip-installs the `cdsint` command.
 ## How to run it
 
 ```powershell
-irm https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1 | iex
+irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1 | iex
 ```
 
-No Git needed — it downloads a release. To install against a clone you are
-editing instead, run it from a file:
+No Git needed — it downloads a release. The script comes from the newest
+release too, so the installer and what it installs are the same version. The
+copy on `main`, at
+`https://raw.githubusercontent.com/kevin00156/cdsint/main/irm/setup.ps1`,
+installs the same way.
+
+Through `iex` there is no command line to put options on. To pass one, make
+the download a script block and call that:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1))) -Version main
+```
+
+To install against a clone you are editing instead, run it from a file:
 
 ```powershell
 .\irm\setup.ps1 -Clone C:\path\to\cdsint
 ```
 
 Run through `iex` it never calls `exit`, because there it runs inside your own
-shell and `exit` would close the window. Run from a file, its exit code is 0
-when every IDE found is in the menu and 1 otherwise.
+shell and `exit` would close the window; a failure is thrown instead, so the
+shell stays open and `$?` is false. Nor does it leave anything set in that
+shell: `$ErrorActionPreference` is set inside a script block of its own, and
+the console encoding is put back when it finishes. Run from a file, its exit
+code is 0 when every IDE found is in the menu and 1 otherwise. Either way the
+green "`cdsint --help` to start" line is printed only when everything worked;
+when `link` could not reach every IDE, the last line says so instead.
 
 ## What it does
+
+**Checks Python first.** It runs `python` and asks its version before
+downloading anything, because being on PATH proves nothing: a stock Windows
+has a `python.exe` that only opens the Microsoft Store. Without Python 3.11 or
+later it stops and says where to get it, and how to turn that alias off
+(Settings > Apps > Advanced app settings > App execution aliases).
 
 **Installs the body.** Downloads the requested version (`-Version`, default
 the newest release) into `%LOCALAPPDATA%\cdsint\body`, replacing whatever is
 there rather than merging — a stub deleted upstream must not survive an
 upgrade and keep showing in the menu. With `-Clone` it skips this and uses the
 clone.
+
+What it downloads is the archive the release job built from the commit the
+tests passed on, `cdsint-<tag>.zip`, and it installs it only when its SHA-256
+matches the `cdsint-<tag>.zip.sha256` published beside it. A release without
+that file — one published before the release job made it — is refused, not
+installed from GitHub's archive of the tag, which is whatever the tag points
+at now. `-Version main` is the one exception: a branch has no release to
+check it against, so it is downloaded as it stands and the script says it is
+unverified.
+
+The new tree is unpacked into `body.new`, beside the old one and so on the
+same drive, and swapped in by two renames, as `cdsint update` does: a failed
+download, a checksum that does not match, or a shell whose current directory
+is inside the old body leaves that body whole. The old copy is deleted last;
+if something holds it open, the install stands and the script names the
+folder to delete by hand.
 
 The body has a directory of its own because `%LOCALAPPDATA%\cdsint` also
 holds the registrations of the IDEs that are listening and the status
@@ -57,8 +96,8 @@ To see which IDEs and ScriptDirs it would use, without installing anything:
 .\irm\setup.ps1 -List
 ```
 
-Run from a checkout, `-List` asks that checkout rather than downloading a
-release.
+`-List` never downloads: run from a checkout it asks that checkout, and
+otherwise the body already installed. With neither it says so and stops.
 
 An install counts only when its executable is there. These vendors put
 shared targets, a gateway and an unversioned directory beside the real
@@ -80,18 +119,22 @@ elevated shell `link` says which ScriptDir it skipped and links the rest;
 | `-List` | print the IDEs and ScriptDirs found, change nothing |
 | `-ScriptDir D` | link `D` only, instead of everything found |
 | `-Clone P` | use the tree at `P` as the body instead of downloading |
-| `-Version v1.2.3` | download this tag instead of the newest release; `main` downloads the branch as it stands |
+| `-Version v1.2.3` | download this release instead of the newest; `main` downloads the branch as it stands, unverified |
 
 ## Afterwards
 
 An install this script downloaded keeps itself current, when asked:
 `cdsint update` replaces the body with the newest release and links any IDE
-installed since, and `cdsint link` does only the second half. Every other
+installed since, and `cdsint link` does only the second half. `update`
+checks the release's archive against its SHA-256 the same way, and the
+linking after it is done by the new body's own `cdsint link`, not by the old
+code still running the update. Every other
 command prints a line on stderr when either is due: a newer release, or an
 IDE whose menu does not reach this body. It checks at most once a day, says
 nothing under `--json` or when it cannot reach GitHub, and never checks from a
 clone. `update` refuses while any CODESYS-family IDE is running: an IDE that
-has run one of the stubs keeps the old engine loaded.
+has run one of the stubs keeps the old engine loaded. Running this script
+again over an install refuses the same way; a first install does not ask.
 
 A clone updates with `git pull`, and `cdsint update` says so. `cdsint link`
 works from a clone too, and points the menus at it.

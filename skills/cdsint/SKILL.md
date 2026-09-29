@@ -117,7 +117,7 @@ it; the rest take their default:
 | `backup_name` | string — what to call those backups | `""` |
 | `backup_retention_count` | integer — how many backups to keep | `10` |
 | `save_after_import`, `save_after_export` | boolean | `true` |
-| `auto_delete_orphans` | boolean — delete orphaned `.st` files without asking | `false` |
+| `auto_delete_orphans` | boolean — delete orphaned files without asking; only a file the last sync wrote and nobody touched since counts | `false` |
 | `trace_memory_mb` | integer — the most controller memory one `plc trace` may ask for | `256` |
 
 A key cdsint does not know, a wrong type, a word `plc` does not recognise, or
@@ -127,8 +127,8 @@ guessed and nothing is silently ignored.
 ## Talking to a controller: `plc`
 
 ```
-cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
-cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported
+cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --gateway 192.168.1.5
+cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --gateway 192.168.1.5
 ```
 
 `plc download` is the only command that changes a machine, and it has two gates in
@@ -146,19 +146,24 @@ downloaded to it from this project. `download` writes the controller's CRC into
 `<project>.cdsint-plc.json` beside the project, one entry per controller, and
 `connect` holds the controller against that. `data.crc` is `MATCH` (exit 0),
 `DIFFERENT` (exit 1: something else has been downloaded to it since) or `UNKNOWN`
-(exit 1: nothing was ever downloaded there from here, or the controller holds
-nothing — neither is agreement). It does not answer "has the project changed
+(exit 1: nothing was ever downloaded to that address through that gateway from here, or the
+controller holds nothing — neither is agreement; an old `project` entry in the
+record, from a download without `--gateway`, is ignored, so download once). A download that leaves the application not
+running is exit 1 too, though it is recorded. It does not answer "has the project changed
 since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 `compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
-`--gateway IP [--port N]` overrides the project's own gateway settings; without it
-the project's are left alone.
+Every `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
+by the project's device name, the controller can be the wrong one, and the
+wrong one passes every check. An IDE profile with more than one gateway also
+needs `--gateway-name NAME` to say which one reaches it; the refusal lists the
+names. `-y` on `connect` or `trace` is exit 2 too.
 
 `plc trace` records variables from a controller that is at `MATCH`, without
 downloading anything. It also refuses a working copy that differs from its last
 download — an imported edit nobody downloaded — because logging in would put
 that edit on the controller; `plc download -y` first, with the user's word. It needs `trace` in the `plc` list, `--gateway` (it is
-exit 2 without one) and a job file, and takes no `-y`. Write `trace.json` as
+exit 2 without one) and a job file, and refuses `-y`. Write `trace.json` as
 `{"task": "MainTask", "variables": ["PRG_X.var"], "duration_s": 3, "out": "runs/first"}`,
 then:
 
@@ -189,8 +194,8 @@ has stops its application.
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
-itself is wrong — flags that do not go together, a flag or job file `plc trace`
-needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
+itself is wrong — flags that do not go together, `--gateway` on any `plc`
+command, a job file `plc trace` needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
 report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`

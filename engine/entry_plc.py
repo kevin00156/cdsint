@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """plc connect, download and trace: the commands that talk to a controller.
 
-Both commands end in the same question, and it is the only one worth asking:
-**is the machine running what cdsint put on it?** `download` makes the answer
-true, reads it back — a download that reports success without being read back
-is a claim, not a check — and writes down what it left there. `connect`
-measures the same two things again and compares them with that record. The
-one step that differs between the two is `remember`, and it is visible below
-for that reason.
+`connect` and `download` end in the same question, and it is the only one
+worth asking: **is the machine running what cdsint put on it?** `download`
+makes the answer true, reads it back — a download that reports success
+without being read back is a claim, not a check — and writes down what it
+left there. `connect` measures the same things again and compares them with
+that record. The steps only a download takes are listed in download()
+below, beside connect()'s two, so that the difference between the commands
+is the first thing a reader sees.
 
 `trace` leans on the same answer: it records only from a controller that
 MATCHes, because a recording of variables from a program that is not this
@@ -15,8 +16,9 @@ working copy's cannot be read against it (SPEC 6.8).
 
 This file is only the surface: the three names cds/ide/entries.py presses,
 the question -y answers, and the order the steps run in. The steps themselves
-are engine/plc_trip.py and, for trace, engine/plc_trace_setup.py (offline)
-and engine/plc_trace.py (online); reaching a controller is
+are engine/plc_trip.py, with download's own in engine/plc_download.py and
+trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
+(online); reaching a controller is
 engine/plc_link.py, and how the question is actually answered —
 why the offline CRC alone cannot answer it, what the record holds, and the
 three verdicts — is engine/plc_crc.py.
@@ -36,6 +38,7 @@ ask_yes_no the import confirmation does.
 from __future__ import print_function
 
 from engine import entry, plc_crc, unhandled
+from engine.plc_download import DownloadTrip
 from engine.plc_trace import TraceTrip
 from engine.plc_trip import Trip, first_problem
 
@@ -66,9 +69,9 @@ def connect():
     is mine", which is the one answer this command must never invent.
     """
     unhandled.start()
-    trip = a_trip("connect")
+    trip = a_trip(Trip, "connect")
     return in_order(trip, [
-        trip.reach_the_device,   # build the boot application, aim the device
+        trip.reach_the_device,   # --gateway, the device, its application
         trip.read_back,          # what the controller holds, and its files
     ]) or trip.verdict()
 
@@ -84,18 +87,16 @@ def download():
     if cancelled:
         return entry.result(False, cancelled, action="download",
                             crc=plc_crc.UNKNOWN)
-    trip = a_trip("download")
-    failed = in_order(trip, [
-        trip.reach_the_device,   # build the boot application, aim the device
+    trip = a_trip(DownloadTrip, "download")
+    return in_order(trip, [
+        trip.reach_the_device,   # --gateway, the device, its application
         trip.what_it_holds,      # the CRC on the controller before this run
         trip.send,               # put this project on it
         trip.read_back,          # the CRC, the files and the archive after
         trip.landed,             # and the two CRCs are not the same
-    ])
-    if failed:
-        return failed
-    trip.remember()
-    return trip.verdict()
+        trip.remember,           # what it left, for a later connect
+        trip.left_running,       # after the record: it does hold this
+    ]) or trip.verdict()
 
 
 def record():
@@ -115,14 +116,14 @@ def record():
 def traced(trip):
     """The trace steps, in SPEC 6.8's order, on a trip made by the caller.
 
-    Split from trace() so a test can hand in a trip with a fake clock and a
+    Split from record() so a test can hand in a trip with a fake clock and a
     fake buffer setter; record() is the only other caller.
     """
     unhandled.start()
     return in_order(trip, [
-        trip.may_run,             # --gateway given, and a wait lent to us
+        trip.may_run,             # a wait lent to us
         trip.read_the_job,        # checked again: the wire is not trusted
-        trip.reach_the_device,    # aim the device at --gateway
+        trip.reach_the_device,    # --gateway, the device, its application
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y
         trip.the_ide_agrees,      # the IDE's download info names it too
         trip.the_program_is_unchanged,  # or Keep would download the change
@@ -161,7 +162,7 @@ def confirm():
     return "PLC download cancelled: not confirmed."
 
 
-def a_trip(action):
+def a_trip(kind, action):
     """Both of this run's inputs from the IDE, handed to the trip.
 
     globals() is this body's namespace, which under cds/ide/silent.py is the
@@ -170,4 +171,4 @@ def a_trip(action):
     where they exist, rather than inside the trip, where they would resolve
     against an ordinary imported module and come back empty.
     """
-    return Trip(action, command_args, globals())
+    return kind(action, command_args, globals())

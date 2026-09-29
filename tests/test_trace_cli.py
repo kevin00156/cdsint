@@ -103,8 +103,43 @@ def test_a_trace_without_a_job_is_refused(runner, capsys):
 @pytest.mark.parametrize("action", ["connect", "download"])
 def test_only_a_trace_takes_a_job(action, tmp_path, runner, capsys):
     said = refused(["plc", action, "--project", "P", "--install", "I",
+                    "--gateway", "192.168.1.5",
                     "--job", write_job(tmp_path, GOOD)], capsys)
     assert "does not take --job" in said
+    assert not runner.started
+
+
+def test_a_download_without_a_gateway_is_refused_with_the_reason(runner,
+                                                                 capsys):
+    # The read-back a download ends in proves only that the controller it
+    # reached changed. Reached by the project's device name, that can be a
+    # different controller from the one the caller meant.
+    said = refused(["plc", "download", "-y", "--project", "P", "--install",
+                    "I"], capsys)
+    assert "needs --gateway" in said and "wrong controller" in said
+    assert not runner.started
+
+
+@pytest.mark.parametrize("action", ["connect", "trace"])
+def test_a_yes_that_confirms_nothing_is_refused(action, tmp_path, runner,
+                                                capsys):
+    job = ["--job", write_job(tmp_path, GOOD)] if action == "trace" else []
+    said = refused(["plc", action, "--project", "P", "--install", "I",
+                    "--gateway", "192.168.1.5", "-y"] + job, capsys)
+    assert "does not take --yes" in said
+    assert not runner.started
+
+
+@pytest.mark.parametrize("more", [[], ["--port", "11741"]])
+def test_a_connect_without_a_gateway_is_refused_with_the_reason(more, runner,
+                                                                capsys):
+    # Found by the project's device name, the controller can be the wrong
+    # one, and the wrong one can answer MATCH for a download that went to it.
+    # A --port on its own was dropped without a word, and is refused the same
+    # way: it is the port behind --gateway.
+    said = refused(["plc", "connect", "--project", "P", "--install", "I"]
+                   + more, capsys)
+    assert "needs --gateway" in said and "wrong controller" in said
     assert not runner.started
 
 
@@ -153,7 +188,7 @@ def test_the_ide_side_is_handed_the_job_not_the_file(tmp_path, runner,
         expected["out"] = str(tmp_path / "out" / "run1")
         assert command == "plc trace"
         assert args == {"yes": None, "gateway": "192.168.1.5", "port": None,
-                        "job": expected}
+                        "gateway_name": None, "job": expected}
 
 
 # --- what comes back ---------------------------------------------------------

@@ -4,6 +4,8 @@
 No IDE and no trip — pure bytes, paths and JSON, which is the reason that
 module was split out of the trip in the first place.
 """
+import os
+
 import pytest
 
 from engine import plc_crc as plc_crc_module
@@ -13,6 +15,8 @@ from tests.plc_fakes import CRC_A
 # --------------------------------------------------------------------------
 
 RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
+CRC_FILE = "PlcLogic/Application/Application.crc"
+UNREAD = CRC_FILE + " could not be fetched: Could not find a part of the path"
 
 
 @pytest.mark.parametrize("record,plc,verdict", [
@@ -23,16 +27,22 @@ RECORD = {"plc_crc": "11223344", "downloaded_at": "2026-09-06T10:00:00"}
     (None, None, "UNKNOWN"),
 ])
 def test_the_comparison_has_three_answers_not_two(record, plc, verdict):
-    assert plc_crc_module.judge(record, plc)[0] == verdict
+    assert plc_crc_module.judge(record, plc, UNREAD)[0] == verdict
 
 
 def test_each_answer_says_what_it_is_about_rather_than_just_naming_itself():
     # UNKNOWN twice over is two different situations and two different next
     # steps, so the word on its own is not the answer.
-    judge = plc_crc_module.judge
+    def judge(recorded, plc):
+        return plc_crc_module.judge(recorded, plc, UNREAD)
+
     assert "loaded with something else since" in judge(RECORD, "55667788")[1]
     assert "download -y" in judge(None, "11223344")[1]
     assert "nothing on it" in judge(RECORD, None)[1]
+    # In the fetch's own words: "has no .crc" was said of a fetch that
+    # failed on a dropped link too, and sent the reader looking for a
+    # controller with nothing loaded.
+    assert UNREAD in judge(RECORD, None)[1]
     assert "2026-09-06T10:00:00" in judge(RECORD, "11223344")[1]
 
 
@@ -60,17 +70,15 @@ def test_a_record_nobody_can_read_is_no_record_rather_than_a_crash(tmp_path):
     assert plc_crc.read_records(path) == {}
 
 
-def test_a_run_with_no_gateway_flag_is_filed_under_its_own_name():
-    # "whatever the project already carried" is not an address, and filing it
-    # under a guessed one would let two different controllers share a record.
-    plc_crc = plc_crc_module
-    assert plc_crc.controller_key(None, 11740) == plc_crc.PROJECT_GATEWAY
-    assert plc_crc.controller_key("127.0.0.1", 11740) == "127.0.0.1:11740"
+def test_a_controller_is_filed_under_its_route_and_nothing_else():
+    assert plc_crc_module.controller_key("Gateway-3", "127.0.0.1", 11740) == \
+        "Gateway-3/127.0.0.1:11740"
+    assert not hasattr(plc_crc_module, "PROJECT_GATEWAY")
 
 
 def test_a_project_that_was_never_saved_has_nowhere_to_keep_a_record():
     assert plc_crc_module.record_path(None) is None
-    assert plc_crc_module.remember(None, "key", {}) is False
+    assert "never been saved" in plc_crc_module.remember(None, "key", {})
 
 
 def test_a_file_too_short_to_hold_the_field_is_no_answer():
@@ -81,3 +89,49 @@ def test_a_file_too_short_to_hold_the_field_is_no_answer():
 
 def test_the_field_is_bytes_five_to_eight():
     assert plc_crc_module.crc_field(CRC_A) == "DEADBEEF"
+
+
+def test_two_copies_of_one_project_do_not_share_a_workspace(tmp_path,
+                                                            monkeypatch):
+    # Named after the project alone, two working copies of Line.project
+    # fetched into one directory, and a run of one could read the other's
+    # files as its own.
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    first = os.path.join(str(tmp_path), "a", "Line.project")
+    second = os.path.join(str(tmp_path), "b", "Line.project")
+    assert (plc_crc_module.workspace(first)
+            != plc_crc_module.workspace(second))
+    # The same file is the same workspace every time, so runs still overwrite
+    # rather than pile up, and the name is still one a reader recognises.
+    assert (plc_crc_module.workspace(first)
+            == plc_crc_module.workspace(os.path.join(str(tmp_path), "a", ".",
+                                                     "Line.project")))
+    assert os.path.basename(plc_crc_module.workspace(first)).startswith(
+        "Line-")
+
+
+def test_a_file_that_will_not_be_cleared_raises(tmp_path, monkeypatch):
+    stale = tmp_path / "plc_Application.crc"
+    stale.write_bytes(CRC_A)
+
+    def locked(path):
+        raise OSError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(os, "remove", locked)
+    with pytest.raises(plc_crc_module.Stale) as raised:
+        plc_crc_module.forget(str(stale))
+    assert str(stale) in str(raised.value)
+
+
+def test_the_files_on_the_controller_are_named_after_the_application():
+    # The paths used to be spelled for an application called Application,
+    # so a project whose application is called anything else read a file
+    # that is not there and answered UNKNOWN for a controller it had loaded.
+    assert plc_crc_module.remote_files("Application") == {
+        "dir": "PlcLogic/Application",
+        "crc": "PlcLogic/Application/Application.crc",
+        "app": "PlcLogic/Application/Application.app"}
+    assert plc_crc_module.remote_files("Line2")["crc"] == \
+        "PlcLogic/Line2/Line2.crc"
+    assert plc_crc_module.local_name("PlcLogic/Line2/Line2.app") == \
+        "plc_Line2.app"

@@ -346,7 +346,7 @@ mutually exclusive, and argparse blocks them directly.
 |---|---|---|---|
 | `installs` | n/a | n/a | list the IDEs on this machine, their profile names, and whether they need admin |
 | `list` | n/a | n/a | list the IDEs that are listening. It asks "who is listening", not about one IDE, so it takes neither form |
-| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, then `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
+| `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, checked against its published SHA-256 (8), then run the new body's own `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
 | `link [--script-dir D]` | n/a | n/a | junction every IDE's `ScriptDir\cdsint` onto this body's `stub\` and write `stub\body.path` (5.3). A ScriptDir needing an elevated shell is skipped without one, and a real directory in the way is left alone; either makes it exit 1 |
 | `ping`, `status`, `stop` | yes | n/a | the watcher's lifecycle, not under permission control |
 | `export [--delete-orphans]` | yes | yes | write the IDE project out as `.st` |
@@ -355,9 +355,9 @@ mutually exclusive, and argparse blocks them directly.
 | `discover` | yes | yes | name every object and the kind it counted as, and list the type GUIDs no kind recognises (`data.unknown`). Read-only, no permission needed |
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
-| `plc connect [--gateway IP --port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
-| `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
+| `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
@@ -406,7 +406,7 @@ Why `plc` commands refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (`plc trace` without `--gateway`), or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (any `plc` command without `--gateway`), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -467,7 +467,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `backup_name` | string | the backup file name | empty |
 | `backup_retention_count` | integer | how many backups to keep | 10 |
 | `save_after_import`, `save_after_export` | boolean | save after a sync | true |
-| `auto_delete_orphans` | boolean | delete orphans on disk automatically on export | false |
+| `auto_delete_orphans` | boolean | delete orphans on disk automatically on export (an orphan is defined in 6.1) | false |
 | `trace_memory_mb` | integer | the most controller memory one `plc trace` may ask for, see 6.8 | 256 |
 
 The one function that reads the file is the only validation: an unknown key, a
@@ -620,6 +620,13 @@ What is required of it:
   it saw as identical, so any `compare`, `verify`, or unconfirmed `import`
   (the comparison runs before the confirmation dialog) would let the next
   export overwrite that edit outright.
+- **Orphans are files the last sync left**. The same evidence decides what
+  export may delete (`engine/orphan_sweep.py`): a file no object claims is an
+  orphan only when the cache has an entry for it and its mtime and size still
+  match that entry. Any other unclaimed file is a file written for import to
+  create, or an edit made after its object went, so it is kept, goes into
+  `data.pending_import`, and `ok` is False. With no cache, as in a fresh
+  clone, nothing is an orphan and `--delete-orphans` deletes nothing.
 - **One save backup per operation.**
 - **Time spent waiting for a person to press a button is not counted in the
   elapsed time.**
@@ -676,8 +683,11 @@ into the hole:
 | The project path travels in an environment variable, not in `--project` and not in `--scriptargs` | `--project` under `--noUI` does not actually open the project; `--scriptargs`'s quoting rules cannot take a Chinese path |
 | The command line is assembled as a single string, not an array | PowerShell 5.1's array arguments re-quote and break `--profile="name with spaces"` |
 | stdout and stderr are redirected to a file named after the report | A GUI-subsystem exe gives the shell no output; the file name follows the report so two parallel processes do not fight over the file |
+| The default report is named after the project's full path (its name plus a short hash), the job file is a fresh temporary file deleted after the run, and a launch lock keyed the same way refuses a second run on the project while one runs; the lock is one the operating system holds on an open file, so it goes with its process and there is nothing stale to clear | Two checkouts of one project share a file name; and CODESYS's own `.~u` only appears once the IDE has the project open, so two runs started together both pass that check and then share a report |
+| The IDE is put in a Windows job object that is killed when cdsint's handle to it closes | A launcher killed outright runs no clean-up code, and used to leave a `--noUI` IDE with no window holding the project's lock |
 | On timeout, kill. Only an incomplete report (no `intended_exit`) counts as "a dialog hung"; a complete report is authoritative, and only "the script finished but the IDE did not exit in time" is noted. After the kill, wait until the process is really gone | A hang is ten times harder to diagnose than an error; and a complete report is evidence that a slow shutdown should not override |
-| After a kill, clear only lock files that "did not exist before this run started", and write into `notes` that it did; a lock file that was there before the start (that is, `--force-lock` was used) is left alone, with the reason stated | `--force-lock` means "run anyway", not "that lock is mine". Clearing it could release a project another IDE really has open, and the next run has two IDEs on one project. The same holds when the process was not killed: the lock stays |
+| After a kill, clear only lock files that "did not exist before this run started" and that the killed IDE made — it writes its report, still without `intended_exit`, the moment the project is open, and a lock with no such report behind it is left — and write into `notes` that it did; a lock file that was there before the start (that is, `--force-lock` was used) is left alone, with the reason stated | `--force-lock` means "run anyway", not "that lock is mine". Clearing it could release a project another IDE really has open, and the next run has two IDEs on one project. The same holds when the process was not killed, and when it never opened the project, since then somebody else opened it meanwhile: the lock stays |
+| A kill with no report behind it, or a Ctrl-C, of a run that included `plc download` says the controller may now be stopped or partly written | A full download stops the application before it writes; "a dialog, probably" is not all the reader needs when the machine may be standing still |
 | The script writes the exit code it intends to use into the report, and the CLI compares it with the one actually received | Whether the exit code makes it back has to be verified; if it does not, read the report instead |
 | `system.prompt_handling` turns on `LogMessageKeys`, so an unanswered prompt prints its key; `--answer KEY=VALUE` fills `prompt_answers` | Delta 1.10 opening a 1.8 project asks whether to upgrade, and the default answer is "don't open it". This is the exception D7 spells out |
 | No close after opening | close asks whether to save, and nobody can answer under `--noUI` |
@@ -691,7 +701,8 @@ environment variable, `CDSINT_HEADLESS_JOB`, pointing at a JSON job file that
 holds the project path, the command list and the `--answer` answers; the
 reason is the same as that row's, and it also spares both sides from growing
 one environment variable per new flag. The IDE side writes a JSON report when
-done, and the CLI side adds what only the outside knows: `stdout_reached`
+done (and a first one without `intended_exit` the moment the project is open),
+and the CLI side adds what only the outside knows: `stdout_reached`
 (only counts when both markers were seen), `exit_code_actual` and
 `exit_code_trusted`, `timed_out`.
 
@@ -732,8 +743,9 @@ Moved from the probe, placed in the engine next to `codesys_online.py` (D12),
 offered only in the `--project` form (D8). `entry_plc.py` is the front for
 the three `plc` commands, `plc_trip.py` the steps of one run, `plc_link.py`
 the part that connects to the controller, and `plc_crc.py` the verdict itself
-(pure bytes, paths and JSON; no IDE). The trace command adds its own steps on
-top of the trip in `plc_trace.py` (6.8).
+(pure bytes, paths and JSON; no IDE). The download and trace commands add
+their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
+(6.8).
 
 - `connect`: set `online.auth_fallback_modes` to `CredentialSourceKind.None`
   to switch off the credential dialog (on ScriptEngine 4.2.0.0 it is, by
@@ -743,24 +755,46 @@ top of the trip in `plc_trace.py` (6.8).
   be switched off is a hang, not a failure). Credentials come only from the
   environment variables `CDS_DEV_USER` and `CDS_DEV_PASS` (D14). List the
   gateways, `find_address_by_ip`, `set_gateway_and_ip_address` on the device
-  node, `create_online_device` to connect, list `PlcLogic/Application`, pull
-  `Application.crc` and take bytes 5 to 8. If there is a source archive, pull
-  it back. Compile nothing.
+  node, `create_online_device` to connect, list `PlcLogic/<app>`, pull
+  `<app>.crc` from it and take bytes 5 to 8, `<app>` being the name of the
+  project's active application; a project without one is refused. Every bench
+  so far had one called `Application`, so that is the only name this layout
+  has been seen for, and the rest of this section says `Application.crc` for
+  short. If there is a source archive, pull it back. Compile nothing.
 - `download`: first pull the controller's current `Application.crc`, then
   `login(OnlineChangeOption.Never, False)` for a full download,
   `create_boot_application`, `start`, `logout`, then pull again. The two values
   must differ: every compile stamps a new four-byte identifier on every block
   of the boot application, so if the download really landed the value changes;
   unchanged means "no error reported but nothing was written", and the run
-  counts as failed. If it landed, record the new value.
+  counts as failed. If it landed, record the new value. The application's
+  state is read after `start` and before `logout`, and anything but `run`
+  fails the run even so: the record is still written, because the controller
+  does hold this download, but a download that leaves the machine standing
+  still has not done its job. An exception anywhere from the login on says
+  the controller may now be stopped or partly written. A first pull that
+  fails is "nothing loaded" only when a listing of `PlcLogic` works and does
+  not name `<app>`, or the listing of `PlcLogic/<app>` works and does not
+  name its `.crc`. When a listing names the `.crc` that could not be read, or
+  a listing itself fails, nothing is sent: a download that writes nothing
+  could not then be told from one that lands, and a listing that raised says
+  no more about absence than the fetch before it, which most likely failed on
+  the same dropped link. That `PlcLogic` itself is there on a controller with
+  nothing loaded is an assumption of this rule, not yet seen on the bench.
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the
-  project file, one entry per controller (the key is `IP:port`; a run without
-  `--gateway` uses the key `project`), so one working copy can serve two rigs
-  at once without them overwriting each other. Copy the project elsewhere and
-  the record does not follow, which is right: it describes what this working
-  copy has done.
+  project file, one entry per controller, keyed `gateway/IP:port` by the
+  gateway actually used, named with `--gateway-name` or not. So one working
+  copy can serve two rigs at once without them overwriting each other, two
+  identical rigs at one address behind two gateways included, and a gateway
+  added to the profile later leaves the existing keys alone. Copy the
+  project elsewhere and the record does not follow, which is right: it
+  describes what this working copy has done. An entry under any other key is
+  never read: a download without `--gateway` once filed its CRC under
+  `project`, which names no controller, so a record holding only that answers
+  `UNKNOWN` until one download to the named address writes a
+  `gateway/IP:port` entry.
 - **The locally built boot application is not compared.** That was the
   original approach, and on the rig two independent reasons for it were
   measured and both fail (2026-09-06, 3.5.21.40 / ScriptEngine 4.2.0.0). One:
@@ -797,24 +831,36 @@ top of the trip in `plc_trace.py` (6.8).
 - The report of both commands has to contain the comparison result, `MATCH`
   or `DIFFERENT`; the pipeline uses it as the gate.
 
-A few more things. `connect` touches the device node's gateway setting only
-when `--gateway` was given; without it the project's own is used, because that
-is an answer somebody else set, and a read-only command should not change it
-in passing. `plc trace` is the exception: without `--gateway` it exits 2.
+A few more things. Every `plc` command needs `--gateway` and exits 2 without
+it; the IDE side refuses it again before anything is switched or connected.
 A project that finds its controller by device name can reach the wrong one
 (two WSL soft PLCs report the same host name), and the IDE's "the address
-differs from the project" prompt defaults to Yes; a trace recorded from the
-wrong controller looks exactly like a right one. `--port` defaults to 11740. When the project has more than one
-device node, both commands refuse and list the names; there is no flag to pick
-one, since guessing a download target is not something that can have a default
-(D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
+differs from the project" prompt defaults to Yes. What the wrong controller
+answers passes every check: a download to it passes its own read-back, since
+that controller's CRC moves too; a connect to it answers `MATCH` if a download
+went there; and a trace recorded from it looks exactly like a right one. So
+the device node is always aimed at the address given, which changes that
+setting in the open project; the project is never saved by a `plc` command.
+`--port` defaults to 11740; `-y` on `connect` or `trace` is exit 2, since
+neither has anything for it to confirm. The gateway the address is reached
+through is the IDE profile's own, and `--gateway-name NAME` picks it; without
+the flag a profile with one gateway uses that one, and a profile with more
+refuses and lists them, since the first one listed is not a choice anybody
+made and the same address behind another gateway can be another controller
+(D7). A name the profile does not have is refused too, even beside a lone
+gateway, because a flag that is quietly overruled aims at a controller nobody
+asked for. A project with more than one device node is refused with the
+names listed; there is no flag to pick one. The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,
 because outside these two commands there is nothing like `verify` that turns
 findings into a verdict, so the exit code itself has to be the verdict. The
-local boot application and the file pulled back from the PLC are written to
-`%TEMP%\cdsint\plc\<project>\`, overwritten on every run of the same project
-and deleted before writing, so that a call that wrote no file cannot have the
-previous run's answer read as this run's.
+files pulled back from the PLC are written to
+`%TEMP%\cdsint\plc\<project>-<hash>\`, the hash being of the project file's
+full path so that two working copies of one project never share it,
+overwritten on every run of the same project and deleted before writing, so
+that a call that wrote no file cannot have the previous run's answer read as
+this run's. A file that cannot be deleted fails that fetch by name rather than
+being left to be read.
 
 ### 6.7 Setup flow
 
@@ -938,7 +984,7 @@ refuses the run before any IDE starts.
 |---|---|---|---|
 | `task` | string | yes | the IEC task to sample in; it must be cyclic, since completeness is measured against its period |
 | `variables` | list of strings | yes | paths as `read_value()` takes them (`PRG_X.var`, `GVL.var`), no application prefix |
-| `duration_s` | number | yes | how long to record |
+| `duration_s` | number | yes | how long to record, in seconds; at most a day, since the controller's ring holds the whole recording and a longer job is a sparse sampling or a typo |
 | `out` | string | yes | output path without extension, relative to the working directory; existing files are overwritten |
 | `formats` | list of strings | no, `["trace", "csv"]` | any of `trace`, `csv`, `txt` |
 | `resolution` | `"us"` or `"ms"` | no, `"us"` | timestamp unit in the files |
@@ -1003,7 +1049,7 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
 ```json
 {
   "action": "trace",
-  "controller": "127.0.0.1:11741",
+  "controller": "Gateway-1/127.0.0.1:11741",
   "crc": "MATCH",
   "task": "MainTask",
   "period_us": 4000,
@@ -1046,7 +1092,8 @@ order changes by itself. The kind therefore leaves `XML_KINDS`, is written
 and read as text built from the script API, and its `sync_direction` becomes
 `bidirectional`. `export_xml` does not gate it. An old
 `Library Manager.library_manager.xml` in a sync folder is an orphan after the
-first export and is swept like any other.
+first export when the sync cache recorded it (6.1); without that record it is
+kept and listed as waiting for import, and has to be deleted by hand.
 
 **The file.** Beside where the XML was, one per application:
 `.../Plc Logic/Application/Library Manager.libraries`, UTF-8, one entry per
@@ -1389,8 +1436,17 @@ There is no release script and none is needed: a release is changing that
 line, dating its section in `CHANGELOG.md`, and pushing the tag `v` plus that
 number. CI's release job publishes the GitHub release once the tests pass, and
 refuses a tag that is not the version or a section that is not dated
-(`tools/release_notes.py`); `cdsint update` and `irm/setup.ps1` install the
-newest published release.
+(`tools/release_notes.py`). It attaches three files to the release: an
+archive of the commit the tests ran on, `cdsint-<tag>.zip`; its SHA-256,
+`cdsint-<tag>.zip.sha256`; and `irm/setup.ps1`, so that the one-line install
+from `releases/latest/download/setup.ps1` runs the installer of the release it
+installs. `cdsint update` and `irm/setup.ps1` install the newest published
+release from that archive, and only when it matches its checksum; a mismatch
+or a missing checksum is refused with the old body untouched. GitHub's own
+archive of a tag is not used: it is whatever the tag points at when somebody
+asks, not what was tested, and has nothing to check it against. The one
+unverified install is `setup.ps1 -Version main`, the branch as it stands,
+which says so.
 
 ---
 

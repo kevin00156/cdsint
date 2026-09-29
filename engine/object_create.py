@@ -247,17 +247,16 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
     Restores POU children after XML import to prevent deletion.
     
     Args:
-        native_batches: dict of {container: [(rel_path, abs_path, name, type_guid, is_new), ...]}
+        native_batches: dict of {container: [(rel_path, abs_path, name, type_guid, is_new, item), ...]}
         import_managers: dict of managers
         project: CODESYS project
         pou_children_info: dict of {pou_name_lower: saved_children} to restore after import
     
     Returns:
-        (updated_count, created_count, failed_count)
+        (updated_count, created_count, failed_count). Each item that landed
+        gets the object it landed as under item["landed"].
     """
-    if pou_children_info is None:
-        pou_children_info = {}
-    
+    pou_children_info = pou_children_info or {}
     updated = 0
     created = 0
     failed = 0
@@ -274,7 +273,7 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
 
                 # Restore POU children after XML import
                 # Find POUs by name in the container
-                for rel_path, file_path, name, type_guid, is_new in items:
+                for rel_path, file_path, name, type_guid, is_new, _item in items:
                     pou_name_lower = name.lower()
                     if pou_name_lower in pou_children_info:
                         children = pou_children_info[pou_name_lower]
@@ -283,11 +282,12 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
                             try:
                                 restore_pou_children(pou_obj, children, import_managers, project)
                             except Exception as e:
-                                log_warning("Could not restore children for POU " + name + ": " + safe_str(e))
+                                unhandled.note(name, "its members could not be restored: " + safe_str(e))
                 
-                for rel_path, file_path, name, type_guid, is_new in items:
+                for rel_path, file_path, name, type_guid, is_new, item in items:
                     res = child_named(container, name)
                     if res:
+                        item["landed"] = res
                         if is_new:
                             created += 1
                         else:

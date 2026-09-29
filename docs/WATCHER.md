@@ -25,7 +25,8 @@ environment variable `CDS_INSTANCES_DIR`. Each open IDE gets one subdirectory:
 instances\
   <instance-id>.json          the instance's registration file, heartbeat included
   <instance-id>\
-    cmd\                      command files the CLI writes in
+    cmd\                      command files the CLI writes in, and the
+                              <id>.running of the one being run
     result\                   result files the watcher writes back
 ```
 
@@ -34,15 +35,17 @@ instances\
 the process id from `os.getpid()`.
 
 The registration file's fields: `instance_id`, `pid`, `ide`, `project_path`,
-`project_name`, `sync_dir`, `state`, `busy_since`, `heartbeat`, `started_at`,
-`watcher_version`. Times come in two copies: the string one is for a person
-opening the file, and `heartbeat_epoch` and `busy_since_epoch` are for a
-program to subtract. Storing numbers saves parsing a local-time string and
+`project_name`, `sync_dir`, `state`, `busy_since`, `busy_command`, `heartbeat`,
+`started_at`, `watcher_version`. `busy_command` names what a busy instance is
+running, so a caller whose `--timeout` is shorter than that is told "busy for
+312s running import" rather than "no live IDE found". Times come in two copies: the string one is for a person
+opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
+`started_at_epoch` are for a program to subtract. Storing numbers saves parsing a local-time string and
 sidesteps the ambiguous hour around a daylight-saving change.
 
 ### 2.1 A few time constants
 
-The code is in `cds/core/instances.py`. These four numbers are starting points,
+The code is in `cds/core/instances.py`. These numbers are starting points,
 not settled values:
 
 | Constant | Value | Meaning |
@@ -51,25 +54,39 @@ not settled values:
 | `ALIVE_TIMEOUT_S` | 10 s | how long an idle instance's heartbeat may go without an update before it counts as dead |
 | `BUSY_TIMEOUT_S` | 120 s | how long a busy instance may stay busy and still count as alive; the CLI's `--timeout` overrides it |
 | `STALE_TIMEOUT_S` | 60 s | at start-up, idle registration files quiet for longer than this are cleared |
+| `ABANDONED_AFTER_S` | 6 h | at start-up, busy registration files busy for longer than this are cleared |
 
-**A `busy` registration file is never cleared.** "Clean up the files a dead
-process left behind" and "decide that a command has run too long" are two
-different things. Tied to one number, the protection only holds while a command
-runs shorter than the timeout, and an import of a real project takes more than
-two minutes as a matter of course. An instance stuck in `busy` is cleared by
-running `Project_watch.py` again.
+**A `busy` registration file is not cleared on the command timeout.** "Clean
+up the files a dead process left behind" and "decide that a command has run
+too long" are two different things. Tied to one number, the protection only
+holds while a command runs shorter than the timeout, and an import of a real
+project takes more than two minutes as a matter of course. A watcher's
+start-up has only time to go on, so it clears a busy record only after
+`ABANDONED_AFTER_S`, which no real command comes near. Re-running
+`Project_watch.py` does not clear one: it stops or starts the watcher of the
+IDE it runs in, and a busy record left by an IDE that crashed belongs to a
+different process id.
 
-**Do not use `os.kill(pid, 0)` to check whether a process is alive.** On
-Windows, CPython's `os.kill` terminates the target process outright. To check,
-use `ctypes` and `OpenProcess`, or simply trust the heartbeat.
+**The CLI also asks whether the pid still runs** (`cdsint/process.py`). A
+registration whose process is gone is dead whatever its state says, which is
+what an IDE that crashed mid-command leaves behind. On Windows that is
+`OpenProcess` plus `GetExitCodeProcess` through `ctypes`, and the process's
+creation time is compared with `started_at_epoch`, so a pid Windows has since
+handed to another program does not keep the record alive. **Do not use
+`os.kill(pid, 0)` there:** on Windows, CPython's `os.kill` terminates the
+target process outright. The IDE side has no such check and does not need
+one; it goes by time alone.
 
 **How the registration file is overwritten depends on the runtime.** With
 `os.replace` available, use it; the overwrite is atomic. Without it, fall back
-to "delete the target, then rename", which is the path IronPython 2.7 takes. On
-Windows, `os.rename` fails outright when the target exists, and the registration
-file overwrites the same name every two seconds. This is also why the CLI waits
-one extra tick before declaring an instance dead: between the delete and the
-rename there is an instant with no file at all.
+to "rename the target aside to `<name>.old`, rename the new one in, delete the
+aside", which is the path IronPython 2.7 takes. On Windows, `os.rename` fails
+outright when the target exists, and the registration file overwrites the same
+name every two seconds. This is also why the CLI waits up to a second before
+declaring an instance dead, and looks again before it says no IDE is listening
+while a `<id>.json.tmp` is present: between the two renames there is an instant
+with no file at all. The aside copy is only read back for the sync cache and
+the plc record; a protocol file the other side deleted must stay deleted.
 
 ## 3. Command files and result files
 
@@ -79,7 +96,7 @@ file has the same name and lives in `result\`.
 
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
- "args": {"yes": true}, "created_at": "..."}
+ "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1}
 ```
 
 ```json
@@ -90,6 +107,11 @@ file has the same name and lives in `result\`.
  "denied": null, "data": null}
 ```
 
+- `deadline_epoch` is when the CLI stops waiting: the moment it queued the
+  command plus its `--timeout`. A CLI that times out takes its command back
+  out of the queue, but one that is killed cannot, so a watcher that reaches
+  a command past its deadline does not run it: it answers `ok` false with
+  "the caller stopped waiting at …; not run". `null` means no deadline.
 - When `ok` is false, `error` always carries text.
 - When the engine asked a question and the command's arguments held no answer,
   `ok` is false and `needs_input` carries the question verbatim and the flag
@@ -124,15 +146,37 @@ CPython, because it takes the IDE's globals as parameters.
 
 1. Still running? Busy right now? `silent.running()`? If any one of the three
    holds, return at once.
-2. Pick up one command file and **delete it before running it**.
-3. Before running, set `state` to `busy` and write `busy_since`.
+2. Pick up one command file and **claim it before running it**: rename
+   `<id>.json` to `<id>.running`. If it is already gone, its caller took it
+   back, and it is neither run nor answered.
+3. Before running, set `state` to `busy` and write `busy_since`. On Windows
+   that write fails while a CLI has the registration open, so it is tried
+   again at once, a few times, with no sleep in between.
 4. Run, write the result file.
-5. In `finally`, write `state` back to `idle`.
+5. In `finally`, write `state` back to `idle` and remove `<id>.running`.
 
-**The command file is deleted before it runs.** If the watcher dies halfway
+**The command file is claimed before it runs.** If the watcher dies halfway
 through an import, the next start-up would pick that import up and run it a
 second time. Losing one result only makes the caller wait until the timeout;
 running an import twice touches the project.
+
+**`<id>.running` is the evidence that does not depend on the registration.**
+If every retry of the busy write loses, the registration still says idle and
+its heartbeat stops for as long as the command runs. Another IDE's start-up
+would then prune this instance as dead and take `cmd\` and `result\` away
+from the running command. It spares an instance with a `.running` file for
+the same `ABANDONED_AFTER_S` it gives a busy one. The CLI also no longer
+opens the registration on every poll while it waits (it checks that the file
+exists), which is what made the busy write lose in the first place.
+
+**The waiting CLI gives up early when nobody will answer.** Every couple of
+seconds it reads the registration, and takes the instance for gone when its
+process no longer runs (section 2.1), or when it is idle, has not beaten for
+`ALIVE_TIMEOUT_S`, and no `.running` file says a command is in progress. It
+takes its command back out of the queue and says the watcher stopped before
+answering, instead of waiting out the whole `--timeout`. When the process still
+runs it says so instead: an IDE whose own thread is held, by a build somebody
+started by hand, cannot tick, and looks the same from outside.
 
 **No two watchers in one IDE.** The instance id is the project name plus the
 process id, so two watchers in the same IDE would get the same id and fight
@@ -186,9 +230,15 @@ that it would differ.
   The tick is already on the UI thread; nothing cross-thread is needed.
 - **Two ways to stop**: the CLI's `stop`, and running `Project_watch.py` again.
   Both take the same tear-down: stop the timer, close the status window, delete
-  the registration file and directory, clear the state on `sys`.
+  the registration file and directory, clear the state on `sys`. A stop that
+  arrives while a command is running (the status window's Stop button, or a
+  re-run of the script, both reach the IDE while a command pumps messages)
+  only takes the watcher out of service; the first tick after the command
+  finishes does the tear-down, so the command's directory is still there
+  when it writes its answer.
 - **The heartbeat stays in the tick.** No heartbeat can go out while a command
-  runs; the registration file's `busy` state already covers that.
+  runs; the registration file's `busy` state, and the command's `.running`
+  file when the busy write was lost, already cover that (section 5).
 - **The status window uses `Show()`, not `ShowDialog()`.** A modal window holds
   the main thread and puts the IDE right back into the state this whole design
   exists to avoid. The window is owned by the IDE's main window and is not

@@ -6,6 +6,7 @@ who wrote it (SPEC 6.8): it names the field, what was there, and what is
 allowed. The buffers a job implies are tests/test_trace_run.py's.
 """
 import io
+import json
 import os
 import re
 
@@ -94,7 +95,7 @@ def test_each_required_field_is_refused_when_missing(name):
     ("task", "   ", "task wants a non-empty string"),
     ("task", 3, "not 3"),
     ("out", None, "out wants a non-empty string, not null"),
-    ("duration_s", 0, "duration_s wants a number greater than 0, not 0"),
+    ("duration_s", 0, "duration_s wants a number greater than 0 and"),
     ("duration_s", -1.5, "not -1.5"),
     ("duration_s", "3", 'not "3"'),
     ("duration_s", True, "not true"),
@@ -111,6 +112,23 @@ def test_each_required_field_is_refused_when_missing(name):
 def test_a_scalar_of_the_wrong_shape_names_field_value_and_kind(
         name, value, words):
     assert words in refused(job(**{name: value}))
+
+
+@pytest.mark.parametrize("written", ["Infinity", "-Infinity", "NaN",
+                                     "86401"])
+def test_a_duration_json_reads_but_no_recording_could_be_is_refused(written):
+    # json takes Infinity and NaN as numbers. An infinite duration passed
+    # `> 0`, and then sized a ring and a process deadline from infinity.
+    found = json.loads('{"task": "MainTask", "variables": ["PRG_X.a"], '
+                       '"out": "o", "duration_s": %s}' % written)
+    assert "duration_s wants a number greater than 0 and at most" in \
+        refused(found)
+
+
+def test_a_duration_of_exactly_a_day_is_taken():
+    value, problem = trace_job.normalise(
+        job(duration_s=trace_job.MAX_DURATION_S))
+    assert problem is None and value["duration_s"] == 86400.0
 
 
 @pytest.mark.parametrize("value, words", [

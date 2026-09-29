@@ -19,7 +19,7 @@ from cds.ide import silent
 from engine import plc_crc as plc_crc_module
 import tests.plc_fakes as plc_fakes
 from tests.plc_fakes import (CRC_A, CRC_B, CRC_C, Device, Gateway,
-                             PLC_BODY, Session, ide, recorded)
+                             PLC_BODY, Session, at, ide, recorded)
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
 
@@ -33,7 +33,7 @@ def crc_of(outcome):
 def test_a_controller_still_holding_what_was_downloaded_is_a_match():
     recorded(plc_crc="11223344")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "MATCH"
     assert outcome.ok()
 
@@ -44,7 +44,7 @@ def test_a_connect_with_nothing_ever_downloaded_is_unknown_not_a_match():
     # different artefacts, so the answer was DIFFERENT every time and carried
     # no information. Having nothing to compare against must say so.
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "UNKNOWN"
     assert not outcome.ok()
     assert "download -y" in outcome.result["summary"]
@@ -55,7 +55,7 @@ def test_a_controller_somebody_else_loaded_is_different_and_fails():
     # the way verify wraps compare — so the exit code has to be the verdict.
     recorded(plc_crc="11223344")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_C))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "DIFFERENT"
     assert not outcome.ok()
     assert "loaded with something else since" in outcome.result["summary"]
@@ -70,7 +70,7 @@ def test_editing_the_project_does_not_move_this_verdict():
     # moves on its own (engine/plc_crc.py).
     recorded(plc_crc="11223344")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "MATCH" and outcome.ok()
 
 
@@ -78,20 +78,32 @@ def test_the_record_the_verdict_used_is_in_the_report():
     # A verdict a reader cannot audit is a verdict they have to trust.
     recorded(plc_crc="11223344")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
-    data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
+    data = silent.run(ide_globals, PLC_BODY, "connect", at()).result["data"]
     assert data["recorded"]["plc_crc"] == "11223344"
     assert data["recorded"]["downloaded_at"] == "2026-09-06T10:00:00"
-    assert data["controller"] == "project"
+    assert data["controller"] == plc_fakes.CONTROLLER
 
 
 def test_a_record_for_another_controller_is_not_this_controllers():
     # Same working copy, two benches: the record for A must not answer for B.
-    recorded(plc_crc="11223344", controller="127.0.0.1:11740")
+    recorded(plc_crc="11223344", controller="Gateway-1/127.0.0.1:11740")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B),
                       gateways=[Gateway()])
     outcome = silent.run(ide_globals, PLC_BODY, "connect",
                          {"gateway": "127.0.0.1", "port": 11741})
     assert crc_of(outcome) == "UNKNOWN"
+
+
+def test_a_record_filed_under_project_names_no_controller_and_is_not_read():
+    # A download without --gateway used to file its CRC under "project":
+    # whatever address the project carried, which could have been any
+    # controller. It says nothing about the one this connect names, so the
+    # answer is UNKNOWN and the way out is one download to that address.
+    recorded(plc_crc="11223344", controller="project")
+    ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
+    assert crc_of(outcome) == "UNKNOWN" and not outcome.ok()
+    assert "run plc download -y once" in outcome.error_text()
 
 
 def test_only_the_identity_bytes_are_read():
@@ -100,7 +112,7 @@ def test_only_the_identity_bytes_are_read():
     assert CRC_A[:4] == CRC_B[:4]
     recorded(plc_crc="DEADBEEF")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert outcome.result["data"]["plc_crc"] == "11223344"
     assert crc_of(outcome) == "DIFFERENT"
 
@@ -109,7 +121,7 @@ def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
     # "cannot tell" reading the same as "matches" is the silent failure this
     # whole codebase exists to keep out (SPEC goal 6).
     ide_globals = ide(allowed=["connect"], device=Device(crc=None))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "UNKNOWN"
     assert not outcome.ok()
     assert "Application.crc" in outcome.result["summary"]
@@ -117,7 +129,7 @@ def test_a_controller_with_nothing_loaded_is_unknown_not_a_match():
 
 def test_a_download_reports_the_crc_it_checked_afterwards():
     ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     assert crc_of(outcome) == "MATCH" and outcome.ok()
     assert outcome.result["data"]["plc_crc"] == "55667788"
 
@@ -127,9 +139,10 @@ def test_a_download_writes_down_what_it_left_there():
     # locally reproduces what the controller holds, so what cdsint itself put
     # there, recorded at the moment it put it, is the only reference.
     ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
-    silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     written = plc_crc_module.read_records(
-        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))["project"]
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))[
+            plc_fakes.CONTROLLER]
     assert written["plc_crc"] == "55667788"
     assert written["device"] == "Device"
 
@@ -137,9 +150,9 @@ def test_a_download_writes_down_what_it_left_there():
 def test_a_download_then_a_connect_is_a_match():
     # The pair the bench runs, in one test: nothing is set up by hand.
     silent.run(ide(allowed=["connect", "download"], device=Device(crc=CRC_B)),
-               PLC_BODY, "download", {"yes": True})
+               PLC_BODY, "download", at(yes=True))
     after = ide(allowed=["connect", "download"], device=Device(crc=CRC_C))
-    outcome = silent.run(after, PLC_BODY, "connect", {})
+    outcome = silent.run(after, PLC_BODY, "connect", at())
     assert crc_of(outcome) == "MATCH" and outcome.ok()
 
 
@@ -151,11 +164,72 @@ def test_a_download_that_did_not_take_is_a_failure_not_a_success():
     device = Device(crc=CRC_B)
     ide_globals = ide(allowed=["download"], device=device)
     ide_globals["online"].session = Session(device=device, writes=[])
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     assert not outcome.ok()
     assert "nothing was written to it" in outcome.error_text()
     assert plc_crc_module.read_records(
         plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
+class FirstCrcFetchFails(Device):
+    """A controller whose first .crc fetch fails, as a reset connection does."""
+
+    def upload_file(self, remote, local, overwrite):
+        if remote.endswith(".crc") and remote not in self.uploaded:
+            self.uploaded.append(remote)
+            raise IOError("transient: the connection was reset")
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_a_crc_that_could_not_be_read_before_stops_the_download():
+    # The failed fetch read as "nothing loaded", so a download that wrote
+    # nothing was held against no CRC at all, passed, and was recorded as
+    # cdsint's: the controller's old program written down as this project's.
+    device = FirstCrcFetchFails(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "nothing was sent" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
+class LinkDropsOnce(FirstCrcFetchFails):
+    """The fetch fails on a reset connection, and so does the listing after
+    it: nothing about the controller could be read, absence included."""
+
+    def get_file_list_of_directory(self, directory):
+        if not getattr(self, "listed", False):
+            self.listed = True
+            raise IOError("transient: the connection was reset")
+        return Device.get_file_list_of_directory(self, directory)
+
+
+def test_a_listing_that_failed_is_not_read_as_nothing_loaded():
+    # A listing that raised was taken for a controller with no application
+    # directory, so the same dropped link that failed the fetch let a
+    # download through, and one that wrote nothing was recorded as landed.
+    device = LinkDropsOnce(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Session(device=device, writes=[])
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "would not list" in outcome.error_text()
+    assert "connection was reset" in outcome.error_text()
+    assert ide_globals["online"].session.calls == []
+    assert plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH)) == {}
+
+
+def test_a_controller_with_nothing_loaded_still_takes_a_download():
+    # No application directory at all is what a fresh controller says, and
+    # there any CRC afterwards is a change.
+    device = Device(crc=None, app=None)
+    ide_globals = ide(allowed=["download"], device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert outcome.ok() and crc_of(outcome) == "MATCH"
 
 
 def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
@@ -165,21 +239,51 @@ def test_a_controller_that_lost_everything_during_a_download_is_a_failure():
             Device.upload_file(self, remote, local, overwrite)
 
     ide_globals = ide(allowed=["download"], device=Wiped(crc=CRC_B))
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     assert not outcome.ok() and "nothing to show it landed" in \
         outcome.error_text()
 
 
+class KeepsOneApplication(Device):
+    """A controller whose application is called Line2, laid out as the
+    runtime lays one out: PlcLogic/Line2/Line2.crc and .app."""
+
+    def upload_file(self, remote, local, overwrite):
+        if not remote.startswith("PlcLogic/Line2/Line2."):
+            raise IOError("Could not find a part of the path: " + remote)
+        Device.upload_file(self, remote, local, overwrite)
+
+
+def test_the_crc_is_read_from_where_the_active_application_keeps_it():
+    # The paths were spelled for an application called Application, so any
+    # other name read a file that is not there and answered UNKNOWN about a
+    # controller cdsint had loaded.
+    recorded(plc_crc="11223344")
+    ide_globals = ide(allowed=["connect"],
+                      device=KeepsOneApplication(application="Line2"),
+                      application=plc_fakes.Application("Line2"))
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
+
+
+def test_a_project_with_no_active_application_is_refused_by_connect_too():
+    ide_globals = ide(allowed=["connect"])
+    ide_globals["projects"].primary.active_application = None
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
+    assert not outcome.ok()
+    assert "no active application" in outcome.error_text()
+
+
 def test_the_source_archive_comes_back_when_the_controller_has_one():
     ide_globals = ide(allowed=["connect"], device=Device(archive=True))
-    data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
+    data = silent.run(ide_globals, PLC_BODY, "connect", at()).result["data"]
     assert data["source_archive"].endswith(".projectarchive")
 
 
 def test_no_source_archive_is_an_answer_not_a_failure():
     recorded(plc_crc="11223344")
     ide_globals = ide(allowed=["connect"], device=Device(archive=False))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     assert outcome.result["data"]["source_archive"] is None
     assert outcome.ok()
 
@@ -188,7 +292,7 @@ def test_the_missing_archive_is_said_in_words_before_the_ides_own():
     # The IDE's words for it are "Value cannot be null. Parameter name: path",
     # which tells a reader nothing at all about what happened.
     ide_globals = ide(allowed=["connect"], device=Device(archive=False))
-    outcome = silent.run(ide_globals, PLC_BODY, "connect", {})
+    outcome = silent.run(ide_globals, PLC_BODY, "connect", at())
     note = [n for n in outcome.result["data"]["notes"] if "archive" in n][0]
     assert note.startswith("no source archive to fetch: nothing has been "
                            "source-downloaded to this controller")
@@ -196,14 +300,14 @@ def test_the_missing_archive_is_said_in_words_before_the_ides_own():
 
 def test_the_files_the_controller_holds_are_named_not_counted():
     ide_globals = ide(allowed=["connect"])
-    data = silent.run(ide_globals, PLC_BODY, "connect", {}).result["data"]
+    data = silent.run(ide_globals, PLC_BODY, "connect", at()).result["data"]
     assert any("Application.crc" in line for line in data["plc_files"])
 
 
 def test_the_connection_is_closed_even_when_the_comparison_fails():
     device = Device(crc=None)
     ide_globals = ide(allowed=["connect"], device=device)
-    silent.run(ide_globals, PLC_BODY, "connect", {})
+    silent.run(ide_globals, PLC_BODY, "connect", at())
     assert device.connected is False
 
 
@@ -215,7 +319,7 @@ def test_a_controller_that_does_not_answer_is_a_sentence_not_a_traceback():
             raise RuntimeError("No connection to device. (Device unplugged?)")
 
     outcome = silent.run(ide(allowed=["connect"], device=Unplugged()),
-                         PLC_BODY, "connect", {})
+                         PLC_BODY, "connect", at())
     said = outcome.error_text()
     assert "did not answer" in said and "Traceback" not in said
 
@@ -228,11 +332,126 @@ def test_a_download_that_throws_is_named_and_still_logs_out():
 
     ide_globals = ide(allowed=["download"])
     ide_globals["online"].session = Refusing()
-    outcome = silent.run(ide_globals, PLC_BODY, "download", {"yes": True})
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
     said = outcome.error_text()
     assert "did not complete" in said and "Traceback" not in said
     # Leaving a session logged in would hold the controller for the next run.
     assert ("logout",) in ide_globals["online"].session.calls
+
+
+class StaysStopped(Session):
+    """start() returns without error and the application does not run."""
+
+    def start(self):
+        Session.start(self)
+        self.application_state = "stop"
+
+    def logout(self):
+        Session.logout(self)
+        self.application_state = "unknown"   # no application once out
+
+
+def test_a_download_that_leaves_the_application_stopped_fails():
+    # The state was read after the logout and only ever noted, so a download
+    # that left the machine standing still exited 0.
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = StaysStopped(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "in state stop, not run" in outcome.error_text()
+    # It did land, so a later connect should still know it is ours.
+    written = plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))[
+            plc_fakes.CONTROLLER]
+    assert written["plc_crc"] == "55667788"
+
+
+def test_a_download_that_fails_after_the_login_says_the_controller_may_stop():
+    class Halfway(Session):
+        def create_boot_application(self):
+            Session.create_boot_application(self)
+            raise RuntimeError("the connection was lost")
+
+    ide_globals = ide(allowed=["download"])
+    ide_globals["online"].session = Halfway()
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "may now be stopped or partly written" in outcome.error_text()
+
+
+def test_a_record_that_could_not_be_written_fails_the_download(monkeypatch):
+    # The write's failure was a log line and a False nobody read, so the
+    # download exited 0 and the next connect answered UNKNOWN or DIFFERENT
+    # about a controller that did hold it, and sent the reader to download
+    # again.
+    def refused(path, data):
+        raise IOError(13, "Access is denied")
+
+    monkeypatch.setattr(plc_crc_module.ipc, "write_json", refused)
+    outcome = silent.run(ide(allowed=["download"], device=Device(crc=CRC_B)),
+                         PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "was not written down" in outcome.error_text()
+    assert "Access is denied" in outcome.error_text()
+
+
+def test_an_online_application_the_ide_refuses_is_named_not_raised():
+    def refuses(application):
+        raise RuntimeError("no licence for this target")
+
+    ide_globals = ide(allowed=["download"])
+    ide_globals["online"].create_online_application = refuses
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "nothing was sent" in outcome.error_text()
+    assert "no licence" in outcome.error_text()
+
+
+def test_a_state_that_cannot_be_read_is_not_a_download_that_failed():
+    # The download did complete; only the question after it failed, and
+    # that was reported as "the download did not complete".
+    class Mute(Session):
+        @property
+        def application_state(self):
+            raise RuntimeError("the session went away")
+
+        @application_state.setter
+        def application_state(self, value):
+            pass
+
+    device = Device(crc=CRC_B)
+    ide_globals = ide(allowed=["download"], device=device)
+    ide_globals["online"].session = Mute(device=device)
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert not outcome.ok()
+    assert "did not complete" not in outcome.error_text()
+    assert "could not be read: the session went away" in outcome.error_text()
+
+
+def test_one_address_behind_two_gateways_is_two_controllers():
+    # Two identical rigs share an address, each behind a gateway of its own.
+    # Filed under the address alone, a download to the second overwrote the
+    # record of the first, whose next connect answered DIFFERENT about a
+    # controller that still held what cdsint put there.
+    first, third = Gateway("Gateway-1"), Gateway("Gateway-3")
+    rig_a, rig_b = Device(crc=CRC_A), Device(crc=CRC_A)
+    for rig, name in ((rig_a, "Gateway-1"), (rig_b, "Gateway-3")):
+        ide_globals = ide(allowed=["download"], device=rig,
+                          gateways=[first, third])
+        ide_globals["online"].session = Session(
+            device=rig, writes=[CRC_B if rig is rig_a else CRC_C])
+        assert silent.run(ide_globals, PLC_BODY, "download",
+                          at(yes=True, gateway_name=name)).ok()
+
+    records = plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))
+    assert sorted(records) == ["Gateway-1/192.168.1.5:11740",
+                               "Gateway-3/192.168.1.5:11740"]
+    outcome = silent.run(ide(allowed=["connect"], device=rig_a,
+                             gateways=[first, third]),
+                         PLC_BODY, "connect", at(gateway_name="Gateway-1"))
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
 
 
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
@@ -244,14 +463,37 @@ def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):
         def upload_file(self, remote, local, overwrite):
             self.uploaded.append(remote)   # as a controller might, and has
 
-    stale = os.path.join(str(workspace), "cdsint", "plc", "Line")
-    os.makedirs(stale)
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
     with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
         handle.write(CRC_B)
     recorded(plc_crc="11223344")
     outcome = silent.run(ide(allowed=["connect"], device=Silent()),
-                         PLC_BODY, "connect", {})
+                         PLC_BODY, "connect", at())
     assert crc_of(outcome) == "UNKNOWN"
+
+
+def test_a_stale_crc_that_will_not_go_is_a_named_failure(monkeypatch):
+    # Clearing the old copy is the only thing standing between an upload
+    # that wrote nothing and last week's answer. When the clearing failed it
+    # used to be a log line, and the old file was read as this run's CRC.
+    class Silent(Device):
+        def upload_file(self, remote, local, overwrite):
+            self.uploaded.append(remote)
+
+    stale = plc_crc_module.workspace(plc_fakes.PROJECT_PATH)
+    with open(os.path.join(stale, "plc_Application.crc"), "wb") as handle:
+        handle.write(CRC_B)
+    recorded(plc_crc="11223344")
+
+    def locked(path):
+        raise OSError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(os, "remove", locked)
+    outcome = silent.run(ide(allowed=["connect"], device=Silent()),
+                         PLC_BODY, "connect", at())
+    assert crc_of(outcome) == "UNKNOWN" and not outcome.ok()
+    assert any("could not be removed" in note
+               for note in outcome.result["data"]["notes"])
 
 
 # --------------------------------------------------------------------------

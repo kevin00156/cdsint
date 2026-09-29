@@ -3,8 +3,11 @@
 
 A command file name is "<13-digit millisecond stamp>-<6 hex>.json", so plain
 alphabetical order is oldest-first and two commands issued in the same
-millisecond still get separate files. The watcher takes one at a time, writes
-the result under the same id, then deletes the command.
+millisecond still get separate files. The watcher takes one at a time by
+renaming it to "<id>.running" before it runs it, writes the result under the
+same id, then removes the .running file. That file is the one sign on disk
+that a command is in progress which does not depend on the registration being
+rewritten -- and on Windows that rewrite can fail (docs/WATCHER.md 2.1).
 
 The CLI deletes each result once it has read it. Results nobody came back for
 (the CLI was killed, say) are swept by the watcher on its next start.
@@ -13,6 +16,7 @@ Pure Python (PRINCIPLES.md 4): no CODESYS imports.
 """
 from __future__ import print_function
 
+import errno
 import os
 import random
 
@@ -33,13 +37,16 @@ def new_id(now=None, suffix=None):
     return "%013d-%s" % (int(ipc.now(now) * 1000), suffix)
 
 
-def new_command(command, args=None, now=None, cmd_id=None):
+def new_command(command, args=None, now=None, cmd_id=None, deadline=None):
     """The record that says what to run, whether or not it is ever a file.
 
     A headless run never queues anything — one process runs the whole list —
     but the result it writes is the same record the watcher writes, and that
     record is built from this one. So both callers start here, and neither
     can end up with a command record the other's readers cannot read.
+
+    deadline_epoch is when the caller stops waiting; None means it waits
+    for as long as it takes, which is what a headless run does.
     """
     now = ipc.now(now)
     return {
@@ -47,14 +54,28 @@ def new_command(command, args=None, now=None, cmd_id=None):
         "command": command,
         "args": dict(args or {}),
         "created_at": ipc.iso(now),
+        "deadline_epoch": deadline,
     }
 
 
-def write_command(root, instance_id, command, args=None, now=None, cmd_id=None):
+def write_command(root, instance_id, command, args=None, now=None, cmd_id=None,
+                  deadline=None):
     """Queue one command for an instance. Returns the record as written."""
-    cmd = new_command(command, args, now, cmd_id)
+    cmd = new_command(command, args, now, cmd_id, deadline)
     ipc.write_json(_command_path(root, instance_id, cmd["id"]), cmd)
     return cmd
+
+
+def overdue(cmd, now=None):
+    """Has the caller who queued this stopped waiting for it?
+
+    A CLI that times out takes its command back out of the queue, but one
+    that is killed cannot, and its command would then run whenever the
+    watcher got to it -- an import an hour later, against a project its
+    owner has been editing since. Nobody is left to read that answer.
+    """
+    deadline = cmd.get("deadline_epoch")
+    return deadline is not None and ipc.now(now) > float(deadline)
 
 
 def list_command_ids(root, instance_id):
@@ -64,16 +85,89 @@ def list_command_ids(root, instance_id):
 
 
 def next_command(root, instance_id):
-    """The oldest queued command, or None if the queue is empty."""
+    """The oldest queued command, or None if the queue is empty.
+
+    A file that is not a command is set aside as <name>.bad, not raised.
+    It keeps its place at the head of the queue, so raising would fail every
+    tick on the same file, block every command queued behind it, and stop
+    the heartbeat that tells the CLI this IDE is alive.
+    """
     for cmd_id in list_command_ids(root, instance_id):
-        cmd = ipc.read_json(_command_path(root, instance_id, cmd_id))
-        if cmd is not None:
+        path = _command_path(root, instance_id, cmd_id)
+        try:
+            cmd = ipc.read_json(path)
+        except ValueError as exc:
+            _set_aside(path, exc)
+            continue
+        if isinstance(cmd, dict) and "id" in cmd:
             return cmd
+        if cmd is not None:
+            _set_aside(path, "not a command object")
     return None
+
+
+def _set_aside(path, why):
+    print("watcher: %s is not a command (%s); set aside as .bad"
+          % (os.path.basename(path), why))
+    os.rename(path, path + ".bad")
 
 
 def delete_command(root, instance_id, cmd_id):
     ipc.remove_file(_command_path(root, instance_id, cmd_id))
+
+
+RUNNING = ".running"
+
+
+def claim_command(root, instance_id, cmd_id):
+    """Take a command off the queue, leaving the mark that it is running.
+
+    A rename, so there is no moment with neither file. Touched afterwards:
+    the file's age has to be how long the command has run, not how long
+    ago the CLI queued it.
+
+    False when the command is no longer there: its caller timed out and
+    took it back between our reading it and claiming it, and a command
+    nobody is waiting for is not run.
+    """
+    path = _running_path(root, instance_id, cmd_id)
+    try:
+        os.rename(_command_path(root, instance_id, cmd_id), path)
+    except (IOError, OSError) as exc:
+        if getattr(exc, "errno", None) == errno.ENOENT:
+            return False
+        raise
+    os.utime(path, None)
+    return True
+
+
+def release_command(root, instance_id, cmd_id):
+    ipc.remove_file(_running_path(root, instance_id, cmd_id))
+
+
+def running_since(root, instance_id):
+    """When the command in progress was claimed, or None if none is.
+
+    The oldest, should there be several: a watcher that died mid-command
+    leaves its mark behind, and that one is the one that says how long.
+    """
+    directory = ipc.command_dir(root, instance_id)
+    try:
+        names = os.listdir(directory)
+    except (IOError, OSError):
+        return None
+    stamps = []
+    for name in names:
+        if name.endswith(RUNNING):
+            try:
+                stamps.append(os.path.getmtime(os.path.join(directory, name)))
+            except (IOError, OSError):
+                continue    # released between the listing and the look
+    return min(stamps) if stamps else None
+
+
+def _running_path(root, instance_id, cmd_id):
+    return os.path.join(ipc.command_dir(root, instance_id), cmd_id + RUNNING)
 
 
 def _command_path(root, instance_id, cmd_id):
@@ -126,8 +220,8 @@ def message(level, text):
     Two producers write these — the stand-in UI recording a dialog nobody saw,
     and the watcher's own notes — and a reader of `messages` cannot tell which
     made a given line, so they had better be the same shape. The text is
-    converted here because IronPython 2.7 hands back bytes and unicode from
-    the same API and only one of them survives being printed.
+    converted here because what the stand-in UI is handed is whatever the IDE
+    passed to a dialog, which need not be text yet.
     """
     return {"level": level, "text": as_text(text)}
 

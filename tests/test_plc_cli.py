@@ -62,7 +62,7 @@ def test_a_project_that_forbids_it_comes_back_as_exit_5(monkeypatch, capsys):
     drive(monkeypatch, record(False, error=said,
                               denied=permit.record(projects, "download")))
     code = cli.main(["plc", "download", "-y", "--project", "P", "--install",
-                     "I", "--sync-dir", "S"])
+                     "I", "--sync-dir", "S", "--gateway", "192.168.1.5"])
     assert code == EXIT_DENIED
     assert "plc" in capsys.readouterr().err
 
@@ -75,7 +75,7 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
                               needs_input={"question": question,
                                            "arg": "yes"}))
     code = cli.main(["plc", "download", "--project", "P", "--install", "I",
-                     "--sync-dir", "S"])
+                     "--sync-dir", "S", "--gateway", "192.168.1.5"])
     assert code == EXIT_FAILED
     assert "--yes" in capsys.readouterr().err
 
@@ -83,7 +83,7 @@ def test_a_download_with_no_yes_comes_back_as_exit_1(monkeypatch, capsys):
 def test_a_match_comes_back_as_exit_0(monkeypatch):
     runner = drive(monkeypatch, record(True, data={"crc": "MATCH"}))
     assert cli.main(["plc", "connect", "--project", "P", "--install", "I",
-                     "--sync-dir", "S"]) == EXIT_OK
+                     "--sync-dir", "S", "--gateway", "192.168.1.5"]) == EXIT_OK
     assert runner.asked[0][0] == "plc connect"
 
 
@@ -157,15 +157,19 @@ def test_the_cli_spells_the_action_into_the_command_name():
          "--sync-dir", "S"])
     assert flags.wire_name(parsed) == "plc download"
     assert flags.command_args(parsed) == {"yes": True, "gateway": None,
-                                        "port": None, "job": None}
+                                        "port": None, "gateway_name": None,
+                                        "job": None}
 
 
 def test_the_gateway_flags_reach_the_body():
     parsed = flags.build_parser().parse_args(
         ["plc", "connect", "--project", "P", "--install", "I", "--sync-dir",
-         "S", "--gateway", "192.168.1.5", "--port", "11740"])
+         "S", "--gateway", "192.168.1.5", "--port", "11740",
+         "--gateway-name", "Gateway-3"])
     assert flags.command_args(parsed) == {"yes": None, "gateway": "192.168.1.5",
-                                        "port": 11740, "job": None}
+                                        "port": 11740,
+                                        "gateway_name": "Gateway-3",
+                                        "job": None}
 
 
 # --------------------------------------------------------------------------

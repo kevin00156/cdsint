@@ -18,118 +18,68 @@ from engine.sync_log import (
 )
 from engine.object_paths import clear_path_caches
 from engine.classify import (
-    SKIP_SYNC_DIRECTION, collect_accessors, create_import_managers,
-    manager_for, resolve_object
+    SKIP_SYNC_DIRECTION, PathClaims, collect_accessors,
+    create_import_managers, manager_for, resolve_object
 )
 from engine.backup import finalize_sync_operation
 from engine.device_pass import export_devices
-from engine.sync_dir import sync_files
+from engine.orphan_sweep import cleanup_orphaned_files
 from engine import entry, settings, unhandled
 
-from cds.core import dialogs
 
-# Shared constants and utilities imported from modules
+def _claim_unwritten(decided, exported_paths):
+    """Keep the file of an object this run does not write off the orphan list.
 
-
-def cleanup_orphaned_files(export_dir, current_objects, auto_delete):
-    """Delete the files in export_dir no object claims. Returns how many.
-
-    The dialog has two buttons, so there are two answers and both are a
-    number. It used to carry a third branch for a Cancel button that no
-    version of this dialog has ever had, and export read the None it
-    would have returned as "cancelled" -- a state nothing could reach.
-
-    auto_delete is the settings file's answer to the same question, so it is
-    passed in rather than read here: one read of the settings per command,
-    and the caller already did it.
+    An import_only kind, or an XML kind with export_xml off, still has an
+    object in the project and usually a file somebody committed; left
+    unclaimed, the orphan sweep deletes it. A kind with no path has no file
+    to keep.
     """
-    # Everything first, so the preview can show the whole list. The walk and
-    # its skip rules are sync_dir's, the same ones the new-file scan uses:
-    # this sweep offers files for deletion, so it must not see a file the
-    # scan refuses to look at (and therefore never claims).
-    orphaned_items = [rel_path for rel_path, _abs in sync_files(export_dir)
-                      if rel_path not in current_objects]
-
-    if not orphaned_items:
-        return 0
-
-    # An object this run could not classify has no path, so its .st file looks
-    # like an orphan and deleting it would throw away a file the project still
-    # needs. The run does not know which files those are -- that is what "could
-    # not classify" means -- so it deletes none of them.
-    if unhandled.any_so_far():
-        print("Orphan cleanup skipped: " + unhandled.summary())
-        log_warning("Not deleting %d orphan(s): this run could not classify "
-                    "every object, so some of them may belong to one of those."
-                    % len(orphaned_items))
-        return 0
-
-    if auto_delete:
-        delete_them = True
-    else:
-        # Prompt user
-        message = "The following files exist in the export directory but are NOT in the CODESYS project (orphans):\n\n"
-        # Show first 15 files as preview
-        for item in orphaned_items[:15]:
-            message += "- " + item + "\n"
-        if len(orphaned_items) > 15:
-            message += "... and " + str(len(orphaned_items) - 15) + " more.\n"
-        
-        message += "\nWould you like to delete these orphaned files?"
-        
-        # buttons: Delete (Yes), Ignore (No)
-        from engine.codesys_ui import ask_yes_no
-        from engine.sync_log import timed_prompt
-        delete_them = timed_prompt(ask_yes_no, dialogs.DELETE_ORPHANS,
-                                   message)
-    
-    removed_count = 0
-    if not delete_them:
-        print("Orphaned files ignored.")
-        return 0
-
-    print("Cleaning up orphaned files...")
-    for rel_path in orphaned_items:
-        full_path = os.path.join(export_dir, rel_path.replace("/", os.sep))
-        try:
-            if os.path.exists(full_path):
-                os.remove(full_path)
-                removed_count += 1
-                print("Deleted: " + rel_path)
-        except Exception as e:
-            print("Error deleting " + rel_path + ": " + safe_str(e))
-    
-    # Now clean up empty directories
-    # Use topdown=False to delete subdirectories before parents
-    for root, dirs, files in os.walk(export_dir, topdown=False):
-        # Also skip hidden dirs here
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        
-        rel_root = os.path.relpath(root, export_dir)
-        if rel_root == "." or not rel_root:
-            continue
-        
-        rel_path = rel_root.replace("\\", "/")
-        
-        # Check if this folder or any of its children should exist
-        folder_needed = False
-        for obj_path in current_objects:
-            if obj_path.startswith(rel_path + "/"):
-                folder_needed = True
-                break
-        
-        if not folder_needed and rel_path not in current_objects:
-            # If directory is empty, delete it
-            try:
-                if not os.listdir(root):
-                    os.rmdir(root)
-                    print("Deleted empty folder: " + rel_path)
-            except OSError:
-                pass  # Not empty, or gone already. Either way, leave it.
-    return removed_count
+    if decided.skip_reason == SKIP_SYNC_DIRECTION:
+        log_info("Skipping export of %s (sync_direction=%s)"
+                 % (decided.rel_path,
+                    sync_direction_of(decided.effective_type)))
+    if decided.rel_path:
+        exported_paths.add(decided.rel_path)
 
 
+def _carry_entry(cache_data, norm_path, new_cache):
+    """Start this object's entry from the last sync's, so an object this run
+    skips or leaves pending keeps what the dirty-file guard reads (SPEC 6.1).
+    A manager that writes the file replaces it."""
+    try:
+        cached_obj = cache_data.get('objects', {}).get(norm_path)
+    except (AttributeError, TypeError):
+        return  # A cache file of the wrong shape is no cache.
+    if norm_path and cached_obj:
+        new_cache[norm_path] = cached_obj
 
+
+def _export_one(obj, context, managers, project):
+    """Export one object: (what the manager did, its path). Raises whatever
+    the object raises; the caller names it (SPEC D13)."""
+    cache_data = context['cache_data']
+    obj_guid = safe_str(obj.guid)
+    decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
+                             context['export_xml'], project)
+    effective_type = decided.effective_type
+    rel_path = decided.rel_path
+
+    # Stored for the next run whatever was decided, skips included:
+    # a "no path here" answer is worth as much as a path next time.
+    context['new_types'][obj_guid] = (effective_type, decided.is_xml, rel_path)
+    collect_accessors(obj, obj_guid, effective_type,
+                      context['property_accessors'])
+    _carry_entry(cache_data, normalize_path(rel_path) if rel_path else None,
+                 context['new_cache'])
+
+    if decided.skip_reason:
+        _claim_unwritten(decided, context['exported_paths'])
+        return None, rel_path
+    if not context['claims'].claim(rel_path, obj_guid, obj):
+        return None, rel_path
+    manager = manager_for(managers, effective_type, decided.is_xml)
+    return manager.export(obj, effective_type, rel_path, context), rel_path
 
 
 def _save_cache(export_dir, new_cache, context):
@@ -198,9 +148,6 @@ def export_project(export_dir, values, projects_obj=None):
     all_objects = projects_obj.primary.get_children(recursive=True)
     print("Found " + str(len(all_objects)) + " total objects")
     
-    exported_new = 0
-    exported_updated = 0
-    exported_identical = 0
     exported_failed = 0
     pending_import = []      # edited on disk, not imported yet (SPEC 6.1)
     
@@ -223,73 +170,42 @@ def export_project(export_dir, values, projects_obj=None):
         'exported_paths': exported_paths,
         'cache_data': cache_data,
         'new_cache': new_cache,
-        'new_types': {}
+        'new_types': {},
+        'claims': PathClaims(),
     }
 
     # Every object, in the order the tree gave them
+    counts = {"new": 0, "updated": 0, "identical": 0}
     for obj in all_objects:
         try:
-            obj_guid = safe_str(obj.guid)
-            decided = resolve_object(obj, obj_guid, cache_data.get('types', {}),
-                                     export_xml, project)
-            effective_type = decided.effective_type
-            is_xml = decided.is_xml
-            rel_path = decided.rel_path
-
-            # Stored for the next run whatever was decided, skips included:
-            # a "no path here" answer is worth as much as a path next time.
-            context['new_types'][obj_guid] = (effective_type, is_xml, rel_path)
-
-            norm_path = normalize_path(rel_path) if rel_path else None
-            
-            collect_accessors(obj, obj_guid, effective_type,
-                              context['property_accessors'])
-
-            # --- PERSIST CACHE FOR SKIPPED OBJECTS ---
-            if cache_data and norm_path:
-                try:
-                    cached_obj = cache_data.get('objects', {}).get(norm_path)
-                    if cached_obj:
-                        new_cache[norm_path] = cached_obj
-                except (AttributeError, TypeError):
-                    pass  # A cache file of the wrong shape is no cache.
-            # ----------------------------------------
-
-            if decided.skip_reason == SKIP_SYNC_DIRECTION:
-                log_info("Skipping export of %s (sync_direction=%s)"
-                         % (rel_path, sync_direction_of(effective_type)))
-                continue
-            if decided.skip_reason:
-                continue
-
-            manager = manager_for(managers, effective_type, is_xml)
-            wrote = manager.export(obj, effective_type, rel_path, context)
-            if wrote == "new":
-                exported_new += 1
-            elif wrote == "updated":
-                exported_updated += 1
-            elif wrote == "identical":
-                exported_identical += 1
-            elif wrote == "pending":
-                # Left alone on purpose: the file holds an edit nobody has
-                # imported yet (SPEC 6.1). Not a failure of this object, so
-                # it stays out of the unhandled register and gets its own
-                # list -- what the reader has to do about it is different.
-                pending_import.append(rel_path)
-                log_warning("Not overwriting " + rel_path + ": it has been "
-                            "edited on disk since the last sync. Import it "
-                            "first, or delete it and export again.")
-
+            wrote, rel_path = _export_one(obj, context, managers, project)
         except Exception as e:
             exported_failed += 1
             unhandled.note(obj, e)
             log_error("Error exporting " + unhandled.name_of(obj) + ": " + safe_str(e))
+            continue
+        if wrote in counts:
+            counts[wrote] += 1
+        elif wrote == "pending":
+            # Left alone on purpose: the file holds an edit nobody has
+            # imported yet (SPEC 6.1). Not a failure of this object, so
+            # it stays out of the unhandled register and gets its own
+            # list -- what the reader has to do about it is different.
+            pending_import.append(rel_path)
+            log_warning("Not overwriting " + rel_path + ": it has been "
+                        "edited on disk since the last sync. Import it "
+                        "first, or delete it and export again.")
+    exported_new, exported_updated, exported_identical = (
+        counts["new"], counts["updated"], counts["identical"])
 
     # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
     pending_import.extend(export_devices(project, export_dir, context, managers))
-    # Orphan cleanup now uses exported_paths set directly
-    removed_count = cleanup_orphaned_files(export_dir, exported_paths,
-                                           values["auto_delete_orphans"])
+    # A file no object claims that the last sync did not leave that way is
+    # somebody's work, so it waits for import rather than being deleted.
+    removed_count, unsynced = cleanup_orphaned_files(
+        export_dir, exported_paths, values["auto_delete_orphans"],
+        cache_data.get('objects', {}), new_cache)
+    pending_import.extend(unsynced)
     _save_cache(export_dir, new_cache, context)
 
     # Save and back up BEFORE stopping the clock and announcing completion.

@@ -318,3 +318,14 @@ def test_a_preflight_that_cannot_read_the_device_tree_names_it(monkeypatch,
     result = entry_import.import_project(sync, DEFAULTS, projects)
     assert result["ok"] is False
     assert "PLC" in result["data"]["failed_objects"]
+
+
+def test_an_object_whose_file_is_known_is_named_but_accounts_for_its_file():
+    unhandled.start()
+    unhandled.note_file_known("Foo", "resolves to A/Foo.st, as another does")
+    assert unhandled.names() == ["Foo"]
+    assert unhandled.records() == [
+        {"name": "Foo", "reason": "resolves to A/Foo.st, as another does"}]
+    assert unhandled.any_file_unaccounted() is False
+    unhandled.note("Bar", "its plugin is missing")
+    assert unhandled.any_file_unaccounted() is True

@@ -181,7 +181,7 @@ def importer(monkeypatch, tmp_path):
     monkeypatch.setattr(entry_import, "find_changes",
                         lambda base_dir, projects_obj, values: {
                             "different": [], "new_in_ide": [],
-                            "new_on_disk": list(on_disk),
+                            "new_on_disk": list(on_disk), "moved": [],
                             "unchanged_count": 0})
     said_yes = types.ModuleType("engine.codesys_ui")
     said_yes.ask_yes_no = lambda title, message: True

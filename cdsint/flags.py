@@ -39,6 +39,13 @@ EITHER = "both"
 HEADLESS = "project"
 
 
+# What an --answer may say: the members of the IDE's PromptResult enum, which
+# are the WinForms DialogResult names. The IDE side looks the value up by
+# exact name, so "yes" is not Yes -- and a name it cannot find used to be an
+# exception after the IDE had started, with no report written at all.
+PROMPT_RESULTS = ("OK", "Cancel", "Abort", "Retry", "Ignore", "Yes", "No")
+
+
 def key_value(text):
     """One --answer, as the (key, value) pair the IDE side wants.
 
@@ -53,6 +60,10 @@ def key_value(text):
     if not separator:
         raise argparse.ArgumentTypeError(
             "wants KEY=VALUE, not %r" % (text,))
+    if value not in PROMPT_RESULTS:
+        raise argparse.ArgumentTypeError(
+            "%r is not a prompt answer; VALUE is one of %s"
+            % (value, ", ".join(PROMPT_RESULTS)))
     return (key, value)
 
 
@@ -141,6 +152,10 @@ class Command(object):
 
 
 ONLY_TRACE = "Only plc trace reads a job file."
+ONLY_DOWNLOAD = ("Only plc download changes the controller, so only it has "
+                 "anything to confirm.")
+WRONG_CONTROLLER = ("A controller found by the project's device name can be "
+                    "the wrong one, and %s (SPEC 6.6).")
 
 COMMANDS = {
     "installs": Command(
@@ -187,22 +202,33 @@ COMMANDS = {
         # The words the settings file's plc list allows are the actions.
         action=settings.PLC_ACTIONS,
         flags=[("-y/--yes", CONFIRM,
-                "confirm the download; connect and trace never need it"),
+                "confirm the download; only plc download takes it"),
                ("--gateway", NAME,
-                "reach the controller through this address instead of "
-                "whatever the project already holds", "IP"),
+                "reach the controller through this address; every plc "
+                "action needs it", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),
+               ("--gateway-name", NAME,
+                "which of the IDE profile's gateways reaches --gateway; "
+                "needed when the profile has more than one"),
                ("--job", JOB, "the trace job file; only plc trace takes it")],
-        needs={"trace": {
-            "gateway": "A controller found by the project's device name can "
-                       "be the wrong one, and a trace recorded from the wrong "
-                       "controller looks exactly like a right one (SPEC 6.6).",
-            "job": "The job file says what to record and for how long "
-                   "(SPEC 6.8)."}},
+        needs={
+            "connect": {"gateway": WRONG_CONTROLLER
+                        % "the wrong controller can answer MATCH for a "
+                          "download that went to it"},
+            "download": {"gateway": WRONG_CONTROLLER
+                         % "a download to the wrong controller passes its "
+                           "own read-back"},
+            "trace": {"gateway": WRONG_CONTROLLER
+                      % "a trace recorded from the wrong controller looks "
+                        "exactly like a right one",
+                      "job": "The job file says what to record and for how "
+                             "long (SPEC 6.8)."}},
         refuses={
-            "connect": {"job": ONLY_TRACE}, "download": {"job": ONLY_TRACE}},
+            "connect": {"job": ONLY_TRACE, "yes": ONLY_DOWNLOAD},
+            "download": {"job": ONLY_TRACE},
+            "trace": {"yes": ONLY_DOWNLOAD}},
         one_form="The watcher runs inside an IDE somebody is using, and "
                  "logging into a controller would take their online session "
                  "away from them (SPEC D8)."),
@@ -223,8 +249,9 @@ PROJECT_FLAGS = (
     ("--sync-dir", NAME,
      "use this folder for this run instead of the sync_folder in the "
      "project's settings file; nothing is written back"),
-    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE; "
-                        "repeatable"),
+    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE "
+                        "with VALUE one of " + ", ".join(PROMPT_RESULTS)
+                        + "; repeatable"),
 )
 
 PROJECT_ONLY = tuple(_dest(spelling)

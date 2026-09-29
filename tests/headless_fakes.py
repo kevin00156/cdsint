@@ -14,8 +14,9 @@ import subprocess
 import pytest
 
 from cds.core import ipc
+from cds.ide.headless import JOB_ENV
 from cdsint import headless as cli_side
-from cdsint import installs
+from cdsint import installs, run_files
 
 
 
@@ -29,6 +30,8 @@ def machine(tmp_path, monkeypatch):
              "script_dir": r"C:\ScriptDir", "script_dir_needs_admin": False,
              "run_as_admin": None}]
     monkeypatch.setattr(installs, "find", lambda: fake)
+    # Launch locks and default reports, kept out of the real temp folder.
+    monkeypatch.setattr(run_files, "runs_dir", lambda: str(tmp_path / "runs"))
     return tmp_path
 
 
@@ -68,11 +71,18 @@ def launching(monkeypatch, code=0, dies=True):
     launches = []
 
     def popen(command, stdout=None, stderr=None, env=None, **kwargs):
-        launches.append({"command": command, "env": env})
+        # The job as the IDE would read it: the file is gone after the run.
+        launches.append({"command": command, "env": env,
+                         "job": ipc.read_json(env[JOB_ENV])})
         launches[-1]["process"] = FakeProcess(launches, code, dies=dies)
         return launches[-1]["process"]
 
     monkeypatch.setattr(subprocess, "Popen", popen)
+    # A fake process has no handle for Windows to put in a job object, and
+    # these tests are about the launch, not the job (tests/test_job_object.py
+    # is). Off Windows die_with_us never gets that far, which is how this
+    # passed on Linux and failed on the Windows runner.
+    monkeypatch.setattr(cli_side, "die_with_us", lambda process: object())
     return launches
 
 
@@ -87,12 +97,21 @@ def written_report(monkeypatch, report):
     monkeypatch.setattr(cli_side.Headless, "_launch", launch)
 
 
-def leaves_a_lock(monkeypatch):
-    """Make the fake launch leave the lock file a real IDE leaves behind."""
+def leaves_a_lock(monkeypatch, opened=True):
+    """Make the fake launch leave the lock file a real IDE leaves behind.
+
+    opened: the IDE said it had the project open before it hung, which is
+    what makes that lock its own (cds/ide/headless.py _say_opened). Without
+    it the lock is somebody else's who opened the project meanwhile.
+    """
     real = cli_side.Headless._launch
 
     def launch(self, job_path, deadline):
         open(self.project + ".~u", "w").close()
+        if opened:
+            ipc.write_json(self.report_path, {"opened": True,
+                                              "intended_exit": None,
+                                              "results": [], "error": None})
         return real(self, job_path, deadline)
     monkeypatch.setattr(cli_side.Headless, "_launch", launch)
 

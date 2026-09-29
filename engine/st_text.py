@@ -18,7 +18,7 @@ from engine.codesys_constants import (
     PROPERTY_SET_MARKER,
 )
 from engine.text_kind import determine_object_type
-from engine.strings import calculate_hash, safe_str
+from engine.strings import calculate_hash
 from engine.sync_log import log_error, log_warning
 
 
@@ -186,6 +186,40 @@ def parse_property_content(content):
     return declaration, get_impl, set_impl
 
 
+def canonical_st(text):
+    """ST text reduced to what import would put into the IDE.
+
+    The one normaliser every comparison of two versions of a file goes
+    through. Line endings, blanks at the end of a line, and blank lines
+    around a section are what an editor or git changes without anybody
+    meaning to, and import throws them away: parse_st_file strips every
+    section. Compared byte for byte instead, a file saved with CRLF or an
+    extra final newline differed from the IDE forever after its import.
+    """
+    markers = (IMPL_MARKER, PROPERTY_GET_MARKER, PROPERTY_SET_MARKER)
+    sections, current = [], []
+    for line in unify_newlines(text).split("\n"):
+        if line.strip() in markers:
+            sections.extend(["\n".join(current).strip(), line.strip()])
+            current = []
+        else:
+            current.append(line.rstrip())
+    sections.append("\n".join(current).strip())
+    return "\n".join(section for section in sections if section)
+
+
+def same_file_text(one, other):
+    """Do two versions of a file say the same thing: same pragmas, same ST?"""
+    one_pragmas, one_st = parse_sync_pragmas(unify_newlines(one))
+    other_pragmas, other_st = parse_sync_pragmas(unify_newlines(other))
+    return (one_pragmas == other_pragmas
+            and canonical_st(one_st) == canonical_st(other_st))
+
+
+def unify_newlines(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def parse_sync_pragmas(content):
     """Parse leading cds-text-sync pragma lines from file content.
 
@@ -322,14 +356,13 @@ def parse_st_file(file_path):
     Returns tuple (declaration, implementation, pragmas).
     pragmas is the dict from parse_sync_pragmas (may be empty); use
     attrs_from_pragmas() to get the boolean build attributes.
-    """
-    try:
-        content = read_sync_text(file_path)
-    except Exception as e:
-        print("Error reading file " + file_path + ": " + safe_str(e))
-        return None, None, {}
 
-    content = content.replace('\r\n', '\n').replace('\r', '\n')
+    A file that cannot be read raises. It used to print and hand back
+    (None, None), which the update read as "nothing to change", so an import
+    of a file saved in another encoding reported success and left the IDE
+    as it was (PRINCIPLES 6). The import loop names the file (SPEC D13).
+    """
+    content = unify_newlines(read_sync_text(file_path))
 
     # Strip sync pragmas first
     pragmas, clean_content = parse_sync_pragmas(content)

@@ -4,6 +4,132 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### 0.2.0 (2026-09-28) — fixes from a review of the sync, update, PLC and watcher paths
+
+**What changes for you**
+
+- **Every `plc` command needs `--gateway`.** `connect` and `download` joined
+  `trace`: a project that finds its controller by device name can reach the
+  wrong one, and a download to the wrong controller passes its own
+  read-back. Records are filed under `gateway/IP:port` only, so two rigs at
+  one address behind two gateways keep a record each; an entry filed under
+  "project" by an older version names no controller and is not read, so the
+  first `connect` after upgrading answers UNKNOWN until one `plc download -y`.
+  A profile with more than one gateway is refused rather than guessed at;
+  `--gateway-name NAME` says which one reaches the controller.
+- **Orphans are only files the last sync left untouched.** A file no object
+  claims is deleted (by `--delete-orphans` or `auto_delete_orphans`) only when
+  the sync cache knows it and it has not changed since. Anything else --
+  a file written for import to create, an edit made after its object went
+  away -- is kept and reported as waiting for import. A fresh clone, with no
+  cache, has no orphans.
+- **Install and update take only what CI tested, and check it.** A release
+  now carries `cdsint-<tag>.zip`, its `.sha256` and `setup.ps1`; `cdsint
+  update` and `setup.ps1` install that archive only when its SHA-256 matches.
+  The one-line install moves to `releases/latest/download/setup.ps1`, which
+  works from the first release made with this change. `-Version main` still
+  installs the branch, unverified, and says so.
+- **One headless run per project at a time.** The default report is named
+  after the project's full path, the job file is private to the run, and a
+  second run on the same project is refused with exit 4 while one runs.
+- **`--answer` takes only the IDE's PromptResult names** (OK, Cancel, Abort,
+  Retry, Ignore, Yes, No) and a typo exits 2 naming them.
+- **A trace job's `duration_s` must be finite and at most a day.**
+
+**Sync**
+
+- **An import records what it applied in the sync cache.** An IDE edit made
+  after an import used to be reported as "waiting to be imported", and
+  importing then overwrote it.
+- **An import moves an object whose file moved on disk.** It used to ignore
+  the move, and the next export recreated the old file and deleted the moved,
+  edited one. A delete in one application and a new file of the same name in
+  another are no longer paired as a move.
+- **Export no longer deletes the files of objects it skips on purpose**
+  (import_only kinds, visualizations with `export_xml` off).
+- **Two objects that resolve to one file are both named** instead of one
+  silently writing over the other, and the pair no longer stops every other
+  file being created on import or swept as an orphan on export.
+- **A folder exported under a device renamed since keeps its objects on
+  import**; they used to be deleted and created again from their files.
+- **An orphan that could not be deleted is named in the result**, and the
+  export is not ok.
+- **A second `compare` still reports an IDE-side edit**, XML objects
+  included.
+- **A `.st` that cannot be read, or text the IDE refuses to take, fails its
+  import by name**; both used to count as unchanged. So does a graphical POU member that could not be recreated,
+  and a property's GET/SET bodies now survive a native re-import.
+- **A file that differs from the IDE only in form** (CRLF, a trailing
+  newline) is no longer Modified on every run.
+- **Paths are compared ignoring case**, as Windows does, so a case-only
+  rename no longer offers its own file for deletion.
+- **The sync cache is written atomically**, and an alarm group or alarm
+  configuration is hashed on what it says, not only its name. Inside the
+  IDE the old cache is set aside rather than deleted while the new one goes
+  in, so a save a virus scanner blocks or a crash cuts short keeps it.
+- **An edit to the file of an object export could not read survives** the
+  export after the object is readable again; it used to lose its cache
+  entry and be written over.
+- **`compare` on a project with nothing to sync no longer crashes**, and
+  builds the folder hashes once instead of once per object.
+
+**Controller**
+
+- **A download refuses to run when it cannot read what the controller holds
+  first** -- a listing that fails too is not "nothing loaded" -- fails
+  when the record of what it left cannot be written, fails when the application is not running afterwards, and says
+  the controller may be stopped when anything fails after the login -- or
+  when a headless run with a download in it is killed.
+- **Controller files are read under the active application's name**, and
+  each working copy gets its own fetch workspace. A CRC that could not be
+  read is said in the fetch's own words, not as "has no .crc".
+- **`plc trace` only trusts an `is_uptodate` that is a real true or false**,
+  and a dialog is only confirmed by a real `true`, never by a truthy string
+  such as `"false"`. `-y` on `connect` or `trace`, which read none, is
+  refused.
+- **The first-run folder dialog keeps the rest of the settings file.** It
+  used to replace it with the one key it chose, taking a `plc` list with it.
+  A settings file saved with a BOM (Notepad) is read instead of refused.
+
+**Watcher and headless**
+
+- **A queued command carries a deadline** and is answered "not run" past it,
+  so a command whose caller was killed cannot fire later.
+- **A crashed IDE's registration is told from a live one** by its process,
+  the CLI stops waiting on an IDE that died, and a busy one is named as busy.
+- **Stop during a command waits for the command**, a lost busy heartbeat no
+  longer lets another IDE clear a running command's directory, and a
+  command file that cannot be read is set aside as `.bad`.
+- **A headless IDE dies with the cdsint that started it** (a Windows job
+  object), and after a kill the `.~u` lock is cleared only when that IDE
+  opened the project.
+- **The launch lock is the operating system's**, so a killed run takes it
+  with it, and two runs that find it free can no longer both take it.
+- **An IDE that went quiet but still runs is said to be not answering**,
+  maybe busy with a build of its own, rather than stopped.
+
+**Install and update**
+
+- **`setup.ps1` never deletes the old install before the new one is in
+  place**, checks for Python 3.11 before downloading anything, prints no
+  success line when linking failed, and leaves the caller's shell settings
+  as they were. Over an existing install it refuses while an IDE runs, as
+  `cdsint update` does, and `-List` never downloads or replaces a body.
+- **`cdsint update` says it could not list the running programs** instead
+  of a traceback, and changes nothing.
+- **`cdsint update` always relinks the menus**, from the new install rather
+  than the old code in memory. A pip failure, or a staging folder that would
+  not delete, used to stop it before `stub\body.path` was written. A cut
+  download or a corrupt archive is said in words.
+- **The daily release check can no longer fail a command**, and a check
+  dated in the future no longer silences it until that date.
+
+**CI**
+
+- **The IDE side is compiled by a real Python 2.7**, a test reads it for
+  Python-3-only APIs, the core tests also run on Python 3.11, and a release
+  waits for all of it.
+
 ### 0.1.1 (2026-09-25) — one-line install, cdsint link
 
 - **Install is one line and no clone.** `irm .../setup.ps1 | iex` downloads

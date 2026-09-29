@@ -57,33 +57,7 @@ def _keep_device(line):
     return 'vqid' not in lowered and 'instanceid' not in lowered
 
 
-def _keep_alarm_group(line):
-    """An alarm group: only the lines that say which group this is."""
-    if not _keep_all_but_volatile(line):
-        return False
-    if '<Single Name="Name" Type="string">' in line and 'AlarmGroup' in line:
-        return True
-    if ('CODESYS_HMI' in line and 'HMI_Application' in line
-            and 'Alarm Configuration' in line):
-        return True
-    # A substring test, not startswith: the object element is nested and the
-    # line arrives with its indentation. The plain filter below does use
-    # startswith, deliberately -- it is throwing lines away rather than
-    # keeping them, and there a looser match drops more than it should.
-    return ('<Object Guid="' in line
-            and ('Type="type_21f"' in line or 'Type="textlist"' in line))
-
-
-def _keep_alarm_config(line):
-    """An alarm configuration: only the lines that identify it."""
-    if not _keep_all_but_volatile(line):
-        return False
-    return ('<Single Name="Name" Type="string">' in line
-            or 'CODESYS_HMI' in line)
-
-
-_Flavour = collections.namedtuple("_Flavour",
-                                  "detect keep name_is_the_fallback")
+_Flavour = collections.namedtuple("_Flavour", "detect keep")
 
 # Ordered, and the order is the one the if/elif chain had: the first detector
 # that matches decides. A document that reads as both a device and an alarm
@@ -93,21 +67,23 @@ _Flavour = collections.namedtuple("_Flavour",
 # consulted by a chain that mixed "which flavour is this" with "keep this
 # line", nine levels deep. What each flavour keeps is the knowledge here; the
 # chain was only ever the way it was written down.
+#
+# An alarm group or an alarm configuration keeps its content, not just the
+# lines that name it: with only those, an alarm text edited in the IDE hashes
+# as before, export calls the file identical and never writes it, and
+# compare never sees the change.
 _XML_FLAVOURS = (
     _Flavour(lambda t: '<Single Name="Name" Type="string">GlobalTextList' in t,
-             _keep_all_but_volatile, True),
+             _keep_all_but_volatile),
     _Flavour(lambda t: '225bfe47-7336-4dbc-9419-4105a7c831fa' in t or '<Device' in t,
-             _keep_device, True),
+             _keep_device),
     _Flavour(lambda t: 'AlarmGroup' in t and 'GlobalTextList' not in t,
-             _keep_alarm_group, True),
+             _keep_all_but_volatile),
     _Flavour(lambda t: 'Alarm Configuration' in t,
-             _keep_alarm_config, True),
+             _keep_all_but_volatile),
 )
 
-# The plain filter is the one that does not fall back on the name. It throws
-# away only what CODESYS rewrites, so a document it empties really is empty,
-# and two empty documents are the same document.
-_PLAIN = _Flavour(lambda t: True, _keep_plain, False)
+_PLAIN = _Flavour(lambda t: True, _keep_plain)
 
 
 def _xml_flavour(text):
@@ -132,9 +108,9 @@ class NativeManager(ObjectManager):
             content_full = read_sync_text(file_path)
         except (IOError, OSError, UnicodeDecodeError):
             return ""
-        return self._hash_content(content_full, os.path.basename(file_path))
+        return self._hash_content(content_full)
 
-    def _hash_content(self, content_full, fallback_name=""):
+    def _hash_content(self, content_full):
         """Hash native XML text, ignoring the parts CODESYS rewrites on every
         export (timestamps, internal GUIDs, volatile instance ids).
 
@@ -145,8 +121,9 @@ class NativeManager(ObjectManager):
         three reads per differing object, on files up to a third of a
         megabyte.
 
-        fallback_name is only consulted for a flavour whose filter left
-        nothing at all; see NOTHING_SURVIVES_FILTERING below.
+        A document its filter empties hashes as empty. No flavour's filter
+        drops the line its detector matched, so only a plain document can be
+        emptied, and then there was nothing in it to compare.
 
         Raises rather than returning "" for an unhashable input. "" used to be
         the answer, and NativeManager.export tests `old_hash and old_hash ==
@@ -156,14 +133,6 @@ class NativeManager(ObjectManager):
         flavour = _xml_flavour(content_full)
         kept = [line for line in content_full.splitlines(True)
                 if flavour.keep(line)]
-        if not kept and flavour.name_is_the_fallback:
-            # NOTHING_SURVIVES_FILTERING: an alarm group or alarm config whose
-            # every line was volatile. Hashing the name means the hash says
-            # where the content came from rather than what it is, and
-            # contents_are_equal passes two deliberately different names so
-            # that such an object always compares as different. Preserved
-            # here, not endorsed.
-            return _crc(fallback_name)
         return _crc("".join(kept))
 
     def export(self, obj, effective_type, rel_path, context, recursive=False):

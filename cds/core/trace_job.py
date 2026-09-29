@@ -15,18 +15,26 @@ from __future__ import print_function
 import json
 import re
 
-# IronPython 2.7 has two string types and json hands back the unicode one;
-# CPython 3 has one. Likewise `long` exists only in 2.7. Each set collapses
-# to whatever this interpreter has.
-TEXT_TYPES = tuple(set([type(u""), type("")]))
+# The one text type: `unicode` on IronPython 2.7, where `str` and `bytes` are
+# that same type, and `str` on CPython 3. json hands back this one on both.
+STRING = type(u"")
+# `long` exists only in 2.7; each set collapses to what this interpreter has.
 NUMBER_TYPES = tuple(set([int, float, type(2 ** 64)]))
 INTEGER_TYPES = tuple(set([int, type(2 ** 64)]))
+
+# The longest duration_s. The controller's ring holds the whole recording,
+# and at the default trace_memory_mb even one BOOL sampled every millisecond
+# fills it within a few hours (cds/core/trace_run.py ring_bytes), so a longer
+# job is either sampled very sparsely or a typo -- and a typo costs an IDE
+# held for as long as it says. It also keeps the process deadline
+# cdsint/headless.py adds it to far inside what a wait on Windows accepts.
+MAX_DURATION_S = 24 * 60 * 60
 
 # What a value may be. The name is what a refusal prints, so it reads as the
 # thing a person would type into the file rather than as a Python type.
 TEXT = "a non-empty string"
 NAMES = "a non-empty list of distinct variable paths, without Application."
-SECONDS = "a number greater than 0"
+SECONDS = "a number greater than 0 and at most %d (a day)" % MAX_DURATION_S
 FORMATS = "a non-empty list of distinct words from trace, csv and txt"
 RESOLUTION = 'either "us" or "ms"'
 COUNT = "a whole number of at least 1"
@@ -164,7 +172,7 @@ def named(job):
 # the kind alone does not say which element was wrong.
 
 def _text(value):
-    if isinstance(value, TEXT_TYPES) and value.strip():
+    if isinstance(value, STRING) and value.strip():
         return value, None
     return None, ""
 
@@ -176,7 +184,10 @@ def _is_number(value):
 
 
 def _seconds(value):
-    if _is_number(value) and value > 0:
+    # Both ends in one chained comparison: json reads Infinity and NaN, and
+    # NaN fails every comparison, so only a test that must hold lets neither
+    # through.
+    if _is_number(value) and 0 < value <= MAX_DURATION_S:
         return float(value), None
     return None, ""
 
@@ -195,7 +206,7 @@ def _count(value):
 
 
 def _resolution(value):
-    if isinstance(value, TEXT_TYPES) and value in RESOLUTIONS:
+    if isinstance(value, STRING) and value in RESOLUTIONS:
         return value, None
     return None, ""
 
@@ -219,7 +230,7 @@ def _words(value, allowed):
 
 def _variable(word):
     """Why `word` is not a variable path, or None."""
-    if not isinstance(word, TEXT_TYPES) or not word.strip():
+    if not isinstance(word, STRING) or not word.strip():
         return "is not a variable path"
     # read_value() resolves names inside the application it was asked on,
     # so an "Application." prefix names a variable that is not there.
@@ -265,7 +276,7 @@ def _trigger(value):
 
 
 def _edge(word):
-    if isinstance(word, TEXT_TYPES) and word in EDGES:
+    if isinstance(word, STRING) and word in EDGES:
         return None
     return "is not one of %s" % ", ".join(EDGES)
 
@@ -285,7 +296,7 @@ TRIGGER_CHECKS = {"variable": _single, "edge": _edge, "level": _level,
 
 
 def _format(word):
-    if isinstance(word, TEXT_TYPES) and word in FORMAT_WORDS:
+    if isinstance(word, STRING) and word in FORMAT_WORDS:
         return None
     return "is not one of %s" % ", ".join(FORMAT_WORDS)
 

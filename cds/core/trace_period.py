@@ -17,6 +17,8 @@ import re
 import xml.etree.ElementTree as ET
 from decimal import Decimal, InvalidOperation
 
+from cds.core.text import as_text
+
 CYCLIC = "Cyclic"
 
 # U+00B5 MICRO SIGN is what the IDE writes; U+03BC GREEK SMALL LETTER MU is
@@ -120,9 +122,7 @@ def _parse(xml_text):
     says utf-16 on text that is already decoded is a lie, and IronPython's
     parser wants bytes.
     """
-    if isinstance(xml_text, bytes):
-        xml_text = xml_text.decode("utf-8-sig")
-    text = DECLARATION.sub(u"", xml_text.lstrip(u"﻿"), count=1)
+    text = DECLARATION.sub(u"", as_text(xml_text).lstrip(u"﻿"), count=1)
     return ET.fromstring(text.encode("utf-8"))
 
 

@@ -6,7 +6,7 @@ import os
 from cds.core import device_text as dt
 from engine import device_pass, device_params, object_create, sync_dir
 from engine.codesys_constants import TYPE_GUIDS
-from engine.sync_cache import load_sync_cache, save_sync_cache
+from engine.sync_cache import load_sync_cache, normalize_path, save_sync_cache
 from tests.device_fakes import a_slave
 from tests.test_device_pass import PLC, a_project, empty_results, write
 
@@ -21,7 +21,7 @@ def test_a_compare_does_not_drop_the_devices_from_the_cache(tmp_path):
     before = load_sync_cache(base)["objects"]
     save_sync_cache(base, {"A/P.st": entry}, {}, {})   # what compare saves
     device_pass.keep_device_cache(base, before)
-    assert load_sync_cache(base)["objects"][rel] == entry
+    assert load_sync_cache(base)["objects"][normalize_path(rel)] == entry
 
 
 def test_a_file_with_no_device_is_refused_even_when_its_name_matches_another(tmp_path):
@@ -102,8 +102,9 @@ def test_a_pending_device_keeps_its_cache_entry_for_the_export_after(tmp_path):
         "c1/1627394048/Value = 6", "c1/1627394048/Value = 9"))
     entry = {"ide_hash": "x", "disk_mtime": 1, "disk_size": 1}
     context = {"export_dir": str(tmp_path), "exported_paths": set(),
-               "new_cache": {}, "cache_data": {"objects": {rel: entry}}}
+               "new_cache": {}, "cache_data": {"objects": {
+                   normalize_path(rel): entry}}}
     managers = classify.create_import_managers(project)
     assert device_pass.export_devices(project, str(tmp_path), context,
                                       managers) == [rel]
-    assert context["new_cache"][rel] == entry
+    assert context["new_cache"][normalize_path(rel)] == entry

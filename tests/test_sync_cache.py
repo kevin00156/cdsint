@@ -14,6 +14,7 @@ import os
 
 import pytest
 
+from cds.core import ipc
 from engine import classify, managers_native, object_create, sync_cache
 
 
@@ -195,6 +196,19 @@ class TestCachedClassification:
         assert types["full"] == ("t", False, "A.st")
         assert "junk" not in types
 
+    def test_load_finds_the_cache_a_save_set_aside(self, utils, tmp_path):
+        # A save that died between its two renames leaves the old cache
+        # under its aside name and none under its own.
+        from engine.codesys_constants import PROFILE_HASH
+        aside = tmp_path / ("sync_cache.json" + ipc.ASIDE)
+        aside.write_text(json.dumps({
+            "version": sync_cache.CACHE_VERSION,
+            "profile_hash": PROFILE_HASH, "folders": {}, "types": {},
+            "objects": {"a/foo.st": ["hash", 1, 2]},
+        }), encoding="utf-8")
+        loaded = sync_cache.load_sync_cache(str(tmp_path))
+        assert "a/foo.st" in loaded["objects"]
+
 
 class TestManagerDispatch:
     """Which manager handles an object, asked once for both directions.
@@ -277,11 +291,24 @@ class TestHashContentPerKind:
         two = '<Device>\n  <Name>OtherPLC</Name>\n</Device>\n'
         assert mgr._hash_content(one) != mgr._hash_content(two)
 
-    def test_an_alarm_group_keeps_only_the_lines_that_identify_it(self, managers):
+    @pytest.mark.parametrize("head", [
+        '  <Single Name="Name" Type="string">AlarmGroup1</Single>\n',
+        '  <Single Name="Name" Type="string">Alarm Configuration</Single>\n',
+    ], ids=["alarm_group", "alarm_config"])
+    def test_an_alarm_document_notices_a_change_to_its_content(self, managers,
+                                                              head):
+        """Their filters kept only the lines naming them, so an alarm text
+        edited in the IDE hashed as before and was never exported."""
         mgr = self.mgr(managers)
-        kept = '  <Single Name="Name" Type="string">AlarmGroup1</Single>\n'
-        assert mgr._hash_content(kept + '  <Noise>a</Noise>\n') == \
-            mgr._hash_content(kept + '  <Noise>b</Noise>\n')
+        text = '  <Single Name="Message" Type="string">%s</Single>\n'
+        assert mgr._hash_content(head + text % "Overheat") != \
+            mgr._hash_content(head + text % "Overtemperature")
+
+    def test_an_alarm_group_still_drops_the_stamps(self, managers):
+        mgr = self.mgr(managers)
+        head = '<AlarmGroup>\n  <Single Name="Name" Type="string">G</Single>\n'
+        assert mgr._hash_content(head + '  <Timestamp>2026-08-13</Timestamp>\n') \
+            == mgr._hash_content(head)
 
     def test_a_textlist_is_not_read_as_an_alarm_group(self, managers):
         """'AlarmGroup' appears in a GlobalTextList too, and a text list keeps
@@ -290,20 +317,6 @@ class TestHashContentPerKind:
         head = '  <Single Name="Name" Type="string">GlobalTextList</Single>\n'
         assert mgr._hash_content(head + '  <Text>a</Text>\n') != \
             mgr._hash_content(head + '  <Text>b</Text>\n')
-
-    def test_an_alarm_group_with_nothing_left_hashes_its_name(self, managers):
-        """The filters can leave nothing at all. The hash then says where the
-        content came from, not what it is -- preserved, not endorsed."""
-        mgr = self.mgr(managers)
-        volatile = '<AlarmGroup>\n  <Timestamp>2026-08-13</Timestamp>\n'
-        assert mgr._hash_content(volatile, "one.xml") != \
-            mgr._hash_content(volatile, "two.xml")
-
-    def test_a_plain_document_with_nothing_left_does_not_hash_its_name(self, managers):
-        """Only the alarm flavours fall back; an empty plain document is
-        empty, and two empty ones are the same."""
-        mgr = self.mgr(managers)
-        assert mgr._hash_content("", "one.xml") == mgr._hash_content("", "two.xml")
 
     def test_content_that_cannot_be_hashed_raises(self, managers):
         """It used to return "", and NativeManager.export tests
@@ -314,66 +327,28 @@ class TestHashContentPerKind:
             mgr._hash_content(None)
 
 
-class TestTheFilenameFallbackIsPinned:
-    """All four special flavours hash the name when their filter leaves
-    nothing. Only the plain one does not.
-
-    That is the historic outcome and it is what contents_are_equal() leans
-    on: it passes two deliberately different names, so an object whose whole
-    content is volatile always compares as different rather than as
-    accidentally identical. Preserved, not endorsed (ticket C ruling 3).
-
-    The refactor that turned this into a table quietly narrowed it to two
-    flavours and nothing failed, because the other two cannot be emptied by
-    their own filters -- see the last test here. "Unreachable today" is not
-    the same as "the rule says two", so the rule is pinned at four.
-    """
-
-    def flavours(self):
-        from engine.managers_native import _XML_FLAVOURS, _PLAIN
-        return _XML_FLAVOURS, _PLAIN
-
-    def test_every_special_flavour_is_marked_as_falling_back(self):
-        specials, _plain = self.flavours()
-        assert len(specials) == 4
-        assert all(f.name_is_the_fallback for f in specials)
-
-    def test_the_plain_filter_is_not(self):
-        """It throws away only what CODESYS rewrites, so a document it empties
-        really is empty, and two empty documents are the same document."""
-        _specials, plain = self.flavours()
-        assert plain.name_is_the_fallback is False
-
-    @pytest.mark.parametrize("content", [
-        '<AlarmGroup>\n  <Timestamp>2026-08-13</Timestamp>\n',
-        'Alarm Configuration\n  <Timestamp>2026-08-13</Timestamp>\n',
-    ], ids=["alarm_group", "alarm_config"])
-    def test_the_two_that_can_be_emptied_hash_their_name(self, managers, content):
-        mgr = managers.NativeManager()
-        assert mgr._hash_content(content, "one.xml") != \
-            mgr._hash_content(content, "two.xml")
+class TestNoSpecialFlavourCanBeEmptied:
+    """The line that says which flavour a document is survives that
+    flavour's own filter. That is why _hash_content no longer needs a name
+    to fall back on when a filter leaves nothing."""
 
     @pytest.mark.parametrize("content", [
         '  <Single Name="Name" Type="string">GlobalTextList</Single>\n',
         '<Device>\n',
-    ], ids=["textlist", "device"])
-    def test_the_other_two_cannot_be_emptied_by_their_own_filter(self, content):
-        """The line that says which flavour this is survives its own filter,
-        so those two never reach the fallback. That is why narrowing the rule
-        to two showed up in no test and in no exported byte."""
+        '<AlarmGroup>\n  <Timestamp>2026-08-13</Timestamp>\n',
+        'Alarm Configuration\n  <Timestamp>2026-08-13</Timestamp>\n',
+    ], ids=["textlist", "device", "alarm_group", "alarm_config"])
+    def test_its_detecting_line_is_kept(self, content):
         from engine.managers_native import _xml_flavour
         flavour = _xml_flavour(content)
         assert [line for line in content.splitlines(True) if flavour.keep(line)]
 
     def test_an_alarm_group_keeps_a_nested_object_line(self, managers):
-        """The alarm-group filter matches the object element anywhere in the
-        line, not only at its start: the element is nested and arrives with
-        its indentation. The plain filter uses startswith on purpose, because
-        there it is throwing lines away rather than keeping them."""
+        """The element is nested and arrives with its indentation."""
         mgr = managers.NativeManager()
         one = '<AlarmGroup>\n        <Object Guid="1" Type="textlist"/>\n'
         two = '<AlarmGroup>\n        <Object Guid="2" Type="textlist"/>\n'
-        assert mgr._hash_content(one, "x.xml") != mgr._hash_content(two, "x.xml")
+        assert mgr._hash_content(one) != mgr._hash_content(two)
 
 
 class TestTheTempFileNeverSurvives:
@@ -416,7 +391,7 @@ class TestTheTempFileNeverSurvives:
     def test_it_goes_when_the_hash_raises(self, managers, tmp_path, monkeypatch):
         mgr = managers.NativeManager(self.Project())
 
-        def refuses(content_full, fallback_name=""):
+        def refuses(content_full):
             raise ValueError("cannot hash this")
 
         monkeypatch.setattr(mgr, "_hash_content", refuses)
@@ -429,3 +404,21 @@ class TestTheTempFileNeverSurvives:
         mgr.export(self.Node(), "t", "Thing.xml", self.context(tmp_path))
         assert list(tmp_path.glob("*.tmp")) == []
         assert (tmp_path / "Thing.xml").exists()
+
+
+class TestASaveThatDiesKeepsTheOldCache:
+    """The entries are the dirty-file guard's evidence (SPEC 6.1). A save
+    that failed half way through used to leave a truncated sync_cache.json,
+    which loads as no cache at all, and with no entries the guard lets the
+    next export write over an edit nobody imported."""
+
+    def test_the_last_good_cache_survives(self, utils, tmp_path):
+        good = {"a/foo.st": {"ide_hash": "1", "disk_mtime": 5, "disk_size": 9}}
+        utils.save_sync_cache(str(tmp_path), good, {}, {})
+
+        # Serialising dies on the second entry, after the first was written.
+        utils.save_sync_cache(str(tmp_path), {"A/Bar.st": {"ide_hash": "2"},
+                                              "A/Zed.st": object()}, {}, {})
+
+        assert utils.load_sync_cache(str(tmp_path))["objects"] == good
+        assert os.listdir(str(tmp_path)) == ["sync_cache.json"]

@@ -134,6 +134,14 @@ def test_stdout_is_restored_even_when_the_script_blows_up(tmp_path, ide):
     assert "boom" in outcome.error and not outcome.ok()
 
 
+def test_a_body_that_calls_sys_exit_is_a_failed_command(tmp_path, ide):
+    # Let through, it unwound the watcher's tick into the IDE's
+    # thread-exception dialog and the caller got no result at all.
+    path = write_script(tmp_path, u"    import sys\n    sys.exit(3)")
+    outcome = silent.run(ide, path, "main", {})
+    assert "SystemExit" in outcome.error and not outcome.ok()
+
+
 # --- answering the dialogs -------------------------------------------------
 
 def yes_no_script(tmp_path, title):
@@ -148,6 +156,14 @@ def test_a_yes_no_dialog_is_answered_from_the_arguments(tmp_path, ide,
     path = yes_no_script(tmp_path, "Delete Orphaned Files?")
     outcome = silent.run(ide, path, "main", {"delete_orphans": True})
     assert outcome.messages[0]["text"] == "answered True"
+
+
+@pytest.mark.parametrize("given", ["false", "no", 1, [True]])
+def test_only_a_real_true_confirms(tmp_path, ide, fake_codesys_ui, given):
+    """A hand-written job's "false" is truthy; it must not confirm an import."""
+    path = yes_no_script(tmp_path, "Confirm Import")
+    outcome = silent.run(ide, path, "main", {"yes": given})
+    assert outcome.messages[0]["text"] == "answered False"
 
 
 def test_a_yes_no_dialog_with_no_argument_takes_its_default(tmp_path, ide,
