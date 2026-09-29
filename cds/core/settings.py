@@ -18,6 +18,7 @@ from __future__ import print_function
 
 import io
 import json
+import ntpath
 import os
 
 # The one text type: `unicode` on IronPython 2.7, where `str` and `bytes` are
@@ -57,7 +58,7 @@ SCHEMA = (
     ("save_after_export", FLAG, True, "save the project after an export"),
     ("save_after_import", FLAG, True, "save the project after an import"),
     ("sync_folder", TEXT, NO_DEFAULT,
-     "where the .st files live; './...' is relative to the project file"),
+     "where the .st files live; relative to the project's folder"),
     ("trace_memory_mb", COUNT, 256,
      "the most controller memory one plc trace may ask for (SPEC 6.8)"),
 )
@@ -138,21 +139,15 @@ def write(path, values):
         handle.write(text + u"\n")
 
 
-def is_relative(sync_folder):
-    """Does this value resolve against the project's own directory?
-
-    One predicate, because two would drift: the first-run dialog decides with
-    it whether to write a relative path, and `folder` below decides with it
-    whether to resolve one. "./..." and "." travel with a project; everything
-    else -- another drive, a folder outside the project -- has no relative
-    form worth keeping and is used as written (SPEC 6.7).
-    """
-    here = _separators(sync_folder)
-    return here == "." or here.startswith("." + os.sep)
-
-
 def folder(sync_folder, project_dir):
     """Where `sync_folder` points, absolute. None when there is nothing to point.
+
+    Every path that does not name its own root -- "./sync", "..", "../x",
+    "sub/x" -- is the project directory's. The only other base on offer is
+    the IDE's working directory, which is wherever it was started from: the
+    project folder when somebody double-clicked the .project, Program Files
+    from the Start menu. A setting that works or not depending on how the IDE
+    was opened is not a setting.
 
     None also when a relative path has no project directory to resolve
     against, which is a project the IDE could not give a path for.
@@ -160,11 +155,23 @@ def folder(sync_folder, project_dir):
     raw = (sync_folder or "").strip()
     if not raw:
         return None
-    if not is_relative(raw):
+    if _anchored(raw):
         return os.path.normpath(raw)
     if not project_dir:
         return None
     return os.path.normpath(os.path.join(project_dir, _separators(raw)))
+
+
+def _anchored(path):
+    """Does the path name its own root: a drive, a share, or a leading slash?
+
+    Read as Windows reads it on every platform, because the file sits beside
+    a Windows .project; a leading slash is also a POSIX absolute path, which
+    is what the tests hand in on Linux. A share is caught by its leading
+    slashes even where splitdrive does not know UNC.
+    """
+    drive, rest = ntpath.splitdrive(path)
+    return bool(drive) or rest[:1] in ("/", "\\")
 
 
 def _separators(value):

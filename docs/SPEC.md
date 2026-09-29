@@ -457,7 +457,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 
 | Key | Type | Meaning | Default |
 |---|---|---|---|
-| `sync_folder` | string | the sync folder. Starting with `./` it is relative to the directory holding the project file; otherwise used as written | none, asked on first run |
+| `sync_folder` | string | the sync folder. A relative path (`./sync`, `..`, `../export`, `sync`) is relative to the directory holding the project file, never to the IDE's working directory; an absolute path (a drive, a UNC share) is used as written | none, asked on first run |
 | `plc` | list of strings | PLC authorisation; only `connect`, `download` and `trace` are recognised as elements, see 6.5 | empty list |
 | `debug` | boolean | write `sync_metadata.json` and `*.log` only when on | false |
 | `devices` | boolean | let `import` apply EtherCAT device settings (6.10) | false |

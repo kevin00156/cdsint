@@ -57,6 +57,17 @@ def test_a_relative_sync_folder_resolves_against_the_project(opened, tmp_path):
     assert answer.startswith(str(tmp_path))
 
 
+def test_a_parent_relative_sync_folder_resolves_against_the_project(tmp_path):
+    # `cdsint status` reports this. It used to hand back "../export" as
+    # written, which means nothing without knowing the IDE's working
+    # directory.
+    opened = Projects(Project(
+        path=os.path.join(str(tmp_path), "line", "x.project")))
+    os.mkdir(os.path.join(str(tmp_path), "line"))
+    write(opened, u'{"sync_folder": "../export"}')
+    assert project.sync_dir(opened) == os.path.join(str(tmp_path), "export")
+
+
 def test_a_settings_file_nobody_can_parse_answers_nothing(opened):
     # The watcher asks this on every heartbeat. A half-saved file must not
     # take it down; the next command that needs the file reports the problem

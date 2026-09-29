@@ -221,13 +221,12 @@ def _as_written(chosen, project_dir):
     project's own directory has a relative form worth writing; anything else,
     or another drive, stays absolute.
 
-    What counts as relative is cds.core.settings.is_relative, the same
-    predicate the resolver uses, so the shape written here cannot drift from
-    the shape that gets read back.
+    This decides only which form to write. What a written path means is
+    cds.core.settings.folder's alone -- every relative path is the project
+    directory's -- so a path the user typed relative goes in as typed, and
+    tests/test_settings.py reads each shape written here back through it.
     """
     chosen = chosen.strip().replace("/", os.sep)
-    if schema.is_relative(chosen):
-        return chosen  # already relative; the user typed it that way
     if not project_dir or not os.path.isabs(chosen):
         return chosen
     try:
