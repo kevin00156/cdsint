@@ -194,8 +194,8 @@ has stops its application.
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
-itself is wrong — flags that do not go together, `--gateway` on any `plc`
-command, a job file `plc trace` needs, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
+itself is wrong — flags that do not go together, a `plc` command without
+`--gateway`, `plc trace` without its job file, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
 report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`
