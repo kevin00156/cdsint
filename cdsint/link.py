@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""`cdsint link`: put this body's stubs in every IDE's Scripts menu.
+"""`cdsint link` and `cdsint unlink`: this body in every IDE's Scripts menu,
+or out of it.
 
 The IDE scans its ScriptDir recursively and menus every .py it finds, so
 ScriptDir\\cdsint becomes an NTFS junction onto this body's stub\\ directory
@@ -15,6 +16,12 @@ A ScriptDir under Program Files needs an elevated shell. Without one it is
 reported and skipped, never attempted: the attempt fails with a bare "access
 denied" that names neither the IDE nor the fix. A real directory where the
 junction should be is not ours to delete, so it is reported and left.
+
+unlink takes out only a junction onto this body. irm/setup.ps1 -Uninstall
+runs it before deleting the body, because a junction left onto a deleted
+body is a Scripts menu entry that fails on every click. A junction onto
+another body -- a clone somebody is working in -- is that body's install,
+and stays.
 
 CPython only: the CLI side never runs inside the IDE.
 """
@@ -36,6 +43,9 @@ ALREADY = "already"          # pointed here before this ran
 NEEDS_ADMIN = "needs_admin"  # skipped: run again from an elevated shell
 OCCUPIED = "occupied"        # a real directory is in the way
 FAILED = "failed"
+REMOVED = "removed"          # unlink: taken out just now
+NONE = "none"                # unlink: no cdsint menu in this ScriptDir
+OTHER = "other"              # unlink: another body's junction, or a real dir
 
 _LONG_PATH = "\\\\?\\"
 
@@ -119,14 +129,38 @@ def write_body_path():
         handle.write(REPO_ROOT)
 
 
-def link_all(script_dir=None):
-    """Link every ScriptDir found, or the one given. One row per ScriptDir."""
-    write_body_path()
+def unlink_one(script_dir, needs_admin):
+    """Take this body out of one ScriptDir. Returns (state, detail)."""
+    menu = os.path.join(script_dir, MENU_FOLDER)
+    if not os.path.lexists(menu):
+        return NONE, script_dir
+    if not points_here(menu):
+        return OTHER, menu
+    if needs_admin and not is_elevated():
+        return NEEDS_ADMIN, script_dir
+    try:
+        os.unlink(menu)
+    except OSError as error:
+        return FAILED, "%s: %s" % (menu, error)
+    return REMOVED, menu
+
+
+def _each(script_dir, act):
+    """act on every ScriptDir found, or the one given. One row per ScriptDir."""
     rows = []
     for names, path, admin in targets(script_dir):
-        state, detail = link_one(path, admin)
+        state, detail = act(path, admin)
         rows.append({"ide": names, "state": state, "detail": detail})
     return rows
+
+
+def link_all(script_dir=None):
+    write_body_path()
+    return _each(script_dir, link_one)
+
+
+def unlink_all(script_dir=None):
+    return _each(script_dir, unlink_one)
 
 
 def run(ns):
@@ -134,3 +168,15 @@ def run(ns):
     report.show_links(rows, ns.json)
     bad = [row for row in rows if row["state"] not in (LINKED, ALREADY)]
     return EXIT_FAILED if bad or not rows else EXIT_OK
+
+
+def run_unlink(ns):
+    """Exit 1 only for a menu of ours that is still there.
+
+    No IDE at all is not a failure here, unlike link: there is nothing of
+    ours to take out.
+    """
+    rows = unlink_all(ns.script_dir)
+    report.show_unlinks(rows, ns.json)
+    bad = [row for row in rows if row["state"] in (NEEDS_ADMIN, FAILED)]
+    return EXIT_FAILED if bad else EXIT_OK

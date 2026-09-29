@@ -30,7 +30,12 @@ npx skills add kevin00156/cdsint
 ```
 
 `cdsint update` fetches the newest release later; `cdsint link` adds an IDE
-installed after cdsint was.
+installed after cdsint was; `cdsint version` says which one you have. To take
+it all out again, from an elevated shell if Delta has it:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1))) -Uninstall
+```
 
 ## What it does
 

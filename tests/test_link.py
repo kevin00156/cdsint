@@ -153,3 +153,92 @@ def test_a_skipped_ide_is_exit_1(machine, capsys):
 def test_no_ide_at_all_is_exit_1(machine, capsys):
     assert cli.main(["link"]) == EXIT_FAILED
     assert "--script-dir" in capsys.readouterr().out
+
+
+def test_unlink_takes_out_what_link_put_in(machine):
+    root, found = machine
+    script_dir = str(root / "codesys")
+    found.append(install("SP21", script_dir))
+    link.link_all()
+    assert [r["state"] for r in link.unlink_all()] == [link.REMOVED]
+    assert not os.path.lexists(menu_of(script_dir))
+    assert os.path.isdir(link.stub_dir())
+    assert link.unlinked() == [("SP21", False)]
+
+
+def test_unlink_leaves_another_bodys_junction(machine):
+    """A clone somebody is working in is that clone's install."""
+    root, found = machine
+    script_dir = str(root / "codesys")
+    elsewhere = str(root / "clone" / "stub")
+    os.makedirs(elsewhere)
+    os.makedirs(script_dir)
+    junction(menu_of(script_dir), elsewhere)
+    found.append(install("SP21", script_dir))
+    assert [r["state"] for r in link.unlink_all()] == [link.OTHER]
+    assert os.readlink(menu_of(script_dir))
+
+
+def test_unlink_leaves_a_real_directory(machine):
+    root, found = machine
+    script_dir = str(root / "codesys")
+    os.makedirs(menu_of(script_dir))
+    found.append(install("SP21", script_dir))
+    assert [r["state"] for r in link.unlink_all()] == [link.OTHER]
+    assert os.path.isdir(menu_of(script_dir))
+
+
+def test_unlink_with_nothing_there(machine):
+    root, found = machine
+    found.append(install("SP21", str(root / "codesys")))
+    assert [r["state"] for r in link.unlink_all()] == [link.NONE]
+
+
+def test_unlink_under_program_files_needs_an_elevated_shell(machine,
+                                                            monkeypatch):
+    root, found = machine
+    script_dir = str(root / "delta")
+    found.append(install("Delta 1.10", script_dir, admin=True))
+    monkeypatch.setattr(link, "is_elevated", lambda: True)
+    link.link_all()
+    monkeypatch.setattr(link, "is_elevated", lambda: False)
+    assert [r["state"] for r in link.unlink_all()] == [link.NEEDS_ADMIN]
+    assert link.points_here(menu_of(script_dir))
+
+
+def test_unlink_script_dir_unlinks_that_one_only(machine):
+    root, found = machine
+    kept = str(root / "codesys")
+    found.append(install("SP21", kept))
+    given = str(root / "given")
+    link.link_all()
+    link.link_all(given)
+    assert [r["state"] for r in link.unlink_all(given)] == [link.REMOVED]
+    assert link.points_here(menu_of(kept))
+
+
+def test_unlink_through_the_cli(machine, capsys):
+    root, found = machine
+    found.append(install("SP21", str(root / "codesys")))
+    link.link_all()
+    assert cli.main(["unlink", "--json"]) == EXIT_OK
+    rows = json.loads(capsys.readouterr().out)
+    assert [r["state"] for r in rows] == [link.REMOVED]
+
+
+def test_a_menu_unlink_could_not_take_out_is_exit_1(machine, monkeypatch,
+                                                    capsys):
+    """setup.ps1 -Uninstall deletes the body only after exit 0."""
+    root, found = machine
+    found.append(install("Delta 1.10", str(root / "delta"), admin=True))
+    monkeypatch.setattr(link, "is_elevated", lambda: True)
+    link.link_all()
+    monkeypatch.setattr(link, "is_elevated", lambda: False)
+    assert cli.main(["unlink"]) == EXIT_FAILED
+    assert "elevated" in capsys.readouterr().out
+
+
+def test_unlink_with_no_ide_at_all_is_done(machine, capsys):
+    """Unlike link: nothing of ours is in any menu, which is the goal."""
+    assert cli.main(["unlink"]) == EXIT_OK
+    assert "--script-dir" in capsys.readouterr().out

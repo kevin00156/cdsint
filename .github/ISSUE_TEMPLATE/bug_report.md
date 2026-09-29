@@ -29,9 +29,9 @@ itself what is broken, name the product and version by hand: CODESYS 3.5 SP19,
 DIADesigner-AX 1.10, PLC Designer 4.0.
 
 - The IDE was: open in front of me / not open, headless / does not matter
-- `pip show cdsint` version:
-- Windows version:
-- `python -V`:
+
+Run `cdsint version` and paste what it prints: the cdsint, Python and Windows
+versions, and where it runs from.
 
 **If an object failed to export or import**
 

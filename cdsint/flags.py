@@ -18,6 +18,7 @@ import argparse
 
 from cds.core import settings
 from cdsint import job_file
+from engine.codesys_constants import SCRIPT_VERSION
 
 # Seconds one command step may take (SPEC 4.2). The one number: the help text
 # renders it with %(default)s, and both runners take it as their default, so
@@ -27,7 +28,7 @@ DEFAULT_TIMEOUT_S = 120.0
 # The two forms of every command (SPEC D2), plus the two that have neither.
 #
 #   NO_IDE     about this machine, not about a project: installs, list,
-#              update, link
+#              version, update, link, unlink
 #   WATCHER    only --target: the watcher's own life, which needs a watcher
 #   EITHER     both forms, the ordinary case
 #   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
@@ -161,6 +162,9 @@ COMMANDS = {
     "installs": Command(
         "list the IDEs on this machine, and what to call each one", NO_IDE),
     "list": Command("show the IDEs that are listening", NO_IDE),
+    "version": Command(
+        "show which cdsint this is, where it runs from, and on what Python "
+        "and Windows", NO_IDE),
     "update": Command(
         "replace this install with the newest release and put it in the "
         "menu of any IDE added since; only one irm/setup.ps1 downloaded",
@@ -170,6 +174,12 @@ COMMANDS = {
         NO_IDE,
         flags=[("--script-dir", NAME,
                 "link this ScriptDir only, instead of every one found")]),
+    "unlink": Command(
+        "take this install out of the Scripts menu of every IDE; "
+        "irm/setup.ps1 -Uninstall runs it before removing the rest",
+        NO_IDE,
+        flags=[("--script-dir", NAME,
+                "unlink this ScriptDir only, instead of every one found")]),
     "ping": Command("check that an IDE is answering", WATCHER),
     "status": Command("show what an IDE has open right now", WATCHER),
     "stop": Command("tell a watcher to shut down", WATCHER),
@@ -286,6 +296,10 @@ class Parser(argparse.ArgumentParser):
 
 def build_parser():
     parser = Parser(prog="cdsint", description="Drive a CODESYS-family IDE.")
+    # The spelling people and agents try first. `cdsint version` says more;
+    # this is its first line.
+    parser.add_argument("--version", action="version",
+                        version="%(prog)s " + SCRIPT_VERSION)
     sub = parser.add_subparsers(dest="command", required=True,
                                 parser_class=Parser)
     # In the table's order, not sorted: the table reads life-cycle first,

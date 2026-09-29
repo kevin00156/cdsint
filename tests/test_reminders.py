@@ -110,10 +110,11 @@ def test_the_reminder_goes_to_stderr(downloaded, monkeypatch, capsys):
 
 @pytest.mark.parametrize("command, want_json", [("installs", True),
                                                 ("update", False),
-                                                ("link", False)])
-def test_quiet_under_json_and_after_update_or_link(downloaded, monkeypatch,
-                                                   capsys, command,
-                                                   want_json):
+                                                ("link", False),
+                                                ("unlink", False)])
+def test_quiet_under_json_and_after_the_menu_commands(downloaded, monkeypatch,
+                                                      capsys, command,
+                                                      want_json):
     calls = asked(monkeypatch, bumped())
     reminders.remind(command, want_json)
     assert capsys.readouterr() == ("", "")

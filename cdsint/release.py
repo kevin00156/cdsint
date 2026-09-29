@@ -8,6 +8,7 @@ from __future__ import print_function
 import http.client
 import json
 import os
+import platform
 import re
 import urllib.request
 
@@ -78,6 +79,20 @@ def is_downloaded():
     body = body_root()
     return bool(body) and (os.path.normcase(os.path.abspath(REPO_ROOT))
                            == os.path.normcase(os.path.abspath(body)))
+
+
+def about():
+    """What `cdsint version` reports. Nothing here reaches the network.
+
+    Where the body is and whether setup.ps1 put it there, because a clone
+    runs whatever is checked out, which is usually ahead of SCRIPT_VERSION.
+    Python and Windows because a bug report needs both, and used to ask for
+    each with a command of its own.
+    """
+    return {"version": SCRIPT_VERSION, "body": REPO_ROOT,
+            "downloaded": is_downloaded(),
+            "python": platform.python_version(),
+            "os": "%s %s" % (platform.system(), platform.version())}
 
 
 def latest_tag(timeout):
