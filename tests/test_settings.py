@@ -299,7 +299,8 @@ def test_what_the_dialog_writes_inside_reads_back_as_the_folder_chosen(
         tmp_path, project, where):
     chosen = os.path.join(str(tmp_path), *where)
     written = settings._as_written(chosen, project_dir(project))
-    assert schema.folder(written, project_dir(project)) ==         os.path.normpath(chosen)
+    assert (schema.folder(written, project_dir(project))
+            == os.path.normpath(chosen))
 
 
 def test_what_the_dialog_writes_outside_reads_back_as_the_folder_chosen(
