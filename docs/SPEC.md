@@ -355,9 +355,9 @@ mutually exclusive, and argparse blocks them directly.
 | `discover` | yes | yes | name every object and the kind it counted as, and list the type GUIDs no kind recognises (`data.unknown`). Read-only, no permission needed |
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
-| `plc connect --gateway IP [--port N]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y --gateway IP [--port N]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
-| `plc trace --gateway IP --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
+| `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
 
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
@@ -838,11 +838,15 @@ went there; and a trace recorded from it looks exactly like a right one. So
 the device node is always aimed at the address given, which changes that
 setting in the open project; the project is never saved by a `plc` command.
 `--port` defaults to 11740; `-y` on `connect` or `trace` is exit 2, since
-neither has anything for it to confirm. When the project has more than one
-device node, or the IDE profile has more than one gateway to reach the
-address through, every `plc` command refuses and lists the names; there is no flag to
-pick one, since guessing a download target is not something that can have a
-default (D7). The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
+neither has anything for it to confirm. The gateway the address is reached
+through is the IDE profile's own, and `--gateway-name NAME` picks it; without
+the flag a profile with one gateway uses that one, and a profile with more
+refuses and lists them, since the first one listed is not a choice anybody
+made and the same address behind another gateway can be another controller
+(D7). A name the profile does not have is refused too, even beside a lone
+gateway, because a flag that is quietly overruled aims at a controller nobody
+asked for. A project with more than one device node is refused with the
+names listed; there is no flag to pick one. The comparison has three answers, `MATCH`, `DIFFERENT` and `UNKNOWN`;
 when either side cannot be obtained it is `UNKNOWN`; only `MATCH` exits 0,
 because outside these two commands there is nothing like `verify` that turns
 findings into a verdict, so the exit code itself has to be the verdict. The

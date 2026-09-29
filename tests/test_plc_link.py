@@ -106,7 +106,7 @@ def test_asking_for_a_gateway_this_profile_does_not_have_stops_the_run():
     assert not outcome.ok() and "no gateway defined" in outcome.error_text()
 
 
-def test_two_gateways_are_named_and_nothing_is_aimed():
+def test_two_gateways_with_none_named_are_listed_and_nothing_is_aimed():
     # The first one listed was used, which nobody chose, and the same
     # address behind the other gateway can be another controller.
     first, second = Gateway("Gateway-1"), Gateway("Gateway-2")
@@ -117,7 +117,41 @@ def test_two_gateways_are_named_and_nothing_is_aimed():
                          {"gateway": "192.168.1.5"})
     said = outcome.error_text()
     assert not outcome.ok() and "Gateway-1, Gateway-2" in said
+    assert "--gateway-name" in said
     assert device_node.gateway_set_to is None and first.asked == []
+
+
+@pytest.mark.parametrize("action, args", [("connect", {}),
+                                          ("download", {"yes": True})])
+def test_the_named_gateway_is_the_one_aimed_through(action, args):
+    # A profile that keeps a gateway per rig is the ordinary case, and until
+    # the flag existed it made every plc command unusable.
+    first, second = Gateway("Gateway-1"), Gateway("Gateway-3")
+    device_node = DeviceNode("Device", DEVICE_GUID)
+    ide_globals = ide(allowed=[action], children=[device_node],
+                      gateways=[first, second])
+    silent.run(ide_globals, PLC_BODY, action,
+               at(gateway_name="Gateway-3", **args))
+    assert device_node.gateway_set_to[0] is second
+    assert first.asked == [] and second.asked == [("192.168.1.5", 11740)]
+
+
+@pytest.mark.parametrize("gateways", [["Gateway-1", "Gateway-2"],
+                                      ["Gateway-1"]])
+def test_a_named_gateway_the_profile_lacks_stops_the_run(gateways):
+    # Even beside a lone gateway: a name that was given and quietly overruled
+    # would aim at a controller nobody asked for.
+    profile = [Gateway(name) for name in gateways]
+    device_node = DeviceNode("Device", DEVICE_GUID)
+    ide_globals = ide(allowed=["connect"], children=[device_node],
+                      gateways=profile)
+    outcome = silent.run(ide_globals, PLC_BODY, "connect",
+                         at(gateway_name="Gateway-9"))
+    said = outcome.error_text()
+    assert not outcome.ok() and "Gateway-9" in said
+    assert ", ".join(gateways) in said
+    assert device_node.gateway_set_to is None
+    assert all(g.asked == [] for g in profile)
 
 
 # --------------------------------------------------------------------------

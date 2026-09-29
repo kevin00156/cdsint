@@ -140,7 +140,39 @@ def find_device(project):
     return devices[0], None
 
 
-def aim_at_gateway(online_api, device_node, address, port):
+def gateway_name(gateway):
+    return safe_str(getattr(gateway, "name", gateway))
+
+
+def pick_gateway(gateways, name, address):
+    """The profile's gateway to reach `address` through. (gateway, problem).
+
+    A name that was given is the only answer, even when the profile has one
+    gateway: a flag that is quietly overruled is a skip wearing another hat.
+    Without one, a lone gateway is the only one there is, and of several the
+    first listed is not a choice anybody made -- the same address behind
+    another gateway can be another controller (D7).
+    """
+    if not gateways:
+        return None, ("--gateway %s was given but this IDE profile has no "
+                      "gateway defined, so there is nothing to reach it "
+                      "through" % address)
+    names = [gateway_name(g) for g in gateways]
+    if name is not None:
+        if name not in names:
+            return None, ("this IDE profile has no gateway called %s (it has "
+                          "%s), so nothing was done"
+                          % (name, ", ".join(names)))
+        return gateways[names.index(name)], None
+    if len(gateways) > 1:
+        return None, ("this IDE profile has %d gateways (%s) and none was "
+                      "named, so nothing was done; pass --gateway-name with "
+                      "the one that reaches %s"
+                      % (len(gateways), ", ".join(names), address))
+    return gateways[0], None
+
+
+def aim_at_gateway(online_api, device_node, address, port, name=None):
     """Point the device at `address`. Returns (note, problem); one is None.
 
     Every plc command calls it: the address the project carries was found
@@ -149,32 +181,19 @@ def aim_at_gateway(online_api, device_node, address, port):
     project opened in another install can come back "Gateway not configured
     properly", and naming it is also the way past that.
     """
-    gateways = list(getattr(online_api, "gateways", []) or [])
-    if not gateways:
-        return None, ("--gateway %s was given but this IDE profile has no "
-                      "gateway defined, so there is nothing to reach it "
-                      "through" % address)
-    if len(gateways) > 1:
-        # The first one listed is not a choice anybody made, and the same
-        # address behind another gateway can be another controller (D7).
-        return None, ("this IDE profile has %d gateways (%s) and there is no "
-                      "flag that says which one reaches %s, so nothing was "
-                      "done; leave one in the profile"
-                      % (len(gateways), ", ".join(
-                          safe_str(getattr(g, "name", g)) for g in gateways),
-                         address))
-    gateway = gateways[0]
+    gateway, problem = pick_gateway(
+        list(getattr(online_api, "gateways", []) or []), name, address)
+    if problem:
+        return None, problem
     try:
         node = gateway.find_address_by_ip(address, port)
         device_node.set_gateway_and_ip_address(gateway, address, port)
     except Exception as exc:
         return None, ("%s:%d could not be reached through gateway %s: %s"
-                      % (address, port,
-                         safe_str(getattr(gateway, "name", gateway)),
+                      % (address, port, gateway_name(gateway),
                          safe_str(exc)))
     return ("gateway: %s -> %s:%d (node address %s)"
-            % (safe_str(getattr(gateway, "name", gateway)), address, port,
-               safe_str(node))), None
+            % (gateway_name(gateway), address, port, safe_str(node))), None
 
 
 def names_in(device, directory):

@@ -155,7 +155,9 @@ since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
 Every `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
 by the project's device name, the controller can be the wrong one, and the
-wrong one passes every check. `-y` on `connect` or `trace` is exit 2 too.
+wrong one passes every check. An IDE profile with more than one gateway also
+needs `--gateway-name NAME` to say which one reaches it; the refusal lists the
+names. `-y` on `connect` or `trace` is exit 2 too.
 
 `plc trace` records variables from a controller that is at `MATCH`, without
 downloading anything. It also refuses a working copy that differs from its last

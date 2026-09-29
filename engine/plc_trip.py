@@ -115,8 +115,9 @@ class Trip(object):
         address = self.args.get("gateway")
         port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
         self.found["controller"] = plc_crc.controller_key(address, port)
-        note, problem = plc_link.aim_at_gateway(self.online, self.device_node,
-                                                address, port)
+        note, problem = plc_link.aim_at_gateway(
+            self.online, self.device_node, address, port,
+            self.args.get("gateway_name"))
         if problem:
             return problem
         self.note(note)

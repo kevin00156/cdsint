@@ -14,7 +14,8 @@ All notable changes to this project will be documented in this file.
   read-back. Records are filed under `IP:port` only; an entry filed under
   "project" by an older version names no controller and is not read, so the
   first `connect` after upgrading answers UNKNOWN until one `plc download -y`.
-  A profile with more than one gateway is refused rather than guessed at.
+  A profile with more than one gateway is refused rather than guessed at;
+  `--gateway-name NAME` says which one reaches the controller.
 - **Orphans are only files the last sync left untouched.** A file no object
   claims is deleted (by `--delete-orphans` or `auto_delete_orphans`) only when
   the sync cache knows it and it has not changed since. Anything else --

@@ -157,15 +157,19 @@ def test_the_cli_spells_the_action_into_the_command_name():
          "--sync-dir", "S"])
     assert flags.wire_name(parsed) == "plc download"
     assert flags.command_args(parsed) == {"yes": True, "gateway": None,
-                                        "port": None, "job": None}
+                                        "port": None, "gateway_name": None,
+                                        "job": None}
 
 
 def test_the_gateway_flags_reach_the_body():
     parsed = flags.build_parser().parse_args(
         ["plc", "connect", "--project", "P", "--install", "I", "--sync-dir",
-         "S", "--gateway", "192.168.1.5", "--port", "11740"])
+         "S", "--gateway", "192.168.1.5", "--port", "11740",
+         "--gateway-name", "Gateway-3"])
     assert flags.command_args(parsed) == {"yes": None, "gateway": "192.168.1.5",
-                                        "port": 11740, "job": None}
+                                        "port": 11740,
+                                        "gateway_name": "Gateway-3",
+                                        "job": None}
 
 
 # --------------------------------------------------------------------------

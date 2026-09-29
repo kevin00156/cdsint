@@ -209,6 +209,9 @@ COMMANDS = {
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),
+               ("--gateway-name", NAME,
+                "which of the IDE profile's gateways reaches --gateway; "
+                "needed when the profile has more than one"),
                ("--job", JOB, "the trace job file; only plc trace takes it")],
         needs={
             "connect": {"gateway": WRONG_CONTROLLER

@@ -146,9 +146,9 @@ Every command that touches a project takes one of two forms, and never both:
 | `discover` | yes | yes | name every object and the kind it counted as; run it when something reports `failed_objects` |
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
-| `plc connect --gateway IP [--port N]` | — | yes | is the controller still holding the last download from here |
-| `plc download -y --gateway IP [--port N]` | — | yes | download to the controller, read the CRC back, write it down |
-| `plc trace --gateway IP --job FILE` | — | yes | record the variables a job file names, without downloading anything |
+| `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
+| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | — | yes | record the variables a job file names, without downloading anything |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
@@ -260,8 +260,11 @@ Every `plc` command also needs `--gateway`, and is exit 2 without it: a
 controller found by the project's device name can be the wrong one, and the
 wrong controller passes every check — a download's read-back, a connect's
 `MATCH`, a trace's samples. `--port` is the port behind it (11740 when left
-out). `-y` on `connect` or `trace` is exit 2, since neither has anything to
-confirm.
+out). The address is reached through one of the IDE profile's gateways:
+`--gateway-name NAME` says which, and it is needed only when the profile has
+more than one. Without it such a profile is refused with the names listed,
+and a name the profile does not have is refused too. `-y` on `connect` or
+`trace` is exit 2, since neither has anything to confirm.
 
 `plc` has no `--target` form at all. The watcher lives inside an IDE somebody
 is using, and a PLC login would take their online session away from them, so a
