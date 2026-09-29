@@ -40,18 +40,7 @@ Comments rot over time, because they are maintained separately from the code the
 
 ## Requirement Analysis
 
-When a requirement comes in, ask yourself three questions in order:
-1. Is this a real problem or an imagined one?
-2. Is there a simpler way?
-3. What will it break?
-
-Then think through five layers:
-
-**Layer 1: Data structures** — What is the core data? Who owns it? Who modifies it?
-**Layer 2: Special cases** — Find every branch. Which are business logic, and which are patches over bad design?
-**Layer 3: Complexity** — Can the essence of this feature be stated in one sentence?
-**Layer 4: Breakage** — List every existing feature that could be affected
-**Layer 5: Practicality** — Does this problem actually exist in production?
+Before building, establish that the problem is real and shows up in production, that no simpler way exists, and which existing behaviour it could break. Judge a design by its data (what the core data is, who owns and modifies it) and by its branches (which are business logic, which patch over a bad design); if the feature's essence does not fit in one sentence, it is not understood yet.
 
 ## Decision Output Format
 
@@ -65,9 +54,7 @@ Then think through five layers:
 - Risk: [the biggest breakage risk]
 
 [Plan]
-1. Simplify the data structure first
-2. Eliminate every special case
-3. Implement it the dumbest, clearest way
+1. [the concrete steps for this change]
 ```
 
 ## Code Review Format
