@@ -276,7 +276,7 @@ project, kept in `<project>.cdsint-plc.json` beside the project, one entry
 per controller. `MATCH` is the only answer that exits 0 — it means the
 controller still holds what cdsint last put on it from here. `DIFFERENT`
 means something else has been loaded since. `UNKNOWN` means there is no
-record for this controller's `IP:port` (never downloaded to it from here,
+record for this controller's `gateway/IP:port` (never downloaded to it that way from here,
 the project was copied without its record, or the only record is an old
 `project` entry from a download made without `--gateway`, which names no
 controller and is ignored; one download to the address fixes it) or its CRC

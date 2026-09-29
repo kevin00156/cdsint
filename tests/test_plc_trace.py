@@ -126,7 +126,7 @@ def test_the_report_has_exactly_the_spec_shape():
         "duration_s", "buffer", "files", "variables", "complete",
         "failed_objects", "why", "notes", "workspace"}
     assert data["action"] == "trace"
-    assert data["controller"] == "%s:%d" % (GATEWAY, PORT)
+    assert data["controller"] == "Gateway-1/%s:%d" % (GATEWAY, PORT)
     assert data["resolution"] == "us" and data["task"] == TASK
     row = data["variables"][1]
     assert row["name"] == "PRG_AxisControl._iOvrZone"

@@ -262,7 +262,7 @@ class OnlineChangeOption(object):
 # Where every connect and download here is aimed: every plc command names its
 # controller (SPEC 6.6), and a record is filed under that name.
 ADDRESS = "192.168.1.5"
-CONTROLLER = "%s:%d" % (ADDRESS, 11740)
+CONTROLLER = "Gateway-1/%s:%d" % (ADDRESS, 11740)
 
 
 def at(**more):
@@ -680,7 +680,8 @@ class TraceBench(object):
                              gateways=[Gateway()])
         self.online.session = TraceSession(self.log, **session)
         if record:
-            recorded(plc_crc=record, controller="%s:%d" % (GATEWAY, PORT))
+            recorded(plc_crc=record,
+                     controller="Gateway-1/%s:%d" % (GATEWAY, PORT))
         if guids is not None:
             download_info(guids)
 

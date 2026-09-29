@@ -784,13 +784,17 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
 - **What is compared.** The controller's current `Application.crc`, against
   the value this project left on this controller after its last completed
   download. The record is written to `<project>.cdsint-plc.json` beside the
-  project file, one entry per controller, keyed `IP:port`, so one working
-  copy can serve two rigs at once without them overwriting each other. Copy
-  the project elsewhere and the record does not follow, which is right: it
+  project file, one entry per controller, keyed `gateway/IP:port` by the
+  gateway actually used, named with `--gateway-name` or not. So one working
+  copy can serve two rigs at once without them overwriting each other, two
+  identical rigs at one address behind two gateways included, and a gateway
+  added to the profile later leaves the existing keys alone. Copy the
+  project elsewhere and the record does not follow, which is right: it
   describes what this working copy has done. An entry under any other key is
   never read: a download without `--gateway` once filed its CRC under
   `project`, which names no controller, so a record holding only that answers
-  `UNKNOWN` until one download to the named address writes an `IP:port` entry.
+  `UNKNOWN` until one download to the named address writes a
+  `gateway/IP:port` entry.
 - **The locally built boot application is not compared.** That was the
   original approach, and on the rig two independent reasons for it were
   measured and both fail (2026-09-06, 3.5.21.40 / ScriptEngine 4.2.0.0). One:
@@ -1045,7 +1049,7 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
 ```json
 {
   "action": "trace",
-  "controller": "127.0.0.1:11741",
+  "controller": "Gateway-1/127.0.0.1:11741",
   "crc": "MATCH",
   "task": "MainTask",
   "period_us": 4000,

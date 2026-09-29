@@ -11,7 +11,8 @@ All notable changes to this project will be documented in this file.
 - **Every `plc` command needs `--gateway`.** `connect` and `download` joined
   `trace`: a project that finds its controller by device name can reach the
   wrong one, and a download to the wrong controller passes its own
-  read-back. Records are filed under `IP:port` only; an entry filed under
+  read-back. Records are filed under `gateway/IP:port` only, so two rigs at
+  one address behind two gateways keep a record each; an entry filed under
   "project" by an older version names no controller and is not read, so the
   first `connect` after upgrading answers UNKNOWN until one `plc download -y`.
   A profile with more than one gateway is refused rather than guessed at;

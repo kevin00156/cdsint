@@ -86,7 +86,7 @@ def test_the_record_the_verdict_used_is_in_the_report():
 
 def test_a_record_for_another_controller_is_not_this_controllers():
     # Same working copy, two benches: the record for A must not answer for B.
-    recorded(plc_crc="11223344", controller="127.0.0.1:11740")
+    recorded(plc_crc="11223344", controller="Gateway-1/127.0.0.1:11740")
     ide_globals = ide(allowed=["connect"], device=Device(crc=CRC_B),
                       gateways=[Gateway()])
     outcome = silent.run(ide_globals, PLC_BODY, "connect",
@@ -427,6 +427,31 @@ def test_a_state_that_cannot_be_read_is_not_a_download_that_failed():
     assert not outcome.ok()
     assert "did not complete" not in outcome.error_text()
     assert "could not be read: the session went away" in outcome.error_text()
+
+
+def test_one_address_behind_two_gateways_is_two_controllers():
+    # Two identical rigs share an address, each behind a gateway of its own.
+    # Filed under the address alone, a download to the second overwrote the
+    # record of the first, whose next connect answered DIFFERENT about a
+    # controller that still held what cdsint put there.
+    first, third = Gateway("Gateway-1"), Gateway("Gateway-3")
+    rig_a, rig_b = Device(crc=CRC_A), Device(crc=CRC_A)
+    for rig, name in ((rig_a, "Gateway-1"), (rig_b, "Gateway-3")):
+        ide_globals = ide(allowed=["download"], device=rig,
+                          gateways=[first, third])
+        ide_globals["online"].session = Session(
+            device=rig, writes=[CRC_B if rig is rig_a else CRC_C])
+        assert silent.run(ide_globals, PLC_BODY, "download",
+                          at(yes=True, gateway_name=name)).ok()
+
+    records = plc_crc_module.read_records(
+        plc_crc_module.record_path(plc_fakes.PROJECT_PATH))
+    assert sorted(records) == ["Gateway-1/192.168.1.5:11740",
+                               "Gateway-3/192.168.1.5:11740"]
+    outcome = silent.run(ide(allowed=["connect"], device=rig_a,
+                             gateways=[first, third]),
+                         PLC_BODY, "connect", at(gateway_name="Gateway-1"))
+    assert crc_of(outcome) == "MATCH" and outcome.ok()
 
 
 def test_last_weeks_crc_is_not_read_as_this_weeks_answer(workspace):

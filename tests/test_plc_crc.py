@@ -70,9 +70,9 @@ def test_a_record_nobody_can_read_is_no_record_rather_than_a_crash(tmp_path):
     assert plc_crc.read_records(path) == {}
 
 
-def test_a_controller_is_filed_under_its_address_and_nothing_else():
-    assert plc_crc_module.controller_key("127.0.0.1", 11740) == \
-        "127.0.0.1:11740"
+def test_a_controller_is_filed_under_its_route_and_nothing_else():
+    assert plc_crc_module.controller_key("Gateway-3", "127.0.0.1", 11740) == \
+        "Gateway-3/127.0.0.1:11740"
     assert not hasattr(plc_crc_module, "PROJECT_GATEWAY")
 
 

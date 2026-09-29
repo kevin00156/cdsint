@@ -146,7 +146,7 @@ downloaded to it from this project. `download` writes the controller's CRC into
 `<project>.cdsint-plc.json` beside the project, one entry per controller, and
 `connect` holds the controller against that. `data.crc` is `MATCH` (exit 0),
 `DIFFERENT` (exit 1: something else has been downloaded to it since) or `UNKNOWN`
-(exit 1: nothing was ever downloaded to that address from here, or the
+(exit 1: nothing was ever downloaded to that address through that gateway from here, or the
 controller holds nothing — neither is agreement; an old `project` entry in the
 record, from a download without `--gateway`, is ignored, so download once). A download that leaves the application not
 running is exit 1 too, though it is recorded. It does not answer "has the project changed

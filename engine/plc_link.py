@@ -172,7 +172,7 @@ def pick_gateway(gateways, name, address):
     return gateways[0], None
 
 
-def aim_at_gateway(online_api, device_node, address, port, name=None):
+def aim_at_gateway(device_node, gateway, address, port):
     """Point the device at `address`. Returns (note, problem); one is None.
 
     Every plc command calls it: the address the project carries was found
@@ -181,10 +181,6 @@ def aim_at_gateway(online_api, device_node, address, port, name=None):
     project opened in another install can come back "Gateway not configured
     properly", and naming it is also the way past that.
     """
-    gateway, problem = pick_gateway(
-        list(getattr(online_api, "gateways", []) or []), name, address)
-    if problem:
-        return None, problem
     try:
         node = gateway.find_address_by_ip(address, port)
         device_node.set_gateway_and_ip_address(gateway, address, port)

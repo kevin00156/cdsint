@@ -111,13 +111,24 @@ class Trip(object):
         return None
 
     def point_at_gateway(self):
-        """Aim the device at --gateway. None when it is aimed."""
+        """Aim the device at --gateway. None when it is aimed.
+
+        The gateway is picked before the controller is named, because it is
+        part of the name: the same address behind two gateways can be two
+        controllers, and a record filed under the address alone let a
+        download to one overwrite what was known about the other.
+        """
         address = self.args.get("gateway")
         port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
-        self.found["controller"] = plc_crc.controller_key(address, port)
-        note, problem = plc_link.aim_at_gateway(
-            self.online, self.device_node, address, port,
-            self.args.get("gateway_name"))
+        gateway, problem = plc_link.pick_gateway(
+            list(getattr(self.online, "gateways", []) or []),
+            self.args.get("gateway_name"), address)
+        if problem:
+            return problem
+        self.found["controller"] = plc_crc.controller_key(
+            plc_link.gateway_name(gateway), address, port)
+        note, problem = plc_link.aim_at_gateway(self.device_node, gateway,
+                                                address, port)
         if problem:
             return problem
         self.note(note)

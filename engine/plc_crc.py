@@ -117,16 +117,19 @@ def record_path(project_path):
     return os.path.splitext(safe_str(project_path))[0] + RECORD_SUFFIX
 
 
-def controller_key(address, port):
-    """The name a controller is filed under in the record: "host:port".
+def controller_key(gateway, address, port):
+    """The name a controller is filed under in the record:
+    "gateway/host:port".
 
-    Keyed by the address a download went to, so one working copy can serve
-    two benches without either answer overwriting the other. Every plc
-    command names its address (--gateway), so there is no other key; an
-    entry under any other name, such as the "project" a download without
-    --gateway once wrote, names no controller and is never read.
+    Keyed by the route a download took, so one working copy can serve two
+    benches without either answer overwriting the other -- two identical
+    rigs often share an address, each behind a gateway of its own. The
+    gateway is the one actually used, named or not, so a gateway added to
+    the profile later leaves the existing keys alone. An entry under any
+    other name, such as "host:port" or the "project" an older download
+    wrote, names no route and is never read.
     """
-    return "%s:%s" % (address, port)
+    return "%s/%s:%s" % (gateway, address, port)
 
 
 def read_records(path):
