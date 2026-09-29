@@ -184,7 +184,7 @@ def test_export_writes_one_file_per_device_and_keeps_an_unimported_edit(tmp_path
                "new_cache": {}, "cache_data": {"objects": {}}}
     managers = classify.create_import_managers(project)
     assert device_pass.export_devices(project, str(tmp_path), context,
-                                      managers) == []
+                                      managers)[1] == []
     rel = PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device"
     with io.open(str(tmp_path / rel), encoding="utf-8") as f:
         assert dt.same(f.read(), device_params.render(slave))
@@ -193,4 +193,75 @@ def test_export_writes_one_file_per_device_and_keeps_an_unimported_edit(tmp_path
     write(str(tmp_path / rel), device_params.render(slave).replace(
         "c1/1627394048/Value = 6", "c1/1627394048/Value = 8"))
     assert device_pass.export_devices(project, str(tmp_path), context,
-                                      managers) == [rel]
+                                      managers)[1] == [rel]
+
+
+# -- export, end to end -----------------------------------------------------
+
+def export_run(monkeypatch, tmp_path, project):
+    """export_project on this project, as the watcher would run it."""
+    from cds.core import settings
+    from engine import entry_export
+    from tests.fakes import DeafSystem, Projects
+    projects = Projects(project)
+    monkeypatch.setattr(entry_export, "projects", projects, raising=False)
+    monkeypatch.setattr(entry_export, "system", DeafSystem(), raising=False)
+    sync = str(tmp_path / "sync")
+    return lambda: entry_export.export_project(
+        sync, settings.resolve({"save_after_export": False}), projects), sync
+
+
+SLAVE = PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device"
+
+
+def test_an_export_counts_the_device_files_it_writes(monkeypatch, tmp_path):
+    project, master, slave = a_project()
+    run, _sync = export_run(monkeypatch, tmp_path, project)
+    first = run()
+    assert first["ok"] is True, first["summary"]
+    assert (first["data"]["devices_new"], first["data"]["devices_updated"],
+            first["data"]["devices_identical"]) == (2, 0, 0)
+    assert "Devices" in first["summary"]
+
+
+def test_an_export_rewrites_a_device_the_ide_changed(monkeypatch, tmp_path):
+    # A device changed in the IDE after the last export: the file is the
+    # side that is behind, and nothing on disk is lost by rewriting it.
+    project, master, slave = a_project()
+    run, sync = export_run(monkeypatch, tmp_path, project)
+    assert run()["ok"] is True
+    op_mode = slave.connectors[0].host_parameters[4]
+    [_index, value] = list(op_mode)
+    value._value = "8"
+
+    second = run()
+
+    assert second["ok"] is True, second["summary"]
+    assert (second["data"]["devices_new"], second["data"]["devices_updated"],
+            second["data"]["devices_identical"]) == (0, 1, 1)
+    assert second["data"]["pending_import"] == []
+    with io.open(os.path.join(sync, SLAVE), encoding="utf-8") as f:
+        assert "c1/1627394048/Value = 8" in f.read()
+
+
+def test_an_export_leaves_an_unimported_device_edit_pending(monkeypatch,
+                                                            tmp_path):
+    # The same rule as a .st (SPEC 6.1): the disk moved since the last sync,
+    # so the file is somebody's work, waits for import, and the run is not ok.
+    project, master, slave = a_project()
+    run, sync = export_run(monkeypatch, tmp_path, project)
+    assert run()["ok"] is True
+    path = os.path.join(sync, SLAVE)
+    with io.open(path, encoding="utf-8") as f:
+        edited = f.read().replace("c1/1627394048/Value = 6",
+                                  "c1/1627394048/Value = 9")
+    with io.open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(edited + u"# edited by hand\n")
+
+    second = run()
+
+    assert second["ok"] is False
+    assert second["data"]["pending_import"] == [SLAVE]
+    assert second["data"]["devices_updated"] == 0
+    with io.open(path, encoding="utf-8") as f:
+        assert "c1/1627394048/Value = 9" in f.read()

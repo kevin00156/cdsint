@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — device files in the export's counts
+
+- **`export` says how many `.device` files it wrote.** The device pass
+  already rewrote a file whose device changed in the IDE and left a file
+  edited on disk in `pending_import`, but its counts went nowhere: a run
+  that wrote no device read the same as one that wrote them all. The result
+  now has `data.devices_new`, `data.devices_updated` and
+  `data.devices_identical`, and the summary line names them when the project
+  has EtherCAT devices. `new`, `updated`, `identical` and `total` are still
+  the objects' alone.
+
 ### 0.2.1 (2026-09-29) — a relative sync folder outside the project
 
 - **Every relative `sync_folder` is relative to the project file's

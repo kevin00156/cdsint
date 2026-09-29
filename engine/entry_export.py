@@ -82,6 +82,25 @@ def _export_one(obj, context, managers, project):
     return manager.export(obj, effective_type, rel_path, context), rel_path
 
 
+def _summary(counts, removed, failed, devices, pending_import, save_error):
+    """The one line a person reads. The devices get their own counts only
+    when there are any: they are not objects of the sync, and a project
+    with no EtherCAT master should read as it always has."""
+    summary = ("Updated: %d, Created: %d, Removed: %d, Failed: %d "
+               "(Identical: %d)" % (counts["updated"], counts["new"], removed,
+                                    failed, counts["identical"]))
+    if any(devices.values()):
+        summary += ("; Devices updated: %d, created: %d (identical: %d)"
+                    % (devices["updated"], devices["new"],
+                       devices["identical"]))
+    if pending_import:
+        summary += ", Waiting to be imported: " + ", ".join(pending_import)
+    if save_error:
+        summary += (" -- the export itself finished; only the IDE project"
+                    " was not saved: " + save_error)
+    return summary
+
+
 def _save_cache(export_dir, new_cache, context):
     """Calculate folder hashes (Merkle Tree) and save the updated cache."""
     if not new_cache:
@@ -199,7 +218,8 @@ def export_project(export_dir, values, projects_obj=None):
         counts["new"], counts["updated"], counts["identical"])
 
     # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
-    pending_import.extend(export_devices(project, export_dir, context, managers))
+    devices, waiting = export_devices(project, export_dir, context, managers)
+    pending_import.extend(waiting)
     # A file no object claims that the last sync did not leave that way is
     # somebody's work, so it waits for import rather than being deleted.
     removed_count, unsynced = cleanup_orphaned_files(
@@ -224,12 +244,8 @@ def export_project(export_dir, values, projects_obj=None):
     print("Completed at: " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
 
     exported_total = exported_new + exported_updated + exported_identical
-    summary = "Updated: " + str(exported_updated) + ", Created: " + str(exported_new) + ", Removed: " + str(removed_count) + ", Failed: " + str(exported_failed) + " (Identical: " + str(exported_identical) + ")"
-    if pending_import:
-        summary += ", Waiting to be imported: " + ", ".join(pending_import)
-    if save_error:
-        summary += (" -- the export itself finished; only the IDE project"
-                    " was not saved: " + save_error)
+    summary = _summary(counts, removed_count, exported_failed, devices,
+                       pending_import, save_error)
     log_info("Export complete! " + summary + " Time elapsed: " + elapsed_text)
 
     # Record sync version; metadata file is written in debug mode only
@@ -266,7 +282,10 @@ def export_project(export_dir, values, projects_obj=None):
                         identical=exported_identical, removed=removed_count,
                         failed=len(missing), total=exported_total,
                         failed_objects=missing,
-                        pending_import=pending_import)
+                        pending_import=pending_import,
+                        devices_new=devices["new"],
+                        devices_updated=devices["updated"],
+                        devices_identical=devices["identical"])
 
 
 def main():

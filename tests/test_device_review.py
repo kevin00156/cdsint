@@ -106,5 +106,5 @@ def test_a_pending_device_keeps_its_cache_entry_for_the_export_after(tmp_path):
                    normalize_path(rel): entry}}}
     managers = classify.create_import_managers(project)
     assert device_pass.export_devices(project, str(tmp_path), context,
-                                      managers) == [rel]
+                                      managers)[1] == [rel]
     assert context["new_cache"][normalize_path(rel)] == entry

@@ -496,6 +496,11 @@ c1/1627394048/Value = 6                             # Op mode
 map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]  # Error Code, %IW5
 ```
 
+`export` rewrites a device's file when the IDE's settings differ from it, and
+counts the device files apart from the objects: `data.devices_new`,
+`data.devices_updated`, `data.devices_identical`. A file you edited and have
+not imported is left alone and named in `data.pending_import`, as a `.st` is.
+
 Change a value or a `map` line and run `import`; delete a `map` line to unmap
 the channel. Import applies it only when the settings file has
 `"devices": true`: most device settings turn the next download into a full

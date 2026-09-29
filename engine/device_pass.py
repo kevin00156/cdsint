@@ -152,8 +152,14 @@ def find_changes(base_dir, projects_obj, values):
 
 
 def export_devices(project, export_dir, context, managers):
-    """Write every device's file. The paths left alone because they hold an
-    edit nobody imported (SPEC 6.1)."""
+    """Write every device's file: (counts, pending).
+
+    counts is {"new", "updated", "identical"}, apart from the objects', so
+    whether a device file was written is a number in the result rather than
+    something only its mtime says. pending is the paths left alone because
+    they hold an edit nobody imported (SPEC 6.1).
+    """
+    counts = {"new": 0, "updated": 0, "identical": 0}
     pending = []
     manager = managers[TYPE_GUIDS["device"]]
     cached = (context.get("cache_data") or {}).get("objects", {})
@@ -165,8 +171,12 @@ def export_devices(project, export_dir, context, managers):
         if key in cached:
             context["new_cache"][key] = cached[key]
         try:
-            if manager.export(device, None, rel, context) == "pending":
-                pending.append(rel)
+            verdict = manager.export(device, None, rel, context)
         except Exception as exc:
             unhandled.note(device, exc)
-    return pending
+            continue
+        if verdict == "pending":
+            pending.append(rel)
+        else:
+            counts[verdict] += 1
+    return counts, pending

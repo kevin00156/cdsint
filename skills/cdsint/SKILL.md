@@ -235,6 +235,8 @@ change is involved.
 export adds `data.pending_import`: files you edited on disk and have not
 imported yet. It does not overwrite those, and the run is not ok. That is not
 an error — run `import` first, or delete the file if you do not want the edit.
+`.device` files are counted apart from the objects, in `data.devices_new`,
+`data.devices_updated` and `data.devices_identical`.
 
 ## Flags answer the questions a person would have
 

@@ -1240,6 +1240,14 @@ map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
    download stops the application; this is the caller's warning before any
    `plc` command.
 
+**Export** writes a device's file whenever what the IDE holds differs from
+it, under the same rule as a `.st` (6.1): a file changed on disk since the
+last sync is somebody's unimported work, so it is left unwritten, named in
+`data.pending_import`, and the run is not ok. The devices are counted apart
+from the objects, in `data.devices_new`, `data.devices_updated` and
+`data.devices_identical`, and in the summary line when there are any;
+`new`, `updated`, `identical` and `total` stay the object sync's.
+
 **Permission.** A new settings key, `devices` (boolean, default `false`).
 Without it, export and compare work as usual and import applies nothing to a
 device: each device whose file differs is a failure by path saying that
