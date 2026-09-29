@@ -75,6 +75,7 @@ def test_a_bom_and_crlf_line_ends_read_the_same(tmp_path):
     found = trace_samples.read_csv(path)
     assert found["header"]["Flags"] == "32"
     assert found["variables"] == [{"name": "GVL.a",
+                                   "settings": {"Class": "7", "Data": ""},
                                    "timestamps": [0, 1000, 2000],
                                    "values": ["0", "0", "0"]}]
 

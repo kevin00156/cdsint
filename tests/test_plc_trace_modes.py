@@ -69,6 +69,18 @@ def test_the_buffers_are_set_after_the_names_and_before_the_download():
     assert last_read < kinds.index("set_buffers") < kinds.index("download")
 
 
+def test_the_editor_that_downloads_is_opened_after_the_buffers_are_set():
+    """An editor keeps the buffer sizes it was opened with: one opened
+    earlier, to read the types, downloaded the default 100-entry ring
+    (docs/trace-research.md 14)."""
+    bench = bench_with()
+    bench.buffers = LoggedBuffers(bench.log)
+    bench.run()
+    kinds = [call[0] for call in bench.log]
+    last_open = max(i for i, kind in enumerate(kinds) if kind == "open_editor")
+    assert kinds.index("set_buffers") < last_open < kinds.index("download")
+
+
 def test_a_ring_over_trace_memory_mb_is_refused_before_the_download():
     # 1 ms for an hour: 3600000 entries of 12 + 4 + 2 bytes, about 62 MB.
     bench = bench_with(settings_file={"trace_memory_mb": 16})
@@ -77,7 +89,7 @@ def test_a_ring_over_trace_memory_mb_is_refused_before_the_download():
     summary = result["summary"]
     assert "61.8 MB" in summary and "16 MB" in summary
     assert "trace_memory_mb" in summary
-    assert bench.calls("download", "start", "open_editor") == []
+    assert bench.calls("download", "start") == []
     assert bench.buffers.set_to is None and bench.calls("logout")
     assert result["data"]["buffer"]["controller_bytes"] == 3600000 * 18
 
@@ -95,7 +107,7 @@ def test_a_variable_of_unknown_type_is_refused_by_name():
     assert result["data"]["failed_objects"] == ["PRG_AxisControl._iOvrZone"]
     assert "PRG_AxisControl._iOvrZone read back as '3' (type unknown)" in \
         result["summary"]
-    assert bench.calls("download", "open_editor") == []
+    assert bench.calls("download") == []
     assert bench.buffers.set_to is None
 
 
@@ -155,7 +167,8 @@ def test_a_trigger_that_fires_ends_the_wait_and_is_not_stopped_again():
     # it stopped itself on the third poll, far short of 10 s of holds
     assert len(bench.calls("hold")) == 2
     assert bench.calls("stop") == []
-    assert len(bench.calls("save")) == 2
+    # The configuration before the download, then the two files.
+    assert len(bench.calls("save")) == 3
 
 
 def test_a_trigger_run_reports_exactly_the_spec_shape_plus_trigger():
@@ -264,3 +277,59 @@ def test_a_condition_with_a_judging_field_is_refused_before_anything():
     assert not result["ok"]
     assert "cannot be given with record_condition" in result["summary"]
     assert bench.tracer.created == []
+
+
+# --------------------------------------------------------------------------
+# Enumerations
+# --------------------------------------------------------------------------
+
+ZONE = "PRG_AxisControl._iOvrZone"
+
+
+def test_an_enumeration_is_recorded_as_the_base_type_the_ide_gives():
+    # The fixture's CSV gives this variable class 7, size 2: an INT.
+    bench = bench_with(values=values(**{ZONE: "E_Zone.OUTSIDE"}))
+    result = bench.run()
+    assert result["ok"], result["summary"]
+    rows = dict((row["name"], row["type"])
+                for row in result["data"]["variables"])
+    assert rows[ZONE] == "INT"
+    assert any("enumeration E_Zone" in note and "base type INT" in note
+               for note in result["data"]["notes"])
+    plain = bench_with().run()
+    assert result["data"]["buffer"] == plain["data"]["buffer"]
+
+
+def test_the_types_are_read_before_anything_is_downloaded():
+    bench = bench_with(values=values(**{ZONE: "E_Zone.OUTSIDE"}))
+    bench.run()
+    first_save = bench.calls("save")[0]
+    assert first_save[1].endswith("configured.csv")
+    assert bench.log.index(first_save) < bench.log.index(("download",))
+
+
+def test_an_enumeration_the_ide_does_not_size_is_refused_by_name():
+    csv = plc_fakes.read_data(plc_fakes.SAMPLE_CSV).replace(
+        u"1.Class; 7", u"1.Class; 25")
+    bench = bench_with(values=values(**{ZONE: "E_Zone.OUTSIDE"}),
+                       csv_text=csv)
+    result = bench.run()
+    assert not result["ok"]
+    assert result["data"]["failed_objects"] == [ZONE]
+    assert "a member of enumeration E_Zone" in result["summary"]
+    assert "class 25, size 2" in result["summary"]
+    assert bench.calls("download") == []
+    assert bench.buffers.set_to is None
+
+
+def test_a_configuration_that_cannot_be_saved_downloads_nothing():
+    bench = bench_with()
+
+    def refuse(path):
+        raise IOError("disk full")
+    bench.tracer.api.editor.save = refuse
+    result = bench.run()
+    assert not result["ok"]
+    assert "could not be saved and read back" in result["summary"]
+    assert "disk full" in result["summary"]
+    assert bench.calls("download") == []

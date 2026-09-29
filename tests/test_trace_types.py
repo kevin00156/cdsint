@@ -55,45 +55,137 @@ SHOWN = {"prg_x.a": "INT#3", "gvl.b": "UDINT#0", "gvl.cnt": "UDINT#7",
 
 
 def test_sized_variables_are_refused_nothing():
-    assert trace_types.refusals(job(), SHOWN) == []
+    assert trace_types.refusals(job(), SHOWN, {}) == []
 
 
 def test_a_variable_with_no_type_is_refused_by_name():
-    found = trace_types.refusals(job(variables=["PRG_X.a", "GVL.s"]), SHOWN)
+    found = trace_types.refusals(job(variables=["PRG_X.a", "GVL.s"]), SHOWN, {})
     assert [name for name, _why in found] == ["GVL.s"]
     assert "type unknown" in found[0][1]
     assert "'text'" in found[0][1]
 
 
 def test_a_type_without_a_size_is_refused_by_name():
-    found = trace_types.refusals(job(variables=["GVL.e"]), SHOWN)
+    found = trace_types.refusals(job(variables=["GVL.e"]), SHOWN, {})
     assert found[0][0] == "GVL.e" and "type E_STATE" in found[0][1]
 
 
 def test_a_numeric_trigger_is_accepted():
     trigger = {"variable": "GVL.cnt"}
-    assert trace_types.refusals(job(trigger=trigger), SHOWN) == []
+    assert trace_types.refusals(job(trigger=trigger), SHOWN, {}) == []
 
 
 @pytest.mark.parametrize("variable", ["GVL.x", "GVL.flag", "GVL.t", "GVL.s"])
 def test_a_trigger_that_is_not_numeric_is_refused(variable):
-    found = trace_types.refusals(job(trigger={"variable": variable}), SHOWN)
+    found = trace_types.refusals(job(trigger={"variable": variable}), SHOWN, {})
     assert found[0][0] == variable
     assert "trigger needs a numeric type" in found[0][1]
 
 
 @pytest.mark.parametrize("variable", ["GVL.x", "GVL.flag"])
 def test_a_bool_condition_is_accepted(variable):
-    assert trace_types.refusals(job(record_condition=variable), SHOWN) == []
+    assert trace_types.refusals(job(record_condition=variable), SHOWN, {}) == []
 
 
 @pytest.mark.parametrize("variable", ["GVL.cnt", "GVL.s", "GVL.t"])
 def test_a_condition_that_is_not_bool_is_refused(variable):
-    found = trace_types.refusals(job(record_condition=variable), SHOWN)
+    found = trace_types.refusals(job(record_condition=variable), SHOWN, {})
     assert found[0][0] == variable and "not a BOOL" in found[0][1]
 
 
 def test_names_are_looked_up_without_case():
     found = trace_types.refusals(job(variables=["prg_X.A"],
-                                     trigger={"variable": "gvl.CNT"}), SHOWN)
+                                     trigger={"variable": "gvl.CNT"}), SHOWN, {})
     assert found == []
+
+
+# --------------------------------------------------------------------------
+# Enumerations: the literal names the type, the IDE names its base
+# --------------------------------------------------------------------------
+
+# Every class and size the IDE's saved trace configuration gave an
+# enumeration of each base type on the bench (docs/trace-research.md 14).
+MEASURED = [(2, 1, "BYTE"), (3, 2, "WORD"), (4, 4, "DWORD"), (5, 8, "LWORD"),
+            (6, 1, "SINT"), (7, 2, "INT"), (8, 4, "DINT"), (9, 8, "LINT"),
+            (10, 1, "USINT"), (11, 2, "UINT"), (12, 4, "UDINT"),
+            (13, 8, "ULINT")]
+
+
+def configured(klass, size):
+    return {"Class": str(klass), "Size": str(size), "GraphType": "1"}
+
+
+@pytest.mark.parametrize("shown, enum", [
+    ("E_TraceInt.LOCKED", "E_TraceInt"),
+    ("SMC_AXIS_STATE.power_off", "SMC_AXIS_STATE"),
+    ("Lib.E_Mode.RUN", "Lib.E_Mode"),
+    (" E_Mode.RUN ", "E_Mode"),
+])
+def test_a_member_names_its_enumeration(shown, enum):
+    assert trace_types.enum_of(shown) == enum
+    assert trace_types.type_of(shown) is None
+
+
+@pytest.mark.parametrize("shown", ["INT#3", "TRUE", "3", "1.5", "'a.b'",
+                                   "E_State#Idle", "", None, "E_Mode."])
+def test_anything_else_is_no_member(shown):
+    assert trace_types.enum_of(shown) is None
+
+
+@pytest.mark.parametrize("klass, size, kind", MEASURED)
+def test_every_base_type_the_ide_reported_is_known(klass, size, kind):
+    assert trace_types.base_of(configured(klass, size)) == kind
+
+
+@pytest.mark.parametrize("reported", [
+    configured(7, 4),               # an INT's class with a DINT's size
+    configured(25, 2),              # a class no enumeration is based on
+    configured("x", 2),
+    {"Size": "2"}, {}, None,
+])
+def test_a_base_the_ide_did_not_state_plainly_is_none(reported):
+    assert trace_types.base_of(reported) is None
+
+
+def test_a_member_is_sized_by_its_base_and_a_literal_by_itself():
+    assert trace_types.recorded_type("E_X.A", configured(8, 4)) == "DINT"
+    assert trace_types.recorded_type("E_X.A", None) is None
+    # A value that is no member reads as its base type's literal.
+    assert trace_types.recorded_type("INT#3", None) == "INT"
+
+
+ENUMS = dict(SHOWN, **{"prg.e": "E_TraceInt.LOCKED",
+                       "prg.lib": "SMC_AXIS_STATE.power_off"})
+
+
+def test_an_enumeration_with_a_reported_base_is_refused_nothing():
+    reported = {"prg.e": configured(7, 2), "prg.lib": configured(7, 2)}
+    assert trace_types.refusals(job(variables=["PRG.e", "PRG.lib"]), ENUMS,
+                                reported) == []
+
+
+def test_an_enumeration_the_ide_gave_no_base_is_refused_as_one():
+    found = trace_types.refusals(job(variables=["PRG.e"]), ENUMS, {})
+    assert [name for name, _why in found] == ["PRG.e"]
+    assert "a member of enumeration E_TraceInt" in found[0][1]
+    assert "no class or size" in found[0][1]
+    assert "cannot be estimated" in found[0][1]
+
+
+def test_an_enumeration_whose_class_and_size_disagree_is_refused():
+    found = trace_types.refusals(job(variables=["PRG.e"]), ENUMS,
+                                 {"prg.e": configured(7, 4)})
+    assert "class 7, size 4" in found[0][1]
+
+
+def test_an_enumeration_is_no_trigger_even_with_a_base():
+    found = trace_types.refusals(job(trigger={"variable": "PRG.e"}), ENUMS,
+                                 {"prg.e": configured(7, 2)})
+    assert found[0][0] == "PRG.e"
+    assert "enumeration E_TraceInt" in found[0][1]
+    assert "trigger needs a numeric type" in found[0][1]
+
+
+def test_an_enumeration_is_no_record_condition():
+    found = trace_types.refusals(job(record_condition="PRG.e"), ENUMS, {})
+    assert found[0][0] == "PRG.e" and "not a BOOL" in found[0][1]

@@ -37,11 +37,13 @@ class Unreadable(ValueError):
 
 
 def read_csv(path):
-    """{"header": {key: value}, "variables": [{name, timestamps, values}]}.
+    """{"header": {key: value},
+        "variables": [{name, settings, timestamps, values}]}.
 
     The header is every `key; value` line before the first variable. A
-    variable's own settings lines (`0.Class; 12` ...) are not kept: nothing
-    here uses them, and the .trace file carries them in full.
+    variable's own lines (`0.Class; 12` ...) are its settings, keyed without
+    the index: the class and size are the IDE's own word on its type, which
+    is where an enumeration's base type comes from (trace_types.base_of).
     """
     header = {}
     variables = []
@@ -64,10 +66,13 @@ def _take(line, number, header, variables):
         raise Unreadable("line %d is not 'key; value': %r" % (number, line))
     key, value = [part.strip() for part in line.split(u";", 1)]
     if VARIABLE.match(key):
-        variables.append({"name": value, "timestamps": [], "values": []})
+        variables.append({"name": value, "settings": {}, "timestamps": [],
+                          "values": []})
     elif not variables:
         header[key] = value
-    elif not SETTING.match(key):
+    elif SETTING.match(key):
+        variables[-1]["settings"][SETTING.sub(u"", key)] = value
+    else:
         raise Unreadable("line %d is neither a sample nor a setting of %s: %r"
                          % (number, variables[-1]["name"], line))
 

@@ -62,8 +62,8 @@ def test_the_calls_come_in_the_order_spec_6_8_gives():
     order = [call[0] for call in bench.log if call[0] != "hold"]
     assert order == [
         "create", "login", "read_value", "read_value", "open_editor",
-        "answer set", "download", "answer removed", "start", "stop",
-        "save", "save", "logout"]
+        "save", "open_editor", "answer set", "download", "answer removed",
+        "start", "stop", "save", "save", "logout"]
     assert ("login", "keep", False) in bench.log
 
 

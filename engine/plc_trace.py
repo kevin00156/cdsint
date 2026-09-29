@@ -21,7 +21,7 @@ from __future__ import print_function
 
 import os
 
-from cds.core import settings, trace_job, trace_run, trace_types
+from cds.core import settings, trace_job, trace_run, trace_samples, trace_types
 from engine import entry, plc_crc, plc_link, plc_trace_verdict, unhandled
 from engine.plc_trace_setup import TraceSetup
 from engine.plc_trip import RUNNING, Trip, first_problem, one_line
@@ -44,6 +44,10 @@ ALREADY_LOGGED_IN = "already logged in"
 # the file goes to the trip's workspace instead of beside the other outputs.
 WORKSPACE_CSV = "trace.csv"
 
+# The trace's configuration, saved before the download so the variables'
+# types can be read from it; also in the workspace.
+CONFIGURED_CSV = "configured.csv"
+
 # The report's own keys (SPEC 6.8), beside the ones every plc command has.
 # A run with a trigger adds "trigger".
 REPORT_KEYS = ("controller", "crc", "task", "period_us", "resolution",
@@ -59,7 +63,8 @@ class TraceTrip(TraceSetup):
         self.editor = None
         self.csv_path = None
         self.shown = {}             # lower-case name -> what read_value said
-        self.types = {}             # lower-case name -> its IEC type, or None
+        self.configured = {}        # lower-case name -> its settings, per IDE
+        self.types = {}             # lower-case name -> the type that sizes it
         self.end_state = None       # the packet state when the wait ended
 
     def recording(self):
@@ -72,7 +77,8 @@ class TraceTrip(TraceSetup):
         self.session = self.online.create_online_application(self.application)
         try:
             return self._log_in(option.Keep) or first_problem([
-                self.names_resolve, self.types_fit, self.memory_fits,
+                self.names_resolve, self.types_reported, self.types_fit,
+                self.memory_fits,
                 self.application_runs, self.size_the_buffers, self.record,
                 self.save])
         finally:
@@ -111,23 +117,57 @@ class TraceTrip(TraceSetup):
                 failed.append("%s (%s)" % (name, one_line(exc)))
                 continue
             self.shown[name.lower()] = shown
-            self.types[name.lower()] = trace_types.type_of(shown)
         if failed:
             return ("%d variable(s) do not resolve on the controller: %s. "
                     "Nothing was downloaded" % (len(failed), ", ".join(failed)))
         self.note("every variable resolves on the controller")
         return None
 
+    def types_reported(self):
+        """What the IDE itself gives each variable: its class and size.
+
+        Read from the trace's configuration, saved before anything is
+        downloaded. An enumeration's value names no type, and this is the
+        one place its base type is known for certain, a library's type
+        included (research 14). This editor is not the one step 7 downloads
+        with: an editor keeps the buffer sizes it was opened with, and these
+        are not set yet.
+        """
+        path = os.path.join(self.workspace(), CONFIGURED_CSV)
+        try:
+            self.api.open_editor().save(plc_crc.forget(path))
+            saved = trace_samples.read_csv(path)
+        except Exception as exc:
+            return ("the trace's configuration could not be saved and read "
+                    "back for the variables' types: %s. Nothing was "
+                    "downloaded" % one_line(exc))
+        self.configured = dict((each["name"].lower(), each["settings"])
+                               for each in saved["variables"])
+        return None
+
     def types_fit(self):
         """Each name reads back as a type its role takes (SPEC 6.8)."""
-        refused = trace_types.refusals(self.job, self.shown)
+        refused = trace_types.refusals(self.job, self.shown, self.configured)
         for name, why in refused:
             unhandled.note(name, why)
         if refused:
             return ("%d variable(s) cannot be used as they read back: %s. "
                     "Nothing was downloaded" % (len(refused), "; ".join(
                         "%s %s" % pair for pair in refused)))
+        for name in self.job["variables"]:
+            self._sized(name)
         return None
+
+    def _sized(self, name):
+        key = name.lower()
+        shown = self.shown[key]
+        self.types[key] = trace_types.recorded_type(shown,
+                                                    self.configured.get(key))
+        enum = trace_types.enum_of(shown)
+        if enum:
+            self.note("%s is of enumeration %s, which the IDE records as its "
+                      "base type %s: the files hold its numbers, not the "
+                      "members' names" % (name, enum, self.types[key]))
 
     def memory_fits(self):
         """The controller's ring fits under trace_memory_mb. None if it does."""

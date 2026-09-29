@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### 0.3.0 (2026-09-29) — version, and a way to take it out
+### 0.3.0 (2026-09-29) — version, a way to take it out, and enumerations in a trace
+
+- **`plc trace` records enumerations.** They used to refuse the whole run,
+  because the value read back (`E_Mode.RUN`) names no size. The base type
+  now comes from the trace configuration the IDE saves before the download,
+  so a library's enumeration works too, and the variable is recorded and
+  reported as that type. The files hold the numbers. An enumeration still
+  cannot be the trigger or the record condition.
 
 - **`cdsint version`** prints which cdsint this is, where it runs from and
   whether `setup.ps1` put it there, and the Python and Windows versions. The
