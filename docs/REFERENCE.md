@@ -63,6 +63,7 @@ release or an IDE whose menu does not have cdsint in it yet — one installed
 after cdsint was, usually. Neither happens by itself:
 
 ```
+cdsint version    # which one this is, where it runs from, on what Python
 cdsint update     # the newest release, and any IDE added since
 cdsint link       # just the IDE menus; as administrator for Delta
 ```
@@ -86,6 +87,27 @@ installed without `-e`, or from a git URL, still answers `installs`, `list` and
 every `--target` command, but a `--project` command refuses before it starts an
 IDE, and says so. A clone updates with `git pull`; it never checks for
 releases.
+
+### Taking it out
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1))) -Uninstall
+```
+
+Everything the install did, undone in the order that keeps a failure harmless:
+`cdsint unlink` takes cdsint out of every IDE's Scripts menu, then the `cdsint`
+command is removed from pip, then the body is deleted with the state cdsint
+keeps beside it in `%LOCALAPPDATA%\cdsint`. Each step runs only once the one
+before it worked, because a body deleted while a menu still points at it is a
+menu entry that fails on every click. Anything else in that directory was put
+there by somebody else, and stays.
+
+It refuses while any CODESYS-family IDE is running, and needs an elevated shell
+when Delta has cdsint in its menu. A menu pointing at another cdsint, a clone
+say, is left alone, and so is a pip command that runs another tree. With
+`-Clone C:\path\to\cdsint` it takes out that clone's menus and command and
+leaves the clone. A cdsint older than 0.3.0 has no `unlink`: `cdsint update`
+first.
 
 ### How the menu finds the code
 
@@ -138,7 +160,9 @@ Every command that touches a project takes one of two forms, and never both:
 | `installs` | — | — | the IDEs on this machine, with profile names and ScriptDirs |
 | `list` | — | — | which IDEs are listening; it asks about this machine, not about one IDE |
 | `update` | — | — | replace a downloaded install with the newest release, once it matches its published SHA-256, and link any IDE added since |
+| `version` | — | — | which cdsint this is, where it runs from, and on what Python and Windows; paste it into a bug report |
 | `link [--script-dir D]` | — | — | put this install in every IDE's Scripts menu |
+| `unlink [--script-dir D]` | — | — | take this install out of every IDE's Scripts menu; a menu pointing at another cdsint stays |
 | `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back in, disk wins |

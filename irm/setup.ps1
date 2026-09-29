@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Install cdsint into every CODESYS-family IDE on this machine.
+    Install cdsint into every CODESYS-family IDE on this machine, or take it
+    out again.
 
 .DESCRIPTION
     The IDE builds its Scripts menu by scanning one directory tree for .py
@@ -34,18 +35,32 @@
 .PARAMETER List
     Print the IDEs and ScriptDirs found, and change nothing.
 
+.PARAMETER Uninstall
+    Take cdsint out of every IDE's Scripts menu, remove the cdsint command,
+    and delete the downloaded body with the state cdsint keeps beside it.
+    With -Clone, the clone's menus and command go and the clone stays. With
+    -ScriptDir, only that ScriptDir's menu is taken out: pass the one the
+    install was given.
+
 .EXAMPLE
     irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1 | iex
 
 .EXAMPLE
     .\setup.ps1 -Clone C:\path\to\cdsint
+
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1))) -Uninstall
 #>
-[CmdletBinding()]
+# One parameter set per thing this does, so that PowerShell refuses what
+# makes no sense together (-Uninstall -Version, -List -Uninstall) before
+# anything runs.
+[CmdletBinding(DefaultParameterSetName = "Install")]
 param(
     [string] $ScriptDir,
     [string] $Clone,
-    [string] $Version = "latest",
-    [switch] $List
+    [Parameter(ParameterSetName = "Install")] [string] $Version = "latest",
+    [Parameter(ParameterSetName = "List")] [switch] $List,
+    [Parameter(ParameterSetName = "Uninstall")] [switch] $Uninstall
 )
 
 $RepoUrl = "https://github.com/kevin00156/cdsint"
@@ -94,7 +109,7 @@ function Get-Body {
     # Only an engine already here can be loaded in an IDE; a first install
     # has nothing to mix with, and must not be refused over an open IDE.
     if ((Test-Path $root) -or (Test-FlatBody -AppDir $appDir)) {
-        Assert-NoIdeRunning -Tree $inner
+        Assert-NoIdeRunning -Tree $inner -Why "One that has run a cdsint script keeps the old engine loaded, and would mix it with the new one."
     }
     if (Test-Path $root) {
         try {
@@ -195,13 +210,13 @@ function Test-FlatBody {
 
 function Assert-NoIdeRunning {
     <#
-        The check `cdsint update` makes before its swap: an IDE that has run
-        a cdsint script keeps the old engine loaded, and would mix it with
-        the new one. Asked of the new tree's own cdsint/update.py, so the
-        list of IDE executables is kept in one place; not knowing what runs
-        is a refusal too, never "nothing runs".
+        The check `cdsint update` makes before its swap, made here before a
+        swap and before an uninstall; $Why is the caller's reason, which is
+        not the same for the two. Asked of the tree's own cdsint/update.py,
+        so the list of IDE executables is kept in one place; not knowing
+        what runs is a refusal too, never "nothing runs".
     #>
-    param([string] $Tree)
+    param([string] $Tree, [string] $Why)
 
     $probe = "import sys; sys.path.insert(0, sys.argv[1]); from cdsint import update; print(', '.join(update.running_ides()))"
     $running = (& python -c $probe $Tree) -join ""
@@ -209,7 +224,7 @@ function Assert-NoIdeRunning {
         throw "Could not check whether a CODESYS-family IDE is running (it said why above), so nothing was changed."
     }
     if ($running) {
-        throw "Close every CODESYS-family IDE first (running: $running). One that has run a cdsint script keeps the old engine loaded, and would mix it with the new one. Nothing was changed."
+        throw "Close every CODESYS-family IDE first (running: $running). $Why Nothing was changed."
     }
 }
 
@@ -351,6 +366,102 @@ function Install-Cdsint {
 }
 
 
+function Uninstall-Cdsint {
+    <#
+        The install undone, as an exit code: the menus, then pip's record,
+        then the body and the state beside it, each only once the one before
+        it worked. The order is the point. A body deleted while a junction
+        still points at it is a Scripts menu entry that fails on every click,
+        which is what an uninstall is for preventing.
+
+        Under -Clone the tree is somebody's working copy, and whatever of
+        %LOCALAPPDATA%\cdsint is there may belong to a downloaded body too,
+        so both stay.
+    #>
+    Write-Host "--- cdsint uninstall ---" -ForegroundColor Cyan
+
+    if (-not (Test-Python)) {
+        Write-Host "[!] Uninstalling runs the installed cdsint's own 'unlink', which needs Python 3.11 or later as 'python' on PATH." -ForegroundColor Red
+        return 1
+    }
+    $body = if ($Clone) { $Clone } else { Join-Path $env:LOCALAPPDATA "cdsint\body" }
+    if (-not (Test-Path (Join-Path $body "cdsint\cli.py"))) {
+        Write-Host "[!] There is no cdsint at $body to uninstall." -ForegroundColor Red
+        return 1
+    }
+    $body = (Resolve-Path $body).Path
+    Assert-NoIdeRunning -Tree $body -Why "One that is open keeps cdsint in its Scripts menu until it restarts, and every click on it would fail once the body is gone."
+
+    $unlinkArgs = @("unlink")
+    if ($ScriptDir) { $unlinkArgs += @("--script-dir", $ScriptDir) }
+    $unlinked = Invoke-Cdsint -Body $body -Arguments $unlinkArgs
+    if ($unlinked -ne 0) {
+        Write-Host "[!] 'cdsint unlink' did not take cdsint out of every Scripts menu; it said why above, and nothing else was removed. A cdsint older than 0.3.0 has no unlink: run 'cdsint update' first." -ForegroundColor Red
+        return $unlinked
+    }
+    if (-not (Remove-PipRecord -Body $body)) { return 1 }
+    if (-not $Clone) { Remove-AppState -AppDir (Split-Path $body) }
+    Write-Host "[+] cdsint is uninstalled; restart any IDE that was open." -ForegroundColor Green
+    return 0
+}
+
+
+function Remove-PipRecord {
+    <#
+        pip's cdsint goes only when it is this body's. setup.ps1 installs with
+        -e, so pip's record names the tree it runs; the last install wins, and
+        a record naming another tree -- a clone installed after the download,
+        say -- is that tree's command. False when pip failed to remove it:
+        the body is then still what the command runs, and stays.
+
+        pip show is not given 2>: in Windows PowerShell 5.1 a redirected
+        native stderr line becomes an error record, which "Stop" throws.
+    #>
+    param([string] $Body)
+
+    $shown = & python -m pip show cdsint
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[*] pip has no cdsint to remove." -ForegroundColor Cyan
+        return $true
+    }
+    $prefix = "Editable project location:"
+    $line = @($shown | Where-Object { $_.StartsWith($prefix) }) -join ""
+    $location = if ($line) { $line.Substring($prefix.Length).Trim() } else { "" }
+    $same = $location -and ([IO.Path]::GetFullPath($location).TrimEnd("\") -eq [IO.Path]::GetFullPath($Body).TrimEnd("\"))
+    if (-not $same) {
+        Write-Host "[*] The cdsint command pip has is not this one's, so it stays: pip show cdsint says where it is." -ForegroundColor Yellow
+        return $true
+    }
+    & python -m pip uninstall --yes --quiet cdsint | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[!] pip could not remove the cdsint command; it said why above, and $Body was left in place." -ForegroundColor Red
+        return $false
+    }
+    return $true
+}
+
+
+function Remove-AppState {
+    <#
+        What cdsint keeps in %LOCALAPPDATA%\cdsint, by name: the body and the
+        two a failed swap can leave beside it, the registrations of the IDEs
+        that were listening, the status window's place, and the day's update
+        check. Anything else there somebody else put there, so it stays, and
+        the directory with it.
+    #>
+    param([string] $AppDir)
+
+    $owned = @("body", "body.new", "body.old", "instances", "statusform.json", "update_check.json")
+    foreach ($name in $owned) { Remove-Leftover -Path (Join-Path $AppDir $name) }
+    $rest = @(Get-ChildItem $AppDir -Force)
+    if ($rest.Count -eq 0) {
+        Remove-Leftover -Path $AppDir
+        return
+    }
+    Write-Host "[*] Left $AppDir, which holds files cdsint did not put there: $($rest.Name -join ', ')" -ForegroundColor Yellow
+}
+
+
 # A script block of its own, because `irm ... | iex` runs this in the
 # caller's shell and a preference set out here would stay set there after
 # the install. The console's encoding belongs to the process, not to a scope,
@@ -361,7 +472,7 @@ $code = & {
     $encoding = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        Install-Cdsint
+        if ($Uninstall) { Uninstall-Cdsint } else { Install-Cdsint }
     } finally {
         [Console]::OutputEncoding = $encoding
     }

@@ -150,6 +150,68 @@ def test_no_body_is_swapped_under_a_running_ide(script):
     assert "update.running_ides()" in function(script, "Assert-NoIdeRunning")
 
 
+def test_uninstall_deletes_only_after_the_menus_and_pip_are_out(script):
+    """A body deleted under a live junction is a menu entry that fails on
+    every click, which is what an uninstall is for preventing."""
+    undo = function(script, "Uninstall-Cdsint")
+    checked = undo.index("Assert-NoIdeRunning -Tree $body")
+    unlinked = undo.index('$unlinkArgs = @("unlink")')
+    stopped = undo.index("return $unlinked")
+    pip = undo.index("Remove-PipRecord -Body $body")
+    deleted = undo.index("Remove-AppState")
+    assert checked < unlinked < stopped < pip < deleted
+    assert "if (-not (Remove-PipRecord -Body $body)) { return 1 }" in undo
+
+
+def test_uninstall_leaves_a_clone_and_its_neighbours(script):
+    undo = function(script, "Uninstall-Cdsint")
+    assert "if (-not $Clone) { Remove-AppState" in undo
+
+
+def test_pip_forgets_only_this_bodys_command(script):
+    pip = function(script, "Remove-PipRecord")
+    compared = pip.index("$same = ")
+    assert "Editable project location:" in pip[:compared]
+    assert compared < pip.index("pip uninstall")
+    assert "$shown = & python -m pip show cdsint\n" in pip
+
+
+def test_uninstall_deletes_what_cdsint_writes_and_nothing_else(
+        script, tmp_path, monkeypatch):
+    """The names are written twice, once per language; this keeps them one.
+
+    Anything in %LOCALAPPDATA%\\cdsint not on the list is somebody else's.
+    """
+    from cds.core import ipc
+    from cds.ide import statusform
+    from cdsint import reminders
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv(ipc.ROOT_ENV, raising=False)
+    home = release.home()
+    written = [release.body_root(), ipc.default_root(),
+               statusform.placement_path(), reminders._state_path()]
+    assert all(os.path.dirname(path) == home for path in written)
+    names = [os.path.basename(path) for path in written]
+    names += [os.path.basename(release.body_root()) + suffix
+              for suffix in (".new", ".old")]
+    owned = re.search(r"\$owned = @\(([^)]*)\)",
+                      function(script, "Remove-AppState")).group(1)
+    assert sorted(re.findall(r'"([^"]+)"', owned)) == sorted(names)
+    body = function(script, "Get-Body")
+    assert '$staging = "$root.new"' in body
+    assert '$retired = "$root.old"' in body
+
+
+def test_uninstall_and_install_do_not_mix(script):
+    """-Uninstall with -Version or -List is refused by PowerShell itself."""
+    assert '[Parameter(ParameterSetName = "Uninstall")] [switch] $Uninstall' \
+        in script
+    assert '[Parameter(ParameterSetName = "List")] [switch] $List' in script
+    tail = script[script.index("$code = & {"):]
+    assert "if ($Uninstall) { Uninstall-Cdsint } else { Install-Cdsint }" \
+        in tail
+
+
 def test_the_flat_body_goes_only_once_the_new_one_is_in(script):
     """It was deleted before the move, so a move that failed left no body."""
     body = function(script, "Get-Body")

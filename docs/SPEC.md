@@ -347,7 +347,9 @@ mutually exclusive, and argparse blocks them directly.
 | `installs` | n/a | n/a | list the IDEs on this machine, their profile names, and whether they need admin |
 | `list` | n/a | n/a | list the IDEs that are listening. It asks "who is listening", not about one IDE, so it takes neither form |
 | `update` | n/a | n/a | replace a body `irm/setup.ps1` downloaded with the newest release, checked against its published SHA-256 (8), then run the new body's own `link` (D17). Refuses on a clone and while any CODESYS-family IDE is running |
+| `version` | n/a | n/a | print `SCRIPT_VERSION`, the body's path and whether `irm/setup.ps1` put it there, and the Python and Windows versions. Never reaches the network; the daily reminder (D17) already says when a newer release is out. `cdsint --version` prints its first line |
 | `link [--script-dir D]` | n/a | n/a | junction every IDE's `ScriptDir\cdsint` onto this body's `stub\` and write `stub\body.path` (5.3). A ScriptDir needing an elevated shell is skipped without one, and a real directory in the way is left alone; either makes it exit 1 |
+| `unlink [--script-dir D]` | n/a | n/a | remove every `ScriptDir\cdsint` junction that points at this body's `stub\`. A junction onto another body and a real directory are left alone. Exit 1 only when a junction of this body's is still there (an elevated shell was needed, or the removal failed); no IDE found is exit 0 |
 | `ping`, `status`, `stop` | yes | n/a | the watcher's lifecycle, not under permission control |
 | `export [--delete-orphans]` | yes | yes | write the IDE project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back into the IDE, disk wins |
@@ -362,6 +364,17 @@ mutually exclusive, and argparse blocks them directly.
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
 function that reads it, which every route passes through.
+
+There is no `uninstall` command either. `irm/setup.ps1 -Uninstall` undoes
+what `irm/setup.ps1` did: it runs the body's own `unlink`, as the install runs
+its `link`, then removes the pip record if it names this body, then deletes
+the body and the state files cdsint writes in `%LOCALAPPDATA%\cdsint`, by
+name, and nothing else there. Each step runs only once the one before it
+worked, and it refuses while any CODESYS-family IDE is running. The command
+being removed is not the one doing the removing, so a removal that stops
+halfway never leaves the user needing a command that may no longer run:
+running the script again picks up where it stopped, and a file it could not
+delete is named.
 
 Shared flags: `--timeout SECONDS` (default 120, the ceiling for **one command
 step**; the `--project` form derives the process deadline from it: launch

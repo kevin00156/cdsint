@@ -41,8 +41,10 @@ CHECK_EVERY_S = 24 * 60 * 60
 # thread could cut that short, and a daily courtesy does not earn one.
 QUERY_TIMEOUT_S = 2.0
 
-# The commands that have just said everything there is to say about this.
-QUIET_AFTER = ("update", "link")
+# The commands that have just said everything there is to say about this,
+# and unlink, after which "run `cdsint link`" would ask to undo what was just
+# asked for.
+QUIET_AFTER = ("update", "link", "unlink")
 
 
 def _state_path():

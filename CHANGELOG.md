@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### 0.3.0 (2026-09-29) — version, and a way to take it out
+
+- **`cdsint version`** prints which cdsint this is, where it runs from and
+  whether `setup.ps1` put it there, and the Python and Windows versions. The
+  bug report template asks for that one paste instead of three commands.
+  `cdsint --version` prints its first line.
+- **`setup.ps1 -Uninstall`** undoes the install: every IDE's Scripts menu,
+  the `cdsint` command, the downloaded body and the state beside it. It runs
+  the body's own new `cdsint unlink` first and deletes nothing unless that
+  worked, so a menu is never left pointing at a deleted body. A cdsint
+  older than 0.3.0 has no `unlink`; `cdsint update` first.
+
 ### 0.2.1 (2026-09-29) — a relative sync folder outside the project
 
 - **Every relative `sync_folder` is relative to the project file's

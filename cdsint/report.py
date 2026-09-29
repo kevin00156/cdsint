@@ -155,15 +155,33 @@ def show_installs(found, want_json=False):
                   % install["run_as_admin"])
 
 
-# What each state of `cdsint link` means to the person reading it.
+def show_version(about, want_json=False):
+    """Print what `cdsint version` found. The first line is `--version`'s."""
+    if want_json:
+        return as_json(about)
+    how = ("installed by irm/setup.ps1" if about["downloaded"] else
+           "not installed by irm/setup.ps1: a clone runs what is checked "
+           "out, which can be ahead of this number")
+    print("cdsint %s" % about["version"])
+    print("body    %s (%s)" % (about["body"], how))
+    print("python  %s" % about["python"])
+    print("os      %s" % about["os"])
+
+
+# What each state of `cdsint link` and `cdsint unlink` means to the person
+# reading it.
 _LINK_SAYS = {
     "linked": "in the Scripts menu now; restart the IDE",
     "already": "already in the Scripts menu",
     "needs_admin": "skipped: this ScriptDir needs an elevated shell; run "
-                   "`cdsint link` again as administrator",
+                   "this again as administrator",
     "occupied": "skipped: a directory that is not a cdsint junction is in "
                 "the way; move it and run `cdsint link` again",
     "failed": "failed",
+    "removed": "taken out of the Scripts menu; restart the IDE",
+    "none": "no cdsint menu here",
+    "other": "left alone: this menu is another cdsint install's, or a "
+             "directory that is not a cdsint junction",
 }
 
 
@@ -174,6 +192,20 @@ def show_links(rows, want_json=False):
     if not rows:
         print("no CODESYS-family IDE found on this machine; pass "
               "--script-dir to link one anyway")
+    _link_rows(rows)
+
+
+def show_unlinks(rows, want_json=False):
+    """Print what `cdsint unlink` did, one ScriptDir at a time."""
+    if want_json:
+        return as_json(rows)
+    if not rows:
+        print("no CODESYS-family IDE found on this machine, so no menu to "
+              "take cdsint out of; pass --script-dir for one it did not find")
+    _link_rows(rows)
+
+
+def _link_rows(rows):
     for row in rows:
         print("%s\n  %s\n  %s" % (row["ide"], _LINK_SAYS[row["state"]],
                                   row["detail"]))
