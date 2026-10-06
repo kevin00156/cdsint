@@ -233,7 +233,7 @@ def build_expected_path(obj, effective_type, is_xml, obj_guid=None):
     per-object path does, and reading .guid again is a .NET round trip for an
     answer somebody upstairs is holding (PRINCIPLES 3).
     """
-    from engine.codesys_constants import TYPE_NAMES, TYPE_GUIDS, kind_of
+    from engine.codesys_constants import TYPE_NAMES, kind_of
 
     # obj.guid and obj.parent are each a .NET round trip, and this function is
     # on the per-object path for both export and compare. The helpers below
@@ -250,18 +250,14 @@ def build_expected_path(obj, effective_type, is_xml, obj_guid=None):
     clean_name = clean_filename(obj_name)
 
     if is_xml:
-        # Special case: POUs exported as XML (graphical) use 'pou_xml' extension
-        if effective_type == TYPE_GUIDS["pou"]:
-            type_name = "pou_xml"
-        else:
-            type_name = TYPE_NAMES.get(effective_type, effective_type[:8])
+        type_name = TYPE_NAMES.get(effective_type, effective_type[:8])
         file_name = clean_name + "." + type_name + ".xml"
     else:
         # kind_of(effective_type), not kind_of(obj.type): they agree on this
         # branch, and the caller already has effective_type. classify_object
         # sets effective_type to the normalized GUID for the object's own kind,
-        # and the two cases where it deviates -- an NVL masquerading as a GVL,
-        # a graphical POU -- both set is_xml and so never reach here.
+        # and the one case where it deviates -- an NVL masquerading as a GVL --
+        # sets is_xml and so never reaches here.
         obj_kind = kind_of(effective_type)
         parent_pou = get_parent_pou_name(obj, parent=parent)
         # Nested objects (Action, Method, Property) prefix filename with parent POU name

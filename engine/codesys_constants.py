@@ -131,12 +131,12 @@ LEGACY_KIND_NAMES = dict((str(_k), str(_v))
                          for _k, _v in _PROFILE.get("legacy_kind_names", {}).items())
 
 # Every token that may legitimately appear as the <kind> segment of a
-# "<Name>.<kind>.xml" export filename: current kinds, retired kind names, and
-# the graphical-POU marker. Filename parsing MUST accept the retired ones too -
-# otherwise an old export on disk is read with the suffix still glued to the
-# object name ("Init.method_alt"), and every lookup for it fails.
+# "<Name>.<kind>.xml" export filename: current kinds and retired kind names.
+# Filename parsing MUST accept the retired ones too - otherwise an old export
+# on disk is read with the suffix still glued to the object name
+# ("Init.method_alt"), and every lookup for it fails.
 KNOWN_TYPE_SUFFIXES = frozenset(
-    list(KIND_GUIDS.keys()) + list(LEGACY_KIND_NAMES.keys()) + ["pou_xml"])
+    list(KIND_GUIDS.keys()) + list(LEGACY_KIND_NAMES.keys()))
 
 
 def kind_of(guid_or_kind):

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — code is Structured Text only
+
+- **An abstract method is a `.st`.** One added in the IDE as abstract has
+  no implementation, and was taken for a graphical one and written as
+  native XML. Importing that XML opened "Select Implementation Language for
+  Pasted Objects": a headless run hung on it until killed, and in an open
+  IDE, answering it turned the method into an ordinary empty one without
+  `ABSTRACT`.
+- **Graphical implementations are no longer synced (breaking).** A POU,
+  method or action in LD, FBD, CFC or SFC is exported as its declaration
+  only, and its body is left alone. Members of such a POU are no longer
+  saved and put back around a native re-import.
+- **An old `<Name>.method.xml` or `<Name>.pou_xml.xml` fails its import by
+  name.** Run export, which writes the object as a `.st`, then delete the
+  file.
+- **Code on disk for an object that cannot take it fails by name.** It used
+  to be skipped, and every later compare reported a difference.
+
 ### 0.3.0 (2026-09-29) — version, a way to take it out, and enumerations in a trace
 
 - **`plc trace` records enumerations.** They used to refuse the whole run,

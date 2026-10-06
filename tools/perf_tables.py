@@ -38,7 +38,6 @@ FUNCTIONS = [
     # classification (is_nvl does a native export per GVL)
     ("classify_object", "classify:classify_object"),
     ("is_nvl", "classify:is_nvl"),
-    ("is_graphical_pou", "classify:is_graphical_pou"),
     # textual content extraction
     ("export_object_content", "content:export_object_content"),
     ("export_interface_declaration", "content:export_interface_declaration"),
@@ -62,10 +61,8 @@ FUNCTIONS = [
     ("update_existing_object", "import:update_existing_object"),
     ("create_new_object", "import:create_new_object"),
     ("update_object_code", "import:update_object_code"),
-    ("batch_import_native_xmls_with_children", "import:batch_native_xmls"),
+    ("batch_import_native_xmls", "import:batch_native_xmls"),
     ("merge_native_xmls", "import:merge_native_xmls"),
-    ("save_pou_children", "import:save_pou_children"),
-    ("restore_pou_children", "import:restore_pou_children"),
     ("build_device_remap", "import:build_device_remap"),
     ("order_st_files_parents_first", "import:order_st_files"),
     ("find_parent_pou", "import:find_parent_pou"),

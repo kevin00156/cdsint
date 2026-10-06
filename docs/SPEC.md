@@ -501,6 +501,13 @@ The existing format is kept, not one byte changed (D15):
 
 - One `.st` per object, the declaration and the implementation separated by
   `// === IMPLEMENTATION ===`.
+- Code is Structured Text and nothing else. A POU, method or action is always
+  an `.st`; one without a textual implementation, such as an abstract method,
+  is its declaration and an empty implementation. A graphical body is not
+  synced. Code as native XML, which versions before this rule wrote
+  (`<Name>.method.xml`, `<Name>.pou_xml.xml`), is refused by name on import:
+  the IDE answers it with a modal dialog asking which language to give the
+  object, which no flag answers and which, answered, drops `ABSTRACT`.
 - Paths follow the IDE tree; a POU's members go in a folder named after the
   POU, for example `Function Blocks/MC_BasicControl/MC_BasicControl.Main.st`.
 - The `//% cds-text-sync.kind=<kind>` pragma is stamped only on kinds the

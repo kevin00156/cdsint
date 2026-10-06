@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 """What kind of thing an IDE object is, when its type GUID alone cannot say.
 
-A GVL and a network variable list share a GUID, and so do a textual POU
-and a graphical one; the answer is in the object's native XML or in a flag
-only some builds expose. classify_object() is the one place that turns an
+A GVL and a network variable list share a GUID; the answer is in the
+object's native XML. classify_object() is the one place that turns an
 object into (kind, extension, manager) for both export and import.
+
+Code is always text (SPEC 4.5). A POU, method or action without a textual
+implementation -- an abstract method -- is a declaration-only .st, not
+native XML: importing that XML made the IDE ask a person which language to
+give it, and the answer deleted ABSTRACT.
 
 Moved out of codesys_managers.py unchanged.
 """
@@ -25,11 +29,6 @@ from engine.codesys_constants import (
 )
 from engine import unhandled
 from engine.ide_read import guid_of, name_of, parent_of
-
-
-# Distinguishes "property absent" from "property present and falsy" when
-# reading an IDE object with a single getattr instead of hasattr-then-read.
-_MISSING = object()
 
 
 def native_xml_of(project, obj, recursive=False):
@@ -86,33 +85,6 @@ def is_nvl(obj, project):
         return 'ListIdentifier' in xml_content or 'NetworkType' in xml_content
     except Exception as e:
         log_warning("Could not check NVL status for " + name_of(obj) + ": " + safe_str(e))
-        return False
-
-
-def is_graphical_pou(obj):
-    """
-    Detect if a POU uses a graphical language (LD, CFC, FBD) instead of ST/IL.
-
-    CODESYS assigns the same type GUID to all POUs regardless of language.
-    The distinguishing factor is that graphical POUs do NOT have a textual
-    implementation body — the implementation exists only in the native XML
-    (graphical data). ST/IL POUs always have has_textual_implementation=True.
-
-    Returns True if the POU's implementation is graphical (needs XML export),
-    False if it is text-based (ST/IL, can be exported as .st).
-    """
-    try:
-        # One read, not two: hasattr() is itself a property read. A sentinel
-        # rather than ide_flag() because "missing" and "present but False" mean
-        # opposite things here -- missing is the safe textual default, present
-        # and False is what identifies a graphical POU.
-        value = getattr(obj, 'has_textual_implementation', _MISSING)
-        if value is _MISSING:
-            # Attribute missing: cannot determine — treat as textual (safe default)
-            return False
-        return not value
-    except Exception as e:
-        log_warning("Could not check graphical POU status for " + safe_str(obj.get_name()) + ": " + safe_str(e))
         return False
 
 
@@ -203,14 +175,6 @@ def classify_object(obj, project):
         try:
             if is_nvl(obj, project):
                 effective_type = TYPE_GUIDS["nvl_sender"]
-                is_xml = True
-        except:
-            pass
-
-    # Graphical POU detection (LD, CFC, FBD → XML)
-    if not is_xml and kind in ("pou", "action", "method"):
-        try:
-            if is_graphical_pou(obj):
                 is_xml = True
         except:
             pass

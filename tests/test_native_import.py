@@ -112,8 +112,8 @@ def test_an_edited_object_in_a_batch_counts_as_updated(monkeypatch):
     _no_merge_needed(monkeypatch)
     container = Target(children=[Child("T_slot1")])
 
-    counts = object_create.batch_import_native_xmls_with_children(
-        _batch(container), {}, project=None)
+    counts = object_create.batch_import_native_xmls(
+        _batch(container), project=None)
 
     assert counts == (1, 0, 0)
     assert len(container.calls) == 1
@@ -124,8 +124,8 @@ def test_a_batch_the_ide_refuses_names_every_object_in_it(monkeypatch):
     _no_merge_needed(monkeypatch)
     container = Target(fail="T_slot1", children=[Child("T_slot1")])
 
-    counts = object_create.batch_import_native_xmls_with_children(
-        _batch(container), {}, project=None)
+    counts = object_create.batch_import_native_xmls(
+        _batch(container), project=None)
 
     assert counts == (0, 0, 1)
     assert unhandled.names() == ["T_slot1"]

@@ -30,7 +30,6 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
     change_detect       what differs, object by object
     move_detect         which of those are moves, paired by file name
     object_create       one file's content into the IDE: update or create
-    pou_children        a POU's members kept across a recreate
     import_order        parents before members; orphans with their parent
     device_remap        a renamed device, mapped for the import
     text_kind           which kind an .st text reads as
