@@ -26,18 +26,18 @@ from engine.import_gates import (
     is_import_allowed,
     never_deleted,
     refused_by_path,
+    stale_code_names,
 )
 from engine.import_order import (
     order_st_files_parents_first,
     orphans_their_parent_takes,
 )
 from engine.object_create import (
-    batch_import_native_xmls_with_children,
+    batch_import_native_xmls,
     create_new_object,
     update_existing_object,
 )
-from engine.pou_children import save_pou_children
-from engine.codesys_constants import TYPE_GUIDS, kind_of
+from engine.codesys_constants import kind_of
 from engine.managers_pou import POUManager
 from engine.ide_tree import ensure_folder_path, find_object_by_path
 from engine.strings import safe_str
@@ -165,6 +165,7 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
     """
     native_batches = {}
     st_files = []
+    stale_code = stale_code_names(to_sync)
     for item in to_sync:
         try:
             if refused_by_path(item, tally):
@@ -172,7 +173,7 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
             if not is_import_allowed(item):
                 continue
             if item.get("is_orphan"):
-                if never_deleted(item):
+                if never_deleted(item, stale_code):
                     continue
                 _delete_orphan(item, taken_by_parent, tally)
                 continue
@@ -197,50 +198,14 @@ def _sort_items(to_sync, base_dir, project, taken_by_parent, tally):
     return native_batches, st_files
 
 
-def _save_pou_children(native_batches, project):
-    """Pass 2: remember what hangs off each POU that is about to be replaced.
-
-    A native XML import replaces the POU object, and its methods, actions and
-    properties go with it. Keyed by lowercased name, because the object that
-    comes back from the import is a different one.
-    """
-    saved = {}
-    for container, items in native_batches.items():
-        for _rel_path, _abs_path, name, type_guid, is_new, _item in items:
-            if type_guid != TYPE_GUIDS.get("pou") or is_new:
-                continue
-            existing = child_named(container, name)
-            if not existing:
-                continue
-            children = save_pou_children(existing, project)
-            if children:
-                saved[name.lower()] = children
-    return saved
-
-
-def _import_xml(native_batches, import_managers, project, pou_children, name_map,
-                tally):
-    """Pass 3: import the batches, then let the ST pass find the new POUs."""
+def _import_xml(native_batches, project, tally):
+    """Pass 2: import the batches. None of them is code (SPEC 4.5)."""
     if not native_batches:
         return
-    updated, created, failed = batch_import_native_xmls_with_children(
-        native_batches, import_managers, project, pou_children)
+    updated, created, failed = batch_import_native_xmls(native_batches, project)
     tally.updated += updated
     tally.created += created
     tally.failed += failed
-
-    for container, items in native_batches.items():
-        for _rel_path, _abs_path, name, type_guid, is_new, _item in items:
-            if not is_new or type_guid != TYPE_GUIDS.get("pou"):
-                continue
-            fresh = child_named(container, name)
-            if fresh is None:
-                continue
-            obj_name = fresh.get_name()
-            holders = name_map.setdefault(obj_name, [])
-            if fresh not in holders:
-                holders.append(fresh)
-            log_info("Added new POU to name_map: " + obj_name)
 
 
 def _create_st(item, rel_path, abs_path, import_managers, name_map,
@@ -273,7 +238,7 @@ def _create_st(item, rel_path, abs_path, import_managers, name_map,
 
 def _import_st(st_files, base_dir, import_managers, project, name_map,
                folder_cache, tally):
-    """Pass 4: update or create every textual object, parents before children."""
+    """Pass 3: update or create every textual object, parents before children."""
     for item in order_st_files_parents_first(st_files):
         try:
             rel_path = item["path"]
@@ -326,9 +291,8 @@ def perform_import_items(primary_project, base_dir, to_sync, pou_type=None):
     than as one long function:
 
       1. sort  -- delete orphans, batch the XML per container, keep the ST
-      2. save  -- remember the children of every POU about to be replaced
-      3. XML   -- import the batches and restore those children
-      4. ST    -- update or create the textual objects, now that POUs exist
+      2. XML   -- import the batches
+      3. ST    -- update or create the textual objects, parents first
 
     Nothing is saved here. The caller finishes with finalize_sync_operation(),
     which owns saving and backup; doing it in both places saved the project
@@ -352,9 +316,7 @@ def perform_import_items(primary_project, base_dir, to_sync, pou_type=None):
 
     native_batches, st_files = _sort_items(
         to_sync, base_dir, primary_project, taken_by_parent, tally)
-    pou_children = _save_pou_children(native_batches, primary_project)
-    _import_xml(native_batches, import_managers, primary_project,
-                pou_children, name_map, tally)
+    _import_xml(native_batches, primary_project, tally)
     _import_st(st_files, base_dir, import_managers, primary_project,
                name_map, folder_cache, tally)
     return tally.as_tuple()

@@ -30,7 +30,9 @@ from engine.sync_log import log_info, log_warning
 # 3.3: disk_mtime is now milliseconds-since-epoch as an int, produced by
 # file_signature(). Older caches stored whole seconds (export) or a float
 # (compare), so they are discarded rather than silently mis-compared.
-CACHE_VERSION = "3.3"
+# 3.4: code is always text (SPEC 4.5). The cache keeps each object's
+# .st-or-.xml answer, so a method once taken for graphical stayed XML.
+CACHE_VERSION = "3.4"
 
 
 def file_signature(file_path, stat_info=None):

@@ -31,7 +31,6 @@ from engine.st_text import (
 )
 from engine.strings import safe_str
 from engine.sync_log import log_info, log_error, log_warning
-from engine.pou_children import restore_pou_children
 from cds.core.device_text import SUFFIX as DEVICE_SUFFIX
 from engine.classify import manager_for
 from engine import unhandled
@@ -121,7 +120,7 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
     base_name = os.path.splitext(path_parts[-1])[0]
     
     if rel_path.endswith(".xml"):
-        # XML files are handled by batch_import_native_xmls_with_children
+        # XML files are handled by batch_import_native_xmls
         return None
     
     decl, impl, pragmas = parse_st_file(file_path)
@@ -241,22 +240,18 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
     return res
 
 
-def batch_import_native_xmls_with_children(native_batches, import_managers, project, pou_children_info=None):
+def batch_import_native_xmls(native_batches, project):
     """
     Process batched native XML imports to reduce dialogs.
-    Restores POU children after XML import to prevent deletion.
-    
+
     Args:
         native_batches: dict of {container: [(rel_path, abs_path, name, type_guid, is_new, item), ...]}
-        import_managers: dict of managers
         project: CODESYS project
-        pou_children_info: dict of {pou_name_lower: saved_children} to restore after import
-    
+
     Returns:
         (updated_count, created_count, failed_count). Each item that landed
         gets the object it landed as under item["landed"].
     """
-    pou_children_info = pou_children_info or {}
     updated = 0
     created = 0
     failed = 0
@@ -271,19 +266,6 @@ def batch_import_native_xmls_with_children(native_batches, import_managers, proj
                 import_native(container if hasattr(container, "import_native")
                               else project, temp_xml)
 
-                # Restore POU children after XML import
-                # Find POUs by name in the container
-                for rel_path, file_path, name, type_guid, is_new, _item in items:
-                    pou_name_lower = name.lower()
-                    if pou_name_lower in pou_children_info:
-                        children = pou_children_info[pou_name_lower]
-                        pou_obj = child_named(container, name)
-                        if pou_obj:
-                            try:
-                                restore_pou_children(pou_obj, children, import_managers, project)
-                            except Exception as e:
-                                unhandled.note(name, "its members could not be restored: " + safe_str(e))
-                
                 for rel_path, file_path, name, type_guid, is_new, item in items:
                     res = child_named(container, name)
                     if res:

@@ -65,11 +65,21 @@ def update_object_code(obj, declaration, implementation):
     which every caller reads as "nothing to change", so an import reported
     success for text that never reached the IDE (PRINCIPLES 6); the import
     loop names the object instead (SPEC D13).
+
+    So does code with nowhere to go: an object without a textual
+    implementation (an abstract method) cannot take the body on disk, and
+    skipping it left every later compare reporting a difference nobody
+    could explain.
     """
+    has_body = ide_flag(obj, "has_textual_implementation")
+    if (implementation or "").strip() and not has_body:
+        raise RuntimeError(
+            "%s has no textual implementation to take the code on disk; an "
+            "abstract method cannot have one" % name_of(obj))
     updated = False
     if declaration is not None and ide_flag(obj, "has_textual_declaration"):
         updated = _write_text(obj.textual_declaration, declaration)
-    if implementation is not None and ide_flag(obj, "has_textual_implementation"):
+    if implementation is not None and has_body:
         updated = _write_text(obj.textual_implementation, implementation) or updated
     return updated
 

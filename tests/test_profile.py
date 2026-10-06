@@ -156,7 +156,7 @@ class TestLegacyKindNames:
     def test_current_kinds_and_pou_xml_are_accepted_suffixes(self, constants):
         for kind in constants.KIND_GUIDS:
             assert kind in constants.KNOWN_TYPE_SUFFIXES
-        assert "pou_xml" in constants.KNOWN_TYPE_SUFFIXES
+        assert constants.kind_of("pou_xml") == "pou"
 
     def test_unknown_suffix_is_rejected(self, constants):
         # Guards against a blanket "anything after the last dot is a type"
@@ -332,3 +332,15 @@ class TestClassifyNormalization:
         obj = self.TypedNode("ffffffff-0000-0000-0000-000000000000")
         eff, is_xml, skip = managers.classify_object(obj, None)
         assert skip
+
+    def test_a_member_without_textual_implementation_is_text(self, managers):
+        # An abstract method has no implementation at all; cdsint syncs code
+        # only as ST, so it is a declaration-only .st, never native XML.
+        # As XML its import made the IDE ask which language to give it, and
+        # answering stripped ABSTRACT from the declaration.
+        for kind in ("method", "method_alt", "pou", "action"):
+            obj = self.TypedNode(_OLD_TYPE_GUIDS[kind])
+            obj.has_textual_implementation = False
+            eff, is_xml, skip = managers.classify_object(obj, None)
+            assert not is_xml, kind
+            assert not skip, kind

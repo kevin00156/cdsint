@@ -14,7 +14,7 @@ import pytest
 
 from tests.fakes import Project
 
-from engine import entry_build, ide_attrs, object_kind, object_paths, sync_cache
+from engine import entry_build, ide_attrs, object_paths, sync_cache
 
 
 @pytest.fixture(scope="module")
@@ -217,36 +217,6 @@ class TestBuildPropertiesProbe:
         again = self.Obj(guids["pou"], self.BuildProps())
         utils.read_ide_attrs(again)
         assert again.build_properties.probes > 0
-
-
-class TestGraphicalPouDetection:
-    """'missing' and 'present but False' mean opposite things here, so this
-    one cannot go through ide_flag."""
-
-    def test_textual_implementation_is_not_graphical(self, env):
-        _, managers, guids = env
-        obj = CountingObj(type_guid=guids["pou"],
-                          flags={"has_textual_implementation": True})
-        assert object_kind.is_graphical_pou(obj) is False
-
-    def test_absent_implementation_flag_defaults_to_textual(self, env):
-        _, managers, guids = env
-        obj = CountingObj(type_guid=guids["pou"],
-                          missing=["has_textual_implementation"])
-        assert object_kind.is_graphical_pou(obj) is False
-
-    def test_present_but_false_means_graphical(self, env):
-        _, managers, guids = env
-        obj = CountingObj(type_guid=guids["pou"],
-                          flags={"has_textual_implementation": False})
-        assert object_kind.is_graphical_pou(obj) is True
-
-    def test_reads_the_flag_once(self, env):
-        _, managers, guids = env
-        obj = CountingObj(type_guid=guids["pou"],
-                          flags={"has_textual_implementation": True})
-        object_kind.is_graphical_pou(obj)
-        assert obj.reads["has_textual_implementation"] == 1
 
 
 class TestFindingApplications:
