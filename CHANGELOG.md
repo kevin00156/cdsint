@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — code is Structured Text only
+### 0.4.0 (2026-10-06) — code is Structured Text only
 
 - **An abstract method is a `.st`.** One added in the IDE as abstract has
   no implementation, and was taken for a graphical one and written as
