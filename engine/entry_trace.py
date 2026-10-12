@@ -20,7 +20,7 @@ from __future__ import print_function
 import json
 import os
 
-from cds.core import dialogs, trace_job
+from cds.core import dialogs, trace_job, trace_samples
 from engine import entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
 from engine.plc_trace_setup import TRACE_NAME
@@ -48,8 +48,10 @@ NO_SAMPLES = ("the trace holds no samples: it has not recorded in this IDE "
               "since it was opened, or its data was cleared. The files "
               "hold only its configuration")
 
-# Where save writes the CSV it judges when the caller asked for none.
+# Where save writes the CSV it judges when the caller asked for none, and
+# where show writes the one it reads what it loaded from.
 WORKSPACE_CSV = "saved.csv"
+SHOWN_CSV = "shown.csv"
 
 
 def to_job():
@@ -192,15 +194,17 @@ def show_data():
 
     Always cdsint_trace: loading replaces the target's definition with the
     file's (research 15.6), and that is only cdsint's to do to its own
-    object. The settings are fetched again after the load, because a
-    script object fetched before it goes on answering with the old ones.
+    object. What was loaded is read back from the editor, not from the
+    object's settings: on the bench those still named the old variables
+    straight after the load, and only caught up later.
     """
     unhandled.start()
     args, project = _inputs()
     api, problem = _cdsint_trace(project)
     if problem:
         return _failed("show", problem)
-    load = ide_private.loader_for(api.open_editor())
+    editor = api.open_editor()
+    load = ide_private.loader_for(editor)
     if load is None:
         return _failed("show", (
             "this IDE's trace editor has no %s with a %s, the private "
@@ -211,16 +215,26 @@ def show_data():
     if said:
         return _failed("show", "the IDE could not load %s: %s"
                        % (args.get("file"), one_line(said)))
-    fresh, problem = trace_objects.reach(globals(), project, TRACE_NAME)
+    variables, problem = _loaded(project, editor)
     if problem:
         return _failed("show", problem)
-    definition, _left_out = trace_config.describe(
-        fresh, entry.borrowed(globals(), "Resolution"))
     return entry.result(
         True, "trace show: %s loaded into %s, %d variable(s)"
-        % (args["file"], TRACE_NAME, len(definition["variables"])),
+        % (args["file"], TRACE_NAME, len(variables)),
         action="show", name=TRACE_NAME, file=args["file"],
-        variables=definition["variables"], failed_objects=unhandled.names())
+        variables=variables, failed_objects=unhandled.names())
+
+
+def _loaded(project, editor):
+    """(the variables the editor now holds, None), or (None, why not)."""
+    path = os.path.join(plc_crc.workspace(project.path), SHOWN_CSV)
+    try:
+        editor.save(plc_crc.forget(path))
+        saved = trace_samples.read_csv(path)
+    except Exception as exc:
+        return None, ("the file was loaded, but what it holds could not be "
+                      "read back: " + one_line(exc))
+    return [each["name"] for each in saved["variables"]], None
 
 
 def _cdsint_trace(project):

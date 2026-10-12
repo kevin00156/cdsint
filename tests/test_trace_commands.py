@@ -13,7 +13,7 @@ import pytest
 
 from cds.ide import entries
 from cds.ide import headless as ide_side
-from engine import ide_private, trace_config
+from engine import ide_private
 from engine.codesys_constants import TYPE_GUIDS
 from tests import plc_fakes
 from tests.fakes import Node, Projects
@@ -60,7 +60,7 @@ class Bench(object):
             [self.application], self.application,
             plc_fakes.read_data(plc_fakes.TASK_CONFIG_XML))
         self.apis = {}       # node guid -> the trace object's settings
-        self.files = {}      # a saved .trace -> the definition it holds
+        self.files = {}      # a saved .trace -> the CSV text it holds
         self.loads = []
         self.reachable = True
         self.online = False     # logged in: CODESYS adds no objects then
@@ -85,12 +85,15 @@ class Bench(object):
         return self.apis.get(guid) if self.reachable else None
 
     def loader_for(self, editor):
+        """As measured: the load replaces what the editor holds at once, and
+        reaches the trace object's settings only later, so a read straight
+        after it finds the old ones (docs/trace-research.md 15.6)."""
         def load(path):
             self.loads.append(path)
             if path not in self.files:
                 return "the file is not a trace"
-            return trace_config.configure(editor.api, self.files[path],
-                                          plc_fakes.Resolution)
+            editor.csv_text = self.files[path]
+            return None
         return load
 
     def globals(self):
@@ -242,16 +245,16 @@ def test_the_headless_launcher_refuses_save(bench):
 
 # --- trace show ----------------------------------------------------------------
 
-def test_show_makes_cdsint_trace_and_loads_the_file_into_it(bench):
-    bench.files["C:/r.trace"] = definition("a.x", "a.y")
+def test_show_makes_cdsint_trace_and_reports_what_it_loaded(bench):
+    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
     shown = bench.press("show", file="C:/r.trace")
     assert shown["ok"], shown["error"]
-    assert shown["data"]["variables"] == ["a.x", "a.y"]
+    assert shown["data"]["variables"] == plc_fakes.TRACED
     assert bench.loads == ["C:/r.trace"]
 
 
 def test_show_twice_keeps_one_cdsint_trace(bench):
-    bench.files["C:/r.trace"] = definition("a.x")
+    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
     bench.press("show", file="C:/r.trace")
     bench.press("show", file="C:/r.trace")
     assert len(bench.project.find("cdsint_trace", True)) == 1
@@ -286,7 +289,7 @@ def test_apply_to_an_existing_trace_while_logged_in_works(bench):
 
 
 def test_show_while_logged_in_without_cdsint_trace_says_why(bench):
-    bench.files["C:/r.trace"] = definition("a.x")
+    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
     bench.online = True
     shown = bench.press("show", file="C:/r.trace")
     assert not shown["ok"] and "logged in" in shown["error"]
