@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — the import pre-flight works in the watcher
+### 0.4.1 (2026-10-12) — the import pre-flight works in the watcher
 
 - **An import from the watcher is refused while the project is logged in
   to a PLC.** The check that says so before anything is compared never
