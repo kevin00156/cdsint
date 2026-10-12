@@ -115,8 +115,18 @@ def _word(words, enum, value):
 
 
 def _number(text):
-    """A trigger level as the job writes it: a number, whole when it is."""
-    number = float(str(text))
+    """A trigger level as the job writes it: a number, whole when it is.
+
+    Anything else comes back as its text: a BOOL trigger made in the IDE
+    has a level no job can hold (research 4), and trace job reports that
+    as a definition plc trace would refuse, not as a crash.
+    """
+    try:
+        number = float(safe_str(text))
+    except ValueError:
+        return safe_str(text)
+    if number != number or number in (float("inf"), float("-inf")):
+        return safe_str(text)
     return int(number) if number == int(number) else number
 
 

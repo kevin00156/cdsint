@@ -202,7 +202,10 @@ user has the IDE open:
 
 - The user picked variables in an IDE trace and wants you to record them:
   `cdsint trace job --target X --name T1 --out t1.json`, add `duration_s` and
-  `out` to the file, then `plc trace --job t1.json`.
+  `out` to the file, then `plc trace --job t1.json`. `plc trace` has only the
+  `--project` form, and an IDE that has the project open holds its lock, so
+  ask the user to close the project first (otherwise exit 4, saying the
+  project is open elsewhere).
 - You want the user to record your selection by hand:
   `cdsint trace apply --target X -y --name T1 --job job.json` (a full
   `plc trace` job is fine). Creating a new trace fails while the project is

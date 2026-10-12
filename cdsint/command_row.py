@@ -23,7 +23,9 @@ DEFAULT_TIMEOUT_S = 120.0
 #
 #   NO_IDE     about this machine, not about a project: installs, list,
 #              version, update, link, unlink
-#   WATCHER    only --target: the watcher's own life, which needs a watcher
+#   WATCHER    only --target: the watcher's own life, which needs a watcher,
+#              and, through a row's action_forms, trace save and show,
+#              whose data lives in the IDE somebody has open
 #   EITHER     both forms, the ordinary case
 #   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
 #              still offered --target, so that asking for the other form is
@@ -134,11 +136,13 @@ class Command(object):
         self.summary = summary
         self.form = form
         self.flags = tuple(flags)
-        # The positional argument, when the command has one. `plc` is the
-        # only one: its actions are separate rows in cds/ide/entries.py
-        # because each has its own word in the plc list and only one writes
-        # to a machine, and a table that tells them apart needs no dispatcher
-        # to read the difference back out (SPEC 4.2).
+        # The positional argument, when the command has one: `plc` and
+        # `trace`. Their actions are separate rows in cds/ide/entries.py
+        # because each differs in its gate -- plc's in its word in the plc
+        # list and whether it writes to a machine, trace's in its forms and
+        # whether it changes the project -- and a table that tells them
+        # apart needs no dispatcher to read the difference back out
+        # (SPEC 4.2).
         self.action = action
         # Why this command has only one form, in the words the refusal uses.
         self.one_form = one_form

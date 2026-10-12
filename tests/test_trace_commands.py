@@ -293,3 +293,21 @@ def test_show_while_logged_in_without_cdsint_trace_says_why(bench):
     bench.online = True
     shown = bench.press("show", file="C:/r.trace")
     assert not shown["ok"] and "logged in" in shown["error"]
+
+
+def test_save_of_a_file_it_cannot_read_says_so(monkeypatch, tmp_path):
+    bench = Bench(monkeypatch, csv_text=u"garbage line without separator")
+    bench.press("apply", yes=True, name="T1", job=definition())
+    saved = bench.press("save", name="T1", out=str(tmp_path / "run"))
+    assert "could not be read" in saved["data"]["why"]
+    assert "holds no samples" not in saved["data"]["why"]
+
+
+def test_job_of_a_trigger_with_no_numeric_level_is_unusable(bench):
+    bench.press("apply", yes=True, name="T1", job=definition(
+        trigger={"variable": "PLC_PRG.n", "edge": "rising", "level": 1,
+                 "post_samples": 5}))
+    bench.trace_named("T1").trigger_level = True
+    read = bench.press("job", name="T1")
+    assert read["ok"], read["error"]
+    assert read["data"]["usable"].startswith("no")

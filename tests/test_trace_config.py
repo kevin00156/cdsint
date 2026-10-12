@@ -6,6 +6,8 @@ person may have made and filled in the IDE, so whatever the object held
 before has to go first. trace job reads an object back as a definition, and
 a variable the person switched off is not part of what it records.
 """
+import pytest
+
 from engine import trace_config
 from tests import plc_fakes
 
@@ -98,3 +100,14 @@ def test_describe_hands_back_plain_python_values():
     api.post_trigger_samples = DotNetNumber(10)
     definition, _left_out = trace_config.describe(api, plc_fakes.Resolution)
     assert json.loads(json.dumps(definition)) == JOB
+
+
+@pytest.mark.parametrize("level", [True, "", None, "TRUE", "inf"])
+def test_a_level_that_is_no_number_comes_back_as_text(level):
+    """A BOOL trigger made in the IDE hands back a level the job has no
+    number for; trace job reports that as unusable rather than crashing."""
+    api = configured(trace_object(), JOB)
+    api.trigger_level = level
+    definition, _left_out = trace_config.describe(api, plc_fakes.Resolution)
+    assert definition["trigger"]["level"] == ("" if level is None
+                                              else str(level))

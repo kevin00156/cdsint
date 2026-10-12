@@ -184,7 +184,8 @@ def _judged(project, api, csv_path):
         judging["record_condition"] = definition["record_condition"]
     found, why = plc_trace_verdict.judged(csv_path, period, judging, {})
     found["period_us"] = period
-    if not any(row["samples"] for row in found["variables"]):
+    rows = found["variables"]
+    if rows and not any(row["samples"] for row in rows):
         return found, NO_SAMPLES
     return found, why
 
