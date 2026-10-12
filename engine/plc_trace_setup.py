@@ -19,22 +19,15 @@ from __future__ import print_function
 
 import time
 
-from cds.core import trace_job, trace_period, trace_run
-from engine import entry, object_kind, plc_crc, plc_identity
-from engine import ide_private
-from engine.ide_read import children_of, kind_of, name_of
+from cds.core import trace_job, trace_run
+from engine import entry, plc_crc, plc_identity
+from engine import ide_private, trace_config
+from engine.ide_read import name_of
 from engine.plc_trip import Trip, one_line
 
 # The only name this command gives a trace. D7's one self-answered prompt
 # (OVERWRITE_PROMPT) is safe only while this name is cdsint's alone.
 TRACE_NAME = "cdsint_trace"
-
-# The job's resolution word -> the member of the IDE's Resolution enum.
-RESOLUTIONS = {"us": "MicroSeconds", "ms": "MilliSeconds"}
-
-# The job's edge word -> the member of the trace plug-in's edge enum, the
-# names research 13.4 set.
-EDGES = {"rising": "Positive", "falling": "Negative", "both": "Both"}
 
 NO_MEMBER = (
     "this IDE's trace plug-in has no %s, the private member cdsint sets both "
@@ -167,19 +160,8 @@ class TraceSetup(Trip):
 
     def find_the_period(self):
         """The job's task and its period, from the task configuration."""
-        project = self.projects.primary
-        config = task_configuration(self.application)
-        if config is None:
-            return ("application %s has no task configuration, so there is "
-                    "no task to sample in" % name_of(self.application))
-        try:
-            xml = object_kind.native_xml_of(project, config, recursive=True)
-        except Exception as exc:
-            return ("the task configuration could not be exported to read "
-                    "the task's period: " + one_line(exc))
-        if not xml:
-            return "exporting the task configuration wrote nothing to read"
-        period, problem = trace_period.task_period_us(xml, self.job["task"])
+        period, problem = trace_config.task_period_us(
+            self.projects.primary, self.application, self.job["task"])
         if problem:
             return problem
         self.found["period_us"] = period
@@ -218,48 +200,9 @@ class TraceSetup(Trip):
         self.set_buffers = self.buffers_for(self.api)
         if self.set_buffers is None:
             return NO_MEMBER
-        return self._configure(getattr(
-            resolution, RESOLUTIONS[self.job["resolution"]]))
-
-    def _configure(self, resolution):
-        job = self.job
-        try:
-            for name in job["variables"]:
-                self.api.add_trace_variable(variableName=name)
-            self.api.resolution = resolution
-            self.api.every_n_cycles = job["every_n_cycles"]
-            if "trigger" in job:
-                self._set_trigger(job["trigger"])
-            if "record_condition" in job:
-                self.api.record_condition = job["record_condition"]
-        except Exception as exc:
-            return "%s could not be configured: %s" % (TRACE_NAME,
-                                                       one_line(exc))
+        problem = trace_config.configure(self.api, self.job, resolution)
+        if problem:
+            return "%s could not be configured: %s" % (TRACE_NAME, problem)
         self.note("%s: %d variable(s) on task %s" % (
-            TRACE_NAME, len(job["variables"]), job["task"]))
+            TRACE_NAME, len(self.job["variables"]), self.job["task"]))
         return None
-
-    def _set_trigger(self, trigger):
-        """Every trigger setting, enabled last.
-
-        A trigger left half set makes the next start() fail without saying
-        why (research 4), so all of them go in before it is switched on. The
-        edge enum is the plug-in's own and not a script global, so its type
-        is read off the value the new trace already holds. The level goes in
-        as text, which the IDE converts to the variable's type (research 4).
-        """
-        api = self.api
-        api.trigger_variable = trigger["variable"]
-        api.trigger_edge = getattr(type(api.trigger_edge),
-                                   EDGES[trigger["edge"]])
-        api.trigger_level = str(trigger["level"])
-        api.post_trigger_samples = trigger["post_samples"]
-        api.trigger_enabled = True
-
-
-def task_configuration(application):
-    """The application's task configuration object, or None."""
-    for child in children_of(application):
-        if kind_of(child) == "task_config":
-            return child
-    return None

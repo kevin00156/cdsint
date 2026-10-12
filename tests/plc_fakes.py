@@ -513,6 +513,32 @@ for _edge in ("Positive", "Negative", "Both"):
     setattr(TriggerEdge, _edge, TriggerEdge(_edge))
 
 
+class TraceVariable(object):
+    """One row of a trace's variable list: its path, and whether it records."""
+
+    def __init__(self, variable_name, enabled):
+        self.variable_name = variable_name
+        self.enabled = enabled
+
+
+class VariableList(object):
+    """ScriptTraceVariableList, over the api's own `variables` and `disabled`.
+
+    `variables` stays a plain list of paths because every plc trace test
+    reads it that way; this is the view trace_config reads and clears.
+    """
+
+    def __init__(self, api):
+        self.api = api
+
+    def __iter__(self):
+        return iter([TraceVariable(name, name not in self.api.disabled)
+                     for name in self.api.variables])
+
+    def clear(self):
+        del self.api.variables[:]
+
+
 class TraceApi(object):
     """What trace.create() hands back: the settings of one trace object.
 
@@ -523,6 +549,8 @@ class TraceApi(object):
     def __init__(self, log, csv_text, trigger_script):
         self.log = log
         self.variables = []
+        self.disabled = set()   # paths switched off in the IDE
+        self.task_name = None
         self.resolution = None
         self.every_n_cycles = None
         self.trigger_variable = None
@@ -544,6 +572,10 @@ class TraceApi(object):
     def add_trace_variable(self, variableName):
         self.variables.append(variableName)
 
+    @property
+    def variable_list(self):
+        return VariableList(self)
+
     def open_editor(self):
         self.log.append(("open_editor",))
         return self.editor
@@ -560,6 +592,7 @@ class Tracer(object):
     def create(self, application, name, task):
         self.log.append(("create", name, task))
         self.created.append((application, name, task))
+        self.api.task_name = task
         return self.api
 
 
