@@ -25,6 +25,7 @@ dialog left open.
 | D. Does a GUID have to be added to `profiles/default.json`? | No, it is already there | 6 |
 | D. Can an edited trace XML be imported? | It could not: every edited native-XML object failed to import headless, a cdsint bug rather than a trace one. Fixed since (section 6.3) | 6 |
 | Can an enumeration be recorded, and what sizes it? | Yes. `read_value()` names the type but not its base; the trace's own configuration, saved before the download, gives every variable's class and size, a library's type included. Values are saved as numbers | 14 |
+| Can the watcher record through the login of the person using the IDE, and move trace configurations and data in and out? | Yes. Online calls need a nested script run from the watcher's timer (they fail with "Stack empty" otherwise); trace calls do not. Loading a saved trace overwrites the target object's configuration | 15 |
 
 ---
 
@@ -891,3 +892,129 @@ nothing in it depends on them being numbers.
   as the base type its literal names. That sizes it correctly, but the run
   cannot say it is an enumeration, and as a trigger it would be accepted as
   a number.
+
+---
+
+## 15. Tracing from the watcher, inside an IDE someone is using (2026-10-12)
+
+The question: with the watcher running in a person's open IDE, can an agent
+record a trace through the session that person is already logged in with,
+and move trace configurations and recorded data in and out without closing
+the project? Measured in the user's own interactive CODESYS 3.5.21.40
+(ScriptEngine 4.2.0.0) on the `trace-enum` project copy of section 14, against
+the same WSL soft PLC, the user logging in and out by hand.
+
+### 15.1 How this was measured
+
+Not with `--runscript`, as everything above was: the point is what code
+running from the watcher's timer can do, and a headless run is the one place
+that never happens (15.2). A throwaway script, run once from the IDE's
+Scripts menu, hung a WinForms timer on the IDE's message loop exactly as
+`cds/ide/session.py` does, and on every tick executed whatever file had been
+dropped into a folder, with the IDE's script globals. Every experiment below
+ran from such a tick.
+
+### 15.2 Online calls fail from a timer tick, and why
+
+`online.create_online_application(app)` raises `SystemError: Stack empty`
+from a tick, logged in or not. The .NET trace ends in
+`Stack<ScriptExecutionEventArgs>.Peek()` inside
+`ScriptOnline.create_online_application`. `ScriptOnline` keeps a private
+`_executionStack`, pushed by its executor's `Executing` event when a script
+starts and popped by `Executed` when it ends, and files every online object
+it hands out under the run on top, so that the run's end can dispose what
+it created (only certificate interceptors, `ScriptOnlineDisposableData`;
+nothing logs out). A tick fires after the script that armed the timer has
+returned, so the stack is empty.
+
+The way through is the executor's own public
+`IScriptExecutor.ExecuteSource(source)`: a one-line script that calls back
+into the tick's code is an ordinary nested run, the stack holds it, and
+`create_online_application`, `is_logged_in`, `application_state` and
+`read_value()` all answer. The executor itself is only reachable through a
+private field (`ScriptOnline._executor`; `system.Executor` is private too).
+After a nested run the watcher's own globals were intact: a `compare` through
+the watcher straight after returned 319 of 319 unchanged.
+
+Two consequences:
+
+- **The import pre-flight never worked in the watcher.** `_is_logged_in` in
+  `engine/codesys_online.py` caught the exception, logged a warning and
+  answered "not logged in" for every application, so an import from the
+  watcher during a login went ahead and failed object by object. Fixed in
+  0.4.1 through `engine/ide_private.py`'s `in_script_run`.
+- **The headless watcher cannot reproduce it.** `tools/headless_watch.py`
+  keeps its IDE alive by parking inside the script that started it, so a
+  script run is on the stack for the watcher's whole life and every online
+  call works. Only an interactive IDE shows the failure.
+
+### 15.3 Trace objects from a tick need no such help
+
+`trace.create(app, name, task)`, `add_trace_variable`, `open_editor()`, and
+the editor's `download()`, `start()`, `stop()` and `save()` all work from a
+tick directly. In an IDE with a window, `open_editor()` opens the trace's
+editor tab and makes it the active one, so the person sees the chart the
+agent is recording. Creating the object marks the project modified.
+
+The editor's flags do not mean what their names suggest:
+
+| Flag | Meaning, as measured |
+|---|---|
+| `is_online` | the application is logged in |
+| `is_logged_in` | this trace has been downloaded to the controller |
+| `is_running` | the trace is recording; it changes a moment after `start()` and `stop()` return |
+
+`stop()` returns before the trace has stopped: a file saved right after it
+ended about 60 samples (0.24 s on the 4 ms task) earlier than one saved once
+`is_running` had gone false.
+
+### 15.4 Recording through the person's login leaves the application alone
+
+With the user logged in by hand, a nested run read `PLC_PRG.nTick`, found the
+application in `run`, and got "Invalid expression" for a name the controller
+does not have. The trace downloaded in 0.7 s, recorded and saved. The
+controller's `Application.crc` was unchanged, and its audit log held the
+user's login and nothing else: no download and no online change.
+
+### 15.5 Recorded data outlives the login
+
+After the user logged out, `save()` from the same editor, and from a freshly
+opened one, still wrote all 37485 rows. Saving needs no login.
+
+### 15.6 Loading a saved trace back into the IDE
+
+The script API has no load. The editor's script object keeps the real editor
+in a private field, `ScriptTraceEditorObject._view`, typed
+`ITraceEditorController`; the class behind it, `_3S.CoDeSys.Trace.TraceEditor`,
+has a public `LoadTrace(string fileName, out string error)`, the method the
+Trace menu's "Load Trace..." calls. Loading `e2e.trace` from section 14
+returned true, drew its 15 variables in the open tab, and a `save()` straight
+after wrote a `.csv` with the same rows and a `.trace` of the same size.
+
+**Loading replaces the trace object's configuration**, not just what the tab
+shows: a script object fetched afterwards held the file's 15 variables, and
+the next `download()` sent them. A script object fetched before the load kept
+answering with the old variable list; it had gone stale.
+
+### 15.7 Reaching a trace object someone else created
+
+`projects.primary.find(name)` returns a plain script object, and `trace` has
+only `create`. The private static
+`ScriptTraceObject.CreateScriptTraceObject(int projectHandle, Guid objectGuid)`
+turns an existing object into a `ScriptTraceObject`; it worked with the
+GUID passed as a `System.Guid` built from the object's GUID string. Handed
+an object that is not a trace (a folder), it fails inside the constructor
+with "The object GUID '00000000-...' is not valid", which names no reason.
+
+### 15.8 What manual start and stop keep
+
+With the object's default buffers, a trace started and stopped from script
+after about 58 s saved 2499 samples per variable, the last 9.99 s, without a
+gap inside them. A recording whose length is not known when it starts cannot
+have its buffers sized to hold it (SPEC 6.8, "The buffers").
+
+### 15.9 Not verified
+
+- Any IDE but CODESYS 3.5.21.40: the three private members above (`_executor`,
+  `_view`, `CreateScriptTraceObject`) were looked up on this one only.
+- Giving the focus back to the tab the person was in after `open_editor()`.

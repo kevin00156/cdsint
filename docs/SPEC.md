@@ -985,8 +985,9 @@ script API exposes neither buffer; they are set through the private
 `PerformWithWriteableCopy` of the trace plug-in's script object. Before it is
 used, its presence is checked, and an IDE without it is refused rather than
 left to record with 100 entries, because a trace that silently loses 70% of its
-samples is the failure this command exists to prevent. It is the only
-non-public member cdsint depends on; section 7 records which IDEs have it.
+samples is the failure this command exists to prevent. Every non-public
+member cdsint depends on is in `engine/ide_private.py`; section 7 records
+which IDEs have each.
 
 **The controller's memory.** The runtime allocates the whole ring when the
 trace is downloaded and keeps it until the next `plc trace` replaces it, and
@@ -1316,6 +1317,7 @@ or a person's record; anything else is "should work".
 | `verify --project` in one command | verified | not verified | not verified | not verified | verified |
 | PLC connect, download | verified, 2026-09-06, full round on two WSL soft PLCs | not verified | not verified | not verified | not verified |
 | PLC trace: private buffer member `PerformWithWriteableCopy` present | verified by reflection and by recording, 2026-09-23 | not checked | not checked | not checked | not checked |
+| Watcher: private `ScriptOnline._executor`, which online calls from the watcher's timer go through (`docs/trace-research.md` 15.2) | verified by reflection and by the import pre-flight in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 
 Every cell in this table is "one vendor's IDE opening its own project". One
 round each was verified on 2026-09-05: stock 3.5.21.40 opening the softplc

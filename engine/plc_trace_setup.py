@@ -21,7 +21,7 @@ import time
 
 from cds.core import trace_job, trace_period, trace_run
 from engine import entry, object_kind, plc_crc, plc_identity
-from engine import plc_trace_buffers
+from engine import ide_private
 from engine.ide_read import children_of, kind_of, name_of
 from engine.plc_trip import Trip, one_line
 
@@ -41,7 +41,7 @@ NO_MEMBER = (
     "trace buffers through. With the default ring of 100 entries a task "
     "faster than about 4 ms loses most of its samples, so nothing was "
     "recorded (SPEC 6.8, \"The buffers\"). %s exists only in memory and the "
-    "project is not saved." % (plc_trace_buffers.MEMBER, TRACE_NAME))
+    "project is not saved." % (ide_private.MEMBER, TRACE_NAME))
 
 
 class TraceSetup(Trip):
@@ -49,11 +49,11 @@ class TraceSetup(Trip):
 
     `clock` and `buffers_for` are the two seams a test replaces: the wall
     clock the wait measures against, and the function that reaches the
-    private buffer member (engine/plc_trace_buffers.py), which needs clr.
+    private buffer member (engine/ide_private.py), which needs clr.
     """
 
     def __init__(self, args, ide_globals, clock=time.time,
-                 buffers_for=plc_trace_buffers.setter_for):
+                 buffers_for=ide_private.setter_for):
         Trip.__init__(self, "trace", args, ide_globals)
         self.clock = clock
         self.buffers_for = buffers_for

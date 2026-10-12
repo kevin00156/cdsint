@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — the import pre-flight works in the watcher
+
+- **An import from the watcher is refused while the project is logged in
+  to a PLC.** The check that says so before anything is compared never
+  worked there: CODESYS's online API refuses every call made from the
+  watcher's timer, once the script that started the watcher has returned,
+  and the check took that refusal for "nothing is logged in". The import
+  went ahead and failed object by object with nothing saying why. The menu
+  and the `--project` form were never affected.
+
 ### 0.4.0 (2026-10-06) — code is Structured Text only
 
 - **An abstract method is a `.st`.** One added in the IDE as abstract has
