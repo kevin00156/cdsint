@@ -38,6 +38,10 @@ class TraceObjects(plc_fakes.TraceProject):
         return found
 
 
+class NoScriptTraceObject(object):
+    is_trace_object = False
+
+
 class Bench(object):
     """One project with an application, a task, a folder and the trace
     plug-in; trace objects appear in the tree as `trace.create` makes them.
@@ -59,12 +63,17 @@ class Bench(object):
         self.files = {}      # a saved .trace -> the definition it holds
         self.loads = []
         self.reachable = True
+        self.online = False     # logged in: CODESYS adds no objects then
         monkeypatch.setattr(ide_private, "script_trace", self.script_trace)
         monkeypatch.setattr(ide_private, "loader_for", self.loader_for)
 
     # -- the IDE ----------------------------------------------------------
 
     def create(self, application, name, task):
+        if self.online:
+            # What create() hands back while the application is logged in
+            # (docs/trace-research.md 15): no object, and no exception.
+            return NoScriptTraceObject()
         api = plc_fakes.TraceApi(self.log, self.csv_text, None)
         api.task_name = task
         node = Node(name, TYPE_GUIDS["trace"], parent=application)
@@ -257,3 +266,27 @@ def test_show_without_the_loader_is_refused_by_name(bench, monkeypatch):
     monkeypatch.setattr(ide_private, "loader_for", lambda editor: None)
     shown = bench.press("show", file="C:/r.trace")
     assert not shown["ok"] and ide_private.EDITOR_VIEW in shown["error"]
+
+
+# --- logged in -----------------------------------------------------------------
+
+def test_apply_of_a_new_trace_while_logged_in_says_why_it_cannot(bench):
+    bench.online = True
+    refused = bench.press("apply", yes=True, name="T1", job=definition())
+    assert not refused["ok"]
+    assert "logged in" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_to_an_existing_trace_while_logged_in_works(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    bench.online = True
+    again = bench.press("apply", yes=True, name="T1", job=definition("a.y"))
+    assert again["ok"], again["error"]
+
+
+def test_show_while_logged_in_without_cdsint_trace_says_why(bench):
+    bench.files["C:/r.trace"] = definition("a.x")
+    bench.online = True
+    shown = bench.press("show", file="C:/r.trace")
+    assert not shown["ok"] and "logged in" in shown["error"]

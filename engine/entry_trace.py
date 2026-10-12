@@ -120,13 +120,9 @@ def _the_trace_to_apply(project, name, definition):
     if others:
         return None, None, ("%s is not a trace object%s"
                             % (name, trace_objects.what_else(others)))
-    try:
-        api = entry.borrowed(globals(), "trace").create(
-            project.active_application, name, definition["task"])
-    except Exception as exc:
-        return None, None, "%s could not be created: %s" % (name,
-                                                            one_line(exc))
-    return api, None, None
+    api, problem = trace_objects.create(globals(), project.active_application,
+                                        name, definition["task"])
+    return api, None, problem
 
 
 def save_data():
@@ -240,12 +236,7 @@ def _cdsint_trace(project):
     if task is None:
         return None, ("the application has no task, and %s needs one to "
                       "exist in before the file replaces it" % TRACE_NAME)
-    try:
-        return entry.borrowed(globals(), "trace").create(
-            application, TRACE_NAME, task), None
-    except Exception as exc:
-        return None, "%s could not be created: %s" % (TRACE_NAME,
-                                                      one_line(exc))
+    return trace_objects.create(globals(), application, TRACE_NAME, task)
 
 
 def _inputs():

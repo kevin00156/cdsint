@@ -10,6 +10,7 @@ from __future__ import print_function
 
 from engine import entry, ide_private
 from engine.ide_read import children_of, kind_of, name_of, parent_of
+from engine.plc_trip import one_line
 from engine.strings import safe_str
 
 TRACE = "trace"
@@ -76,6 +77,28 @@ def reach(ide_globals, project, name):
     if problem:
         return None, problem
     return scripted(ide_globals, project, obj)
+
+
+def create(ide_globals, application, name, task):
+    """(a new trace object's settings, None), or (None, why there is none).
+
+    While the application is logged in, CODESYS adds no object to it, and
+    trace.create says so only by handing back a NoScriptTraceObject, whose
+    one member is is_trace_object = False (docs/trace-research.md 15).
+    Without this check that surfaced as "no attribute 'variable_list'".
+    """
+    try:
+        api = entry.borrowed(ide_globals, "trace").create(application, name,
+                                                          task)
+    except Exception as exc:
+        return None, "%s could not be created: %s" % (name, one_line(exc))
+    if getattr(api, "is_trace_object", True) is False:
+        return None, ("%s could not be created: the project is logged in to "
+                      "the controller, and CODESYS adds no object to an "
+                      "application that is online. Log out and run this "
+                      "again; a trace that already exists can be changed "
+                      "while logged in" % name)
+    return api, None
 
 
 def first_task(application):
