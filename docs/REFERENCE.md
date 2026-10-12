@@ -438,7 +438,7 @@ of them talks to a controller, so none needs a word in the `plc` list.
 - **`trace apply`** makes `T1` record a job file's definition, replacing
   whatever it recorded before, or creates `T1` when there is none. It takes
   a `trace job` file or a full `plc trace` job. It needs `-y`, as `import`
-  does, and does not save the project. A name that belongs to a folder or a
+  does, and saves the project as `import` does. A name that belongs to a folder or a
   POU is refused, and so is creating a trace while the project is logged in
   to the controller: CODESYS adds no object to an application that is online.
   An existing trace can be changed while logged in.

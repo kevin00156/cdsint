@@ -8,8 +8,10 @@ what a trace in this IDE recorded; show loads a saved trace into this IDE
 for a person to look at. The last two are the watcher's only: recorded data
 lives in the IDE that recorded it (cds/ide/entries.py HEADLESS_REFUSES).
 
-Nothing here saves the project: apply and show change it in memory, and the
-person whose IDE it is decides whether that is kept.
+apply saves the project, as import does: in the --project form nothing
+else would, and the change would go with the IDE that made it. show leaves
+the project unsaved: cdsint_trace holding a loaded file is for looking at,
+and the person whose IDE it is decides whether that is kept.
 
 The function names avoid `trace`: this file is exec'd into the namespace
 CODESYS gives its scripts, where `trace` is the trace plug-in, which the
@@ -21,7 +23,7 @@ import json
 import os
 
 from cds.core import dialogs, trace_job, trace_samples
-from engine import entry, ide_private, plc_crc, plc_trace_verdict
+from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
 from engine.plc_trace_setup import TRACE_NAME
 from engine.plc_trip import one_line
@@ -31,8 +33,8 @@ from engine.plc_trip import one_line
 command_args = {}
 
 APPLY_QUESTION = ("This replaces what trace object %s records with the job "
-                  "file's definition, creating it if there is none. The "
-                  "project is changed in memory and not saved.\n\nProceed?")
+                  "file's definition, creating it if there is none, and "
+                  "saves the project.\n\nProceed?")
 
 # What a trace someone else recorded is judged against: the job's own
 # defaults, since nobody wrote limits for it (SPEC 6.8 "Completeness").
@@ -96,11 +98,14 @@ def from_job():
         return _failed("apply", "%s could not be configured: %s"
                        % (name, problem))
     created = replaced is None
+    summary = ("trace apply: %s %s, recording %d variable(s) on task %s"
+               % (name, "created" if created else "replaced",
+                  len(definition["variables"]), definition["task"]))
+    problem = backup.save_project(entry.borrowed(globals(), "projects"))
+    if problem:
+        summary += " -- but the project was not saved: " + problem
     return entry.result(
-        True, "trace apply: %s %s, recording %d variable(s) on task %s"
-        % (name, "created" if created else "replaced",
-           len(definition["variables"]), definition["task"]),
-        action="apply", name=name, created=created,
+        problem is None, summary, action="apply", name=name, created=created,
         replaced=replaced or [], variables=definition["variables"],
         failed_objects=unhandled.names())
 

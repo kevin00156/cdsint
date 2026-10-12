@@ -1329,7 +1329,10 @@ else (a folder, a POU) is refused with what it is, and so are two traces of
 one name, which `--name` cannot tell apart. While the application is logged
 in, CODESYS adds no object to it, so a new trace is refused then, saying so;
 an existing one is changed while logged in. `-y` answers apply's question the
-way it answers import's. Apply does not save the project.
+way it answers import's. Apply saves the project, as import does: the
+`--project` form would otherwise change nothing that outlives the run. A
+save that fails makes the run not ok, with the change still in the open
+IDE.
 
 **Data lives in the IDE that recorded it.** An IDE the `--project` form
 starts has recorded nothing, and nobody sees what is loaded into it, so

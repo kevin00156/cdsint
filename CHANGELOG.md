@@ -11,8 +11,8 @@ All notable changes to this project will be documented in this file.
   `trace job`, add `duration_s` and `out`, and it is a `plc trace` job; or
   hand `trace apply -y` a job and the trace in the project records it. A
   variable switched off in the IDE is left out and listed. Both work in
-  either form; apply does not save the project, and creating a trace while
-  the project is logged in is refused with the reason.
+  either form; apply saves the project, as import does, and creating a
+  trace while the project is logged in is refused with the reason.
 - **`cdsint trace save` and `trace show`**, with `--target` only: write what
   a trace recorded in the open IDE, with the same completeness report
   `plc trace` gives but without failing on it, or load a saved `.trace` into

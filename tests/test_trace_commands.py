@@ -159,6 +159,27 @@ def test_apply_onto_something_that_is_not_a_trace_is_refused(bench):
     assert "TraceEnum" in refused["error"] and "folder" in refused["error"]
 
 
+def test_apply_saves_the_project_it_changed(bench):
+    applied = bench.press("apply", yes=True, name="T1", job=definition())
+    assert applied["ok"], applied["error"]
+    assert bench.project.saves == 1
+
+
+def test_a_refused_apply_saves_nothing(bench):
+    bench.press("apply", yes=True, name="TraceEnum", job=definition())
+    assert bench.project.saves == 0
+
+
+def test_an_apply_that_could_not_save_is_not_ok_and_says_why(bench):
+    def refuse():
+        raise IOError("the file is read-only")
+    bench.project.save = refuse
+    applied = bench.press("apply", yes=True, name="T1", job=definition())
+    assert not applied["ok"]
+    assert "not saved" in applied["error"]
+    assert "read-only" in applied["error"]
+
+
 # --- trace job -----------------------------------------------------------------
 
 def test_job_on_a_name_that_is_no_trace_says_what_it_is(bench):
