@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — trace objects in and out of an open IDE
+
+- **`cdsint trace job` and `trace apply`** move what a trace records between
+  a trace object and a job file. Pick the variables in the IDE's trace, run
+  `trace job`, add `duration_s` and `out`, and it is a `plc trace` job; or
+  hand `trace apply -y` a job and the trace in the project records it. A
+  variable switched off in the IDE is left out and listed. Both work in
+  either form; apply does not save the project, and creating a trace while
+  the project is logged in is refused with the reason.
+- **`cdsint trace save` and `trace show`**, with `--target` only: write what
+  a trace recorded in the open IDE, with the same completeness report
+  `plc trace` gives but without failing on it, or load a saved `.trace` into
+  `cdsint_trace` so the person at the IDE sees it.
+
 ### 0.4.1 (2026-10-12) — the import pre-flight works in the watcher
 
 - **An import from the watcher is refused while the project is logged in

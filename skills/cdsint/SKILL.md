@@ -195,6 +195,28 @@ The controller's ring holds the whole recording, and a ring estimated over
 Do not raise that key without the user's word: a controller given more than it
 has stops its application.
 
+## Trace objects and their data: `trace`
+
+These never touch a controller and need no `plc` word. Use them when the
+user has the IDE open:
+
+- The user picked variables in an IDE trace and wants you to record them:
+  `cdsint trace job --target X --name T1 --out t1.json`, add `duration_s` and
+  `out` to the file, then `plc trace --job t1.json`.
+- You want the user to record your selection by hand:
+  `cdsint trace apply --target X -y --name T1 --job job.json` (a full
+  `plc trace` job is fine). Creating a new trace fails while the project is
+  logged in; changing an existing one works.
+- The user recorded something and you need the numbers:
+  `cdsint trace save --target X --name T1 --out runs/t1 --formats csv`. Read
+  `data.why` and `data.variables[].samples`: a hand-started trace often
+  holds only its last few thousand samples.
+- You recorded something and want the user to see it:
+  `cdsint trace show --target X --file runs/t1.trace` puts it in
+  `cdsint_trace` and opens it. Tell them that is where to look.
+
+`save` and `show` exist only with `--target`.
+
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line

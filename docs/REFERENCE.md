@@ -173,6 +173,10 @@ Every command that touches a project takes one of two forms, and never both:
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
 | `plc trace --gateway IP [--gateway-name NAME] --job FILE` | — | yes | record the variables a job file names, without downloading anything |
+| `trace job --name T [--out FILE]` | yes | yes | write what trace object `T` records as a job file |
+| `trace apply -y --name T --job FILE` | yes | yes | make trace `T` record a job file's variables, creating it if needed |
+| `trace save --name T --out PATH [--formats LIST]` | yes | — | write what `T` recorded in this IDE, and say whether samples are missing |
+| `trace show --file FILE` | yes | — | load a saved `.trace` into `cdsint_trace` for a person to look at |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
@@ -413,6 +417,44 @@ says which variables were enumerations. The files hold the numbers, not the
 members' names. An enumeration whose base type the IDE does not report as
 one of the twelve integer types is refused by name, and an enumeration cannot
 be the `trigger` or the `record_condition`.
+
+### Trace objects and their data: `trace`
+
+```
+cdsint trace job   --target softplc --name T1 --out t1.json
+cdsint trace apply --target softplc -y --name T1 --job t1.json
+cdsint trace save  --target softplc --name T1 --out runs/t1 --formats csv,trace
+cdsint trace show  --target softplc --file runs/t1.trace
+```
+
+Four commands for trace objects in the project and what they recorded. None
+of them talks to a controller, so none needs a word in the `plc` list.
+
+- **`trace job`** writes what trace `T1` records — task, variables,
+  resolution, every-nth-cycle, trigger or record condition — as a job file.
+  It has no `duration_s` and no `out`: add those two and it is a `plc trace`
+  job. A variable switched off in the IDE is left out and listed in
+  `data.left_out`; `data.usable` says whether `plc trace` would take it.
+- **`trace apply`** makes `T1` record a job file's definition, replacing
+  whatever it recorded before, or creates `T1` when there is none. It takes
+  a `trace job` file or a full `plc trace` job. It needs `-y`, as `import`
+  does, and does not save the project. A name that belongs to a folder or a
+  POU is refused, and so is creating a trace while the project is logged in
+  to the controller: CODESYS adds no object to an application that is online.
+  An existing trace can be changed while logged in.
+- **`trace save`** writes what `T1` recorded in this IDE (`--formats`, any of
+  `trace`, `csv`, `txt`; default `trace,csv`) and judges the samples as
+  `plc trace` does. Missing samples do not fail it: they are reported in
+  `data.variables`, `data.complete` and `data.why`, because a trace started
+  and stopped by hand with the IDE's default buffers keeps only its last few
+  thousand samples.
+- **`trace show`** loads a saved `.trace` into `cdsint_trace`, cdsint's own
+  trace object, and opens it, so a person sees what an agent recorded.
+  Loading replaces the target's definition, which is why it never loads into
+  a trace of yours.
+
+`save` and `show` have no `--project` form: recorded data lives in the IDE
+that recorded it, and an IDE cdsint starts has none and nobody to see it.
 
 ### Exit codes
 

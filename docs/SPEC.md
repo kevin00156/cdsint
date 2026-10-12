@@ -340,7 +340,9 @@ package name `cli` collided with users' own directories.
 
 Every command has two forms (D2). `--target X` finds the watcher in an open
 IDE; `--project P --install I` starts a headless IDE. The two sets of flags are
-mutually exclusive, and argparse blocks them directly.
+mutually exclusive, and argparse blocks them directly. Two exceptions, each
+refused with its reason rather than left out: `plc` has only the second form
+(D8), and `trace save` and `trace show` only the first (6.11).
 
 | Command | `--target X` | `--project P --install I` | What it does |
 |---|---|---|---|
@@ -360,6 +362,8 @@ mutually exclusive, and argparse blocks them directly.
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
 | `plc trace --gateway IP [--gateway-name NAME] --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
+| `trace job --name T [--out FILE]`, `trace apply -y --name T --job FILE` | yes | yes | a trace object's definition, out to a job file or in from one (6.11) |
+| `trace save --name T --out PATH [--formats LIST]`, `trace show --file FILE` | yes | refused | what a trace recorded in this IDE, written to files, or a saved trace loaded for a person to see (6.11) |
 
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
@@ -1294,6 +1298,65 @@ plain Python in `cds/core/`. Reading and writing a device is an engine
 module, and one pass per command (export, compare, import) is added beside
 the object sync, not inside it.
 
+### 6.11 Trace objects and their data
+
+`cdsint trace job|apply|save|show` moves what a trace records, and what it
+recorded, between the project and files. None of the four touches a
+controller, so none is under the `plc` list (D8). The measurements behind
+every rule here are in `docs/trace-research.md` 15.
+
+| Action | What it does | Forms | Confirms |
+|---|---|---|---|
+| `trace job --name T [--out FILE]` | the trace's definition as a job file | both | no |
+| `trace apply --name T --job FILE` | make trace `T` record the job file's definition, creating it if there is none | both | `-y` |
+| `trace save --name T --out PATH [--formats LIST]` | write what `T` recorded in this IDE, and judge it | `--target` | no |
+| `trace show --file FILE` | load a saved trace into `cdsint_trace` for a person to see | `--target` | no |
+
+**The definition is a job without its run.** A trace object holds what to
+record (`task`, `variables`, `resolution`, `every_n_cycles`, `trigger`,
+`record_condition`), not for how long or where to write, so `trace job`
+writes a job file with no `duration_s` and no `out`. Add those two and it is
+a `plc trace` job (6.8). `trace apply` takes either: a full job's run fields
+are checked like any other and then dropped. A variable switched off in the
+IDE is not part of what the trace records, so `job` leaves it out and names
+it in `data.left_out`; `data.usable` says whether `plc trace` would take the
+definition as it stands.
+
+**Apply replaces, and never doubles a name.** An existing trace loses its
+variables, trigger and condition before the definition goes in, since
+anything left would be recorded beside it. A name that belongs to something
+else (a folder, a POU) is refused with what it is, and so are two traces of
+one name, which `--name` cannot tell apart. While the application is logged
+in, CODESYS adds no object to it, so a new trace is refused then, saying so;
+an existing one is changed while logged in. `-y` answers apply's question the
+way it answers import's. Apply does not save the project.
+
+**Data lives in the IDE that recorded it.** An IDE the `--project` form
+starts has recorded nothing, and nobody sees what is loaded into it, so
+`save` and `show` have only the `--target` form; the CLI refuses the other at
+the parser (exit 2) and the launcher refuses it again.
+
+**Save reports, it does not judge.** The files are written, then the CSV is
+judged as `plc trace` judges its own (6.8 "Completeness"), with the job's
+default limits, and the verdict goes in `data.variables`, `data.complete` and
+`data.why`. The exit code says only whether the files were written: nobody
+chose this trace's buffers, and one left at the IDE's default keeps only its
+last few thousand samples, which is worth reading and not worth failing on. A
+trace that holds no samples says so instead of blaming the controller.
+
+**Show loads into cdsint_trace only.** Loading a file replaces the target's
+definition with the file's, and that is only cdsint's to do to its own
+object; `cdsint_trace` is made if the project has none, which is refused
+while logged in, as above. What was loaded is read from the editor, not from
+the trace's settings, which on the bench still named the old variables
+straight after the load.
+
+**The private members** (6.8 "The buffers" says why each is checked before
+use and refused by name when missing): `ScriptTraceObject.CreateScriptTraceObject`
+reaches a trace somebody made in the IDE, for `job`, `apply` and `save`; the
+trace editor's `_view` holds the editor whose `LoadTrace` is the Trace menu's
+"Load Trace...", for `show`. Both are in `engine/ide_private.py`.
+
 ---
 
 ## 7. Compatibility matrix
@@ -1318,6 +1381,7 @@ or a person's record; anything else is "should work".
 | PLC connect, download | verified, 2026-09-06, full round on two WSL soft PLCs | not verified | not verified | not verified | not verified |
 | PLC trace: private buffer member `PerformWithWriteableCopy` present | verified by reflection and by recording, 2026-09-23 | not checked | not checked | not checked | not checked |
 | Watcher: private `ScriptOnline._executor`, which online calls from the watcher's timer go through (`docs/trace-research.md` 15.2) | verified by reflection and by the import pre-flight in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
+| Trace commands: private `ScriptTraceObject.CreateScriptTraceObject` and the trace editor's `_view` / `LoadTrace` (6.11) | verified by job, apply, save and show in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 
 Every cell in this table is "one vendor's IDE opening its own project". One
 round each was verified on 2026-09-05: stock 3.5.21.40 opening the softplc
