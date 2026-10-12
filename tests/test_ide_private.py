@@ -103,3 +103,18 @@ def test_the_login_check_asks_through_a_nested_run(fields):
             return Session()
 
     assert codesys_online._is_logged_in(Online(), object()) is True
+
+
+def test_without_dotnet_there_is_no_script_trace():
+    """Outside the IDE: the caller refuses by name rather than guessing."""
+    assert ide_private.script_trace(
+        object(), 0, "00000000-0000-0000-0000-000000000000") is None
+
+
+def test_without_dotnet_there_is_no_loader():
+    assert ide_private.loader_for(object()) is None
+
+
+def test_an_editor_without_the_view_field_has_no_loader(monkeypatch):
+    monkeypatch.setattr(ide_private, "_field", lambda obj, name: None)
+    assert ide_private.loader_for(object()) is None
