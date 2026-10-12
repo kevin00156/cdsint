@@ -158,7 +158,8 @@ def _together(job, result):
                 "not one per cycle, so completeness is not judged"
                 % " and ".join(given))
     for name in JUDGING:
-        del result[name]
+        # Absent when only a definition was read: it has no judging fields.
+        result.pop(name, None)
     return None
 
 

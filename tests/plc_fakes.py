@@ -552,7 +552,7 @@ class TraceApi(object):
         self.disabled = set()   # paths switched off in the IDE
         self.task_name = None
         self.resolution = None
-        self.every_n_cycles = None
+        self.every_n_cycles = 1     # what a new trace holds in the IDE
         self.trigger_variable = None
         self.trigger_edge = TriggerEdge.Positive
         self.trigger_level = None

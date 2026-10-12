@@ -75,3 +75,26 @@ def test_a_condition_round_trips():
            "every_n_cycles": 1, "record_condition": "PLC_PRG.b"}
     api = configured(trace_object(), job)
     assert trace_config.describe(api, plc_fakes.Resolution)[0] == job
+
+
+class DotNetNumber(object):
+    """What the IDE hands back for a number: not a Python int, so json
+    refuses it, though int() and str() both work (seen on the bench)."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __int__(self):
+        return self.value
+
+    def __str__(self):
+        return str(self.value)
+
+
+def test_describe_hands_back_plain_python_values():
+    import json
+    api = configured(trace_object(), JOB)
+    api.every_n_cycles = DotNetNumber(2)
+    api.post_trigger_samples = DotNetNumber(10)
+    definition, _left_out = trace_config.describe(api, plc_fakes.Resolution)
+    assert json.loads(json.dumps(definition)) == JOB

@@ -16,6 +16,7 @@ from cds.core import trace_period
 from engine import object_kind
 from engine.ide_read import children_of, kind_of, name_of
 from engine.plc_trip import one_line
+from engine.strings import safe_str
 
 # The job's resolution word -> the member of the IDE's Resolution enum.
 RESOLUTIONS = {"us": "MicroSeconds", "ms": "MilliSeconds"}
@@ -80,25 +81,28 @@ def _condition(api, condition):
 def describe(api, resolution_enum):
     """(the definition `api` records, the variables it has switched off).
 
-    Enums are matched against their members rather than by name: the IDE's
-    str() of one is not something the job has a word for.
+    Every value comes back as a plain Python one: the IDE hands out .NET
+    numbers and strings, and json, which the result travels in, refuses a
+    .NET UInt32 (seen on the bench). Enums are matched against their
+    members rather than by name: the IDE's str() of one is not something
+    the job has a word for.
     """
     variables, left_out = [], []
     for variable in api.variable_list:
         (variables if variable.enabled else left_out).append(
-            variable.variable_name)
-    definition = {"task": api.task_name, "variables": variables,
+            safe_str(variable.variable_name))
+    definition = {"task": safe_str(api.task_name), "variables": variables,
                   "resolution": _word(RESOLUTIONS, resolution_enum,
                                       api.resolution),
-                  "every_n_cycles": api.every_n_cycles}
+                  "every_n_cycles": int(api.every_n_cycles)}
     if api.trigger_enabled:
         definition["trigger"] = {
-            "variable": api.trigger_variable,
+            "variable": safe_str(api.trigger_variable),
             "edge": _word(EDGES, type(api.trigger_edge), api.trigger_edge),
             "level": _number(api.trigger_level),
-            "post_samples": api.post_trigger_samples}
+            "post_samples": int(api.post_trigger_samples)}
     if api.record_condition:
-        definition["record_condition"] = api.record_condition
+        definition["record_condition"] = safe_str(api.record_condition)
     return definition, left_out
 
 

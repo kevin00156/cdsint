@@ -46,3 +46,11 @@ def test_a_definition_keeps_its_trigger():
 def test_a_run_job_still_needs_its_run_keys():
     _, problem = trace_job.normalise({"task": "T", "variables": ["a.b"]})
     assert "duration_s is required" in problem
+
+
+def test_a_definition_with_a_record_condition():
+    definition, problem = trace_job.normalise_definition(
+        {"task": "MainTask", "variables": ["PLC_PRG.n"],
+         "record_condition": "PLC_PRG.b"})
+    assert problem is None
+    assert definition["record_condition"] == "PLC_PRG.b"
