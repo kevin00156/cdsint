@@ -306,8 +306,8 @@ def waits_s(args):
 
     A trace records for its job's duration_s: time the caller asked for, not
     time the IDE took. Read from the step's args, not its name, so the job
-    on the wire is the one place the duration is written down.
+    on the wire is the one place the duration is written down. trace apply
+    carries a job too, but only its definition, which records nothing.
     """
-    job = args.get("job")
-    return job["duration_s"] if job else 0.0
+    return (args.get("job") or {}).get("duration_s", 0.0)
 

@@ -158,3 +158,10 @@ def test_every_other_step_keeps_the_timeout_it_had(machine, monkeypatch):
     one = started.deadline([("export", {})])
     assert started.deadline([("import", {}), ("export", {})]) == \
         one + started.timeout
+
+
+def test_a_definition_on_the_wire_adds_no_wait():
+    """trace apply carries a job too, but only its definition: what to
+    record, not for how long, so nothing is added to the deadline."""
+    assert cli_side.waits_s({"job": {"task": "MainTask",
+                                     "variables": ["PLC_PRG.n"]}}) == 0.0
