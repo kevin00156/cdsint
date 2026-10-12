@@ -53,6 +53,12 @@ TRIGGER_KEYS = ("variable", "edge", "level", "post_samples")
 # not one per cycle, so there is nothing for them to judge (SPEC 6.8).
 JUDGING = ("min_complete", "max_gap_periods")
 
+# What a trace object holds: what to record. The rest of a job is how one
+# run records it, which a trace object has no field for (`trace job`,
+# `trace apply`).
+DEFINITION_KEYS = ("task", "variables", "resolution", "every_n_cycles",
+                   "trigger", "record_condition")
+
 # Marks the fields a job has to name; there is no guess for what to record.
 REQUIRED = object()
 # Marks the fields that change what a run is when given, so there is no
@@ -84,11 +90,12 @@ SCHEMA = (
 KINDS = dict((name, kind) for name, kind, _d, _m in SCHEMA)
 
 
-def normalise(job):
+def normalise(job, for_run=True):
     """(the job with every default filled in, None), or (None, problem).
 
     Never raises on what a person wrote: the caller turns the problem into
-    a refusal, and a traceback is not a refusal.
+    a refusal, and a traceback is not a refusal. for_run=False is
+    normalise_definition's.
     """
     if not isinstance(job, dict):
         return None, _refusal("the job is not a JSON object, it is %s"
@@ -105,6 +112,8 @@ def normalise(job):
                 return None, _refusal("%s wants %s, not %s%s" % (
                     name, kind, _shown(job[name]), problem))
             result[name] = value
+        elif not for_run and name not in DEFINITION_KEYS:
+            continue
         elif default is REQUIRED:
             return None, _refusal("%s is required and missing" % name)
         elif default is not OPTIONAL:
@@ -112,7 +121,21 @@ def normalise(job):
     problem = _together(job, result)
     if problem:
         return None, _refusal(problem)
+    if not for_run:
+        result = dict((name, value) for name, value in result.items()
+                      if name in DEFINITION_KEYS)
     return result, None
+
+
+def normalise_definition(job):
+    """(what to record, None), or (None, problem): a job without its run.
+
+    A trace object holds only DEFINITION_KEYS, so the job `trace job` writes
+    has no duration_s and no out, and `trace apply` must take it back. A
+    full job is taken too, its run fields checked like any other and then
+    dropped: an agent may apply the very file it records with.
+    """
+    return normalise(job, for_run=False)
 
 
 def _together(job, result):
