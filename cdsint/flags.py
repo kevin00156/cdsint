@@ -17,144 +17,28 @@ from __future__ import print_function
 import argparse
 
 from cds.core import settings
-from cdsint import job_file
+from cdsint.command_row import (  # noqa: F401  the table's vocabulary
+    CONFIRM, CONFIRM_IMPORT, DEFAULT_TIMEOUT_S, DEFINITION, EITHER, HEADLESS,
+    JOB, KINDS, METAVAR, NAME, NO_IDE, NUMBER, PAIRS, PATH, PROMPT_RESULTS,
+    PROJECT_FLAGS, PROJECT_ONLY, SWITCH, WATCHER, WORDS, Command, _dest,
+    format_words, key_value)
 from engine.codesys_constants import SCRIPT_VERSION
-
-# Seconds one command step may take (SPEC 4.2). The one number: the help text
-# renders it with %(default)s, and both runners take it as their default, so
-# there is nowhere for a second 120 to be written down and go stale.
-DEFAULT_TIMEOUT_S = 120.0
-
-# The two forms of every command (SPEC D2), plus the two that have neither.
-#
-#   NO_IDE     about this machine, not about a project: installs, list,
-#              version, update, link, unlink
-#   WATCHER    only --target: the watcher's own life, which needs a watcher
-#   EITHER     both forms, the ordinary case
-#   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
-#              still offered --target, so that asking for the other form is
-#              answered with the reason rather than with "unrecognized"
-NO_IDE = "none"
-WATCHER = "target"
-EITHER = "both"
-HEADLESS = "project"
-
-
-# What an --answer may say: the members of the IDE's PromptResult enum, which
-# are the WinForms DialogResult names. The IDE side looks the value up by
-# exact name, so "yes" is not Yes -- and a name it cannot find used to be an
-# exception after the IDE had started, with no report written at all.
-PROMPT_RESULTS = ("OK", "Cancel", "Abort", "Retry", "Ignore", "Yes", "No")
-
-
-def key_value(text):
-    """One --answer, as the (key, value) pair the IDE side wants.
-
-    Checked here because here is where argparse checks every other flag, and
-    a malformed one is a command line that will not run rather than a command
-    that ran and failed: argparse answers it with exit 2, like every
-    refusal in cdsint/refusals.py (SPEC 4.3). It used to be parsed in
-    cdsint/cli.py after the parser had finished, and a Failure's exit 1 said
-    the opposite.
-    """
-    key, separator, value = text.partition("=")
-    if not separator:
-        raise argparse.ArgumentTypeError(
-            "wants KEY=VALUE, not %r" % (text,))
-    if value not in PROMPT_RESULTS:
-        raise argparse.ArgumentTypeError(
-            "%r is not a prompt answer; VALUE is one of %s"
-            % (value, ", ".join(PROMPT_RESULTS)))
-    return (key, value)
-
-
-# What shape a flag is. The kind decides both how argparse is told about it
-# and what the IDE side receives; every one of them defaults to None rather
-# than False or 0, so "not said" and "said no" stay different all the way
-# through (cds/core/commands.py new_command). The one exception is --answer,
-# whose default is an empty list because it is repeatable.
-SWITCH = "switch"     # --delete-orphans
-CONFIRM = "confirm"   # -y/--yes: the same flag wherever a step changes things
-NAME = "name"         # --app NAME
-NUMBER = "number"     # --port N
-PAIRS = "pairs"       # --answer KEY=VALUE, and again for the next one
-JOB = "job"           # --job FILE: the IDE side gets what the file says
-
-KINDS = {
-    SWITCH: {"action": "store_true", "default": None},
-    CONFIRM: {"action": "store_true", "default": None},
-    NAME: {"default": None},
-    NUMBER: {"type": int, "default": None, "metavar": "N"},
-    PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE",
-            "type": key_value},
-    JOB: {"type": job_file.read, "default": None, "metavar": "FILE"},
-}
-
-# A kind says how a flag is shaped; a flag may still name what its value is
-# called in the help. Only --gateway does, and "IP" is what the reference and
-# SPEC 4.2 have always called it.
-METAVAR = 3
-
-def _dest(spelling):
-    """What argparse calls a flag: its last long spelling, as an identifier."""
-    return spelling.split("/")[-1].lstrip("-").replace("-", "_")
-
-
-# -y is the spelling in SPEC 4.2 and the one every other tool that asks "are
-# you sure" uses, so the flag carries both and argparse names it after the
-# long one.
-CONFIRM_IMPORT = ("-y/--yes", CONFIRM,
-                  "confirm the import; without it the watcher asks")
-
-
-class Command(object):
-    """One subcommand, and everything the command line knows about it."""
-
-    def __init__(self, summary, form, flags=(), action=None, one_form=None,
-                 needs=None, refuses=None):
-        self.summary = summary
-        self.form = form
-        self.flags = tuple(flags)
-        # The positional argument, when the command has one. `plc` is the
-        # only one: its actions are separate rows in cds/ide/entries.py
-        # because each has its own word in the plc list and only one writes
-        # to a machine, and a table that tells them apart needs no dispatcher
-        # to read the difference back out (SPEC 4.2).
-        self.action = action
-        # Why this command has only one form, in the words the refusal uses.
-        self.one_form = one_form
-        # {action: {dest: why}}: the flags one action cannot run without,
-        # and the ones it will not take, each with the sentence that refuses.
-        self.needs = needs or {}
-        self.refuses = refuses or {}
-
-    def dests(self):
-        """What argparse will call each of this command's flags."""
-        return [_dest(flag[0]) for flag in self.flags]
-
-    def carries(self):
-        """Every attribute this row's own subparser defines.
-
-        Worked out from the row because the row is what _build_one reads.
-        set_defaults does not fill a gap — it overwrites the default of any
-        action with the same name — so a name in here that the parser also
-        defines would have its declared default silently replaced, which is
-        how --answer's empty list turned into None.
-        """
-        named = set(self.dests())
-        if self.action is not None:
-            named.add("action")
-        if self.form != NO_IDE:
-            named.add("target")
-        if self.form in (EITHER, HEADLESS):
-            named.add("project")
-            named.update(PROJECT_ONLY)
-        return named
 
 
 ONLY_TRACE = "Only plc trace reads a job file."
 ONLY_DOWNLOAD = ("Only plc download changes the controller, so only it has "
                  "anything to confirm.")
+ONLY_APPLY = ("Only trace apply changes the project, so only it has "
+              "anything to confirm.")
+TRACE_NAMED = "Which trace object in the project is meant."
+DATA_IN_THE_IDE = ("Recorded data lives only in the IDE that recorded it: an "
+                   "IDE this command starts has none, and nobody would see "
+                   "a trace loaded into it.")
+SHOW_TARGET = ("trace show always loads into cdsint_trace, cdsint's own "
+               "trace object, because loading replaces the object's "
+               "definition with the file's.")
+NOT_FOR = "Only %s takes it."
+TRACE_ACTIONS = ("job", "apply", "save", "show")
 WRONG_CONTROLLER = ("A controller found by the project's device name can be "
                     "the wrong one, and %s (SPEC 6.6).")
 
@@ -211,6 +95,9 @@ COMMANDS = {
         HEADLESS,
         # The words the settings file's plc list allows are the actions.
         action=settings.PLC_ACTIONS,
+        action_help="connect reads what the controller holds; download "
+                    "writes this project to it; trace records what a job "
+                    "file names",
         flags=[("-y/--yes", CONFIRM,
                 "confirm the download; only plc download takes it"),
                ("--gateway", NAME,
@@ -242,30 +129,50 @@ COMMANDS = {
         one_form="The watcher runs inside an IDE somebody is using, and "
                  "logging into a controller would take their online session "
                  "away from them (SPEC D8)."),
+    "trace": Command(
+        "move a trace's definition or its recorded data between the project "
+        "and files; touches no PLC",
+        EITHER,
+        action=TRACE_ACTIONS,
+        action_help="job writes a trace's definition to a job file; apply "
+                    "makes a trace from one; save writes what a trace "
+                    "recorded; show loads a saved trace for a person to see",
+        flags=[("-y/--yes", CONFIRM,
+                "confirm trace apply; it changes the project"),
+               ("--name", NAME, "the trace object in the project"),
+               ("--out", PATH,
+                "trace job: the job file to write; trace save: the output "
+                "path without extension"),
+               ("--job", DEFINITION,
+                "trace apply: the job file to take the definition from"),
+               ("--file", PATH, "trace show: the saved .trace file to load"),
+               ("--formats", WORDS,
+                "trace save: comma-separated from trace, csv, txt; default "
+                "trace,csv")],
+        needs={
+            "job": {"name": TRACE_NAMED},
+            "apply": {"name": TRACE_NAMED,
+                      "job": "The job file says what the trace records."},
+            "save": {"name": TRACE_NAMED,
+                     "out": "Where the files go, without extension."},
+            "show": {"file": "The .trace file a trace save or plc trace "
+                             "wrote."}},
+        refuses={
+            "job": {"yes": ONLY_APPLY, "job": NOT_FOR % "trace apply",
+                    "file": NOT_FOR % "trace show",
+                    "formats": NOT_FOR % "trace save"},
+            "apply": {"out": NOT_FOR % "trace job or trace save",
+                      "file": NOT_FOR % "trace show",
+                      "formats": NOT_FOR % "trace save"},
+            "save": {"yes": ONLY_APPLY, "job": NOT_FOR % "trace apply",
+                     "file": NOT_FOR % "trace show"},
+            "show": {"yes": ONLY_APPLY, "name": SHOW_TARGET,
+                     "out": NOT_FOR % "trace job or trace save",
+                     "job": NOT_FOR % "trace apply",
+                     "formats": NOT_FOR % "trace save"}},
+        action_forms={"save": (WATCHER, DATA_IN_THE_IDE),
+                      "show": (WATCHER, DATA_IN_THE_IDE)}),
 }
-
-# Flags that only mean something when we start the IDE ourselves. --answer is
-# among them because the prompts it answers are the IDE's own, and in the
-# --target form there is a person sitting in front of that IDE to answer them.
-# One list, so that what the parser offers and what refusals.check refuses
-# without a --project cannot be two different sets of six names.
-PROJECT_FLAGS = (
-    ("--install", NAME, "which IDE to start; `cdsint installs` lists them"),
-    ("--profile", NAME,
-     "the IDE profile name, when the install has more than one"),
-    ("--report", NAME, "where to write the run's report"),
-    ("--force-lock", SWITCH,
-     "start even though the project looks open elsewhere"),
-    ("--sync-dir", NAME,
-     "use this folder for this run instead of the sync_folder in the "
-     "project's settings file; nothing is written back"),
-    ("--answer", PAIRS, "answer one of the IDE's own prompts, as KEY=VALUE "
-                        "with VALUE one of " + ", ".join(PROMPT_RESULTS)
-                        + "; repeatable"),
-)
-
-PROJECT_ONLY = tuple(_dest(spelling)
-                     for spelling, _kind, _help in PROJECT_FLAGS)
 
 # Every attribute a parsed command line can carry, worked out from the rows
 # above rather than listed again. Each subparser is given the ones it does
@@ -314,9 +221,7 @@ def _build_one(sub, name, row):
     command = sub.add_parser(name, help=row.summary)
     if row.action is not None:
         command.add_argument("action", choices=row.action,
-                             help="connect reads what the controller holds; "
-                                  "download writes this project to it; trace "
-                                  "records what a job file names")
+                             help=row.action_help)
     command.add_argument("--timeout", type=float,
                          default=DEFAULT_TIMEOUT_S,
                          help="seconds one command step may take (default "

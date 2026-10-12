@@ -28,22 +28,27 @@ def check(parser, ns):
 
 
 def _one_form_only(parser, ns, row):
-    """A command with a single form, asked for the other one (SPEC D8).
+    """A command or action with a single form, asked for the other one.
 
-    argparse could simply not offer --target here, but then asking for it
+    argparse could simply not offer the other form, but then asking for it
     reads as a typo. Which form a command has and why is a decision, so it
-    gets a sentence, and the sentence is the row's.
+    gets a sentence, and the sentence is the row's: plc has only --project
+    (SPEC D8), trace save and show only --target.
     """
-    if row.form != flags.HEADLESS:
+    form, why = row.form_of(ns.action)
+    shown = flags.wire_name(ns)
+    if form == flags.WATCHER and ns.project:
+        parser.error("%s has no --project form; it works on an IDE somebody "
+                     "has open, so it wants --target. %s" % (shown, why))
+    if form != flags.HEADLESS:
         return
     if ns.target:
         parser.error("%s has no --target form; it starts an IDE of its own, "
                      "so it wants --project P --install I. %s"
-                     % (ns.command, row.one_form))
+                     % (shown, why))
     if not ns.project:
         parser.error("%s needs --project P --install I. It is the only "
-                     "command with no --target form. %s"
-                     % (ns.command, row.one_form))
+                     "command with no --target form. %s" % (shown, why))
 
 
 def _project_flags_need_a_project(parser, ns, row):
