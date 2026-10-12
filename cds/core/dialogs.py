@@ -18,3 +18,4 @@ from __future__ import print_function
 DELETE_ORPHANS = "Delete Orphaned Files?"
 CONFIRM_IMPORT = "Confirm Import"
 CONFIRM_PLC_DOWNLOAD = "Confirm PLC Download"
+CONFIRM_TRACE_APPLY = "Confirm Trace Apply"

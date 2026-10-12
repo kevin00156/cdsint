@@ -42,6 +42,10 @@ SCRIPTS = {
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),
     "plc trace": ("entry_plc.py", "record"),
+    "trace job": ("entry_trace.py", "to_job"),
+    "trace apply": ("entry_trace.py", "from_job"),
+    "trace save": ("entry_trace.py", "save_data"),
+    "trace show": ("entry_trace.py", "show_data"),
 }
 
 # What the watcher will not run, whoever asks. Logging into a PLC takes the
@@ -55,6 +59,17 @@ WATCHER_REFUSES = dict(
            "IDE somebody is using, and logging into a PLC would take their "
            "online session away from them (SPEC D8)." % name)
     for name in SCRIPTS if name.startswith("plc "))
+
+# What the headless launcher will not run. Recorded data lives in the IDE
+# that recorded it: one this run started has none to save, and a trace
+# loaded into it is seen by nobody. The CLI refuses these at the parser
+# (cdsint/flags.py DATA_IN_THE_IDE); this is the same rule for a job object
+# written by hand.
+HEADLESS_REFUSES = dict(
+    (name, "%s only runs in the --target form. Recorded data lives only in "
+           "the IDE that recorded it: an IDE this command starts has none, "
+           "and nobody would see a trace loaded into it." % name)
+    for name in ("trace save", "trace show"))
 
 # Every command the watcher answers by pressing an engine body.
 COMMANDS = sorted(set(SCRIPTS) - set(WATCHER_REFUSES))

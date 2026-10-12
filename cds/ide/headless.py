@@ -173,6 +173,12 @@ def run_commands(ide_globals, wanted, sync_dir=None):
         if sync_dir:
             args["sync_dir"] = sync_dir
         cmd = commands.new_command(step["command"], args)
+        refused = entries.HEADLESS_REFUSES.get(step["command"])
+        if refused is not None:
+            results.append(commands.new_result(cmd, False,
+                                               started_at=ipc.now(),
+                                               error=refused))
+            break
         results.append(entries.answer(ide_globals, cmd, ipc.now()))
         if not results[-1]["ok"]:
             break

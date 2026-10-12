@@ -45,6 +45,7 @@ YES_NO = {
     dialogs.DELETE_ORPHANS: ("delete_orphans", False),
     dialogs.CONFIRM_IMPORT: ("yes", None),
     dialogs.CONFIRM_PLC_DOWNLOAD: ("yes", None),
+    dialogs.CONFIRM_TRACE_APPLY: ("yes", None),
 }
 
 # The name the command's flags appear under inside a body's namespace. The
