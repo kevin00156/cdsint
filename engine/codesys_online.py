@@ -17,6 +17,7 @@ evidence against.
 from __future__ import print_function
 
 
+from engine.ide_private import in_script_run
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 from engine.object_paths import get_container_prefix
@@ -85,17 +86,25 @@ def _find_applications(project):
 
 
 def _is_logged_in(online_api, app):
-    """True when `app` holds a live PLC login. Unanswerable counts as False."""
-    session = None
+    """True when `app` holds a live PLC login. Unanswerable counts as False.
+
+    Through in_script_run because the watcher asks from a timer tick, where
+    create_online_application raises "Stack empty" for every application
+    and this check used to answer "not logged in" without having looked.
+    """
+    def ask():
+        session = None
+        try:
+            session = online_api.create_online_application(app)
+            return bool(session.is_logged_in)
+        finally:
+            _release(session)
     try:
-        session = online_api.create_online_application(app)
-        return bool(session.is_logged_in)
+        return in_script_run(online_api, ask)
     except Exception as e:
         log_warning("Login pre-flight: cannot read the login state of "
                     + name_of(app) + ": " + safe_str(e))
         return False
-    finally:
-        _release(session)
 
 
 def _release(session):
