@@ -171,11 +171,18 @@ class Recording(object):
             self.problem = "the trace could not be stopped: " + one_line(exc)
 
     def _finish(self):
-        problem = self.problem or self.trip.save()
+        """Save, then judge. A trace that could not be stopped is saved all
+        the same: what it recorded outlives a lost login (research 15.5)."""
+        saved = self.trip.save()
+        problem = self.problem or saved
         return self.trip.failed(problem) if problem else self.trip.verdict()
 
     def _broke_off(self, exc):
-        """Whatever the IDE threw, as the run's reason; nothing more is
-        asked of a trace that has just failed to answer."""
+        """Whatever the IDE threw, as the run's reason, with what can still
+        be saved saved first."""
         self.stopping_since = self.stopping_since or self.trip.clock()
+        try:
+            self.trip.save()
+        except Exception:
+            pass    # the reason already given is the one the caller needs
         return self.trip.failed("the recording broke off: " + one_line(exc))

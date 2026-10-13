@@ -165,3 +165,17 @@ def test_stop_in_the_project_form_is_refused(monkeypatch):
     monkeypatch.setattr(entry_plc, "command_args", {"stop": True})
     answer = entry_plc.record()
     assert not answer["ok"] and "watcher" in answer["summary"]
+
+
+def test_what_was_recorded_is_saved_even_when_the_recording_broke_off(bench):
+    # The data outlives a lost login (docs/trace-research.md 15.5), so a
+    # recording that broke off still leaves its files behind.
+    recording = started(bench)
+
+    def lost():
+        raise RuntimeError("connection lost")
+    bench.named_api.editor.get_packet_state = lost
+    bench.clock.now += 2.0
+    result = finished(bench, recording)
+    assert result["data"]["files"]
+    assert "connection lost" in result["data"]["why"]
