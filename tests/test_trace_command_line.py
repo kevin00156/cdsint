@@ -173,3 +173,31 @@ def test_trace_list_marks_a_trace_it_could_not_read_even_without_a_reason(
                                       "left_out": [], "unread": ""}]})
     report.show(record)
     assert "App/T2  (not read" in capsys.readouterr().out
+
+
+def test_a_list_another_command_names_like_a_trace_list_prints_plainly(
+        capsys):
+    """Row printers belong to the command whose rows they were written for
+    (#9): a plc command reporting trace names is not trace list."""
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("plc connect"), True,
+                                 data={"traces": ["T1", "T2"],
+                                       "variables": ["a.x"]})
+    report.show(record)
+    shown = capsys.readouterr().out
+    assert "T1" in shown and "T2" in shown and "a.x" in shown
+
+
+def test_trace_save_prints_how_much_of_each_variable_came_back(capsys):
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace save"), True,
+                                 data={"variables": [
+                                     {"name": "a.x", "samples": 9,
+                                      "expected": 10, "complete": 0.9,
+                                      "gaps": [{}],
+                                      "longest_interval": 2}]})
+    report.show(record)
+    assert "a.x  9/10 samples  complete 0.9  gaps 1" in \
+        capsys.readouterr().out
