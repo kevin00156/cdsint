@@ -160,3 +160,16 @@ def test_trace_list_prints_a_line_per_trace(capsys):
     shown = capsys.readouterr().out
     assert "App/Traces/T1  MainTask  2 variable(s), 1 switched off" in shown
     assert "App/T2  (not read: no member)" in shown
+
+
+def test_trace_list_marks_a_trace_it_could_not_read_even_without_a_reason(
+        capsys):
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace list"), True,
+                                 data={"traces": [
+                                     {"name": "T2", "path": "App/T2",
+                                      "task": None, "variables": [],
+                                      "left_out": [], "unread": ""}]})
+    report.show(record)
+    assert "App/T2  (not read" in capsys.readouterr().out

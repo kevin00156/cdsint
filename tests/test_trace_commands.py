@@ -473,6 +473,63 @@ def test_list_still_names_a_trace_it_cannot_read(bench):
     assert ide_private.CREATE_SCRIPT_TRACE in rows[0]["unread"]
 
 
+class Unreadable(Node):
+    """An object whose plug-in is missing: it will not say what it is."""
+
+    @property
+    def type(self):
+        raise SystemError("no plug-in")
+
+    @type.setter
+    def type(self, value):
+        pass
+
+
+def test_list_of_a_tree_it_could_not_read_whole_is_not_ok(bench):
+    """SPEC D11/D13: ok means every object was handled. The traces it could
+    read are still listed, and the object it could not is named once."""
+    bench.press("apply", yes=True, name="T1", job=definition())
+    bench.application._children.append(
+        Unreadable("Broken", None, parent=bench.application))
+    listed = bench.press("list")
+    assert not listed["ok"]
+    assert [row["name"] for row in listed["data"]["traces"]] == ["T1"]
+    assert listed["data"]["failed_objects"] == ["Broken"]
+    assert "Broken" in listed["error"]
+
+
+def test_list_of_a_tree_that_will_not_list_is_not_ok(bench):
+    def refuses(recursive=False):
+        raise SystemError("no plug-in")
+    bench.project.get_children = refuses
+    listed = bench.press("list")
+    assert not listed["ok"] and listed["data"]["traces"] == []
+
+
+@pytest.mark.parametrize("action,args", [
+    ("list", {}), ("job", {"name": "T1"}),
+    ("apply", {"yes": True, "name": "T1", "job": definition()}),
+    ("save", {"name": "T1", "out": "x"}),
+    ("show", {"yes": True, "name": "T1", "file": "x.trace"})])
+def test_every_action_refuses_when_no_project_is_open(bench, action, args):
+    bench.project = None
+    refused = bench.press(action, **args)
+    assert not refused["ok"] and "no project open" in refused["error"]
+    assert "Traceback" not in refused["error"]
+
+
+def test_an_unread_trace_with_a_blank_reason_still_says_it(bench,
+                                                           monkeypatch):
+    from engine import trace_config
+    bench.press("apply", yes=True, name="T1", job=definition())
+
+    def blank(*args):
+        raise RuntimeError("\r\n")
+    monkeypatch.setattr(trace_config, "describe", blank)
+    row = bench.press("list")["data"]["traces"][0]
+    assert row["unread"] == "RuntimeError"
+
+
 def test_list_saves_nothing(bench):
     bench.press("apply", yes=True, name="T1", job=definition())
     saves = bench.project.saves

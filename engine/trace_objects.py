@@ -8,14 +8,16 @@ looking for a typo when what they need is to know what the name is.
 """
 from __future__ import print_function
 
-from engine import entry, ide_private
-from engine.ide_read import children_of, guid_of, kind_of, name_of, parent_of
+from engine import entry, ide_private, unhandled
+from engine.ide_read import guid_of, kind_of, name_of, parent_of
 from engine.plc_trip import one_line
 from engine.strings import safe_str
 
 TRACE = "trace"
 FOLDER = "folder"
 APPLICATION = "application"
+# What failed_objects names when the project will not list its objects.
+PROJECT_TREE = "the project's object tree"
 
 NO_SCRIPT_TRACE = (
     "this IDE's trace plug-in has no %s, the private member cdsint reaches "
@@ -105,8 +107,18 @@ def reach(ide_globals, project, name):
 
 
 def every(project):
-    """Every trace object in the project, wherever it sits in the tree."""
-    return [obj for obj in _below(project) if kind_of(obj) == TRACE]
+    """Every trace object in the project, wherever it sits in the tree.
+
+    One recursive enumeration, the one export and discover make, so this
+    sees what they see (docs/trace-research.md 15.13). Each object's kind is
+    read once; one that will not say is named in engine/unhandled.py.
+    """
+    try:
+        found = project.get_children(True)
+    except Exception as exc:
+        unhandled.note(PROJECT_TREE, exc)
+        return []
+    return [obj for obj in found if kind_of(obj) == TRACE]
 
 
 def folder_named(project, name):
@@ -176,16 +188,6 @@ def move(obj, folder):
                 "be moved into %s: %s" % (name_of(obj), path_of(obj),
                                          path_of(folder), one_line(exc)))
     return None
-
-
-def _below(top):
-    """Every object under `top`, nearest first."""
-    found, level = [], list(children_of(top))
-    while level:
-        obj = level.pop(0)
-        found.append(obj)
-        level.extend(children_of(obj))
-    return found
 
 
 def create(ide_globals, application, name, task):

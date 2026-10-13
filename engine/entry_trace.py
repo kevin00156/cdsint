@@ -49,6 +49,8 @@ JUDGING = dict((name, default) for name, _kind, default, _meaning
 
 DEFAULT_FORMATS = ("trace", "csv")
 
+NO_PROJECT = "'projects' object not found or no project open"
+
 # A trace that has not recorded since the IDE opened still lists its
 # variables in the file, with no rows; judged as samples it would read as
 # every cycle missing and blame the controller.
@@ -67,15 +69,22 @@ def list_traces():
 
     A trace that cannot be read is still listed, with why: its name and
     place are what the caller came for, and they need no private member.
+    An object that will not say what it is might be a trace, so the list
+    is not ok then (SPEC D11, D13): the rows are what could be seen.
     """
     unhandled.start()
-    _args, project = _inputs()
+    _args, project, refused = _inputs("list")
+    if refused:
+        return refused
     rows = sorted((_listed(project, obj)
                    for obj in trace_objects.every(project)),
                   key=lambda row: row["path"].lower())
+    summary = "trace list: %d trace object(s)" % len(rows)
+    if unhandled.any_so_far():
+        summary += " -- " + unhandled.summary()
     return entry.result(
-        True, "trace list: %d trace object(s)" % len(rows), action="list",
-        traces=rows, failed_objects=unhandled.names())
+        not unhandled.any_so_far(), summary, action="list", traces=rows,
+        failed_objects=unhandled.names())
 
 
 def _listed(project, obj):
@@ -89,7 +98,7 @@ def _listed(project, obj):
         definition, left_out = trace_config.describe(
             api, entry.borrowed(globals(), "Resolution"))
     except Exception as exc:
-        row["unread"] = one_line(exc)
+        row["unread"] = one_line(exc) or type(exc).__name__
         return row
     row.update(task=definition["task"], variables=definition["variables"],
                left_out=left_out)
@@ -99,7 +108,9 @@ def _listed(project, obj):
 def to_job():
     """trace job: what a trace object records, as a job file's definition."""
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("job")
+    if refused:
+        return refused
     api, problem = trace_objects.reach(globals(), project, args.get("name"))
     if problem:
         return _failed("job", problem)
@@ -132,7 +143,9 @@ def from_job():
     """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("apply")
+    if refused:
+        return refused
     name = args.get("name")
     definition, problem = trace_job.normalise_definition(args.get("job"))
     if problem:
@@ -233,7 +246,9 @@ def save_data():
     default keeps only its last few thousand samples (research 15.8).
     """
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("save")
+    if refused:
+        return refused
     api, problem = trace_objects.reach(globals(), project, args.get("name"))
     if problem:
         return _failed("save", problem)
@@ -300,7 +315,9 @@ def show_data():
     """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("show")
+    if refused:
+        return refused
     name, path = args.get("name"), args.get("file")
     if not ask_yes_no(dialogs.CONFIRM_TRACE_SHOW,
                       SHOW_QUESTION % (path, name, name)):
@@ -349,10 +366,14 @@ def _loaded(project, editor):
                       "read back: " + one_line(exc))
 
 
-def _inputs():
-    """(this run's flags, the open project)."""
-    return (entry.flags(globals()),
-            entry.borrowed(globals(), "projects").primary)
+def _inputs(action):
+    """(this run's flags, the open project, None), or a failed result when
+    no project is open."""
+    projects = entry.borrowed(globals(), "projects")
+    project = projects.primary if projects is not None else None
+    if project is None:
+        return None, None, _failed(action, NO_PROJECT)
+    return entry.flags(globals()), project, None
 
 
 def _failed(action, problem, **data):

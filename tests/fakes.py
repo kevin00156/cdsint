@@ -39,7 +39,9 @@ class Project(object):
         return Info(self.values)
 
     def get_children(self, recursive=False):
-        return list(self._children)
+        if not recursive:
+            return list(self._children)
+        return list(_every_below(self._children))
 
     def get_name(self):
         return "FakeProject"
@@ -84,11 +86,20 @@ class Node(object):
     def get_children(self, recursive=False):
         if not recursive:
             return list(self._children)
-        out = []
-        for child in self._children:
-            out.append(child)
-            out.extend(child.get_children(recursive=True))
-        return out
+        return list(_every_below(self._children))
+
+
+def _every_below(children):
+    """get_children(recursive=True): every object below, parents first.
+
+    The IDE enumerates on its own side, without asking each child to list
+    itself, so a child whose own get_children raises is still descended
+    into here, and a stand-in with no children of its own is a leaf.
+    """
+    for child in children:
+        yield child
+        for below in _every_below(getattr(child, "_children", ())):
+            yield below
 
 
 class DeafUI(object):

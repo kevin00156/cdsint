@@ -321,8 +321,8 @@ def _listed(row):
     Its variables are counted, not spelled out: --json has them, and a line
     per trace is what lets a reader find the one they mean.
     """
-    if row["unread"]:
-        return "%s  (not read: %s)" % (row["path"], row["unread"])
+    if row["unread"] is not None:
+        return "%s  (not read: %s)" % (row["path"], row["unread"] or "?")
     shown = "%s  %s  %d variable(s)" % (row["path"], row["task"],
                                          len(row["variables"]))
     if row["left_out"]:
