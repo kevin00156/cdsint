@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""trace job, apply, save and show: a trace's definition and data, in and out.
+"""trace list, job, apply, save and show: a trace's definition and data.
 
-None of these touches a PLC. job and apply move what a trace records between
+None of these touches a PLC. list says which traces the project has, where
+they sit and what each records, so a trace can be named without knowing the
+person's folders. job and apply move what a trace records between
 a trace object and a job file, so a person can pick variables in the IDE and
 an agent can record them with plc trace, or the other way round. save writes
 what a trace in this IDE recorded; show loads a saved trace into a trace
@@ -26,6 +28,7 @@ import os
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
+from engine.ide_read import kind_of, name_of, parent_of
 from engine.plc_trip import one_line
 
 # The flags this run was given, put here by cds/ide/silent.py once this
@@ -57,6 +60,40 @@ NO_SAMPLES = ("the trace holds no samples: it has not recorded in this IDE "
 # where show writes the one it reads what it loaded from.
 WORKSPACE_CSV = "saved.csv"
 SHOWN_CSV = "shown.csv"
+
+
+def list_traces():
+    """trace list: every trace object, its whole path, and what it records.
+
+    A trace that cannot be read is still listed, with why: its name and
+    place are what the caller came for, and they need no private member.
+    """
+    unhandled.start()
+    _args, project = _inputs()
+    rows = sorted((_listed(project, obj)
+                   for obj in trace_objects.every(project)),
+                  key=lambda row: row["path"].lower())
+    return entry.result(
+        True, "trace list: %d trace object(s)" % len(rows), action="list",
+        traces=rows, failed_objects=unhandled.names())
+
+
+def _listed(project, obj):
+    row = {"name": name_of(obj), "path": trace_objects.path_of(obj),
+           "task": None, "variables": [], "left_out": [], "unread": None}
+    api, problem = trace_objects.scripted(globals(), project, obj)
+    if problem:
+        row["unread"] = problem
+        return row
+    try:
+        definition, left_out = trace_config.describe(
+            api, entry.borrowed(globals(), "Resolution"))
+    except Exception as exc:
+        row["unread"] = one_line(exc)
+        return row
+    row.update(task=definition["task"], variables=definition["variables"],
+               left_out=left_out)
+    return row
 
 
 def to_job():
@@ -103,10 +140,13 @@ def from_job():
     existing, problem = _existing_trace(project, name)
     if problem:
         return _failed("apply", problem)
+    folder, problem = _the_folder(project, args.get("folder"), existing)
+    if problem:
+        return _failed("apply", problem)
     if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY, APPLY_QUESTION % name):
         return _failed("apply", "not confirmed")
     api, replaced, problem = _the_trace_to_apply(project, name, definition,
-                                                 existing)
+                                                 existing, folder)
     if problem:
         return _failed("apply", problem)
     problem = trace_config.configure(api, definition,
@@ -147,7 +187,27 @@ def _existing_trace(project, name):
     return None, None
 
 
-def _the_trace_to_apply(project, name, definition, existing):
+def _the_folder(project, wanted, existing):
+    """(the folder a new trace goes in, or None, None), or (None, why).
+
+    --folder places a trace apply creates; it never moves one, so a trace
+    already somewhere else is refused rather than left where it is while
+    the caller believes it was put in the folder.
+    """
+    if not wanted:
+        return None, None
+    if existing is None:
+        return trace_objects.folder_named(project.active_application, wanted)
+    parent = parent_of(existing)
+    if (parent is not None and name_of(parent).lower() == wanted.lower()
+            and kind_of(parent) == trace_objects.FOLDER):
+        return None, None
+    return None, ("%s already exists at %s, and apply changes a trace where "
+                  "it is: leave out --folder, or move it in the IDE"
+                  % (name_of(existing), trace_objects.path_of(existing)))
+
+
+def _the_trace_to_apply(project, name, definition, existing, folder):
     """(settings, what it recorded before or None if new, None), or a why."""
     if existing is not None:
         api, problem = trace_objects.scripted(globals(), project, existing)
@@ -156,6 +216,9 @@ def _the_trace_to_apply(project, name, definition, existing):
         return api, [v.variable_name for v in api.variable_list], None
     api, problem = trace_objects.create(globals(), project.active_application,
                                         name, definition["task"])
+    if problem is None and folder is not None:
+        api, problem = trace_objects.move_into(globals(), project, name,
+                                               folder)
     return api, None, problem
 
 

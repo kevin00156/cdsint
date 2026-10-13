@@ -50,7 +50,8 @@ STOP_ALONE = ("--stop ends the recording a watcher is holding, and takes "
 STOP_IN_THE_WATCHER = ("--stop ends a recording a watcher is holding; a "
                        "--project run records within its own process and "
                        "ends by itself.")
-TRACE_ACTIONS = ("job", "apply", "save", "show")
+TRACE_ACTIONS = ("list", "job", "apply", "save", "show")
+LISTS_ONLY = "trace list names every trace and takes nothing else."
 WRONG_CONTROLLER = ("A controller found by the project's device name can be "
                     "the wrong one, and %s (SPEC 6.6).")
 
@@ -161,11 +162,13 @@ COMMANDS = {
                       "download": (HEADLESS, CONTROLLER_LOGIN)},
         variant=("stop", "--stop")),
     "trace": Command(
-        "move a trace's definition or its recorded data between the project "
-        "and files; touches no PLC",
+        "list the project's traces, or move a trace's definition or its "
+        "recorded data between the project and files; touches no PLC",
         EITHER,
         action=TRACE_ACTIONS,
-        action_help="job writes a trace's definition to a job file; apply "
+        action_help="list names every trace, where it is and what it "
+                    "records; job writes a trace's definition to a job file; "
+                    "apply "
                     "makes a trace from one; save writes what a trace "
                     "recorded; show loads a saved trace into one for a person "
                     "to see",
@@ -181,7 +184,10 @@ COMMANDS = {
                ("--file", PATH, "trace show: the saved .trace file to load"),
                ("--formats", WORDS,
                 "trace save: comma-separated from trace, csv, txt; default "
-                "trace,csv")],
+                "trace,csv"),
+               ("--folder", NAME,
+                "trace apply: the folder a new trace goes in; it has to "
+                "exist, and an existing trace is not moved")],
         needs={
             "job": {"name": TRACE_NAMED},
             "apply": {"name": TRACE_NAMED,
@@ -192,17 +198,23 @@ COMMANDS = {
                              "wrote.",
                      "name": TRACE_NAMED}},
         refuses={
+            "list": dict((dest, LISTS_ONLY) for dest in
+                         ("yes", "name", "out", "job", "file", "formats",
+                          "folder")),
             "job": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
                     "file": NOT_FOR % "trace show",
-                    "formats": NOT_FOR % "trace save"},
+                    "formats": NOT_FOR % "trace save",
+                    "folder": NOT_FOR % "trace apply"},
             "apply": {"out": NOT_FOR % "trace job or trace save",
                       "file": NOT_FOR % "trace show",
                       "formats": NOT_FOR % "trace save"},
             "save": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
-                     "file": NOT_FOR % "trace show"},
+                     "file": NOT_FOR % "trace show",
+                     "folder": NOT_FOR % "trace apply"},
             "show": {"out": NOT_FOR % "trace job or trace save",
                      "job": NOT_FOR % "trace apply",
-                     "formats": NOT_FOR % "trace save"}},
+                     "formats": NOT_FOR % "trace save",
+                     "folder": NOT_FOR % "trace apply"}},
         action_forms={"save": (WATCHER, DATA_IN_THE_IDE),
                       "show": (WATCHER, DATA_IN_THE_IDE)}),
 }

@@ -71,6 +71,10 @@ class Bench(object):
     # -- the IDE ----------------------------------------------------------
 
     def create(self, application, name, task):
+        if application is not self.application:
+            # As measured: handed a folder, create() makes nothing and says
+            # so only by what it returns (docs/trace-research.md 15.12).
+            return NoScriptTraceObject()
         if self.online:
             # What create() hands back while the application is logged in
             # (docs/trace-research.md 15): no object, and no exception.
@@ -426,3 +430,96 @@ def test_show_into_a_trace_that_is_recording_is_refused(bench):
     shown = bench.press("show", yes=True, name="T1", file=path)
     assert not shown["ok"] and "recording" in shown["error"]
     assert bench.loads == []
+
+
+# --- trace list ----------------------------------------------------------------
+
+def folder(bench, name="Traces"):
+    node = Node(name, TYPE_GUIDS["folder"], parent=bench.application)
+    bench.application._children.append(node)
+    return node
+
+
+def test_list_names_every_trace_with_its_path_task_and_variables(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("a.x", "a.y"))
+    bench.press("apply", yes=True, name="T2", job=definition("b.z"))
+    listed = bench.press("list")
+    assert listed["ok"], listed["error"]
+    rows = dict((row["name"], row) for row in listed["data"]["traces"])
+    assert sorted(rows) == ["T1", "T2"]
+    assert rows["T1"]["path"] == "Application/T1"
+    assert rows["T1"]["task"] == TASK
+    assert rows["T1"]["variables"] == ["a.x", "a.y"]
+
+
+def test_list_finds_a_trace_inside_a_folder(bench):
+    folder(bench)
+    bench.press("apply", yes=True, name="T1", job=definition(),
+                folder="Traces")
+    rows = bench.press("list")["data"]["traces"]
+    assert [row["path"] for row in rows] == ["Application/Traces/T1"]
+
+
+def test_list_of_a_project_with_no_trace_is_ok_and_empty(bench):
+    listed = bench.press("list")
+    assert listed["ok"] and listed["data"]["traces"] == []
+
+
+def test_list_still_names_a_trace_it_cannot_read(bench):
+    bench.press("apply", yes=True, name="T1", job=definition())
+    bench.reachable = False
+    rows = bench.press("list")["data"]["traces"]
+    assert rows[0]["name"] == "T1" and rows[0]["task"] is None
+    assert ide_private.CREATE_SCRIPT_TRACE in rows[0]["unread"]
+
+
+def test_list_saves_nothing(bench):
+    bench.press("apply", yes=True, name="T1", job=definition())
+    saves = bench.project.saves
+    bench.press("list")
+    assert bench.project.saves == saves
+
+
+# --- trace apply --folder ------------------------------------------------------
+
+def test_apply_puts_a_new_trace_in_the_folder(bench):
+    folder(bench)
+    applied = bench.press("apply", yes=True, name="T1", job=definition("a.x"),
+                          folder="Traces")
+    assert applied["ok"], applied["error"]
+    node = [n for n in bench.project.find("T1", True)][0]
+    assert node.parent.get_name() == "Traces"
+    assert bench.trace_named("T1").variables == ["a.x"]
+
+
+def test_apply_into_a_folder_that_is_not_there_creates_nothing(bench):
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="Nowhere")
+    assert not refused["ok"] and "no folder named Nowhere" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_into_a_name_that_is_not_a_folder_is_refused(bench):
+    bench.press("apply", yes=True, name="T2", job=definition())
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="T2")
+    assert not refused["ok"] and "not a folder" in refused["error"]
+
+
+def test_apply_with_a_folder_to_a_trace_already_there_changes_it(bench):
+    folder(bench)
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"),
+                folder="Traces")
+    again = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
+                        folder="Traces")
+    assert again["ok"], again["error"]
+    assert bench.trace_named("T1").variables == ["b.y"]
+
+
+def test_apply_with_another_folder_does_not_move_an_existing_trace(bench):
+    folder(bench)
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    refused = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
+                          folder="Traces")
+    assert not refused["ok"] and "Application/T1" in refused["error"]
+    assert bench.trace_named("T1").variables == ["a.x"]

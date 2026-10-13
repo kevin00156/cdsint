@@ -315,9 +315,24 @@ def _traced(row):
         len(row["gaps"]))
 
 
+def _listed(row):
+    """One trace trace list found: where it is, its task, how much it records.
+
+    Its variables are counted, not spelled out: --json has them, and a line
+    per trace is what lets a reader find the one they mean.
+    """
+    if row["unread"]:
+        return "%s  (not read: %s)" % (row["path"], row["unread"])
+    shown = "%s  %s  %d variable(s)" % (row["path"], row["task"],
+                                         len(row["variables"]))
+    if row["left_out"]:
+        shown += ", %d switched off" % len(row["left_out"])
+    return shown
+
+
 # The data lists whose rows need their own words; every other list's rows go
 # through _one_line.
-ROWS = {"variables": _traced}
+ROWS = {"variables": _traced, "traces": _listed}
 
 
 def _show_needs(result):
