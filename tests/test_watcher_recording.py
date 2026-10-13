@@ -226,3 +226,25 @@ def test_a_recording_registration_lives_by_its_heartbeat():
     instances.set_state(reg, instances.STATE_RECORDING, 1000.0, "plc trace")
     assert instances.is_alive(reg, now=1005.0)
     assert not instances.is_alive(reg, now=1000.0 + 3600.0)
+
+
+def test_closing_the_watcher_leaves_the_answer_for_its_caller(root, watch,
+                                                              handle):
+    # The bench found the result written and then deleted with the instance
+    # directory in the same breath, so the caller read "stopped before
+    # answering" for a recording that had been answered.
+    first = recording(root, watch, handle)
+    watch.shutdown()
+    assert instances.read(root, watch.instance_id) is None
+    assert result(root, watch, first)["ok"] is True
+
+
+def test_the_caller_clears_what_a_closed_watcher_left_for_it(root, watch,
+                                                             handle):
+    from cdsint import target
+    first = recording(root, watch, handle)
+    watch.shutdown()
+    assert target.collect(root, watch.instance_id, first)["ok"] is True
+    import os
+    from cds.core import ipc
+    assert not os.path.exists(ipc.instance_dir(root, watch.instance_id))

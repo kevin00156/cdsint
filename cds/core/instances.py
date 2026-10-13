@@ -165,9 +165,18 @@ def read_all(root):
     return out
 
 
-def delete(root, instance_id):
-    """Drop an instance: its registration file and its whole directory."""
+def delete(root, instance_id, keep_results=False):
+    """Drop an instance: its registration file and its whole directory.
+
+    keep_results leaves the result directory for a caller still waiting on
+    an answer written a moment ago (a recording a closing watcher just
+    finished); that caller clears the rest once it has read it
+    (cdsint/target.py collect).
+    """
     ipc.remove_file(ipc.registration_path(root, instance_id))
+    if keep_results:
+        shutil.rmtree(ipc.command_dir(root, instance_id), ignore_errors=True)
+        return
     shutil.rmtree(ipc.instance_dir(root, instance_id), ignore_errors=True)
 
 

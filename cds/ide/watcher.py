@@ -120,13 +120,16 @@ class Watcher(HoldsARecording):
         """Leave nothing behind for the next watcher to trip over.
 
         A recording is finished first: no tick will come again, so its
-        caller is answered now, with what was recorded so far.
+        caller is answered now, with what was recorded so far, and the
+        answer is left behind for that caller to collect.
         """
-        if self.recording is not None:
+        answered = self.recording is not None
+        if answered:
             self._conclude(self.recording,
                            self.recording.finish("the watcher was stopped"))
         try:
-            instances.delete(self.root, self.instance_id)
+            instances.delete(self.root, self.instance_id,
+                             keep_results=answered)
         except EnvironmentError as exc:
             # A CLI reading the file right now holds it open. Leaving the
             # registration behind is survivable — the next watcher's

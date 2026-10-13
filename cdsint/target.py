@@ -166,7 +166,7 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     watching = Watching(root, instance_id)
     try:
         while True:
-            result = commands.take_result(root, instance_id, cmd["id"])
+            result = collect(root, instance_id, cmd["id"])
             if result is not None:
                 return result
             answer = GONE if watching.gone(time.time()) else None
@@ -177,6 +177,21 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     except KeyboardInterrupt:
         commands.delete_command(root, instance_id, cmd["id"])
         raise
+
+
+def collect(root, instance_id, cmd_id):
+    """The result of cmd_id, or None if it is not there yet.
+
+    A watcher closed while it held a recording writes that answer and goes,
+    leaving its directory for this caller (cds/core/instances.py delete).
+    Once the answer is read and the registration is gone, nobody else will
+    come for what is left, so it is cleared here.
+    """
+    result = commands.take_result(root, instance_id, cmd_id)
+    if result is not None and not os.path.exists(
+            ipc.registration_path(root, instance_id)):
+        instances.delete(root, instance_id)
+    return result
 
 
 class Watching(object):
