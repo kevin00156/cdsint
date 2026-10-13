@@ -42,6 +42,7 @@ SCRIPTS = {
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),
     "plc trace": ("entry_plc.py", "record"),
+    "trace list": ("entry_trace.py", "list_traces"),
     "trace job": ("entry_trace.py", "to_job"),
     "trace apply": ("entry_trace.py", "from_job"),
     "trace save": ("entry_trace.py", "save_data"),

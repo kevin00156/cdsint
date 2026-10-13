@@ -9,11 +9,12 @@ looking for a typo when what they need is to know what the name is.
 from __future__ import print_function
 
 from engine import entry, ide_private
-from engine.ide_read import kind_of, name_of, parent_of
+from engine.ide_read import children_of, kind_of, name_of, parent_of
 from engine.plc_trip import one_line
 from engine.strings import safe_str
 
 TRACE = "trace"
+FOLDER = "folder"
 
 NO_SCRIPT_TRACE = (
     "this IDE's trace plug-in has no %s, the private member cdsint reaches "
@@ -59,10 +60,26 @@ def path_of(obj):
     of the tree. The parent alone told nothing apart when two traces of one
     name sat in two applications, which both name their parent the same."""
     names = []
-    while obj is not None:
+    while obj is not None and not _the_project(obj):
         names.append(name_of(obj))
         obj = parent_of(obj)
     return "/".join(reversed(names))
+
+
+def _the_project(obj):
+    """The project itself, where every chain of parents ends in the IDE.
+
+    It has no name of its own, and name_of would print its description
+    (docs/trace-research.md 15.12). Both tests are needed: an object whose
+    plug-in is missing has no name either, but it has a parent.
+    """
+    if parent_of(obj) is not None:
+        return False
+    try:
+        obj.get_name()
+    except Exception:
+        return True
+    return False
 
 
 def scripted(ide_globals, project, obj):
@@ -80,6 +97,60 @@ def reach(ide_globals, project, name):
     if problem:
         return None, problem
     return scripted(ide_globals, project, obj)
+
+
+def every(project):
+    """Every trace object in the project, wherever it sits in the tree."""
+    return [obj for obj in _below(project) if kind_of(obj) == TRACE]
+
+
+def folder_named(application, name):
+    """(the one folder called `name` under the application, None), or
+    (None, why there is not one). Never made here: a folder is the person's
+    to lay out, and a typo would otherwise become a folder."""
+    found = [obj for obj in _below(application)
+             if name_of(obj).lower() == name.lower()]
+    folders = [obj for obj in found if kind_of(obj) == FOLDER]
+    if len(folders) == 1:
+        return folders[0], None
+    if folders:
+        return None, ("%d folders are named %s (%s), and --folder cannot say "
+                      "which; rename one" % (len(folders), name, ", ".join(
+                          path_of(obj) for obj in folders)))
+    if found:
+        return None, "%s is not a folder%s" % (name, what_else(found))
+    return None, ("no folder named %s under %s; make it in the IDE first"
+                  % (name, path_of(application)))
+
+
+def move_into(ide_globals, project, name, folder):
+    """(the settings of trace `name`, moved into `folder`, None), or (None,
+    why).
+
+    trace.create takes only an application: handed a folder it makes
+    nothing (docs/trace-research.md 15.12), so a trace is made there and
+    moved. It is reached again afterwards rather than trusted, because a
+    script object fetched before its object changed can go stale (15.6).
+    """
+    obj, problem = find(project, name)
+    if problem:
+        return None, problem
+    try:
+        obj.move(folder)
+    except Exception as exc:
+        return None, ("%s was made but could not be moved into %s: %s"
+                      % (name, path_of(folder), one_line(exc)))
+    return scripted(ide_globals, project, obj)
+
+
+def _below(top):
+    """Every object under `top`, nearest first."""
+    found, level = [], list(children_of(top))
+    while level:
+        obj = level.pop(0)
+        found.append(obj)
+        level.extend(children_of(obj))
+    return found
 
 
 def create(ide_globals, application, name, task):

@@ -174,6 +174,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
+| `trace list` | yes | yes | every trace object in the project: its whole path, task and variables |
 | `trace job --name T [--out FILE]` | yes | yes | write what trace object `T` records as a job file |
 | `trace apply -y --name T --job FILE` | yes | yes | make trace `T` record a job file's variables, creating it if needed |
 | `trace save --name T --out PATH [--formats LIST]` | yes | — | write what `T` recorded in this IDE, and say whether samples are missing |
@@ -459,14 +460,20 @@ the IDE ends it the same way.
 ### Trace objects and their data: `trace`
 
 ```
+cdsint trace list  --target softplc
 cdsint trace job   --target softplc --name T1 --out t1.json
 cdsint trace apply --target softplc -y --name T1 --job t1.json
 cdsint trace save  --target softplc --name T1 --out runs/t1 --formats csv,trace
 cdsint trace show  --target softplc -y --name T1 --file runs/t1.trace
 ```
 
-Four commands for trace objects in the project and what they recorded. None
+Five commands for trace objects in the project and what they recorded. None
 of them talks to a controller, so none needs a word in the `plc` list.
+
+- **`trace list`** names every trace object in the project, wherever it
+  sits, with its whole path, its task and the variables it records
+  (`data.traces`). Use it to find a trace kept in a folder; `--name` takes
+  the trace's own name, not its path.
 
 - **`trace job`** writes what trace `T1` records — task, variables,
   resolution, every-nth-cycle, trigger or record condition — as a job file.
@@ -479,7 +486,9 @@ of them talks to a controller, so none needs a word in the `plc` list.
   does, and saves the project as `import` does. A name that belongs to a folder or a
   POU is refused, and so is creating a trace while the project is logged in
   to the controller: CODESYS adds no object to an application that is online.
-  An existing trace can be changed while logged in.
+  An existing trace can be changed while logged in. `--folder F` puts a new
+  trace in an existing folder `F`; it never moves a trace that is already
+  there, and refuses one that sits elsewhere.
 - **`trace save`** writes what `T1` recorded in this IDE (`--formats`, any of
   `trace`, `csv`, `txt`; default `trace,csv`) and judges the samples as
   `plc trace` does. Missing samples do not fail it: they are reported in

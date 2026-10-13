@@ -123,3 +123,40 @@ def test_a_list_of_variable_names_prints_one_name_a_line(capsys):
     report.show(record)
     shown = capsys.readouterr().out
     assert "PLC_PRG.a" in shown and "PLC_PRG.b" in shown
+
+
+
+def test_trace_list_takes_both_forms_and_no_flags(capsys):
+    assert flags.wire_name(parse(["trace", "list", "--target", "x"])) \
+        == "trace list"
+    parse(["trace", "list", "--project", "p.project", "--install", "i"])
+    err = refused(["trace", "list", "--target", "x", "--name", "T1"], capsys)
+    assert "trace list does not take --name" in err
+
+
+def test_only_apply_takes_a_folder(tmp_path, capsys):
+    job = write_job(tmp_path, '{"task": "T", "variables": ["a"]}')
+    ns = parse(["trace", "apply", "--target", "x", "-y", "--name", "T1",
+                "--job", job, "--folder", "Traces"])
+    assert ns.folder == "Traces"
+    err = refused(["trace", "job", "--target", "x", "--name", "T1",
+                   "--folder", "F"], capsys)
+    assert "trace job does not take --folder" in err
+
+
+def test_trace_list_prints_a_line_per_trace(capsys):
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace list"), True,
+                                 data={"traces": [
+                                     {"name": "T1", "path": "App/Traces/T1",
+                                      "task": "MainTask",
+                                      "variables": ["a", "b"],
+                                      "left_out": ["c"], "unread": None},
+                                     {"name": "T2", "path": "App/T2",
+                                      "task": None, "variables": [],
+                                      "left_out": [], "unread": "no member"}]})
+    report.show(record)
+    shown = capsys.readouterr().out
+    assert "App/Traces/T1  MainTask  2 variable(s), 1 switched off" in shown
+    assert "App/T2  (not read: no member)" in shown

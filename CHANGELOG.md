@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Unreleased — trace objects in and out of an open IDE
 
+- **`cdsint trace list`** names every trace object in the project with its
+  whole path, its task and what it records, in either form, so a trace kept
+  in a folder can be found by name.
+- **`trace apply --folder F`** puts a trace it creates into the existing
+  folder `F`; an existing trace is never moved.
+
 - **`cdsint trace job` and `trace apply`** move what a trace records between
   a trace object and a job file. Pick the variables in the IDE's trace, run
   `trace job`, add `duration_s` and `out`, and it is a `plc trace` job; or

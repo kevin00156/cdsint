@@ -226,6 +226,11 @@ refused rather than taken over.
 These never touch a controller and need no `plc` word. Use them when the
 user has the IDE open:
 
+- To see which traces exist and where: `cdsint trace list --target X`. Each
+  row is a trace's whole path, task and variable count (`--json` has the
+  variables). Users keep traces in folders of their own; `--name` takes the
+  trace's name, not the path.
+
 - The user picked variables in an IDE trace and wants you to record them:
   `cdsint plc trace --target X --name T1 --job run.json` while they are
   logged in (above). To read what T1 records first, `cdsint trace job
@@ -234,7 +239,9 @@ user has the IDE open:
   `plc trace --name`: `cdsint trace apply --target X -y --name T1 --job
   job.json` (a full `plc trace` job is fine). It saves the project. Creating
   a new trace fails while the project is logged in; changing an existing one
-  works, so make the trace once while logged out.
+  works, so make the trace once while logged out. Add `--folder F` to put a
+  new trace in the user's existing folder `F` (see where theirs live with
+  `trace list`); it never moves an existing trace.
 - The user recorded something and you need the numbers:
   `cdsint trace save --target X --name T1 --out runs/t1 --formats csv`. Read
   `data.why` and `data.variables[].samples`: a hand-started trace often

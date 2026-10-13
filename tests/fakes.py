@@ -74,6 +74,13 @@ class Node(object):
     def get_name(self):
         return self._name
 
+    def move(self, new_parent):
+        """IScriptObject.move: the object, its GUID kept, under new_parent."""
+        if self.parent is not None:
+            self.parent._children.remove(self)
+        new_parent._children.append(self)
+        self.parent = new_parent
+
     def get_children(self, recursive=False):
         if not recursive:
             return list(self._children)
