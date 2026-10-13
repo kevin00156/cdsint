@@ -42,51 +42,42 @@ def find(project, name):
     if len(traces) == 1:
         return traces[0], None
     if traces:
-        return None, several(name, traces)
-    return None, "no trace object named %s%s" % (name, what_else(others))
+        return None, several(project, name, traces)
+    return None, "no trace object named %s%s" % (name,
+                                                 what_else(project, others))
 
 
-def several(name, traces):
+def several(project, name, traces):
     return ("%d trace objects are named %s (%s), and --name cannot say "
-            "which; rename one" % (len(traces), name,
-                                   ", ".join(path_of(t) for t in traces)))
+            "which; rename one" % (len(traces), name, ", ".join(
+                path_of(project, t) for t in traces)))
 
 
-def what_else(others):
+def what_else(project, others):
     """'; it is a folder' -- what a name that is not a trace names instead."""
     if not others:
         return ""
     return "; the name belongs to %s" % ", ".join(
-        "%s (a %s)" % (path_of(obj), kind_of(obj) or "kind cdsint does not "
-                                                     "know")
+        "%s (a %s)" % (path_of(project, obj),
+                       kind_of(obj) or "kind cdsint does not know")
         for obj in others)
 
 
-def path_of(obj):
+def path_of(project, obj):
     """'Device/Plc Logic/Application/Traces/T1': where it is, from the top
     of the tree. The parent alone told nothing apart when two traces of one
-    name sat in two applications, which both name their parent the same."""
+    name sat in two applications, which both name their parent the same.
+
+    The walk ends at the project, which is its top objects' parent as the
+    very object the caller holds (docs/trace-research.md 15.13) and has no
+    name to print (15.12), or at an object with no parent to give, such as
+    one whose plug-in is missing, which is named rather than dropped.
+    """
     names = []
-    while obj is not None and not _the_project(obj):
+    while obj is not None and obj is not project:
         names.append(name_of(obj))
         obj = parent_of(obj)
     return "/".join(reversed(names))
-
-
-def _the_project(obj):
-    """The project itself, where every chain of parents ends in the IDE.
-
-    It has no name of its own, and name_of would print its description
-    (docs/trace-research.md 15.12). Both tests are needed: an object whose
-    plug-in is missing has no name either, but it has a parent.
-    """
-    if parent_of(obj) is not None:
-        return False
-    try:
-        obj.get_name()
-    except Exception:
-        return True
-    return False
 
 
 def scripted(ide_globals, project, obj):
@@ -143,14 +134,15 @@ def folder_named(project, name):
     if mine:
         return None, ("%d folders are named %s (%s), and --folder cannot say "
                       "which; rename one" % (len(mine), name, ", ".join(
-                          path_of(obj) for obj in mine)))
+                          path_of(project, obj) for obj in mine)))
     if folders:
         return None, ("the folder %s is not in %s, the application the trace "
                       "is made in (%s)" % (name, name_of(application),
-                                           ", ".join(path_of(obj)
+                                           ", ".join(path_of(project, obj)
                                                      for obj in folders)))
     if others:
-        return None, "%s is not a folder%s" % (name, what_else(others))
+        return None, "%s is not a folder%s" % (name,
+                                               what_else(project, others))
     return None, ("no folder named %s in %s; make it in the IDE first"
                   % (name, name_of(application)))
 
@@ -173,7 +165,7 @@ def owned_by(obj, application):
     return False
 
 
-def move(obj, folder):
+def move(project, obj, folder):
     """None once `obj` sits in `folder`, or why it does not.
 
     trace.create takes only an application: handed a folder it makes
@@ -185,8 +177,9 @@ def move(obj, folder):
         obj.move(folder)
     except Exception as exc:
         return ("%s was made at %s, with nothing to record yet, but could not "
-                "be moved into %s: %s" % (name_of(obj), path_of(obj),
-                                         path_of(folder), one_line(exc)))
+                "be moved into %s: %s" % (name_of(obj), path_of(project, obj),
+                                         path_of(project, folder),
+                                         one_line(exc)))
     return None
 
 

@@ -88,7 +88,8 @@ def list_traces():
 
 
 def _listed(project, obj):
-    row = {"name": name_of(obj), "path": trace_objects.path_of(obj),
+    path = trace_objects.path_of(project, obj)
+    row = {"name": path.rsplit("/", 1)[-1], "path": path,
            "task": None, "variables": [], "left_out": [], "unread": None}
     api, problem = trace_objects.scripted(globals(), project, obj)
     if problem:
@@ -156,7 +157,7 @@ def from_job():
     folder, problem = _the_folder(project, args.get("folder"), existing)
     if problem:
         return _failed("apply", problem)
-    where = trace_objects.path_of(folder if folder is not None
+    where = trace_objects.path_of(project, folder if folder is not None
                                   else project.active_application)
     if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY,
                       APPLY_QUESTION % (name, "in " + where)):
@@ -194,12 +195,12 @@ def _existing_trace(project, name):
     """
     traces, others = trace_objects.named(project, name)
     if len(traces) > 1:
-        return None, trace_objects.several(name, traces)
+        return None, trace_objects.several(project, name, traces)
     if traces:
         return traces[0], None
     if others:
         return None, ("%s is not a trace object%s"
-                      % (name, trace_objects.what_else(others)))
+                      % (name, trace_objects.what_else(project, others)))
     return None, None
 
 
@@ -220,7 +221,8 @@ def _the_folder(project, wanted, existing):
         return None, None
     return None, ("%s already exists at %s, and apply changes a trace where "
                   "it is: leave out --folder, or move it in the IDE"
-                  % (name_of(existing), trace_objects.path_of(existing)))
+                  % (name_of(existing),
+                     trace_objects.path_of(project, existing)))
 
 
 def _the_trace_to_apply(project, name, definition, existing, folder):
@@ -234,7 +236,7 @@ def _the_trace_to_apply(project, name, definition, existing, folder):
                                         name, definition["task"])
     if problem is None and folder is not None:
         made, problem = trace_objects.find(project, name)
-        problem = problem or trace_objects.move(made, folder)
+        problem = problem or trace_objects.move(project, made, folder)
     return api, None, problem
 
 

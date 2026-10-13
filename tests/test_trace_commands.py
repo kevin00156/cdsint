@@ -25,9 +25,16 @@ TASK = plc_fakes.TASK  # the sample CSV was recorded at its 1000 us
 
 
 class TraceObjects(plc_fakes.TraceProject):
-    """The open project, finding real nodes by name rather than names."""
+    """The open project, finding real nodes by name rather than names.
+
+    Shaped as the IDE's: the parent of its top objects, with no name of its
+    own (docs/trace-research.md 15.12, 15.13).
+    """
 
     handle = 0
+
+    def get_name(self):
+        raise AttributeError("get_name")
 
     def find(self, name, recursive=False):
         found, level = [], list(self.get_children(False))
@@ -60,6 +67,7 @@ class Bench(object):
         self.project = TraceObjects(
             [self.application], self.application,
             plc_fakes.read_data(plc_fakes.TASK_CONFIG_XML))
+        self.application.parent = self.project
         self.apis = {}       # node guid -> the trace object's settings
         self.files = {}      # a saved .trace -> the CSV text it holds
         self.loads = []
@@ -634,19 +642,57 @@ def test_apply_into_a_folder_needs_no_private_member(bench):
     assert bench.apis[node.guid].variables == ["a.x"]
 
 
-class TopOfTheTree(object):
-    """The project itself, where every object's chain of parents ends in
-    the IDE: it has no name to give (seen on the bench, research 15.12)."""
+class Nameless(object):
+    """An object whose plug-in is missing: no name, and no parent to give
+    (engine/ide_read.py parent_of), like the project at the top."""
 
     def get_name(self):
-        raise AttributeError("get_name")
+        raise SystemError("no plug-in")
+
+    @property
+    def parent(self):
+        raise SystemError("no plug-in")
 
     def __str__(self):
-        return "Project(Project=0, stPath=C:/p/x.project)"
+        return "Nameless"
+
+
+def test_a_nameless_orphan_is_not_taken_for_the_project(bench):
+    from engine import trace_objects
+    assert trace_objects.path_of(bench.project, Nameless()) == "Nameless"
+
+
+class Counted(Node):
+    """A node that counts how often its parent is read."""
+
+    reads = 0
+
+    @property
+    def parent(self):
+        Counted.reads += 1
+        return self._parent
+
+    @parent.setter
+    def parent(self, value):
+        self._parent = value
+
+
+def test_a_path_reads_each_parent_once(bench):
+    from engine import trace_objects
+    top = Counted("Device", TYPE_GUIDS["folder"])
+    top.parent = bench.project
+    node = top
+    for name in ("Plc Logic", "Application", "Traces", "T1"):
+        child = Counted(name, TYPE_GUIDS["folder"], parent=node)
+        node = child
+    Counted.reads = 0
+    path = trace_objects.path_of(bench.project, node)
+    assert path == "Device/Plc Logic/Application/Traces/T1"
+    assert Counted.reads == 5
 
 
 def test_a_path_does_not_start_with_the_project_itself(bench):
-    bench.application.parent = TopOfTheTree()
+    """The bench's project is its application's parent, as in the IDE."""
     bench.press("apply", yes=True, name="T1", job=definition())
     rows = bench.press("list")["data"]["traces"]
     assert rows[0]["path"] == "Application/T1"
