@@ -12,6 +12,8 @@ of a good export into a failed command.
 """
 from __future__ import print_function
 
+from cds.core import trace_run
+
 
 class NeedsInput(BaseException):
     """A dialog wanted an answer that the command did not carry.
@@ -58,6 +60,14 @@ class Outcome(object):
         that earns exit 5, and matching on wording is a guess, not a decision.
         """
         return cls([], "", error=error, denied=denied)
+
+    @property
+    def recording(self):
+        """The run still going after the body returned, or None: a watcher
+        plc trace (cds/ide/entries.py Pending)."""
+        if isinstance(self.result, dict):
+            return self.result.get(trace_run.RECORDING)
+        return None
 
     def ok(self):
         return not self.error_text()

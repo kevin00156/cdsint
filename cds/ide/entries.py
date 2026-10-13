@@ -50,15 +50,17 @@ SCRIPTS = {
 
 # What the watcher will not run, whoever asks. Logging into a PLC takes the
 # online session away from the person sitting in front of that IDE, so the
-# watcher has no business doing it (SPEC D8). The CLI stops a `plc --target`
-# at the parser; this is the same rule where a hand-written command file
-# would otherwise land, and it answers by name rather than by pretending the
-# command does not exist.
+# watcher has no business doing it (SPEC D8). plc trace is not among them:
+# in the watcher it records through the login that person already has open
+# and never logs in itself (SPEC 6.8). The CLI stops connect and download
+# with --target at the parser; this is the same rule where a hand-written
+# command file would otherwise land, and it answers by name rather than by
+# pretending the command does not exist.
 WATCHER_REFUSES = dict(
     (name, "%s only runs in the --project form. The watcher lives inside an "
            "IDE somebody is using, and logging into a PLC would take their "
            "online session away from them (SPEC D8)." % name)
-    for name in SCRIPTS if name.startswith("plc "))
+    for name in ("plc connect", "plc download"))
 
 # What the headless launcher will not run. Recorded data lives in the IDE
 # that recorded it: one this run started has none to save, and a trace
@@ -110,6 +112,14 @@ def answer(ide_globals, cmd, started):
         import traceback
         return commands.new_result(cmd, False, started_at=started,
                                    error=traceback.format_exc())
+    if outcome.recording is not None:
+        return Pending(ide_globals, cmd, started, outcome.recording)
+    return record_of(ide_globals, cmd, started, outcome)
+
+
+def record_of(ide_globals, cmd, started, outcome):
+    """The result record of one finished run, as both callers write it."""
+    command = cmd["command"]
     error = outcome.error_text()
     return commands.new_result(
         cmd, not error, started_at=started, error=error,
@@ -118,6 +128,52 @@ def answer(ide_globals, cmd, started):
         data=outcome.data(),
         denied=outcome.denied,
         needs_input=None if outcome.needs is None else outcome.needs.as_record())
+
+
+class Pending(object):
+    """A command whose body returned while its run goes on: a watcher plc
+    trace. The watcher calls poll() once a tick and answers the caller with
+    the record poll() hands back; nothing on this side waits (SPEC D5).
+
+    poll() and finish() return rather than raise: an exception out of here
+    would leave the caller waiting out its timeout for a result nobody
+    writes.
+    """
+
+    def __init__(self, ide_globals, cmd, started, handle):
+        self.ide_globals = ide_globals
+        self.cmd = cmd
+        self.started = started
+        self.handle = handle
+        job = (cmd.get("args") or {}).get("job") or {}
+        self.until = (started + job["duration_s"]
+                      if job.get("duration_s") else None)
+
+    def poll(self):
+        """None while the run goes on; its result record once it is done."""
+        return self._ended(self.handle.poll)
+
+    def stop(self, why):
+        """Ask the run to end early; a later poll() answers its caller."""
+        self.handle.stop(why)
+
+    def finish(self, why):
+        """The record now: the watcher is going and will not tick again."""
+        return self._ended(lambda: self.handle.finish(why))
+
+    def _ended(self, call):
+        try:
+            done = call()
+        except Exception:
+            import traceback
+            return commands.new_result(
+                self.cmd, False, started_at=self.started,
+                error=("the recording's poll failed, and the trace may still "
+                       "be running in the IDE:\n" + traceback.format_exc()))
+        if done is None:
+            return None
+        return record_of(self.ide_globals, self.cmd, self.started,
+                         Outcome([], "", result=done))
 
 
 def run(ide_globals, command, args):

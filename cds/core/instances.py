@@ -25,6 +25,11 @@ from cds.core import commands, ipc
 
 STATE_IDLE = "idle"
 STATE_BUSY = "busy"
+# A watcher holding a plc trace between ticks. It still beats every tick, so
+# it is alive by its heartbeat like an idle one (every check below tests for
+# STATE_BUSY alone), and a caller with a short --timeout still finds it to
+# send --stop however long the recording is.
+STATE_RECORDING = "recording"
 
 # Starting points, not settled numbers (docs/WATCHER.md 2.1).
 HEARTBEAT_INTERVAL_S = 2.0

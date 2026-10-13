@@ -130,12 +130,11 @@ def test_the_project_form_no_longer_has_to_say_where_the_st_files_are():
     assert parsed.sync_dir is None
 
 
-def test_the_watcher_will_not_run_a_plc_command():
+def test_the_watcher_will_not_log_in_to_a_plc():
+    # plc trace runs there through the person's own login (SPEC 6.8).
     assert "plc connect" not in entries.COMMANDS
     assert "plc download" not in entries.COMMANDS
-    assert "plc trace" not in entries.COMMANDS
-    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download",
-                                            "plc trace"}
+    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download"}
 
 
 def test_the_watcher_refuses_by_name_rather_than_pretending_not_to_know():

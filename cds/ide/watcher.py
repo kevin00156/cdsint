@@ -23,11 +23,12 @@ import traceback
 
 from cds.core import commands, instances, ipc
 from cds.ide import display, entries, messages, project, silent
+from cds.ide.recording import TRACE, WHILE_RECORDING, HoldsARecording
 
 BEAT_ATTEMPTS = 5
 
 
-class Watcher(object):
+class Watcher(HoldsARecording):
     """One IDE's listener: on every tick, claim a command, answer it, beat."""
 
     def __init__(self, ide_globals, root=None, version=None):
@@ -103,6 +104,7 @@ class Watcher(object):
             return False
         self.busy = True
         try:
+            self._poll_recording()
             cmd = commands.next_command(self.root, self.instance_id)
             if cmd is not None:
                 self.run_one(cmd)
@@ -115,7 +117,14 @@ class Watcher(object):
         return True
 
     def shutdown(self):
-        """Leave nothing behind for the next watcher to trip over."""
+        """Leave nothing behind for the next watcher to trip over.
+
+        A recording is finished first: no tick will come again, so its
+        caller is answered now, with what was recorded so far.
+        """
+        if self.recording is not None:
+            self._conclude(self.recording,
+                           self.recording.finish("the watcher was stopped"))
         try:
             instances.delete(self.root, self.instance_id)
         except EnvironmentError as exc:
@@ -140,6 +149,9 @@ class Watcher(object):
 
         A command its caller took back before we could claim it is not run
         and not answered: nobody is waiting for either.
+
+        A plc trace comes back as an entries.Pending: it is held, still
+        claimed, and answered by a later tick (_poll_recording).
         """
         started = ipc.now()
         if not self._claim(cmd):
@@ -153,20 +165,31 @@ class Watcher(object):
             self._show()
             messages.note(self.ide, "cdsint: %s started" % self.doing)
             result = self._answer(cmd, started)
-            commands.write_result(self.root, self.instance_id, result)
-            # A caller that gave up before we answered leaves its result
-            # behind. Sweeping here keeps the directory bounded on a watcher
-            # that runs for days; what we just wrote is far too young to catch.
-            commands.prune_results(self.root, self.instance_id)
+            if isinstance(result, entries.Pending):
+                self._hold(result)
+                return result
+            self._write(result)
         except Exception:
             print("watcher: answering %s failed\n%s"
                   % (cmd.get("id"), traceback.format_exc()))
         finally:
-            self._finished(cmd, result, started)
-            self._beat(ipc.now(), instances.STATE_IDLE)
-            self._release(cmd)
-            self._show()
+            if not isinstance(result, entries.Pending):
+                self._close(cmd, result, started)
         return result
+
+    def _write(self, result):
+        commands.write_result(self.root, self.instance_id, result)
+        # A caller that gave up before we answered leaves its result
+        # behind. Sweeping here keeps the directory bounded on a watcher
+        # that runs for days; what we just wrote is far too young to catch.
+        commands.prune_results(self.root, self.instance_id)
+
+    def _close(self, cmd, result, started):
+        """The end of one command, answered or not: say so, beat, unmark."""
+        self._finished(cmd, result, started)
+        self._beat(ipc.now(), self._rest_state())
+        self._release(cmd)
+        self._show()
 
     def _claim(self, cmd):
         """Take the command off the queue. False: do not run it."""
@@ -230,6 +253,12 @@ class Watcher(object):
                 cmd, False, started_at=started,
                 error="the caller stopped waiting at %s; not run"
                       % ipc.iso(float(cmd["deadline_epoch"])))
+        name = cmd.get("command")
+        if name == TRACE and (cmd.get("args") or {}).get("stop"):
+            return self._stop_the_recording(cmd, started)
+        if self.recording is not None and name not in WHILE_RECORDING:
+            return commands.new_result(cmd, False, started_at=started,
+                                       error=self._recording_until())
         handler = self.handlers.get(cmd.get("command"))
         if handler is None:
             known = ", ".join(sorted(self.handlers))
@@ -251,7 +280,7 @@ class Watcher(object):
         live = dict(self.reg)
         # Answering this is what makes us busy, so reporting "busy" would say
         # nothing. Report the state we go back to; `list` shows the live one.
-        instances.set_state(live, instances.STATE_IDLE, started)
+        instances.set_state(live, self._rest_state(), started)
         note = commands.message("info", live["project_path"]
                                 or "no project open")
         return commands.new_result(cmd, True, started_at=started, data=live,
