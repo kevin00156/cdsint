@@ -36,6 +36,11 @@ MICROSECONDS = 1000000
 # import this module and neither may import the other (SPEC D12).
 HOLD_GLOBAL = "cdsint_hold_ms"
 
+# The key a body's result carries a recording under when the run goes on
+# after the body returns (plc trace in the watcher). Here because both
+# sides read it and cds/ide may not import the engine (SPEC D12).
+RECORDING = "recording"
+
 # One hold of the wait. The research probes recorded 100% of their samples
 # holding in steps of this size; the IDE fetches from the controller on its
 # own schedule, so a shorter step buys nothing, and a longer one only

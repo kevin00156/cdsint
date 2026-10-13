@@ -465,6 +465,19 @@ class TraceEditor(object):
         self.trigger_script = trigger_script
         self.script = [("Stopped", "Disabled")]
         self.polls = 0
+        self.running = False    # start() to stop(), as the IDE's is_running
+        # Reads of is_running that still say True after stop(): the real
+        # stop() returns before the trace has stopped (research 15.3).
+        self.settle = 0
+
+    @property
+    def is_running(self):
+        if self.running:
+            return True
+        if self.settle > 0:
+            self.settle -= 1
+            return True
+        return False
 
     def download(self):
         self.log.append(("download",))
@@ -474,6 +487,7 @@ class TraceEditor(object):
         self.script = (self.trigger_script if self.api.trigger_enabled
                        else UNTRIGGERED)
         self.polls = 0
+        self.running = True
 
     def _now(self):
         return self.script[min(self.polls, len(self.script) - 1)]
@@ -481,6 +495,8 @@ class TraceEditor(object):
     def get_packet_state(self):
         state = self._now()[0]
         self.polls += 1
+        if state == "Stopped":
+            self.running = False
         return state
 
     def get_trigger_state(self):
@@ -491,6 +507,7 @@ class TraceEditor(object):
         if self._now()[0] != "Started":
             raise RuntimeError("Cannot stop the trace in the current state")
         self.script = [("Stopped", self._now()[1])]
+        self.running = False
 
     def save(self, path):
         self.log.append(("save", path))
@@ -604,9 +621,13 @@ class TraceSession(Session):
     a login that did not happen.
     """
 
-    def __init__(self, log, values=None, state="run", refuse_login=None):
+    def __init__(self, log, values=None, state="run", refuse_login=None,
+                 logged_in=True):
         Session.__init__(self)
         self.log = log
+        # What the watcher asks before it records through the person's
+        # login; the --project form logs in itself and never reads it.
+        self.is_logged_in = logged_in
         self.values = dict(VALUES if values is None else values)
         self.application_state = state
         self.refuse_login = refuse_login
@@ -773,6 +794,20 @@ class TraceBench(object):
         trip = TraceTrip(self.args(job, gateway, name), self.globals(ui),
                          clock=self.clock, buffers_for=self.buffers)
         return entry_plc.traced(trip)
+
+    def watch(self, job, name):
+        """The watcher's form on this bench: checks and start, a Recording.
+
+        No hold in the globals, as in an IDE with a window.
+        """
+        from engine import entry_plc
+        from engine.plc_trace_watch import WatchedTrip
+        args = {"job": job}
+        if name:
+            args["name"] = name
+        trip = WatchedTrip(args, self.globals(ui=True), clock=self.clock,
+                           buffers_for=self.buffers)
+        return entry_plc.watched(trip)
 
     def calls(self, *kinds):
         return [call for call in self.log if call[0] in kinds]

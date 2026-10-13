@@ -17,6 +17,8 @@ and `flags` is how a body reaches the arguments the command carried.
 """
 from __future__ import print_function
 
+from cds.core import trace_run
+
 
 def result(ok, summary, **data):
     """What every entry body returns (SPEC D11).
@@ -32,6 +34,16 @@ def result(ok, summary, **data):
     prints one line per key.
     """
     return {"ok": bool(ok), "summary": summary, "data": data}
+
+
+def recording(handle, summary):
+    """What a body returns when its run goes on after it: the watcher polls
+    `handle` once a tick until it hands back the real result (SPEC D5).
+
+    ok only says it started; the caller's verdict is the result poll() ends
+    with, and that is what the caller is answered with.
+    """
+    return {"ok": True, "summary": summary, trace_run.RECORDING: handle}
 
 
 def flags(caller_globals):
