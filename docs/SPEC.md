@@ -1388,7 +1388,7 @@ every rule here are in `docs/trace-research.md` 15.
 
 | Action | What it does | Forms | Confirms |
 |---|---|---|---|
-| `trace list` | every trace object: its whole path, task and variables | both | no |
+| `trace list` | every trace object: its whole path and what it records | both | no |
 | `trace job --name T [--out FILE]` | the trace's definition as a job file | both | no |
 | `trace apply --name T --job FILE [--folder F]` | make trace `T` record the job file's definition, creating it if there is none, in folder `F` if given | both | `-y` |
 | `trace save --name T --out PATH [--formats LIST]` | write what `T` recorded in this IDE, and judge it | `--target` | no |
@@ -1418,21 +1418,30 @@ IDE.
 
 **Apply places a new trace, and moves none.** Without `--folder` a new trace
 goes under the application. `--folder F` puts it in folder `F`, found by
-name anywhere under the application; a missing folder is refused rather
+name anywhere in the active application; a missing folder is refused rather
 than made, since a typo would otherwise become a folder, and so are two
-folders of one name and a name that is not a folder. The script API's
-`trace.create` takes only an application (handed a folder it makes nothing,
-`docs/trace-research.md` 15.12), so the trace is made there and moved. An
-existing trace is changed where it is: with `--folder` naming a folder it is
-not in, apply is refused, because leaving it where it is would let the
-caller believe it was moved.
+folders of one name, a name that is not a folder, an empty name and a path
+(`F` is a folder's name, the last part of the path `trace list` prints). A
+folder of that name in another application, such as an old project's
+sub-application, is refused too: a trace moved there belongs to that
+application, which does not have the task the trace was made with. The
+script API's `trace.create` takes only an application (handed a folder it
+makes nothing, `docs/trace-research.md` 15.12), so the trace is made there,
+moved, and then configured through what `create` returned, which still
+reaches it after the move (15.13). An existing trace is changed where it
+is: with `--folder` naming a folder it is not in, apply is refused, because
+leaving it where it is would let the caller believe it was moved.
 
 **List names what is there.** `trace list` reports every trace object in
 the project, wherever it sits, as `data.traces` rows of `name`, `path` (from
-the top of the project tree), `task`, `variables` (the ones switched on),
-`left_out` and `unread`. A trace whose settings cannot be read is still
-listed, with `unread` saying why, since its name and place need no private
-member. It changes nothing and opens no editor.
+the top of the project tree), its definition as `trace job` writes it
+(`task`, `variables` switched on, `resolution`, `every_n_cycles`, and
+`trigger` or `record_condition` when set), `left_out` and `unread`. A trace
+whose settings cannot be read is still listed, with `unread` saying why,
+since its name and place need no private member. An object in the project
+that will not say what it is might be a trace, so the list is then not ok
+and `failed_objects` names it (D11, D13). It changes nothing and opens no
+editor.
 
 **Data lives in the IDE that recorded it.** An IDE the `--project` form
 starts has recorded nothing, and nobody sees what is loaded into it, so
@@ -1458,8 +1467,10 @@ the load.
 
 **The private members** (6.8 "The buffers" says why each is checked before
 use and refused by name when missing): `ScriptTraceObject.CreateScriptTraceObject`
-reaches a trace somebody made in the IDE, for `job`, `apply`, `save`,
-`show` and `plc trace --name`; the
+reaches a trace somebody made in the IDE, for `list` (every trace),
+`job`, `apply` on an existing trace, `save`, `show` and `plc trace --name`;
+a trace `apply` creates is configured through what `trace.create`
+returned, `--folder` or not; the
 trace editor's `_view` holds the editor whose `LoadTrace` is the Trace menu's
 "Load Trace...", for `show`. Both are in `engine/ide_private.py`.
 

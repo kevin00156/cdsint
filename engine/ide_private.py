@@ -157,8 +157,8 @@ def loader_for(editor):
     The script API has no load; the editor's script object keeps the real
     editor in `_view`, whose public LoadTrace is what the Trace menu's
     "Load Trace..." calls. Loading replaces the trace object's definition
-    with the file's (docs/trace-research.md 15.6), which is why only
-    cdsint_trace is ever loaded into.
+    with the file's (docs/trace-research.md 15.6), which is why trace show
+    loads only into a trace the caller names and confirms.
     """
     view = _field(editor, EDITOR_VIEW)
     if view is None:

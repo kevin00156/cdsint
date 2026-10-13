@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """What `cdsint trace` looks like from outside the IDE.
 
-Four actions on one row. job and apply have both forms; save and show only
-the watcher's, because recorded data lives in the IDE that recorded it, and
-the refusal says so rather than "unrecognized". Files are flags, as plc
+Five actions on one row. list, job and apply have both forms; save and show
+only the watcher's, because recorded data lives in the IDE that recorded it,
+and the refusal says so rather than "unrecognized". Files are flags, as plc
 trace's --job is, and every path arrives at the IDE side absolute: its
 working directory is not the shell's.
 """

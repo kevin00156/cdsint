@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Trace objects in the project, by name: finding one, and reaching its settings.
+"""Trace objects and their folders: finding, listing, placing, reaching.
 
 The trace commands name a trace with --name, and a name is not a trace: it
 can be a folder, a POU, or two traces in two applications. Each of those is

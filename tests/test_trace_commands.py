@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""trace job, apply, save and show, pressed the way the IDE side presses them.
+"""trace list, job, apply, save and show, pressed as the IDE side presses them.
 
 Through cds/ide/entries.py, so the stand-in dialogs answer apply's question
 and the result record is the one a caller reads. The two private members are
