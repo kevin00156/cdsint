@@ -59,6 +59,14 @@ JUDGING = ("min_complete", "max_gap_periods")
 DEFINITION_KEYS = ("task", "variables", "resolution", "every_n_cycles",
                    "trigger", "record_condition")
 
+# What plc trace --name says of a definition key in its job. The named
+# trace object already says what to record; a job saying it too would be
+# two answers with no rule for which one wins.
+NAMED_DEFINITION = ("%s is what the named trace records, not part of this "
+                    "run: with --name the job holds only how long to record "
+                    "and where to write. Change what the trace records with "
+                    "trace apply")
+
 # Marks the fields a job has to name; there is no guess for what to record.
 REQUIRED = object()
 # Marks the fields that change what a run is when given, so there is no
@@ -90,12 +98,16 @@ SCHEMA = (
 KINDS = dict((name, kind) for name, kind, _d, _m in SCHEMA)
 
 
-def normalise(job, for_run=True):
+def normalise(job, for_run=True, named=False):
     """(the job with every default filled in, None), or (None, problem).
 
     Never raises on what a person wrote: the caller turns the problem into
     a refusal, and a traceback is not a refusal. for_run=False is
     normalise_definition's.
+
+    named=True is the run half of a job for plc trace --name: a definition
+    key is refused, and no default is filled in, because the definition
+    still to be merged decides which defaults apply (_together).
     """
     if not isinstance(job, dict):
         return None, _refusal("the job is not a JSON object, it is %s"
@@ -104,6 +116,10 @@ def normalise(job, for_run=True):
     if unknown:
         return None, _refusal("%s is not a job field cdsint knows"
                               % _shown(unknown[0]))
+    if named:
+        given = [key for key in DEFINITION_KEYS if key in job]
+        if given:
+            return None, _refusal(NAMED_DEFINITION % given[0])
     result = {}
     for name, kind, default, _meaning in SCHEMA:
         if name in job:
@@ -113,6 +129,8 @@ def normalise(job, for_run=True):
                     name, kind, _shown(job[name]), problem))
             result[name] = value
         elif not for_run and name not in DEFINITION_KEYS:
+            continue
+        elif named and (name in DEFINITION_KEYS or default is not REQUIRED):
             continue
         elif default is REQUIRED:
             return None, _refusal("%s is required and missing" % name)

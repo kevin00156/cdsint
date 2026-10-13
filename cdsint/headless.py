@@ -25,6 +25,7 @@ from cdsint import installs, launch_result, lock, run_files
 from cdsint.launch_result import KILLED_DOWNLOAD
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
+from cdsint.job_file import waits_s
 from cdsint.job_object import WINDOWS, die_with_us
 
 # The IDE-side script this starts, in the same tree as everything else.
@@ -299,15 +300,4 @@ class Headless(object):
 
     def stderr_path(self):
         return self.report_path + ".stderr"
-
-
-def waits_s(args):
-    """Seconds a step waits on purpose, on top of --timeout (SPEC 6.8).
-
-    A trace records for its job's duration_s: time the caller asked for, not
-    time the IDE took. Read from the step's args, not its name, so the job
-    on the wire is the one place the duration is written down. trace apply
-    carries a job too, but only its definition, which records nothing.
-    """
-    return (args.get("job") or {}).get("duration_s", 0.0)
 
