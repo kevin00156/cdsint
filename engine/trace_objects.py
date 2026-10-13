@@ -9,12 +9,13 @@ looking for a typo when what they need is to know what the name is.
 from __future__ import print_function
 
 from engine import entry, ide_private
-from engine.ide_read import children_of, kind_of, name_of, parent_of
+from engine.ide_read import children_of, guid_of, kind_of, name_of, parent_of
 from engine.plc_trip import one_line
 from engine.strings import safe_str
 
 TRACE = "trace"
 FOLDER = "folder"
+APPLICATION = "application"
 
 NO_SCRIPT_TRACE = (
     "this IDE's trace plug-in has no %s, the private member cdsint reaches "
@@ -22,11 +23,15 @@ NO_SCRIPT_TRACE = (
     "15.7), so nothing was read or changed" % ide_private.CREATE_SCRIPT_TRACE)
 
 
-def named(project, name):
-    """(the traces called `name`, the other objects called it)."""
-    found = project.find(name, True) or []
-    traces = [obj for obj in found if kind_of(obj) == TRACE]
-    return traces, [obj for obj in found if kind_of(obj) != TRACE]
+def named(project, name, kind=TRACE):
+    """(the objects of `kind` called `name`, the other objects called it).
+
+    The IDE's own find, which reaches into folders (docs/trace-research.md
+    15.12) and matches names the way the IDE does.
+    """
+    found = [(obj, kind_of(obj)) for obj in project.find(name, True) or []]
+    return ([obj for obj, its in found if its == kind],
+            [obj for obj, its in found if its != kind])
 
 
 def find(project, name):
@@ -104,43 +109,73 @@ def every(project):
     return [obj for obj in _below(project) if kind_of(obj) == TRACE]
 
 
-def folder_named(application, name):
-    """(the one folder called `name` under the application, None), or
-    (None, why there is not one). Never made here: a folder is the person's
-    to lay out, and a typo would otherwise become a folder."""
-    found = [obj for obj in _below(application)
-             if name_of(obj).lower() == name.lower()]
-    folders = [obj for obj in found if kind_of(obj) == FOLDER]
-    if len(folders) == 1:
-        return folders[0], None
-    if folders:
+def folder_named(project, name):
+    """(the one folder called `name` in the active application, None), or
+    (None, why there is not one).
+
+    Never made here: a folder is the person's to lay out, and a typo would
+    otherwise become a folder. One in another application is refused: a
+    trace moved there belongs to that application, which does not have the
+    task it was made with (kevin00156/cdsint#5).
+    """
+    if not name.strip():
+        return None, "--folder is empty; it takes a folder's name"
+    if "/" in name:
+        return None, ("--folder takes a folder's name, not a path like %s; "
+                      "the name is the path's last part" % name)
+    application = project.active_application
+    folders, others = named(project, name, FOLDER)
+    mine = [obj for obj in folders if owned_by(obj, application)]
+    if len(mine) == 1:
+        return mine[0], None
+    if mine:
         return None, ("%d folders are named %s (%s), and --folder cannot say "
-                      "which; rename one" % (len(folders), name, ", ".join(
-                          path_of(obj) for obj in folders)))
-    if found:
-        return None, "%s is not a folder%s" % (name, what_else(found))
-    return None, ("no folder named %s under %s; make it in the IDE first"
-                  % (name, path_of(application)))
+                      "which; rename one" % (len(mine), name, ", ".join(
+                          path_of(obj) for obj in mine)))
+    if folders:
+        return None, ("the folder %s is not in %s, the application the trace "
+                      "is made in (%s)" % (name, name_of(application),
+                                           ", ".join(path_of(obj)
+                                                     for obj in folders)))
+    if others:
+        return None, "%s is not a folder%s" % (name, what_else(others))
+    return None, ("no folder named %s in %s; make it in the IDE first"
+                  % (name, name_of(application)))
 
 
-def move_into(ide_globals, project, name, folder):
-    """(the settings of trace `name`, moved into `folder`, None), or (None,
-    why).
+def owned_by(obj, application):
+    """Whether `application` is the nearest application above `obj`.
+
+    The project at the top has no kind to read (docs/trace-research.md
+    15.12), so the walk stops below it rather than asking.
+    """
+    wanted = guid_of(application)
+    obj = parent_of(obj)
+    while obj is not None:
+        if guid_of(obj) == wanted:
+            return True
+        parent = parent_of(obj)
+        if parent is None or kind_of(obj) == APPLICATION:
+            return False
+        obj = parent
+    return False
+
+
+def move(obj, folder):
+    """None once `obj` sits in `folder`, or why it does not.
 
     trace.create takes only an application: handed a folder it makes
     nothing (docs/trace-research.md 15.12), so a trace is made there and
-    moved. It is reached again afterwards rather than trusted, because a
-    script object fetched before its object changed can go stale (15.6).
+    moved. The settings create handed back still configure it afterwards:
+    move keeps the object's GUID, which is all they hold (15.13).
     """
-    obj, problem = find(project, name)
-    if problem:
-        return None, problem
     try:
         obj.move(folder)
     except Exception as exc:
-        return None, ("%s was made but could not be moved into %s: %s"
-                      % (name, path_of(folder), one_line(exc)))
-    return scripted(ide_globals, project, obj)
+        return ("%s was made at %s, with nothing to record yet, but could not "
+                "be moved into %s: %s" % (name_of(obj), path_of(obj),
+                                         path_of(folder), one_line(exc)))
+    return None
 
 
 def _below(top):

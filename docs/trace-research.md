@@ -1113,3 +1113,23 @@ Measured in a headless CODESYS 3.5.21.40 on a copy, never saved.
   seven traces listed all seven with their tasks and counts; `apply
   --folder TraceEnum` made `T_folder` in `Application/DUT/TraceEnum`, and
   the next list showed it there.
+
+### 15.13 After a move, the project object, one recursive call (2026-10-13)
+
+Measured in a headless CODESYS 3.5.21.40 on a copy of the softplc_refactor
+project, never saved, for the review of `trace list` and `trace apply
+--folder` (kevin00156/cdsint#5, #7, #10).
+
+- **The settings `trace.create` returned still work after a move.** A
+  trace made under the application and moved into a folder took two
+  variables through the object `create` had handed back; reached again
+  through `CreateScriptTraceObject`, it held the same two and the same
+  task. The script object holds the project handle and the object's GUID,
+  and `move` keeps the GUID. So `apply --folder` configures through what
+  `create` returned and needs no private member.
+- **The project is its top objects' parent, as the same object.** A
+  top-level object's `parent` compared `is` and `==` to the project
+  `projects.open` returned and to `projects.primary`. The project raised
+  `AttributeError` on both `get_name()` and `.parent`.
+- **One recursive `get_children(True)` lists what a walk does.** On the
+  project, 404 objects either way.

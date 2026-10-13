@@ -186,8 +186,9 @@ COMMANDS = {
                 "trace save: comma-separated from trace, csv, txt; default "
                 "trace,csv"),
                ("--folder", NAME,
-                "trace apply: the folder a new trace goes in; it has to "
-                "exist, and an existing trace is not moved")],
+                "trace apply: the name, not the path, of the existing folder "
+                "a new trace goes in; a trace that exists elsewhere is "
+                "refused, never moved")],
         needs={
             "job": {"name": TRACE_NAMED},
             "apply": {"name": TRACE_NAMED,

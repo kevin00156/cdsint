@@ -28,7 +28,7 @@ import os
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
-from engine.ide_read import kind_of, name_of, parent_of
+from engine.ide_read import guid_of, name_of, parent_of
 from engine.plc_trip import one_line
 
 # The flags this run was given, put here by cds/ide/silent.py once this
@@ -36,7 +36,7 @@ from engine.plc_trip import one_line
 command_args = {}
 
 APPLY_QUESTION = ("This replaces what trace object %s records with the job "
-                  "file's definition, creating it if there is none, and "
+                  "file's definition, creating it %s if there is none, and "
                   "saves the project.\n\nProceed?")
 SHOW_QUESTION = ("This loads %s into trace object %s, which replaces what %s "
                  "records with the file's definition. The project is changed "
@@ -126,9 +126,9 @@ def to_job():
 def from_job():
     """trace apply: make a trace object record a job file's definition.
 
-    The definition and the name are checked before the question: both
-    checks only read, and a refusal for either is worth more than a
-    question whose yes leads only to it.
+    The definition, the name and the folder are checked before the
+    question: each check only reads, and a refusal for any of them is worth
+    more than a question whose yes leads only to it.
     """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
@@ -143,7 +143,10 @@ def from_job():
     folder, problem = _the_folder(project, args.get("folder"), existing)
     if problem:
         return _failed("apply", problem)
-    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY, APPLY_QUESTION % name):
+    where = trace_objects.path_of(folder if folder is not None
+                                  else project.active_application)
+    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY,
+                      APPLY_QUESTION % (name, "in " + where)):
         return _failed("apply", "not confirmed")
     api, replaced, problem = _the_trace_to_apply(project, name, definition,
                                                  existing, folder)
@@ -192,15 +195,15 @@ def _the_folder(project, wanted, existing):
 
     --folder places a trace apply creates; it never moves one, so a trace
     already somewhere else is refused rather than left where it is while
-    the caller believes it was put in the folder.
+    the caller believes it was put in the folder. An empty --folder is a
+    folder nobody can have, not a missing flag.
     """
-    if not wanted:
+    if wanted is None:
         return None, None
-    if existing is None:
-        return trace_objects.folder_named(project.active_application, wanted)
-    parent = parent_of(existing)
-    if (parent is not None and name_of(parent).lower() == wanted.lower()
-            and kind_of(parent) == trace_objects.FOLDER):
+    folder, problem = trace_objects.folder_named(project, wanted)
+    if problem or existing is None:
+        return folder, problem
+    if guid_of(parent_of(existing)) == guid_of(folder):
         return None, None
     return None, ("%s already exists at %s, and apply changes a trace where "
                   "it is: leave out --folder, or move it in the IDE"
@@ -217,8 +220,8 @@ def _the_trace_to_apply(project, name, definition, existing, folder):
     api, problem = trace_objects.create(globals(), project.active_application,
                                         name, definition["task"])
     if problem is None and folder is not None:
-        api, problem = trace_objects.move_into(globals(), project, name,
-                                               folder)
+        made, problem = trace_objects.find(project, name)
+        problem = problem or trace_objects.move(made, folder)
     return api, None, problem
 
 

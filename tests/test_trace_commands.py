@@ -525,6 +525,58 @@ def test_apply_with_another_folder_does_not_move_an_existing_trace(bench):
     assert bench.trace_named("T1").variables == ["a.x"]
 
 
+def test_apply_into_a_folder_of_another_application_creates_nothing(bench):
+    """A trace moved there would be that application's, without the task it
+    was made with (kevin00156/cdsint#5, seen on CODESYS 3.5.21.40)."""
+    sub = Node("SubApp", TYPE_GUIDS["application"], parent=bench.application)
+    sub._children.append(Node("F", TYPE_GUIDS["folder"], parent=sub))
+    bench.application._children.append(sub)
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="F")
+    assert not refused["ok"]
+    assert "not in Application" in refused["error"]
+    assert "Application/SubApp/F" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_with_an_empty_folder_creates_nothing(bench):
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="")
+    assert not refused["ok"] and "--folder is empty" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_an_empty_folder_does_not_pass_an_existing_trace_elsewhere(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    refused = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
+                          folder="")
+    assert not refused["ok"]
+    assert bench.trace_named("T1").variables == ["a.x"]
+
+
+def test_apply_into_a_folder_path_says_only_a_name_is_taken(bench):
+    folder(bench)
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="Application/Traces")
+    assert not refused["ok"]
+    assert "name, not a path" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_into_a_folder_needs_no_private_member(bench):
+    """The settings create handed back configure the trace after the move
+    (docs/trace-research.md 15.13); only an existing trace needs the private
+    member to be reached."""
+    folder(bench)
+    bench.reachable = False
+    applied = bench.press("apply", yes=True, name="T1", job=definition("a.x"),
+                          folder="Traces")
+    assert applied["ok"], applied["error"]
+    node = bench.project.find("T1", True)[0]
+    assert node.parent.get_name() == "Traces"
+    assert bench.apis[node.guid].variables == ["a.x"]
+
+
 class TopOfTheTree(object):
     """The project itself, where every object's chain of parents ends in
     the IDE: it has no name to give (seen on the bench, research 15.12)."""
