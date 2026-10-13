@@ -27,8 +27,9 @@ DEFAULT_TIMEOUT_S = 120.0
 #              and, through a row's action_forms, trace save and show,
 #              whose data lives in the IDE somebody has open
 #   EITHER     both forms, the ordinary case
-#   HEADLESS   only --project, and the row says why (plc, SPEC D8). It is
-#              still offered --target, so that asking for the other form is
+#   HEADLESS   only --project, through a row's action_forms: plc connect
+#              and download, which log in to a controller (SPEC D8). Still
+#              offered --target, so that asking for the other form is
 #              answered with the reason rather than with "unrecognized"
 NO_IDE = "none"
 WATCHER = "target"
@@ -89,7 +90,7 @@ CONFIRM = "confirm"   # -y/--yes: the same flag wherever a step changes things
 NAME = "name"         # --app NAME
 NUMBER = "number"     # --port N
 PAIRS = "pairs"       # --answer KEY=VALUE, and again for the next one
-JOB = "job"           # --job FILE: the IDE side gets what the file says
+JOB = "job"           # --job FILE: parsed here, checked once --name is known
 DEFINITION = "definition"  # --job FILE, read as what to record only
 PATH = "path"         # --out PATH: made absolute here, where the shell is
 WORDS = "words"       # --formats csv,trace
@@ -101,7 +102,7 @@ KINDS = {
     NUMBER: {"type": int, "default": None, "metavar": "N"},
     PAIRS: {"action": "append", "default": [], "metavar": "KEY=VALUE",
             "type": key_value},
-    JOB: {"type": job_file.read, "default": None, "metavar": "FILE"},
+    JOB: {"type": job_file.load, "default": None, "metavar": "FILE"},
     DEFINITION: {"type": job_file.read_definition, "default": None,
                  "metavar": "FILE"},
     # The IDE side writes and reads these, and its working directory is not
@@ -130,9 +131,9 @@ CONFIRM_IMPORT = ("-y/--yes", CONFIRM,
 class Command(object):
     """One subcommand, and everything the command line knows about it."""
 
-    def __init__(self, summary, form, flags=(), action=None, one_form=None,
-                 needs=None, refuses=None, action_forms=None,
-                 action_help=None):
+    def __init__(self, summary, form, flags=(), action=None, needs=None,
+                 refuses=None, action_forms=None, action_help=None,
+                 form_needs=None, form_refuses=None, variant=None):
         self.summary = summary
         self.form = form
         self.flags = tuple(flags)
@@ -144,10 +145,9 @@ class Command(object):
         # apart needs no dispatcher to read the difference back out
         # (SPEC 4.2).
         self.action = action
-        # Why this command has only one form, in the words the refusal uses.
-        self.one_form = one_form
-        # {action: {dest: why}}: the flags one action cannot run without,
-        # and the ones it will not take, each with the sentence that refuses.
+        # {key: {dest: why}}: the flags one action cannot run without, and
+        # the ones it will not take, each with the sentence that refuses.
+        # The key is the action, or the action with its variant (key_of).
         self.needs = needs or {}
         self.refuses = refuses or {}
         # {action: (form, why)}: an action with fewer forms than its row,
@@ -155,10 +155,38 @@ class Command(object):
         self.action_forms = action_forms or {}
         # What the positional says in --help: each action in a few words.
         self.action_help = action_help
+        # {form: {key: {dest: why}}}: what one form adds to needs and
+        # refuses. plc trace needs a --gateway headless and refuses one in
+        # the watcher, which records through a login that already chose the
+        # controller.
+        self.form_needs = form_needs or {}
+        self.form_refuses = form_refuses or {}
+        # (dest, spelling): a switch that makes an action a different ask
+        # with its own needs and refuses -- plc trace --stop takes nothing
+        # else -- keyed "<action> <spelling>" in the tables above.
+        self.variant = variant
 
     def form_of(self, action):
-        """(this action's form, why it has only that one), or the row's."""
-        return self.action_forms.get(action, (self.form, self.one_form))
+        """(this action's form, why it has only that one).
+
+        A row with one form for all its actions is a watcher's own command,
+        which is never offered --project, so there is no refusal to word.
+        """
+        return self.action_forms.get(action, (self.form, None))
+
+    def key_of(self, action, said):
+        """The needs/refuses key for this action as it was asked.
+
+        Only an action whose tables name the variant has it: plc connect
+        --stop is connect asked with a flag it refuses, not an ask of its
+        own, and keying it "connect --stop" would find no table at all.
+        """
+        if not (self.variant and said.get(self.variant[0])):
+            return action
+        key = "%s %s" % (action, self.variant[1])
+        tables = [self.needs, self.refuses] + list(
+            self.form_needs.values()) + list(self.form_refuses.values())
+        return key if any(key in table for table in tables) else action
 
     def dests(self):
         """What argparse will call each of this command's flags."""

@@ -74,13 +74,17 @@ def test_apply_refuses_a_job_that_is_wrong(tmp_path, capsys):
     assert "variables is required" in err
 
 
-def test_show_names_no_trace(capsys):
-    err = refused(["trace", "show", "--target", "x", "--file", "a.trace",
-                   "--name", "T1"], capsys)
-    assert "cdsint_trace" in err
+def test_show_needs_a_name_and_takes_a_confirmation(tmp_path, capsys):
+    shown = str(tmp_path / "t.trace")
+    err = refused(["trace", "show", "--target", "x", "--file", shown, "-y"],
+                  capsys)
+    assert "trace show needs --name" in err
+    ns = parse(["trace", "show", "--target", "x", "--file", shown,
+                "--name", "T1", "-y"])
+    assert ns.name == "T1" and ns.yes is True
 
 
-def test_only_apply_takes_yes(capsys):
+def test_only_the_actions_that_change_a_trace_take_yes(capsys):
     err = refused(["trace", "job", "--target", "x", "--name", "T1", "-y"],
                   capsys)
     assert "trace job does not take --yes" in err

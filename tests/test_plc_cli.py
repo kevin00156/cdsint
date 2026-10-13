@@ -158,7 +158,8 @@ def test_the_cli_spells_the_action_into_the_command_name():
     assert flags.wire_name(parsed) == "plc download"
     assert flags.command_args(parsed) == {"yes": True, "gateway": None,
                                         "port": None, "gateway_name": None,
-                                        "job": None}
+                                        "job": None, "name": None,
+                                        "stop": None}
 
 
 def test_the_gateway_flags_reach_the_body():
@@ -169,7 +170,8 @@ def test_the_gateway_flags_reach_the_body():
     assert flags.command_args(parsed) == {"yes": None, "gateway": "192.168.1.5",
                                         "port": 11740,
                                         "gateway_name": "Gateway-3",
-                                        "job": None}
+                                        "job": None, "name": None,
+                                        "stop": None}
 
 
 # --------------------------------------------------------------------------

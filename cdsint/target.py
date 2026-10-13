@@ -18,7 +18,7 @@ import time
 
 from cds.core import commands, instances, ipc
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
-from cdsint import process
+from cdsint import job_file, process
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
 
@@ -100,12 +100,15 @@ class Target(object):
 
     def run_one(self, command, args):
         cmd = commands.new_command(command, args)
-        result = send(self.root, self.instance_id, cmd, self.timeout)
+        # A recording answers when it is done: its duration_s is time the
+        # caller asked for, on top of the time the step may take.
+        waited = self.timeout + job_file.waits_s(args)
+        result = send(self.root, self.instance_id, cmd, waited)
         if result is GONE:
             return self._gone(cmd)
         if result is None:
             raise Failure("timed out after %gs waiting for %s"
-                          % (self.timeout, self.instance_id), EXIT_TIMEOUT)
+                          % (waited, self.instance_id), EXIT_TIMEOUT)
         return result
 
     def _gone(self, cmd):

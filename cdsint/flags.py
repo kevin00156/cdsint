@@ -25,19 +25,31 @@ from cdsint.command_row import (  # noqa: F401  the table's vocabulary
 from engine.codesys_constants import SCRIPT_VERSION
 
 
-ONLY_TRACE = "Only plc trace reads a job file."
+ONLY_TRACE = "Only plc trace takes it."
 ONLY_DOWNLOAD = ("Only plc download changes the controller, so only it has "
                  "anything to confirm.")
-ONLY_APPLY = ("Only trace apply changes the project, so only it has "
-              "anything to confirm.")
+ONLY_CHANGES = ("Only trace apply and trace show change a trace object, so "
+                "only they have anything to confirm.")
 TRACE_NAMED = "Which trace object in the project is meant."
 DATA_IN_THE_IDE = ("Recorded data lives only in the IDE that recorded it: an "
                    "IDE this command starts has none, and nobody would see "
                    "a trace loaded into it.")
-SHOW_TARGET = ("trace show always loads into cdsint_trace, cdsint's own "
-               "trace object, because loading replaces the object's "
-               "definition with the file's.")
 NOT_FOR = "Only %s takes it."
+CONTROLLER_LOGIN = ("The watcher runs inside an IDE somebody is using, and "
+                    "logging into a controller would take their online "
+                    "session away from them (SPEC D8).")
+WATCHER_NAMES = ("In the watcher it records through the login already open "
+                 "in that IDE, and CODESYS adds no object to an application "
+                 "that is logged in, so the trace has to exist already: name "
+                 "it, or make one with trace apply while logged out.")
+THROUGH_THE_LOGIN = ("In the watcher it records through the login already "
+                     "open in that IDE, which chose the controller; cdsint "
+                     "does not aim it anywhere else.")
+STOP_ALONE = ("--stop ends the recording a watcher is holding, and takes "
+              "nothing else.")
+STOP_IN_THE_WATCHER = ("--stop ends a recording a watcher is holding; a "
+                       "--project run records within its own process and "
+                       "ends by itself.")
 TRACE_ACTIONS = ("job", "apply", "save", "show")
 WRONG_CONTROLLER = ("A controller found by the project's device name can be "
                     "the wrong one, and %s (SPEC 6.6).")
@@ -92,24 +104,31 @@ COMMANDS = {
     "plc": Command(
         "talk to the controller: read what it runs, download to it, or "
         "record a trace from it",
-        HEADLESS,
+        EITHER,
         # The words the settings file's plc list allows are the actions.
         action=settings.PLC_ACTIONS,
         action_help="connect reads what the controller holds; download "
-                    "writes this project to it; trace records what a job "
-                    "file names",
+                    "writes this project to it; trace records a trace "
+                    "(--stop ends one a watcher is recording)",
         flags=[("-y/--yes", CONFIRM,
                 "confirm the download; only plc download takes it"),
                ("--gateway", NAME,
-                "reach the controller through this address; every plc "
-                "action needs it", "IP"),
+                "reach the controller through this address; every --project "
+                "plc action needs it", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),
                ("--gateway-name", NAME,
                 "which of the IDE profile's gateways reaches --gateway; "
                 "needed when the profile has more than one"),
-               ("--job", JOB, "the trace job file; only plc trace takes it")],
+               ("--job", JOB, "the trace job file; only plc trace takes it"),
+               ("--name", NAME,
+                "plc trace: record this trace object as it is configured; "
+                "the job then holds only duration_s, out, formats and the "
+                "judging fields"),
+               ("--stop", SWITCH,
+                "plc trace --target: end the recording the watcher is "
+                "holding")],
         needs={
             "connect": {"gateway": WRONG_CONTROLLER
                         % "the wrong controller can answer MATCH for a "
@@ -117,18 +136,30 @@ COMMANDS = {
             "download": {"gateway": WRONG_CONTROLLER
                          % "a download to the wrong controller passes its "
                            "own read-back"},
-            "trace": {"gateway": WRONG_CONTROLLER
-                      % "a trace recorded from the wrong controller looks "
-                        "exactly like a right one",
-                      "job": "The job file says what to record and for how "
-                             "long (SPEC 6.8)."}},
+            "trace": {"job": "The job file says how long to record and "
+                             "where to write (SPEC 6.8)."}},
         refuses={
-            "connect": {"job": ONLY_TRACE, "yes": ONLY_DOWNLOAD},
-            "download": {"job": ONLY_TRACE},
-            "trace": {"yes": ONLY_DOWNLOAD}},
-        one_form="The watcher runs inside an IDE somebody is using, and "
-                 "logging into a controller would take their online session "
-                 "away from them (SPEC D8)."),
+            "connect": {"job": ONLY_TRACE, "yes": ONLY_DOWNLOAD,
+                        "name": ONLY_TRACE, "stop": ONLY_TRACE},
+            "download": {"job": ONLY_TRACE, "name": ONLY_TRACE,
+                         "stop": ONLY_TRACE},
+            "trace": {"yes": ONLY_DOWNLOAD},
+            "trace --stop": dict((dest, STOP_ALONE) for dest in
+                                 ("job", "name", "gateway", "port",
+                                  "gateway_name", "yes"))},
+        form_needs={
+            WATCHER: {"trace": {"name": WATCHER_NAMES}},
+            HEADLESS: {"trace": {"gateway": WRONG_CONTROLLER
+                                 % "a trace recorded from the wrong "
+                                   "controller looks exactly like a right "
+                                   "one"}}},
+        form_refuses={
+            WATCHER: {"trace": dict((dest, THROUGH_THE_LOGIN) for dest in
+                                    ("gateway", "port", "gateway_name"))},
+            HEADLESS: {"trace --stop": {"stop": STOP_IN_THE_WATCHER}}},
+        action_forms={"connect": (HEADLESS, CONTROLLER_LOGIN),
+                      "download": (HEADLESS, CONTROLLER_LOGIN)},
+        variant=("stop", "--stop")),
     "trace": Command(
         "move a trace's definition or its recorded data between the project "
         "and files; touches no PLC",
@@ -136,9 +167,11 @@ COMMANDS = {
         action=TRACE_ACTIONS,
         action_help="job writes a trace's definition to a job file; apply "
                     "makes a trace from one; save writes what a trace "
-                    "recorded; show loads a saved trace for a person to see",
+                    "recorded; show loads a saved trace into one for a person "
+                    "to see",
         flags=[("-y/--yes", CONFIRM,
-                "confirm trace apply; it changes the project"),
+                "confirm trace apply or trace show; both change a trace "
+                "object"),
                ("--name", NAME, "the trace object in the project"),
                ("--out", PATH,
                 "trace job: the job file to write; trace save: the output "
@@ -156,18 +189,18 @@ COMMANDS = {
             "save": {"name": TRACE_NAMED,
                      "out": "Where the files go, without extension."},
             "show": {"file": "The .trace file a trace save or plc trace "
-                             "wrote."}},
+                             "wrote.",
+                     "name": TRACE_NAMED}},
         refuses={
-            "job": {"yes": ONLY_APPLY, "job": NOT_FOR % "trace apply",
+            "job": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
                     "file": NOT_FOR % "trace show",
                     "formats": NOT_FOR % "trace save"},
             "apply": {"out": NOT_FOR % "trace job or trace save",
                       "file": NOT_FOR % "trace show",
                       "formats": NOT_FOR % "trace save"},
-            "save": {"yes": ONLY_APPLY, "job": NOT_FOR % "trace apply",
+            "save": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
                      "file": NOT_FOR % "trace show"},
-            "show": {"yes": ONLY_APPLY, "name": SHOW_TARGET,
-                     "out": NOT_FOR % "trace job or trace save",
+            "show": {"out": NOT_FOR % "trace job or trace save",
                      "job": NOT_FOR % "trace apply",
                      "formats": NOT_FOR % "trace save"}},
         action_forms={"save": (WATCHER, DATA_IN_THE_IDE),
