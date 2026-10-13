@@ -175,7 +175,9 @@ A wrong job file is exit 2 before any IDE starts, and the refusal lists every
 field the job may hold with its default. The run is exit 1 when samples are
 missing (`data.variables[].complete`, `gaps`); the files named in `data.files`
 are written either way. `--timeout` bounds the work around the recording, and
-`duration_s` is added to it.
+`duration_s` is added to it. On a soft PLC in WSL2 a recording holds only
+about 90% of `duration_s`, with no sample missing: WSL can slow the clock the
+runtime runs by (known issue, docs/REFERENCE.md). That is not lost data.
 
 Two optional job fields, never together. `"trigger": {"variable": "GVL.cnt",
 "edge": "rising", "level": 5000, "post_samples": 2000}` (a numeric variable;

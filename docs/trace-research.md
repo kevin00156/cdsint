@@ -698,16 +698,52 @@ compiling, before any recording, and stayed flat through a 300 s recording
 with an IDE-side buffer of 600000 samples per variable. Section 11's worry
 about memory at that size does not show at these lengths.
 
-### 13.3 This bench's controller runs slow
+### 13.3 This bench's clock runs slow
 
 Every recording covered about 90% of the wall-clock time between `start()` and
 `stop()`, on the 1 ms task and the 4 ms task alike, with a sample for every
 cycle. A per-cycle counter read twice, 60 wall seconds apart, advanced 54356:
-900.6 cycles per second on a 1 ms task. The runtime's own time base runs at
-about 0.9 of real time in this VM, while the WSL clock itself keeps time with
-Windows. Nothing was lost; the controller ran fewer cycles. A recording's
-span measured from its timestamps is therefore shorter than `duration_s` on
-this bench, and completeness, which is judged over the span, is unaffected.
+900.6 cycles per second on a 1 ms task. Nothing was lost; the controller ran
+fewer cycles. A recording's span measured from its timestamps is therefore
+shorter than `duration_s` on this bench, and completeness, which is judged
+over the span, is unaffected.
+
+What is slow is WSL's Linux clock, not the runtime (measured 2026-10-13, WSL
+2.5.9, kernel 6.6.87.2). The first reading of this section blamed the
+runtime's time base because `date` in the VM kept time with Windows; that
+clock is the one WSL corrects, and the runtime does not schedule by it.
+
+- **Linux's own clock runs at 0.90.** Over 30 s of Windows time,
+  `/proc/uptime` in the bench advanced 27.26 s. The kernel's `tick`
+  (`adjtimex`) was 9000 where 10000 is normal, which is exactly that
+  factor. The kernel had logged `Adjusting tsc more than 11%` hours after
+  boot, so it was not slow from the start.
+- **The wall clock hides it.** The kernel's Hyper-V time sync
+  (`hv_utils.timesync_implicit=1` on WSL's kernel command line) steps the
+  wall clock whenever it falls behind the host; the bench's journal showed
+  `Clock change detected` every 36 s. So `date` looks right while the
+  monotonic clock, which the runtime schedules and timestamps by, runs slow.
+- **WSL's own chronyd sets the tick.** WSL's init starts chronyd in its
+  hidden system distro (`wsl --system`), disciplining the kernel all distros
+  share against the host clock on `/dev/ptp0`. Its `chronyc tracking` read
+  "Frequency 86016 ppm fast" with the system time 22 s ahead, and 9000 is the
+  lowest tick chrony sets. No distro of ours runs chrony or anything else
+  that calls `adjtimex`. That the step-forward sync and chrony drive each
+  other to the limit is a guess; it was not tested.
+- **The runtime follows the kernel.** Two recordings' trace start
+  timestamps, 61.9 s apart on the controller, were 65.2 to 70.0 s apart on
+  Windows. Recording 20 s gave 18.11 to 18.19 s of samples, none missing,
+  whether the application had run for hours, had just been started, or the
+  trace had just been changed by `trace apply`.
+- **A real controller does not show it.** On a CODESYS runtime on another
+  machine, 20 s recorded 20.87 s and 20.74 s, complete, with no interval
+  over 1 ms; the extra is the time the trace takes to stop after it is told
+  to.
+
+The same symptom is reported upstream as microsoft/WSL#12583, open at the
+time of writing. Nothing here tries to change it: every distro shares the
+kernel, and a restart of WSL, which presumably starts chrony afresh, was not
+tried.
 
 ### 13.4 Trigger and record condition work headless
 

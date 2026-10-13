@@ -34,6 +34,10 @@ All notable changes to this project will be documented in this file.
   a trace recorded in the open IDE, with the same completeness report
   `plc trace` gives but without failing on it, or load a saved `.trace` into
   a trace the caller names (`-y --name T`) so the person at the IDE sees it.
+- **Known issue:** a soft PLC in WSL2 records about 90% of `duration_s`,
+  with every cycle present. WSL's own time sync can slow the Linux clock the
+  runtime runs by (microsoft/WSL#12583); a controller on its own hardware
+  records the full length. See docs/REFERENCE.md.
 
 ### 0.4.1 (2026-10-12) — the import pre-flight works in the watcher
 

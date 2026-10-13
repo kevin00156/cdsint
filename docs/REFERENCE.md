@@ -384,6 +384,15 @@ without a realtime kernel does it routinely, so there, loosen
 has one row per variable with `samples`, `expected`, `complete` and `gaps`;
 `data.files` names what was written.
 
+**Known issue: a soft PLC in WSL2 records about 90% of `duration_s`.** WSL's
+own time sync can slow the Linux clock that every WSL distro shares by up to
+10%, while `date` still looks right (microsoft/WSL#12583). A runtime there
+runs its tasks by that clock, so a 20 s recording holds about 18 s of
+samples, every cycle present, and is judged complete. Nothing was lost: the
+controller ran fewer cycles in those 20 s. A controller on its own hardware
+records the full length. cdsint does not correct for it
+(docs/trace-research.md 13.3).
+
 A `trigger` records from the start, fires when its variable (a numeric one;
 a BOOL or an enumeration is refused) crosses `level` on the `edge`, keeps `post_samples` more
 samples and stops by itself; `duration_s` is then the longest the run waits
