@@ -61,13 +61,18 @@ class Node(object):
     """One object in the project tree.
 
     The four things a real script object exposes and the engine reads: a name,
-    a type GUID, a parent and a GUID of its own.
+    a type GUID, a parent and a GUID of its own. The GUID is the object's,
+    not its name's: two objects of one name in two places are two objects,
+    and code that confused them would pass on GUIDs made from names.
     """
 
+    made = 0
+
     def __init__(self, name, type_guid, children=None, parent=None):
+        Node.made += 1
         self._name = name
         self.type = type_guid
-        self.guid = "guid-" + name
+        self.guid = "guid-%s-%d" % (name, Node.made)
         self.parent = parent
         self._children = list(children or [])
         for child in self._children:
