@@ -523,3 +523,21 @@ def test_apply_with_another_folder_does_not_move_an_existing_trace(bench):
                           folder="Traces")
     assert not refused["ok"] and "Application/T1" in refused["error"]
     assert bench.trace_named("T1").variables == ["a.x"]
+
+
+class TopOfTheTree(object):
+    """The project itself, where every object's chain of parents ends in
+    the IDE: it has no name to give (seen on the bench, research 15.12)."""
+
+    def get_name(self):
+        raise AttributeError("get_name")
+
+    def __str__(self):
+        return "Project(Project=0, stPath=C:/p/x.project)"
+
+
+def test_a_path_does_not_start_with_the_project_itself(bench):
+    bench.application.parent = TopOfTheTree()
+    bench.press("apply", yes=True, name="T1", job=definition())
+    rows = bench.press("list")["data"]["traces"]
+    assert rows[0]["path"] == "Application/T1"

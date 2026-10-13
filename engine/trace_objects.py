@@ -60,10 +60,26 @@ def path_of(obj):
     of the tree. The parent alone told nothing apart when two traces of one
     name sat in two applications, which both name their parent the same."""
     names = []
-    while obj is not None:
+    while obj is not None and not _the_project(obj):
         names.append(name_of(obj))
         obj = parent_of(obj)
     return "/".join(reversed(names))
+
+
+def _the_project(obj):
+    """The project itself, where every chain of parents ends in the IDE.
+
+    It has no name of its own, and name_of would print its description
+    (docs/trace-research.md 15.12). Both tests are needed: an object whose
+    plug-in is missing has no name either, but it has a parent.
+    """
+    if parent_of(obj) is not None:
+        return False
+    try:
+        obj.get_name()
+    except Exception:
+        return True
+    return False
 
 
 def scripted(ide_globals, project, obj):
