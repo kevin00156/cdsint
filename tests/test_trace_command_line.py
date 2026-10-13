@@ -109,3 +109,17 @@ def test_a_format_the_ide_cannot_save_is_refused(capsys):
     err = refused(["trace", "save", "--target", "x", "--name", "T1",
                    "--out", "o", "--formats", "csv,xlsx"], capsys)
     assert "xlsx" in err
+
+
+def test_a_list_of_variable_names_prints_one_name_a_line(capsys):
+    # trace apply and trace show carry `variables` as names, not as the
+    # rows a recording judged; the bench found the printer taking the one
+    # for the other and stopping the CLI with a traceback.
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace apply"), True,
+                                 data={"variables": ["PLC_PRG.a",
+                                                     "PLC_PRG.b"]})
+    report.show(record)
+    shown = capsys.readouterr().out
+    assert "PLC_PRG.a" in shown and "PLC_PRG.b" in shown

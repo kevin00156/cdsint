@@ -302,8 +302,11 @@ def _traced(row):
     and a reader deciding whether the run can be trusted wants the count
     (SPEC 6.8 says what each field means). A row recorded under a
     condition has no count to hold its samples against, so it prints only
-    what it has.
+    what it has. trace apply and trace show name their variables without
+    judging them, and a name is printed as it is.
     """
+    if not isinstance(row, dict):
+        return _one_line(row)
     if row["complete"] is None:
         return "%s  %s samples  longest interval %s" % (
             row["name"], row["samples"], row["longest_interval"])
