@@ -372,7 +372,8 @@ first (6.11).
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | n/a | yes | log in, record the variables the job names (or what trace `T` is set to record) into files, log out, without downloading the application (6.8) |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | n/a | record trace `T` through the login already open in that IDE; `--stop` ends that recording early (6.8, "In the watcher") |
-| `trace job --name T [--out FILE]`, `trace apply -y --name T --job FILE` | yes | yes | a trace object's definition, out to a job file or in from one (6.11) |
+| `trace list` | yes | yes | every trace object in the project, with its whole path, its task and what it records (6.11) |
+| `trace job --name T [--out FILE]`, `trace apply -y --name T --job FILE [--folder F]` | yes | yes | a trace object's definition, out to a job file or in from one (6.11) |
 | `trace save --name T --out PATH [--formats LIST]`, `trace show -y --name T --file FILE` | yes | refused | what a trace recorded in this IDE, written to files, or a saved trace loaded into trace `T` for a person to see (6.11) |
 
 There is no `config` command. The settings are one text file beside the
@@ -1379,15 +1380,17 @@ the object sync, not inside it.
 
 ### 6.11 Trace objects and their data
 
-`cdsint trace job|apply|save|show` moves what a trace records, and what it
-recorded, between the project and files. None of the four touches a
-controller, so none is under the `plc` list (D8). The measurements behind
+`cdsint trace list|job|apply|save|show` says which traces the project has,
+and moves what a trace records, and what it recorded, between the project
+and files. None of the five touches a controller, so none is under the `plc`
+list (D8). The measurements behind
 every rule here are in `docs/trace-research.md` 15.
 
 | Action | What it does | Forms | Confirms |
 |---|---|---|---|
+| `trace list` | every trace object: its whole path, task and variables | both | no |
 | `trace job --name T [--out FILE]` | the trace's definition as a job file | both | no |
-| `trace apply --name T --job FILE` | make trace `T` record the job file's definition, creating it if there is none | both | `-y` |
+| `trace apply --name T --job FILE [--folder F]` | make trace `T` record the job file's definition, creating it if there is none, in folder `F` if given | both | `-y` |
 | `trace save --name T --out PATH [--formats LIST]` | write what `T` recorded in this IDE, and judge it | `--target` | no |
 | `trace show --name T --file FILE` | load a saved trace into `T` for a person to see | `--target` | `-y` |
 
@@ -1412,6 +1415,24 @@ way it answers import's. Apply saves the project, as import does: the
 `--project` form would otherwise change nothing that outlives the run. A
 save that fails makes the run not ok, with the change still in the open
 IDE.
+
+**Apply places a new trace, and moves none.** Without `--folder` a new trace
+goes under the application. `--folder F` puts it in folder `F`, found by
+name anywhere under the application; a missing folder is refused rather
+than made, since a typo would otherwise become a folder, and so are two
+folders of one name and a name that is not a folder. The script API's
+`trace.create` takes only an application (handed a folder it makes nothing,
+`docs/trace-research.md` 15.12), so the trace is made there and moved. An
+existing trace is changed where it is: with `--folder` naming a folder it is
+not in, apply is refused, because leaving it where it is would let the
+caller believe it was moved.
+
+**List names what is there.** `trace list` reports every trace object in
+the project, wherever it sits, as `data.traces` rows of `name`, `path` (from
+the top of the project tree), `task`, `variables` (the ones switched on),
+`left_out` and `unread`. A trace whose settings cannot be read is still
+listed, with `unread` saying why, since its name and place need no private
+member. It changes nothing and opens no editor.
 
 **Data lives in the IDE that recorded it.** An IDE the `--project` form
 starts has recorded nothing, and nobody sees what is loaded into it, so

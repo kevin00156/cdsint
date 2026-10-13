@@ -1091,3 +1091,25 @@ login was opened by an in-IDE `Keep` login, `is_uptodate` checked true first.
 - **`--name` headless.** A fresh copy holding `T_watch`, recorded for 5 s
   by `plc trace --project ... --name T_watch`: `MATCH`, complete 0.9967,
   nothing created, the copy not saved.
+
+### 15.12 A trace in a folder, and the top of the tree (2026-10-13)
+
+Measured in a headless CODESYS 3.5.21.40 on a copy, never saved.
+
+- **`trace.create` takes only an application.** Handed a folder under it,
+  it raised nothing and returned a `NoScriptTraceObject`
+  (`is_trace_object` false), and no object appeared: the same answer it
+  gives while logged in (15.10).
+- **A trace made under the application moves.** The tree object's
+  `move(folder)` put it in the folder, and `find` reached it there. Handed
+  `None`, `move` fails with "Multiple targets could match", the overloads
+  for a script object and for the project. `create_folder` returns `None`;
+  the folder is reached by `find` afterwards.
+- **Every chain of parents ends at the project.** A top-level object's
+  `parent` is the project, which has no `get_name()`, so a path built by
+  walking parents and printing names began with the project's description,
+  `Project(Project=0, stPath=...)`.
+- **`trace list` and `trace apply --folder` on the project.** A copy with
+  seven traces listed all seven with their tasks and counts; `apply
+  --folder TraceEnum` made `T_folder` in `Application/DUT/TraceEnum`, and
+  the next list showed it there.
