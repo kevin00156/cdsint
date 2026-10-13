@@ -3,7 +3,8 @@
 
 SPEC 6.8 steps 1 to 3. Everything here happens offline, so a refusal costs
 the controller nothing: the flags, the job, the CRC and the IDE's download
-info, the task's period, and cdsint_trace created and configured. What
+info, the task's period, and the trace object: cdsint_trace created and
+configured in memory, or the one --name names, as the project has it. What
 happens online is engine/plc_trace.py, whose TraceTrip is this with the
 recording added.
 
@@ -21,7 +22,7 @@ import time
 
 from cds.core import trace_job, trace_run
 from engine import entry, plc_crc, plc_identity
-from engine import ide_private, trace_config
+from engine import ide_private, trace_config, trace_objects
 from engine.ide_read import name_of
 from engine.plc_trip import Trip, one_line
 
@@ -33,8 +34,8 @@ NO_MEMBER = (
     "this IDE's trace plug-in has no %s, the private member cdsint sets both "
     "trace buffers through. With the default ring of 100 entries a task "
     "faster than about 4 ms loses most of its samples, so nothing was "
-    "recorded (SPEC 6.8, \"The buffers\"). %s exists only in memory and the "
-    "project is not saved." % (ide_private.MEMBER, TRACE_NAME))
+    "recorded (SPEC 6.8, \"The buffers\"), and the project is not saved."
+    % ide_private.MEMBER)
 
 
 class TraceSetup(Trip):
@@ -57,7 +58,9 @@ class TraceSetup(Trip):
         self.found.update({"task": None, "period_us": None,
                            "resolution": None, "duration_s": None,
                            "buffer": None, "files": {}, "variables": [],
-                           "complete": False, "trigger": None})
+                           "complete": False, "trigger": None,
+                           "trace": TRACE_NAME, "uptodate": None,
+                           "stopped_early": None})
 
     # -- before anything is touched ----------------------------------------
 
@@ -72,14 +75,27 @@ class TraceSetup(Trip):
                     "where there is no window to freeze (SPEC D5)")
         return None
 
+    def named(self):
+        """Whether the caller named a trace object to record (--name)."""
+        return bool(self.args.get("name"))
+
     def read_the_job(self):
-        """The job, checked again here: the IDE side does not trust the wire."""
-        self.job, problem = trace_job.normalise(self.args.get("job"))
+        """The job, checked again here: the IDE side does not trust the wire.
+
+        With --name it is only the run; the definition is the named trace's,
+        merged in by take_the_named_trace.
+        """
+        self.job, problem = trace_job.normalise(self.args.get("job"),
+                                                named=self.named())
         if problem:
             return problem
+        if not self.named():
+            self._found_from_the_job()
+        return None
+
+    def _found_from_the_job(self):
         for key in ("task", "duration_s", "resolution"):
             self.found[key] = self.job[key]
-        return None
 
     def holds_our_download(self):
         """The controller's CRC MATCHes this copy's record. None if it does.
@@ -154,6 +170,7 @@ class TraceSetup(Trip):
                     "Keep login would put that change on the controller, by "
                     "online change or a full download, without asking. Save "
                     "and run plc download -y first, or undo the change")
+        self.found["uptodate"] = True
         return None
 
     # -- the trace, in memory -----------------------------------------------
@@ -166,6 +183,38 @@ class TraceSetup(Trip):
             return problem
         self.found["period_us"] = period
         self.note("task %s runs every %d us" % (self.job["task"], period))
+        return None
+
+    def take_the_named_trace(self):
+        """--name: the run, recording what the named trace is set to record.
+
+        The merged job is checked as a whole job, so a trace that names no
+        variable, or a trigger this command does not take, is refused as a
+        job would be, before anything is logged in to.
+        """
+        name = self.args["name"]
+        self.api, problem = trace_objects.reach(self.globals,
+                                                self.projects.primary, name)
+        if problem:
+            return problem
+        definition, left_out = trace_config.describe(
+            self.api, entry.borrowed(self.globals, "Resolution"))
+        merged = dict(definition)
+        merged.update(self.job)
+        self.job, problem = trace_job.normalise(merged)
+        if problem:
+            return "%s cannot record as it is set: %s" % (name, problem)
+        self._found_from_the_job()
+        self.found["trace"] = name
+        if left_out:
+            self.note("%s has %d variable(s) switched off, which are not "
+                      "recorded: %s" % (name, len(left_out),
+                                        ", ".join(left_out)))
+        self.set_buffers = self.buffers_for(self.api)
+        if self.set_buffers is None:
+            return NO_MEMBER
+        self.note("%s: %d variable(s) on task %s, as the project has it"
+                  % (name, len(self.job["variables"]), self.job["task"]))
         return None
 
     def no_trace_of_ours(self):

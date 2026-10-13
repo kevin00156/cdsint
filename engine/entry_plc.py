@@ -120,6 +120,15 @@ def traced(trip):
     fake buffer setter; record() is the only other caller.
     """
     unhandled.start()
+    if trip.named():
+        the_trace = [
+            trip.take_the_named_trace,  # --name: as the project has it
+            trip.find_the_period]       # of the task the trace samples in
+    else:
+        the_trace = [
+            trip.find_the_period,     # the task's period, from its configuration
+            trip.no_trace_of_ours,    # nothing already called cdsint_trace
+            trip.make_the_trace]      # in memory only; buffers wait for step 5
     return in_order(trip, [
         trip.may_run,             # a wait lent to us
         trip.read_the_job,        # checked again: the wire is not trusted
@@ -127,9 +136,7 @@ def traced(trip):
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y
         trip.the_ide_agrees,      # the IDE's download info names it too
         trip.the_program_is_unchanged,  # or Keep would download the change
-        trip.find_the_period,     # the task's period, from its configuration
-        trip.no_trace_of_ours,    # nothing already called cdsint_trace
-        trip.make_the_trace,      # in memory only; buffers wait for step 5
+    ] + the_trace + [
         trip.recording,           # log in, names, types, memory, run state,
                                   # buffers, record, save
     ]) or trip.verdict()

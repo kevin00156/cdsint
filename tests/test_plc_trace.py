@@ -124,7 +124,10 @@ def test_the_report_has_exactly_the_spec_shape():
     assert set(data) == {
         "action", "controller", "crc", "task", "period_us", "resolution",
         "duration_s", "buffer", "files", "variables", "complete",
-        "failed_objects", "why", "notes", "workspace"}
+        "failed_objects", "why", "notes", "workspace", "trace", "uptodate",
+        "stopped_early"}
+    assert data["trace"] == "cdsint_trace" and data["uptodate"] is True
+    assert data["stopped_early"] is None
     assert data["action"] == "trace"
     assert data["controller"] == "Gateway-1/%s:%d" % (GATEWAY, PORT)
     assert data["resolution"] == "us" and data["task"] == TASK
