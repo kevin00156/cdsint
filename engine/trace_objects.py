@@ -55,11 +55,14 @@ def what_else(others):
 
 
 def path_of(obj):
-    """'Application/T1': enough of where it is to tell two apart."""
-    parent = parent_of(obj)
-    if parent is None:
-        return name_of(obj)
-    return "%s/%s" % (name_of(parent), name_of(obj))
+    """'Device/Plc Logic/Application/Traces/T1': where it is, from the top
+    of the tree. The parent alone told nothing apart when two traces of one
+    name sat in two applications, which both name their parent the same."""
+    names = []
+    while obj is not None:
+        names.append(name_of(obj))
+        obj = parent_of(obj)
+    return "/".join(reversed(names))
 
 
 def scripted(ide_globals, project, obj):

@@ -73,7 +73,12 @@ def to_job():
               else "no: plc trace would refuse it: " + refusal)
     out = args.get("out")
     if out:
-        _write_json(out, definition)
+        try:
+            _write_json(out, definition)
+        except (IOError, OSError) as exc:
+            return _failed("job", "%s could not be written: %s"
+                           % (out, one_line(exc)), job=definition,
+                           left_out=left_out, usable=usable)
     return entry.result(
         True, "trace job: %s records %d variable(s) on task %s"
         % (args["name"], len(definition["variables"]), definition["task"]),
@@ -82,24 +87,35 @@ def to_job():
 
 
 def from_job():
-    """trace apply: make a trace object record a job file's definition."""
+    """trace apply: make a trace object record a job file's definition.
+
+    The definition and the name are checked before the question: both
+    checks only read, and a refusal for either is worth more than a
+    question whose yes leads only to it.
+    """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
     args, project = _inputs()
     name = args.get("name")
-    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY, APPLY_QUESTION % name):
-        return _failed("apply", "not confirmed")
     definition, problem = trace_job.normalise_definition(args.get("job"))
     if problem:
         return _failed("apply", problem)
-    api, replaced, problem = _the_trace_to_apply(project, name, definition)
+    existing, problem = _existing_trace(project, name)
+    if problem:
+        return _failed("apply", problem)
+    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY, APPLY_QUESTION % name):
+        return _failed("apply", "not confirmed")
+    api, replaced, problem = _the_trace_to_apply(project, name, definition,
+                                                 existing)
     if problem:
         return _failed("apply", problem)
     problem = trace_config.configure(api, definition,
                                      entry.borrowed(globals(), "Resolution"))
     if problem:
+        # The old variables are gone by now (configure clears first), so
+        # the report is the one place left that says what they were.
         return _failed("apply", "%s could not be configured: %s"
-                       % (name, problem))
+                       % (name, problem), replaced=replaced or [])
     created = replaced is None
     summary = ("trace apply: %s %s, recording %d variable(s) on task %s"
                % (name, "created" if created else "replaced",
@@ -113,23 +129,31 @@ def from_job():
         failed_objects=unhandled.names())
 
 
-def _the_trace_to_apply(project, name, definition):
-    """(settings, what it recorded before or None if new, None), or a why.
+def _existing_trace(project, name):
+    """(the trace called `name`, or None if there is none, None), or why
+    `name` cannot be applied to.
 
     A name that belongs to something else is refused rather than created
     beside it: two objects of one name are what --name cannot tell apart.
     """
     traces, others = trace_objects.named(project, name)
     if len(traces) > 1:
-        return None, None, trace_objects.several(name, traces)
+        return None, trace_objects.several(name, traces)
     if traces:
-        api, problem = trace_objects.scripted(globals(), project, traces[0])
+        return traces[0], None
+    if others:
+        return None, ("%s is not a trace object%s"
+                      % (name, trace_objects.what_else(others)))
+    return None, None
+
+
+def _the_trace_to_apply(project, name, definition, existing):
+    """(settings, what it recorded before or None if new, None), or a why."""
+    if existing is not None:
+        api, problem = trace_objects.scripted(globals(), project, existing)
         if problem:
             return None, None, problem
         return api, [v.variable_name for v in api.variable_list], None
-    if others:
-        return None, None, ("%s is not a trace object%s"
-                            % (name, trace_objects.what_else(others)))
     api, problem = trace_objects.create(globals(), project.active_application,
                                         name, definition["task"])
     return api, None, problem
@@ -218,6 +242,9 @@ def show_data():
     api, problem = trace_objects.reach(globals(), project, name)
     if problem:
         return _failed("show", problem)
+    if not os.path.isfile(path):
+        return _failed("show", "%s does not exist, so nothing was loaded"
+                       % path)
     editor = api.open_editor()
     load = ide_private.loader_for(editor)
     if load is None:
@@ -245,11 +272,10 @@ def _loaded(project, editor):
     path = os.path.join(plc_crc.workspace(project.path), SHOWN_CSV)
     try:
         editor.save(plc_crc.forget(path))
-        saved = trace_samples.read_csv(path)
+        return trace_samples.variable_names(path), None
     except Exception as exc:
         return None, ("the file was loaded, but what it holds could not be "
                       "read back: " + one_line(exc))
-    return [each["name"] for each in saved["variables"]], None
 
 
 def _inputs():
@@ -258,9 +284,10 @@ def _inputs():
             entry.borrowed(globals(), "projects").primary)
 
 
-def _failed(action, problem):
+def _failed(action, problem, **data):
     return entry.result(False, "trace %s: %s" % (action, problem),
-                        action=action, failed_objects=unhandled.names())
+                        action=action, failed_objects=unhandled.names(),
+                        **data)
 
 
 def _write_json(path, definition):

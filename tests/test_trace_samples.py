@@ -216,3 +216,13 @@ def test_a_condition_that_never_held_counts_zero():
     rows = trace_samples.counted([{"name": u"GVL.x", "timestamps": [],
                                    "values": []}])
     assert rows[0]["samples"] == 0 and rows[0]["longest_interval"] == 0
+
+
+def test_variable_names_skips_the_samples(tmp_path):
+    # trace show wants only the names; a long recording's samples are most
+    # of the file, and are not even looked at.
+    path = tmp_path / "t.csv"
+    path.write_text(u"Name; T\n0.Variable; PLC_PRG.a\n;not a sample at all\n"
+                    u"1.Variable; PLC_PRG.b\n;1;2\n", encoding="utf-8")
+    assert trace_samples.variable_names(str(path)) == ["PLC_PRG.a",
+                                                        "PLC_PRG.b"]

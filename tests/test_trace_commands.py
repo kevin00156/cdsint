@@ -7,6 +7,7 @@ faked here (engine/ide_private.py): CPython has no .NET to reflect over, and
 the real ones were measured on the bench (docs/trace-research.md 15.6-7).
 """
 import io
+import os
 import json
 
 import pytest
@@ -113,8 +114,10 @@ class Bench(object):
 
 
 @pytest.fixture
-def bench(monkeypatch):
-    return Bench(monkeypatch)
+def bench(monkeypatch, tmp_path):
+    bench = Bench(monkeypatch)
+    bench.dir = str(tmp_path)
+    return bench
 
 
 def definition(*variables, **more):
@@ -266,19 +269,24 @@ def test_the_headless_launcher_refuses_save(bench):
 
 # --- trace show ----------------------------------------------------------------
 
-def saved_trace(bench):
-    """T1 in the project, and a saved .trace the loader knows."""
+def saved_trace(bench, name="r.trace", known=True):
+    """T1 in the project, and a saved .trace on disk the loader knows."""
     bench.press("apply", yes=True, name="T1", job=definition())
-    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
-    return "C:/r.trace"
+    path = os.path.join(bench.dir, name)
+    with io.open(path, "w", encoding="utf-8") as handle:
+        handle.write(u"a trace")
+    if known:
+        bench.files[path] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
+    return path
 
 
 def test_show_loads_into_the_named_trace_and_reports_what_it_loaded(bench):
-    shown = bench.press("show", yes=True, name="T1", file=saved_trace(bench))
+    path = saved_trace(bench)
+    shown = bench.press("show", yes=True, name="T1", file=path)
     assert shown["ok"], shown["error"]
     assert shown["data"]["name"] == "T1"
     assert shown["data"]["variables"] == plc_fakes.TRACED
-    assert bench.loads == ["C:/r.trace"]
+    assert bench.loads == [path]
 
 
 def test_show_without_yes_asks_and_loads_nothing(bench):
@@ -303,9 +311,8 @@ def test_show_does_not_save_the_project(bench):
 
 
 def test_show_passes_on_what_the_loader_said(bench):
-    saved_trace(bench)
-    shown = bench.press("show", yes=True, name="T1",
-                        file="C:/not-a-trace.txt")
+    path = saved_trace(bench, "not-a-trace.txt", known=False)
+    shown = bench.press("show", yes=True, name="T1", file=path)
     assert not shown["ok"] and "the file is not a trace" in shown["error"]
 
 
@@ -356,3 +363,58 @@ def test_job_of_a_trigger_with_no_numeric_level_is_unusable(bench):
     read = bench.press("job", name="T1")
     assert read["ok"], read["error"]
     assert read["data"]["usable"].startswith("no")
+
+
+# --- what plan 1's review left -------------------------------------------------
+
+def test_two_traces_of_one_name_are_told_apart_by_their_whole_path(bench):
+    folder = Node("Traces", TYPE_GUIDS["folder"], parent=bench.application)
+    bench.application._children.append(folder)
+    bench.press("apply", yes=True, name="T1", job=definition())
+    other = Node("T1", TYPE_GUIDS["trace"], parent=folder)
+    folder._children.append(other)
+    refused = bench.press("job", name="T1")
+    assert "Application/T1" in refused["error"]
+    assert "Application/Traces/T1" in refused["error"]
+
+
+def test_show_of_a_file_that_is_not_there_says_so(bench):
+    bench.press("apply", yes=True, name="T1", job=definition())
+    missing = os.path.join(bench.dir, "gone.trace")
+    shown = bench.press("show", yes=True, name="T1", file=missing)
+    assert not shown["ok"] and "does not exist" in shown["error"]
+    assert bench.loads == []
+
+
+def test_apply_without_yes_onto_a_folder_is_refused_for_the_folder(bench):
+    refused = bench.press("apply", name="TraceEnum", job=definition())
+    assert not refused["ok"] and not refused["needs_input"]
+    assert "folder" in refused["error"]
+
+
+def test_apply_without_yes_of_a_bad_definition_is_refused_for_it(bench):
+    refused = bench.press("apply", name="T1", job={"task": TASK})
+    assert not refused["ok"] and not refused["needs_input"]
+    assert "variables" in refused["error"]
+
+
+def test_job_that_cannot_write_its_file_says_so(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    blocker = os.path.join(bench.dir, "a-file")
+    with io.open(blocker, "w", encoding="utf-8") as handle:
+        handle.write(u"in the way")
+    read = bench.press("job", name="T1",
+                       out=os.path.join(blocker, "t1.json"))
+    assert not read["ok"] and "could not be written" in read["error"]
+    assert read["data"]["job"]["variables"] == ["a.x"]
+
+
+def test_a_failed_apply_still_reports_what_it_cleared(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("old.a"))
+
+    def refuse(variableName):
+        raise RuntimeError("not today")
+    bench.trace_named("T1").add_trace_variable = refuse
+    again = bench.press("apply", yes=True, name="T1", job=definition("new.b"))
+    assert not again["ok"] and "not today" in again["error"]
+    assert again["data"]["replaced"] == ["old.a"]
