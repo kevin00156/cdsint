@@ -118,3 +118,41 @@ def test_without_dotnet_there_is_no_loader():
 def test_an_editor_without_the_view_field_has_no_loader(monkeypatch):
     monkeypatch.setattr(ide_private, "_field", lambda obj, name: None)
     assert ide_private.loader_for(object()) is None
+
+
+class Kind(object):
+    def __init__(self, name, method=None):
+        self.Name = name
+        self.method = method
+
+    def GetMethod(self, name, flags):
+        return self.method
+
+
+class Assembly(object):
+    """The trace plug-in's assembly, counting how often it is scanned."""
+
+    def __init__(self, kinds):
+        self.kinds = kinds
+        self.scans = 0
+
+    def GetTypes(self):
+        self.scans += 1
+        return self.kinds
+
+
+def test_the_private_creator_is_looked_up_once_per_assembly(monkeypatch):
+    """trace list reaches one trace after another; the assembly's types
+    are scanned for the member once, not once per trace (#10)."""
+    monkeypatch.setattr(ide_private, "_CREATORS", {})
+    creator = object()
+    assembly = Assembly([Kind("Other"),
+                         Kind(ide_private.SCRIPT_TRACE_TYPE, creator)])
+    for _ in range(3):
+        assert ide_private._creator(assembly, 0) is creator
+    assert assembly.scans == 1
+
+
+def test_an_assembly_without_the_member_has_no_creator(monkeypatch):
+    monkeypatch.setattr(ide_private, "_CREATORS", {})
+    assert ide_private._creator(Assembly([Kind("Other")]), 0) is None

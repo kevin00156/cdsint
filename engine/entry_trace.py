@@ -101,8 +101,7 @@ def _listed(project, obj):
     except Exception as exc:
         row["unread"] = one_line(exc) or type(exc).__name__
         return row
-    row.update(task=definition["task"], variables=definition["variables"],
-               left_out=left_out)
+    row.update(definition, left_out=left_out)
     return row
 
 

@@ -125,18 +125,30 @@ def script_trace(trace_global, project_handle, guid_text):
         from System.Reflection import BindingFlags
     except ImportError:
         return None
-    found = [kind for kind in clr.GetClrType(type(trace_global)).Assembly
-             .GetTypes() if kind.Name == SCRIPT_TRACE_TYPE]
-    if not found:
-        return None
-    create = found[0].GetMethod(
-        CREATE_SCRIPT_TRACE, BindingFlags.NonPublic | BindingFlags.Static)
+    create = _creator(clr.GetClrType(type(trace_global)).Assembly,
+                      BindingFlags.NonPublic | BindingFlags.Static)
     if create is None:
         return None
     args = Array.CreateInstance(object, 2)
     args[0] = Int32(project_handle)
     args[1] = Guid(guid_text)
     return create.Invoke(None, args)
+
+
+# The member found in each assembly, for this run: the IDE side loads the
+# engine afresh for every command (cds/ide/entries.py), so this lives as long
+# as one trace list, which reaches one trace after another.
+_CREATORS = {}
+
+
+def _creator(assembly, flags):
+    """CreateScriptTraceObject in `assembly`, or None; scanned for once."""
+    if assembly not in _CREATORS:
+        found = [kind for kind in assembly.GetTypes()
+                 if kind.Name == SCRIPT_TRACE_TYPE]
+        _CREATORS[assembly] = (found[0].GetMethod(CREATE_SCRIPT_TRACE, flags)
+                               if found else None)
+    return _CREATORS[assembly]
 
 
 def loader_for(editor):

@@ -469,6 +469,9 @@ def test_list_names_every_trace_with_its_path_task_and_variables(bench):
     assert rows["T1"]["path"] == "Application/T1"
     assert rows["T1"]["task"] == TASK
     assert rows["T1"]["variables"] == ["a.x", "a.y"]
+    # The whole definition trace job would print: it was read anyway.
+    assert rows["T1"]["every_n_cycles"] == 1
+    assert rows["T1"]["resolution"] == "us"
 
 
 def test_list_finds_a_trace_inside_a_folder(bench):
