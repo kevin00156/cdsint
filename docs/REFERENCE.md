@@ -172,18 +172,19 @@ Every command that touches a project takes one of two forms, and never both:
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
-| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | — | yes | record the variables a job file names, without downloading anything |
+| `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
+| `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
 | `trace job --name T [--out FILE]` | yes | yes | write what trace object `T` records as a job file |
 | `trace apply -y --name T --job FILE` | yes | yes | make trace `T` record a job file's variables, creating it if needed |
 | `trace save --name T --out PATH [--formats LIST]` | yes | — | write what `T` recorded in this IDE, and say whether samples are missing |
-| `trace show --file FILE` | yes | — | load a saved `.trace` into `cdsint_trace` for a person to look at |
+| `trace show -y --name T --file FILE` | yes | — | load a saved `.trace` into trace `T` for a person to look at |
 
 Shared flags: `--timeout SECONDS` (default 120) is how long **one step** may
 take, in both forms; with `--project` the deadline for the whole process is
 derived from it — a launch allowance, plus that many seconds per step, plus a
 shutdown allowance — so a four-step `verify` waits well past 120 seconds.
-A `plc trace` adds its job's `duration_s` on top: `--timeout` bounds the
-work around the recording, not the recording itself.
+A `plc trace` adds its job's `duration_s` on top, in both forms: `--timeout`
+bounds the work around the recording, not the recording itself.
 `--json` prints the raw record. A `--project` run's record carries four
 fields the other form has no use for: `ide`, `sync_dir`, `report_path`, and
 `notes` — what the launcher had to say about the run rather than about the
@@ -284,7 +285,8 @@ cannot stand in for each other.
   as `import` and `verify`. Without it: what the download would do,
   `needs_input`, exit 1, controller untouched.
 
-Every `plc` command also needs `--gateway`, and is exit 2 without it: a
+Every `plc` command in the `--project` form also needs `--gateway`, and is
+exit 2 without it: a
 controller found by the project's device name can be the wrong one, and the
 wrong controller passes every check — a download's read-back, a connect's
 `MATCH`, a trace's samples. `--port` is the port behind it (11740 when left
@@ -418,13 +420,49 @@ members' names. An enumeration whose base type the IDE does not report as
 one of the twelve integer types is refused by name, and an enumeration cannot
 be the `trigger` or the `record_condition`.
 
+`--name T` records a trace object the project already has, as it is set,
+instead of one made from the job. The job then holds only the run —
+`duration_s`, `out`, and optionally `formats`, `min_complete` and
+`max_gap_periods` — and any definition field in it is exit 2, pointing at
+`trace apply`. A variable switched off in the IDE is not recorded, and the
+notes say so. `data.trace` names the trace that recorded.
+
+### Recording through an open IDE: `plc trace --target`
+
+```
+cdsint plc trace --target softplc --name T1 --job run.json
+cdsint plc trace --target softplc --stop
+```
+
+With the project open and logged in to the controller, `plc trace` records
+trace `T1` through that login, and answers when the recording is done. It
+never logs in or out, so the person's session is left as it was; not logged
+in is exit 1, saying so. `--gateway`, `--port` and `--gateway-name` are
+exit 2: the login already chose the controller. `--name` is required,
+because CODESYS adds no object to an application that is logged in — make
+the trace with `trace apply` while logged out, or use one of your own.
+
+What it checks: the names resolve on the controller, the types fit, the ring
+fits `trace_memory_mb`, the application is running, and `T1` is not already
+recording (a trace you started by hand is refused, not taken over). It does
+not read the controller's CRC — that needs a connection of cdsint's own,
+and closing it can end your session — so `data.crc` is `UNKNOWN`;
+`data.uptodate` says whether the working copy matches what was downloaded.
+
+While it records, that IDE answers only `plc trace --stop`, `ping` and
+`status`, and refuses other commands saying when the recording ends; `list`
+shows it as `recording`. `--stop` ends the recording early: the first
+command then answers with `data.stopped_early` (`after_s`, `why`), and
+completeness is judged against the time it recorded. Closing the watcher in
+the IDE ends it the same way.
+
 ### Trace objects and their data: `trace`
 
 ```
 cdsint trace job   --target softplc --name T1 --out t1.json
 cdsint trace apply --target softplc -y --name T1 --job t1.json
 cdsint trace save  --target softplc --name T1 --out runs/t1 --formats csv,trace
-cdsint trace show  --target softplc --file runs/t1.trace
+cdsint trace show  --target softplc -y --name T1 --file runs/t1.trace
 ```
 
 Four commands for trace objects in the project and what they recorded. None
@@ -448,10 +486,10 @@ of them talks to a controller, so none needs a word in the `plc` list.
   `data.variables`, `data.complete` and `data.why`, because a trace started
   and stopped by hand with the IDE's default buffers keeps only its last few
   thousand samples.
-- **`trace show`** loads a saved `.trace` into `cdsint_trace`, cdsint's own
-  trace object, and opens it, so a person sees what an agent recorded.
-  Loading replaces the target's definition, which is why it never loads into
-  a trace of yours.
+- **`trace show`** loads a saved `.trace` into trace `T1` and opens it, so a
+  person sees what an agent recorded. Loading replaces what `T1` records with
+  the file's definition, which is why it needs `-y`; it never creates a
+  trace, and does not save the project.
 
 `save` and `show` have no `--project` form: recorded data lives in the IDE
 that recorded it, and an IDE cdsint starts has none and nobody to see it.

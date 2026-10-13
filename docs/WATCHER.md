@@ -43,6 +43,12 @@ opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
 `started_at_epoch` are for a program to subtract. Storing numbers saves parsing a local-time string and
 sidesteps the ambiguous hour around a daylight-saving change.
 
+`state` is `idle`, `busy`, or `recording`: a watcher holding a `plc trace`
+between ticks (section 5). A recording watcher still ticks and beats, so it
+is alive by its heartbeat like an idle one, and only a `busy` one is judged
+by `busy_since`. That is what lets a `plc trace --stop` with a short
+`--timeout` find a watcher an hour into a recording.
+
 ### 2.1 A few time constants
 
 The code is in `cds/core/instances.py`. These numbers are starting points,
@@ -137,7 +143,8 @@ file has the same name and lives in `result\`.
 | `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
-| `plc connect`, `plc download`, `plc trace` | — | The watcher always refuses, with an error that states the reason: it runs inside an IDE somebody is using, and logging in to a controller would take that person's online session away (SPEC D8). These three commands exist only in the `--project` form |
+| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: it runs inside an IDE somebody is using, and logging in to a controller would take that person's online session away (SPEC D8). These two commands exist only in the `--project` form |
+| `plc trace` | `name`, `job` (the run only), or `stop` | none. Records trace `name` through the login the person already has open, and is answered when the recording ends (section 5, SPEC 6.8). `stop` ends a recording early and is answered by the watcher itself |
 
 ## 5. What one tick does
 
@@ -186,6 +193,20 @@ it treats the run as "running it again means stop".
 **Catch everything inside a tick.** An uncaught exception escaping a WinForms
 tick handler becomes the IDE's thread-exception dialog, and can take the IDE
 down with it.
+
+**A recording spans ticks.** A `plc trace` body returns once the trace has
+started, handing back a recording rather than a result (`engine/plc_trace_watch.py`).
+The watcher keeps it (`cds/ide/recording.py`), leaves its command claimed, so
+the `.running` file keeps telling the waiting CLI that someone is working on
+it, and sets `state` to `recording`. Every tick then starts by looking at the
+recording once; when it is done, its result is written, the claim is
+released and `state` goes back to `idle`. Nothing waits in between (SPEC D5).
+While it records, the watcher answers `plc trace` with `stop`, `ping` and
+`status`, and refuses everything else, its own `stop` included, saying until
+when. `plc trace` with `stop` is answered by the watcher without pressing the
+engine: "nothing is recording" when nothing is. Closing the watcher from the
+IDE finishes the recording at once (stop, save, judge) and answers its
+caller before the registration goes.
 
 ## 6. Why a timer, not a main loop
 

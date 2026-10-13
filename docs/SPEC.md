@@ -168,6 +168,10 @@ in `cds/ide/`, the layer D12 gives the timer to, and the engine's recording
 loop receives it as a function, so the loop itself has no waiting call in it
 and CI runs it against a fake clock.
 
+The watcher form of `plc trace` (6.8) needs no exception: its body returns
+as soon as the trace has started, and the watcher looks at the recording
+once a tick until it is done, so the wait is the timer's own.
+
 **D6 Command hand-off is a file protocol; not a named pipe, not HTTP.** The
 protocol spec is in `docs/WATCHER.md`.
 Reason: the existing protocol has already run against real projects, and
@@ -190,22 +194,26 @@ through `LogMessageKeys`, and the message says which `--answer` to add.
 One IDE prompt is answered by cdsint itself, with no flag:
 `Strings.OverwriteExistingOnlineTrace`, answered OK by `plc trace` and by
 nothing else. It asks whether to delete a trace of the same name already on the
-controller, and the only name `plc trace` ever downloads is its own
-`cdsint_trace` (6.8), so the trace being deleted is the one the previous run
-left behind. Answering is not guessing for the caller; leaving it to a flag
+controller, and `plc trace` downloads only its own `cdsint_trace` or the trace
+the caller named with `--name` (6.8), so the trace being deleted is that
+trace's own earlier download. Answering is not guessing for the caller; leaving it to a flag
 would make every run after the first need the same `--answer` for no
 information. The exception is by key and by command: the answer is set by the
 trace step, not by `answer_prompts`, so no other command inherits it.
 
 **D8 Only actions that touch the PLC are under permission control, in two
 layers.** The `plc` list in the settings file decides whether this project
-allows it; `-y` confirms this one call. The watcher mode refuses PLC commands
-outright.
+allows it; `-y` confirms this one call. The watcher mode refuses the PLC
+commands that log in (`connect`, `download`) outright; `plc trace` runs there
+through the login the user already has open, and never logs in or out itself
+(6.8).
 Reason: an agent issuing a wrong command can now download straight to a PLC.
 `export`, `import`, `compare` and `build` touch no hardware; putting them under
 the permission list would only add a pre-check to every command in exchange
 for a feature none of the three scenarios uses. The watcher runs inside the
-user's IDE, and a login would take the user's online session away. The first
+user's IDE, and a login would take the user's online session away; recording
+through a session the user opened takes nothing away, and is the point of
+recording while a person and an agent work on the same machine. The first
 layer used to be a project property, which meant "someone decided this inside
 the IDE"; after the settings moved to a text file (D10) that meaning no longer
 holds, the first layer is just "the file says so", and the real gate is `-y`.
@@ -341,8 +349,9 @@ package name `cli` collided with users' own directories.
 Every command has two forms (D2). `--target X` finds the watcher in an open
 IDE; `--project P --install I` starts a headless IDE. The two sets of flags are
 mutually exclusive, and argparse blocks them directly. Two exceptions, each
-refused with its reason rather than left out: `plc` has only the second form
-(D8), and `trace save` and `trace show` only the first (6.11).
+refused with its reason rather than left out: `plc connect` and `plc download`
+have only the second form (D8), and `trace save` and `trace show` only the
+first (6.11).
 
 | Command | `--target X` | `--project P --install I` | What it does |
 |---|---|---|---|
@@ -361,9 +370,10 @@ refused with its reason rather than left out: `plc` has only the second form
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
-| `plc trace --gateway IP [--gateway-name NAME] --job FILE` | refused | yes | record the variables the job names into a file, without downloading the application (6.8) |
+| `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | n/a | yes | log in, record the variables the job names (or what trace `T` is set to record) into files, log out, without downloading the application (6.8) |
+| `plc trace --name T --job FILE`, `plc trace --stop` | yes | n/a | record trace `T` through the login already open in that IDE; `--stop` ends that recording early (6.8, "In the watcher") |
 | `trace job --name T [--out FILE]`, `trace apply -y --name T --job FILE` | yes | yes | a trace object's definition, out to a job file or in from one (6.11) |
-| `trace save --name T --out PATH [--formats LIST]`, `trace show --file FILE` | yes | refused | what a trace recorded in this IDE, written to files, or a saved trace loaded for a person to see (6.11) |
+| `trace save --name T --out PATH [--formats LIST]`, `trace show -y --name T --file FILE` | yes | refused | what a trace recorded in this IDE, written to files, or a saved trace loaded into trace `T` for a person to see (6.11) |
 
 There is no `config` command. The settings are one text file beside the
 project (4.4); the file is the interface, and validation is in the one
@@ -409,13 +419,13 @@ of the output and written into the report as `sync_dir`; that field holds the
 value that actually took effect on the IDE side, not what the flag said.
 
 `-y` uniformly means "confirm that this step changes state"; `import`,
-`verify` and `plc download` share it. Without it the command prints what this
+`verify`, `plc download`, `trace apply` and `trace show` share it. Without it the command prints what this
 run would do, returns `needs_input`, exits 1, and changes nothing. There is no
 `-N`, because leaving out `-y` already means "don't"; the other dialogs with a
 safe default each have a named flag, and `--delete-orphans` answers "delete
 the orphans".
 
-Why `plc` commands refuse the `--target` form is in D8.
+Why `plc connect` and `plc download` refuse the `--target` form is in D8.
 
 ### 4.3 Exit codes and output
 
@@ -750,9 +760,9 @@ run would do (full download, stop, write the boot application, start), returns
 **`plc trace` does not need `-y`.** `-y` confirms a change of state, and a
 trace run changes none the caller would have to confirm: it never downloads
 the application, never starts or stops it, and never writes a variable (6.8).
-What it does put on the controller is a trace of its own, `cdsint_trace`, which
-replaces the one the previous run left there. The `trace` word in the list is
-the whole gate.
+What it does put on the controller is a trace: its own `cdsint_trace`, or
+the one `--name` named, replacing that trace's earlier download. The `trace`
+word in the list is the whole gate, in both forms.
 
 The first layer used to carry the meaning "only a person inside the IDE can
 write it"; that was the project-property era (D8). Now it is one key in a text
@@ -944,13 +954,16 @@ measurements behind every rule here are in `docs/trace-research.md`.
    `docs/ethercat-research.md` 5.2). An IDE without `is_uptodate` is refused
    too. It needs no build, and the trace object of step 3 does not change
    it, which is why it is asked before that object exists.
-3. Open the project. Refuse if it already has an object named
-   `cdsint_trace` anywhere; it is not renamed around, because the overwrite
-   prompt in D7 is only safe to answer while that name is cdsint's alone.
-   Refuse if the trace plug-in lacks the private member that sets the buffers
-   (below). Create `cdsint_trace` under the application, in memory only, and
-   set its variables, task, resolution, sampling rate and, when the job has
-   them, its trigger or record condition. The buffers are set after step 5,
+3. Open the project. With `--name T`, reach trace `T` wherever it sits in
+   the project tree, read what it is set to record, and check that with the
+   job's run as one whole job ("Naming a trace", below). Without it, refuse
+   if the project already has an object named `cdsint_trace` anywhere; it is
+   not renamed around, because the overwrite prompt in D7 is only safe to
+   answer while that name is cdsint's alone. Create `cdsint_trace` under the
+   application, in memory only, and set its variables, task, resolution,
+   sampling rate and, when the job has them, its trigger or record
+   condition. Either way, refuse if the trace plug-in lacks the private
+   member that sets the buffers (below). The buffers are set after step 5,
    once the variables' types are known.
 4. Log in with `OnlineChangeOption.Keep`. `Keep` puts on the controller
    whatever the working copy has that it lacks; after step 2 that is nothing,
@@ -977,6 +990,59 @@ measurements behind every rule here are in `docs/trace-research.md`.
    closed, 6.4), so the project file is never written and the trace object
    never reaches disk.
 9. Check completeness from the saved samples and write the report.
+
+**Naming a trace.** `--name T` records a trace object the project already
+has, as it is set: what to record is then `T`'s, and the job holds only the
+run (`duration_s`, `out`, `formats`, `min_complete`, `max_gap_periods`). A
+job with `--name` that names `task`, `variables`, `resolution`,
+`every_n_cycles`, `trigger` or `record_condition` is refused at the parser
+(exit 2), pointing at `trace apply` (6.11), because two answers to "what to
+record" have no rule for which one wins. A variable switched off in the IDE
+is not recorded, and the run's notes name it. Nothing is created and the
+project is not saved; the buffers set on `T` (below) stay as they were set,
+and the report says what they were. Two traces of one name are refused, as
+in 6.11.
+
+**In the watcher.** `cdsint plc trace --target X --name T --job FILE` records
+trace `T` through the login the person at that IDE already has open, and
+answers when the recording is done. It never logs in or out (D8), so its
+steps are fewer than the ones above:
+
+1. Refuse with exit 5 unless the `plc` list holds `trace`. `--gateway`,
+   `--port` and `--gateway-name` are refused at the parser: the person's
+   login already chose the controller. `--name` is required: CODESYS adds no
+   object to an application that is logged in, so the trace has to exist.
+2. Reach `T` and merge its definition with the job, as above.
+3. Refuse unless the application is logged in, saying to log in; refuse if
+   `T` is already recording, started by hand, since taking it over would end
+   that recording and lose what it held.
+4. Read every variable, check the types and `trace_memory_mb`, refuse if the
+   application is not running, and set the buffers, as in steps 5 and 6.
+5. Report, without refusing, whether the working copy is up to date
+   (`uptodate`). The controller's CRC is not read: that takes a device
+   connection of cdsint's own, and closing it can end the person's session,
+   so `crc` is `UNKNOWN` and the notes say why.
+6. Download the trace and start it. The steps up to here run inside one
+   nested script run, which the online calls need from the watcher's timer
+   (`docs/trace-research.md` 15.2). Then the body returns, and the watcher
+   looks at the recording once a tick (D5): when `duration_s` is up, or a
+   trigger has stopped it, it stops the trace, waits for it to stop (the
+   editor's `stop()` returns early, research 15.3), saves, judges, and
+   answers the caller.
+
+While it records, the watcher answers only `plc trace --stop`, `ping` and
+`status`, and refuses anything else saying until when; its registration's
+state is `recording` (`docs/WATCHER.md`). `plc trace --stop --target X`
+ends the recording early: the report carries
+`"stopped_early": {"after_s": ..., "why": "plc trace --stop"}`, and
+completeness is judged against the time it actually recorded, since samples
+the caller chose not to wait for are not missing. Closing the watcher from
+the IDE finishes the recording the same way, with `why` "the watcher was
+stopped", and the caller is answered. A recording whose poll throws (the
+person logged out, the connection dropped) still saves what it holds, which
+outlives the login (research 15.5), and fails saying what was thrown.
+`--stop` in the `--project` form is refused at the parser. The CLI waits
+`--timeout` plus `duration_s` for the answer.
 
 **The buffers.** The controller keeps a ring of samples that the IDE empties
 whenever its main thread is free: every 80 to 180 ms on an idle machine, and
@@ -1084,7 +1150,8 @@ limits; 1 anything else that ran (no `MATCH`, another client logged in, a
 name that does not resolve, application not running, incomplete samples,
 `needs_input`); 2 bad command line, including a missing `--gateway`; 3 timed
 out; 4 no usable IDE; 5 `trace` not in the `plc` list. `--timeout` is the
-ceiling for the trace step excluding `duration_s`, which is added to it.
+ceiling for the trace step excluding `duration_s`, which is added to it,
+in both forms.
 
 **Report `data`.**
 
@@ -1106,7 +1173,10 @@ ceiling for the trace step excluding `duration_s`, which is added to it.
   ],
   "complete": true,
   "failed_objects": [],
-  "why": null
+  "why": null,
+  "trace": "cdsint_trace",
+  "uptodate": true,
+  "stopped_early": null
 }
 ```
 
@@ -1115,6 +1185,11 @@ in the file's timestamp unit, which `resolution` names. `type` is the type
 `read_value()` reported, or for a member of an enumeration its base type. A run with a `trigger` also carries `"trigger":
 {"reached": true}` (or `false`), from the editor's own trigger state; its
 samples are continuous, so completeness is judged as for any other run.
+`trace` is the trace object that recorded: `cdsint_trace`, or the one
+`--name` named. `uptodate` is the application's `is_uptodate`, which the
+`--project` form gates on (step 2) and the watcher only reports.
+`stopped_early` is set only in the watcher, by `--stop` or by the watcher
+closing.
 
 **Where the code lives** (D12). Everything that talks to the IDE or the
 controller is in `engine/`, next to the other `plc` modules. Reading the saved
@@ -1310,7 +1385,7 @@ every rule here are in `docs/trace-research.md` 15.
 | `trace job --name T [--out FILE]` | the trace's definition as a job file | both | no |
 | `trace apply --name T --job FILE` | make trace `T` record the job file's definition, creating it if there is none | both | `-y` |
 | `trace save --name T --out PATH [--formats LIST]` | write what `T` recorded in this IDE, and judge it | `--target` | no |
-| `trace show --file FILE` | load a saved trace into `cdsint_trace` for a person to see | `--target` | no |
+| `trace show --name T --file FILE` | load a saved trace into `T` for a person to see | `--target` | `-y` |
 
 **The definition is a job without its run.** A trace object holds what to
 record (`task`, `variables`, `resolution`, `every_n_cycles`, `trigger`,
@@ -1347,16 +1422,19 @@ chose this trace's buffers, and one left at the IDE's default keeps only its
 last few thousand samples, which is worth reading and not worth failing on. A
 trace that holds no samples says so instead of blaming the controller.
 
-**Show loads into cdsint_trace only.** Loading a file replaces the target's
-definition with the file's, and that is only cdsint's to do to its own
-object; `cdsint_trace` is made if the project has none, which is refused
-while logged in, as above. What was loaded is read from the editor, not from
-the trace's settings, which on the bench still named the old variables
-straight after the load.
+**Show loads into a trace the caller names.** Loading a file replaces the
+target's definition with the file's, so the caller names the target with
+`--name` and confirms with `-y`, as for apply. It never creates one: CODESYS
+adds no object while logged in, which is when a person most wants to look,
+and a name that is not a trace is refused as for `job`. The project is not
+saved. What was loaded is read from the editor, not from the trace's
+settings, which on the bench still named the old variables straight after
+the load.
 
 **The private members** (6.8 "The buffers" says why each is checked before
 use and refused by name when missing): `ScriptTraceObject.CreateScriptTraceObject`
-reaches a trace somebody made in the IDE, for `job`, `apply` and `save`; the
+reaches a trace somebody made in the IDE, for `job`, `apply`, `save`,
+`show` and `plc trace --name`; the
 trace editor's `_view` holds the editor whose `LoadTrace` is the Trace menu's
 "Load Trace...", for `show`. Both are in `engine/ide_private.py`.
 
@@ -1383,7 +1461,7 @@ or a person's record; anything else is "should work".
 | `verify --project` in one command | verified | not verified | not verified | not verified | verified |
 | PLC connect, download | verified, 2026-09-06, full round on two WSL soft PLCs | not verified | not verified | not verified | not verified |
 | PLC trace: private buffer member `PerformWithWriteableCopy` present | verified by reflection and by recording, 2026-09-23 | not checked | not checked | not checked | not checked |
-| Watcher: private `ScriptOnline._executor`, which online calls from the watcher's timer go through (`docs/trace-research.md` 15.2) | verified by reflection and by the import pre-flight in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
+| Watcher: private `ScriptOnline._executor`, which online calls from the watcher's timer go through (`docs/trace-research.md` 15.2): the import pre-flight and the watcher's `plc trace` checks | verified by reflection and by the import pre-flight in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 | Trace commands: private `ScriptTraceObject.CreateScriptTraceObject` and the trace editor's `_view` / `LoadTrace` (6.11) | verified by job, apply, save and show in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 
 Every cell in this table is "one vendor's IDE opening its own project". One
