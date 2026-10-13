@@ -21,11 +21,10 @@ from cdsint.command_row import (  # noqa: F401  the table's vocabulary
     CONFIRM, CONFIRM_IMPORT, DEFAULT_TIMEOUT_S, DEFINITION, EITHER, HEADLESS,
     JOB, KINDS, METAVAR, NAME, NO_IDE, NUMBER, PAIRS, PATH, PROMPT_RESULTS,
     PROJECT_FLAGS, PROJECT_ONLY, SWITCH, WATCHER, WORDS, Command, _dest,
-    format_words, key_value)
+    OTHERWISE, format_words, key_value)
 from engine.codesys_constants import SCRIPT_VERSION
 
 
-ONLY_TRACE = "Only plc trace takes it."
 ONLY_DOWNLOAD = ("Only plc download changes the controller, so only it has "
                  "anything to confirm.")
 ONLY_CHANGES = ("Only trace apply and trace show change a trace object, so "
@@ -34,7 +33,6 @@ TRACE_NAMED = "Which trace object in the project is meant."
 DATA_IN_THE_IDE = ("Recorded data lives only in the IDE that recorded it: an "
                    "IDE this command starts has none, and nobody would see "
                    "a trace loaded into it.")
-NOT_FOR = "Only %s takes it."
 CONTROLLER_LOGIN = ("The watcher runs inside an IDE somebody is using, and "
                     "logging into a controller would take their online "
                     "session away from them (SPEC D8).")
@@ -51,6 +49,8 @@ STOP_IN_THE_WATCHER = ("--stop ends a recording a watcher is holding; a "
                        "--project run records within its own process and "
                        "ends by itself.")
 TRACE_ACTIONS = ("list", "job", "apply", "save", "show")
+# The flags that aim every plc action at its controller.
+REACH = ("gateway", "port", "gateway_name")
 LISTS_ONLY = "trace list names every trace and takes nothing else."
 WRONG_CONTROLLER = ("A controller found by the project's device name can be "
                     "the wrong one, and %s (SPEC 6.6).")
@@ -139,15 +139,15 @@ COMMANDS = {
                            "own read-back"},
             "trace": {"job": "The job file says how long to record and "
                              "where to write (SPEC 6.8)."}},
+        takes={
+            "connect": REACH,
+            "download": REACH + ("yes",),
+            "trace": REACH + ("job", "name", "stop"),
+            "trace --stop": ("stop",)},
         refuses={
-            "connect": {"job": ONLY_TRACE, "yes": ONLY_DOWNLOAD,
-                        "name": ONLY_TRACE, "stop": ONLY_TRACE},
-            "download": {"job": ONLY_TRACE, "name": ONLY_TRACE,
-                         "stop": ONLY_TRACE},
+            "connect": {"yes": ONLY_DOWNLOAD},
             "trace": {"yes": ONLY_DOWNLOAD},
-            "trace --stop": dict((dest, STOP_ALONE) for dest in
-                                 ("job", "name", "gateway", "port",
-                                  "gateway_name", "yes"))},
+            "trace --stop": {OTHERWISE: STOP_ALONE}},
         form_needs={
             WATCHER: {"trace": {"name": WATCHER_NAMES}},
             HEADLESS: {"trace": {"gateway": WRONG_CONTROLLER
@@ -198,24 +198,16 @@ COMMANDS = {
             "show": {"file": "The .trace file a trace save or plc trace "
                              "wrote.",
                      "name": TRACE_NAMED}},
+        takes={
+            "list": (),
+            "job": ("name", "out"),
+            "apply": ("yes", "name", "job", "folder"),
+            "save": ("name", "out", "formats"),
+            "show": ("yes", "name", "file")},
         refuses={
-            "list": dict((dest, LISTS_ONLY) for dest in
-                         ("yes", "name", "out", "job", "file", "formats",
-                          "folder")),
-            "job": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
-                    "file": NOT_FOR % "trace show",
-                    "formats": NOT_FOR % "trace save",
-                    "folder": NOT_FOR % "trace apply"},
-            "apply": {"out": NOT_FOR % "trace job or trace save",
-                      "file": NOT_FOR % "trace show",
-                      "formats": NOT_FOR % "trace save"},
-            "save": {"yes": ONLY_CHANGES, "job": NOT_FOR % "trace apply",
-                     "file": NOT_FOR % "trace show",
-                     "folder": NOT_FOR % "trace apply"},
-            "show": {"out": NOT_FOR % "trace job or trace save",
-                     "job": NOT_FOR % "trace apply",
-                     "formats": NOT_FOR % "trace save",
-                     "folder": NOT_FOR % "trace apply"}},
+            "list": {OTHERWISE: LISTS_ONLY},
+            "job": {"yes": ONLY_CHANGES},
+            "save": {"yes": ONLY_CHANGES}},
         action_forms={"save": (WATCHER, DATA_IN_THE_IDE),
                       "show": (WATCHER, DATA_IN_THE_IDE)}),
 }
