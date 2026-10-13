@@ -143,9 +143,20 @@ class Recording(object):
             return self._broke_off(exc)
 
     def _time_to_stop(self):
-        return (self.stop_asked is not None or self.trip._done()
-                or self.trip.clock() - self.started
-                >= self.trip.job["duration_s"])
+        """--stop, duration_s up, or the trace already stopped by itself.
+
+        A trace stops by itself when its trigger is done, and also when the
+        person logs out, presses stop or the connection drops; waiting out
+        duration_s then would hold the caller and refuse every other command
+        for nothing. is_running turns true only a moment after start()
+        returns (research 15.3), so a trace not running yet within the grace
+        is not taken for one that stopped.
+        """
+        elapsed = self.trip.clock() - self.started
+        stopped = (elapsed >= STOP_GRACE_S
+                   and not self.trip.editor.is_running)
+        return (self.stop_asked is not None or stopped or self.trip._done()
+                or elapsed >= self.trip.job["duration_s"])
 
     def _settling(self):
         """Still stopping. A stop that failed is not waited for: whatever the
@@ -178,11 +189,13 @@ class Recording(object):
         return self.trip.failed(problem) if problem else self.trip.verdict()
 
     def _broke_off(self, exc):
-        """Whatever the IDE threw, as the run's reason, with what can still
-        be saved saved first."""
-        self.stopping_since = self.stopping_since or self.trip.clock()
-        try:
-            self.trip.save()
-        except Exception:
-            pass    # the reason already given is the one the caller needs
+        """Whatever the IDE threw, as the run's reason, with the trace
+        stopped and what it held saved first, as far as either still works:
+        a trace left running would be refused next time as one a person
+        started."""
+        for last_try in (self.trip.editor.stop, self.trip.save):
+            try:
+                last_try()
+            except Exception:
+                pass    # the reason already given is the one the caller needs
         return self.trip.failed("the recording broke off: " + one_line(exc))

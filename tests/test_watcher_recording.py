@@ -248,3 +248,18 @@ def test_the_caller_clears_what_a_closed_watcher_left_for_it(root, watch,
     import os
     from cds.core import ipc
     assert not os.path.exists(ipc.instance_dir(root, watch.instance_id))
+
+
+def test_a_registration_missing_for_a_moment_is_not_a_closed_watcher(root,
+                                                                     watch):
+    # The watcher rewrites its registration by renaming it aside and the
+    # new one in (no os.replace on IronPython); a caller reading its answer
+    # in that moment must not take the watcher for closed.
+    import os
+    from cds.core import ipc
+    from cdsint import target
+    cmd_id = send(root, watch, "ping")
+    watch.tick()
+    os.remove(ipc.registration_path(root, watch.instance_id))
+    assert target.collect(root, watch.instance_id, cmd_id)["ok"] is True
+    assert os.path.isdir(ipc.command_dir(root, watch.instance_id))

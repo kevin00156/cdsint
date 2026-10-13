@@ -183,15 +183,21 @@ def collect(root, instance_id, cmd_id):
     """The result of cmd_id, or None if it is not there yet.
 
     A watcher closed while it held a recording writes that answer and goes,
-    leaving its directory for this caller (cds/core/instances.py delete).
-    Once the answer is read and the registration is gone, nobody else will
-    come for what is left, so it is cleared here.
+    leaving its result directory for this caller and nothing else
+    (cds/core/instances.py delete). Once that answer is read, nobody else
+    will come for what is left, so it is cleared here. The command directory
+    is the sign: a missing registration alone is also every live watcher's
+    rewrite on IronPython, which renames it aside and back (Watching).
     """
     result = commands.take_result(root, instance_id, cmd_id)
-    if result is not None and not os.path.exists(
-            ipc.registration_path(root, instance_id)):
+    if result is not None and _left_for_us(root, instance_id):
         instances.delete(root, instance_id)
     return result
+
+
+def _left_for_us(root, instance_id):
+    return not (os.path.exists(ipc.registration_path(root, instance_id))
+                or os.path.isdir(ipc.command_dir(root, instance_id)))
 
 
 class Watching(object):

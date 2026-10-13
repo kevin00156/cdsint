@@ -246,6 +246,11 @@ def show_data():
         return _failed("show", "%s does not exist, so nothing was loaded"
                        % path)
     editor = api.open_editor()
+    if editor.is_running:
+        # Loading replaces what the trace records, mid-recording; plc trace
+        # refuses the same trace for the same reason.
+        return _failed("show", "%s is recording; stop it, or wait for it, "
+                       "then run this again" % name)
     load = ide_private.loader_for(editor)
     if load is None:
         return _failed("show", (

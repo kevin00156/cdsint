@@ -1025,10 +1025,13 @@ steps are fewer than the ones above:
 6. Download the trace and start it. The steps up to here run inside one
    nested script run, which the online calls need from the watcher's timer
    (`docs/trace-research.md` 15.2). Then the body returns, and the watcher
-   looks at the recording once a tick (D5): when `duration_s` is up, or a
-   trigger has stopped it, it stops the trace, waits for it to stop (the
-   editor's `stop()` returns early, research 15.3), saves, judges, and
-   answers the caller.
+   looks at the recording once a tick (D5): when `duration_s` is up, or the
+   trace has stopped by itself (its trigger is done, or the person logged
+   out, pressed stop, or lost the connection), it stops the trace if it is
+   still going, waits for it to stop (the editor's `stop()` returns early,
+   research 15.3), saves, judges, and answers the caller. A trace that
+   stopped before `duration_s` without a trigger fails, saying so, with
+   what it held saved.
 
 While it records, the watcher answers only `plc trace --stop`, `ping` and
 `status`, and refuses anything else saying until when; its registration's
@@ -1038,9 +1041,10 @@ ends the recording early: the report carries
 completeness is judged against the time it actually recorded, since samples
 the caller chose not to wait for are not missing. Closing the watcher from
 the IDE finishes the recording the same way, with `why` "the watcher was
-stopped", and the caller is answered. A recording whose poll throws (the
-person logged out, the connection dropped) still saves what it holds, which
+stopped", and the caller is answered. A recording whose poll throws is
+stopped and saved as far as either still works, since what it holds
 outlives the login (research 15.5), and fails saying what was thrown.
+`trace show` refuses a trace that is recording, as `plc trace` does.
 `--stop` in the `--project` form is refused at the parser. The CLI waits
 `--timeout` plus `duration_s` for the answer.
 

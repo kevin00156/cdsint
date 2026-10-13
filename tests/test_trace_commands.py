@@ -418,3 +418,11 @@ def test_a_failed_apply_still_reports_what_it_cleared(bench):
     again = bench.press("apply", yes=True, name="T1", job=definition("new.b"))
     assert not again["ok"] and "not today" in again["error"]
     assert again["data"]["replaced"] == ["old.a"]
+
+
+def test_show_into_a_trace_that_is_recording_is_refused(bench):
+    path = saved_trace(bench)
+    bench.trace_named("T1").editor.running = True
+    shown = bench.press("show", yes=True, name="T1", file=path)
+    assert not shown["ok"] and "recording" in shown["error"]
+    assert bench.loads == []

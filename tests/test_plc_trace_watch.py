@@ -179,3 +179,40 @@ def test_what_was_recorded_is_saved_even_when_the_recording_broke_off(bench):
     result = finished(bench, recording)
     assert result["data"]["files"]
     assert "connection lost" in result["data"]["why"]
+
+
+def test_a_trace_that_stops_by_itself_ends_the_recording_early(bench):
+    # The person logged out, pressed stop, or the connection dropped: the
+    # trace stops, and the caller is answered then, not at duration_s.
+    recording = started(bench, duration_s=600.0)
+    bench.clock.now += 3.0      # past the grace after start()
+    assert recording.poll() is None
+    bench.named_api.editor.running = False
+    bench.named_api.editor.script = [("Stopped", "Disabled")]
+    result = finished(bench, recording)
+    assert result["ok"] is False and "before duration_s" in result["summary"]
+    assert result["data"]["files"]
+    assert bench.clock.now < 1000.0 + 600.0
+
+
+def test_a_trace_not_running_yet_right_after_start_is_not_taken_as_ended(bench):
+    # is_running turns true a moment after start() returns (research 15.3).
+    recording = started(bench)
+    bench.named_api.editor.running = False
+    assert recording.poll() is None
+
+
+def test_a_recording_that_breaks_off_while_running_saves_and_stops(bench):
+    recording = started(bench, duration_s=600.0)
+    bench.clock.now += 3.0      # past the grace, so is_running is asked
+    editor = bench.named_api.editor
+
+    class Lost(type(editor)):
+        @property
+        def is_running(self):
+            raise RuntimeError("connection lost")
+    editor.__class__ = Lost
+    result = finished(bench, recording)
+    assert result["ok"] is False and "connection lost" in result["summary"]
+    assert result["data"]["files"]
+    assert ("stop",) in bench.log
