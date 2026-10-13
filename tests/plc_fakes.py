@@ -465,6 +465,19 @@ class TraceEditor(object):
         self.trigger_script = trigger_script
         self.script = [("Stopped", "Disabled")]
         self.polls = 0
+        self.running = False    # start() to stop(), as the IDE's is_running
+        # Reads of is_running that still say True after stop(): the real
+        # stop() returns before the trace has stopped (research 15.3).
+        self.settle = 0
+
+    @property
+    def is_running(self):
+        if self.running:
+            return True
+        if self.settle > 0:
+            self.settle -= 1
+            return True
+        return False
 
     def download(self):
         self.log.append(("download",))
@@ -474,6 +487,7 @@ class TraceEditor(object):
         self.script = (self.trigger_script if self.api.trigger_enabled
                        else UNTRIGGERED)
         self.polls = 0
+        self.running = True
 
     def _now(self):
         return self.script[min(self.polls, len(self.script) - 1)]
@@ -481,6 +495,8 @@ class TraceEditor(object):
     def get_packet_state(self):
         state = self._now()[0]
         self.polls += 1
+        if state == "Stopped":
+            self.running = False
         return state
 
     def get_trigger_state(self):
@@ -491,6 +507,7 @@ class TraceEditor(object):
         if self._now()[0] != "Started":
             raise RuntimeError("Cannot stop the trace in the current state")
         self.script = [("Stopped", self._now()[1])]
+        self.running = False
 
     def save(self, path):
         self.log.append(("save", path))
@@ -513,6 +530,32 @@ for _edge in ("Positive", "Negative", "Both"):
     setattr(TriggerEdge, _edge, TriggerEdge(_edge))
 
 
+class TraceVariable(object):
+    """One row of a trace's variable list: its path, and whether it records."""
+
+    def __init__(self, variable_name, enabled):
+        self.variable_name = variable_name
+        self.enabled = enabled
+
+
+class VariableList(object):
+    """ScriptTraceVariableList, over the api's own `variables` and `disabled`.
+
+    `variables` stays a plain list of paths because every plc trace test
+    reads it that way; this is the view trace_config reads and clears.
+    """
+
+    def __init__(self, api):
+        self.api = api
+
+    def __iter__(self):
+        return iter([TraceVariable(name, name not in self.api.disabled)
+                     for name in self.api.variables])
+
+    def clear(self):
+        del self.api.variables[:]
+
+
 class TraceApi(object):
     """What trace.create() hands back: the settings of one trace object.
 
@@ -523,8 +566,10 @@ class TraceApi(object):
     def __init__(self, log, csv_text, trigger_script):
         self.log = log
         self.variables = []
+        self.disabled = set()   # paths switched off in the IDE
+        self.task_name = None
         self.resolution = None
-        self.every_n_cycles = None
+        self.every_n_cycles = 1     # what a new trace holds in the IDE
         self.trigger_variable = None
         self.trigger_edge = TriggerEdge.Positive
         self.trigger_level = None
@@ -544,6 +589,10 @@ class TraceApi(object):
     def add_trace_variable(self, variableName):
         self.variables.append(variableName)
 
+    @property
+    def variable_list(self):
+        return VariableList(self)
+
     def open_editor(self):
         self.log.append(("open_editor",))
         return self.editor
@@ -560,6 +609,7 @@ class Tracer(object):
     def create(self, application, name, task):
         self.log.append(("create", name, task))
         self.created.append((application, name, task))
+        self.api.task_name = task
         return self.api
 
 
@@ -571,9 +621,13 @@ class TraceSession(Session):
     a login that did not happen.
     """
 
-    def __init__(self, log, values=None, state="run", refuse_login=None):
+    def __init__(self, log, values=None, state="run", refuse_login=None,
+                 logged_in=True):
         Session.__init__(self)
         self.log = log
+        # What the watcher asks before it records through the person's
+        # login; the --project form logs in itself and never reads it.
+        self.is_logged_in = logged_in
         self.values = dict(VALUES if values is None else values)
         self.application_state = state
         self.refuse_login = refuse_login
@@ -603,7 +657,14 @@ class PromptResult(object):
 
 
 class TraceProject(Project):
-    """The open project: it can find by name and export native XML."""
+    """The open project: it can find by name and export native XML.
+
+    `names` are objects only their name is known of, enough for the check
+    that nothing is called cdsint_trace yet; the tree's own nodes are
+    found too, for the checks that read what kind a found object is.
+    """
+
+    handle = 0      # what trace_objects hands the private member with a GUID
 
     def __init__(self, children, application, xml, names=()):
         Project.__init__(self, {}, children, PROJECT_PATH, application)
@@ -611,7 +672,11 @@ class TraceProject(Project):
         self.names = list(names)
 
     def find(self, name, recursive=False):
-        return [n for n in self.names if n.lower() == name.lower()]
+        roots = self.get_children(False) + [self.active_application]
+        nodes = [node for root in roots if root is not None
+                 for node in [root] + root.get_children(True)
+                 if node.get_name().lower() == name.lower()]
+        return [n for n in self.names if n.lower() == name.lower()] + nodes
 
     def export_native(self, objects, path, recursive=False):
         self.exported = (objects, recursive)
@@ -658,7 +723,8 @@ class TraceBench(object):
 
     def __init__(self, csv_text=None, xml=None, names=(), crc=CRC_B,
                  record="11223344", app=APP_HEADER, guids=BOOTINFO_GUIDS,
-                 trigger_script=TRIGGER_FIRES, settings_file=None, **session):
+                 trigger_script=TRIGGER_FIRES, settings_file=None, named=None,
+                 **session):
         self.log = []
         self.clock = FakeClock()
         self.buffers = Buffers()
@@ -673,6 +739,18 @@ class TraceBench(object):
         # What the IDE says when the working copy compiles to what was
         # last downloaded; a test that edits the program sets it False.
         self.application.is_uptodate = True
+        # A trace object the project already has, set to record TRACED on
+        # TASK, for plc trace --name; reached through the patched
+        # ide_private.script_trace a test installs.
+        self.named_api = None
+        if named:
+            self.named_api = TraceApi(self.log, self.tracer.api.editor.csv_text,
+                                      trigger_script)
+            self.named_api.task_name = TASK
+            self.named_api.variables = list(TRACED)
+            self.named_api.resolution = Resolution.MicroSeconds
+            self.application._children.append(
+                BaseNode(named, TYPE_GUIDS["trace"], parent=self.application))
         self.project = TraceProject(
             [DeviceNode("Device", DEVICE_GUID)], self.application,
             read_data(TASK_CONFIG_XML) if xml is None else xml, names)
@@ -702,17 +780,34 @@ class TraceBench(object):
                 "OnlineChangeOption": OnlineChangeOption,
                 trace_run.HOLD_GLOBAL: None if ui else self.hold_ms}
 
-    def args(self, job=None, gateway=GATEWAY):
-        return {"gateway": gateway, "port": PORT,
+    def args(self, job=None, gateway=GATEWAY, name=None):
+        args = {"gateway": gateway, "port": PORT,
                 "job": trace_job() if job is None else job}
+        if name:
+            args["name"] = name
+        return args
 
-    def run(self, job=None, gateway=GATEWAY, ui=False):
+    def run(self, job=None, gateway=GATEWAY, ui=False, name=None):
         """The trace body on this bench, with its clock and its buffers."""
         from engine import entry_plc
         from engine.plc_trace import TraceTrip
-        trip = TraceTrip(self.args(job, gateway), self.globals(ui),
+        trip = TraceTrip(self.args(job, gateway, name), self.globals(ui),
                          clock=self.clock, buffers_for=self.buffers)
         return entry_plc.traced(trip)
+
+    def watch(self, job, name):
+        """The watcher's form on this bench: checks and start, a Recording.
+
+        No hold in the globals, as in an IDE with a window.
+        """
+        from engine import entry_plc
+        from engine.plc_trace_watch import WatchedTrip
+        args = {"job": job}
+        if name:
+            args["name"] = name
+        trip = WatchedTrip(args, self.globals(ui=True), clock=self.clock,
+                           buffers_for=self.buffers)
+        return entry_plc.watched(trip)
 
     def calls(self, *kinds):
         return [call for call in self.log if call[0] in kinds]

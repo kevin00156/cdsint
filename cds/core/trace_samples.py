@@ -55,6 +55,21 @@ def read_csv(path):
     return {"header": header, "variables": variables}
 
 
+def variable_names(path):
+    """The names of the variables a saved CSV holds, in its order.
+
+    The samples are most of a long recording's file, and nothing here is
+    done with them: each line is only asked whether it names a variable.
+    """
+    names = []
+    with io.open(path, encoding="utf-8-sig") as handle:
+        for raw in handle:
+            key, separator, value = raw.partition(u";")
+            if separator and VARIABLE.match(key.strip()):
+                names.append(value.strip())
+    return names
+
+
 def _take(line, number, header, variables):
     """Put one line where it belongs, or refuse it by line number."""
     if line.startswith(u";"):

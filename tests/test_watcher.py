@@ -129,7 +129,7 @@ def test_a_locked_registration_does_not_break_shutdown(root, monkeypatch):
     watch = watcher.Watcher(make_globals(), root)
     watch.start()
 
-    def locked(_root, _instance_id):
+    def locked(_root, _instance_id, keep_results=False):
         raise OSError(13, "used by another process")
 
     monkeypatch.setattr(instances, "delete", locked)

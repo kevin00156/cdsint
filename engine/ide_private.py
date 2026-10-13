@@ -23,6 +23,14 @@ MEMBER = "PerformWithWriteableCopy"
 EXECUTOR = "_executor"
 EXECUTION_STACK = "_executionStack"
 
+# The trace plug-in's (ScriptDriverTraceObject.plugin, 4.2.0.0): the static
+# that wraps an existing trace object, the editor's real editor behind its
+# script object, and that editor's loader (docs/trace-research.md 15.6-7).
+SCRIPT_TRACE_TYPE = "ScriptTraceObject"
+CREATE_SCRIPT_TRACE = "CreateScriptTraceObject"
+EDITOR_VIEW = "_view"
+LOAD_TRACE = "LoadTrace"
+
 # Where in_script_run parks the call for the nested run to pick up. One name
 # is enough: inside the nested run the stack is not empty, so a call() that
 # itself goes through in_script_run calls straight through.
@@ -101,6 +109,59 @@ def in_script_run(online_api, call):
     if "error" in box:
         raise box["error"]
     return box.get("value")
+
+
+def script_trace(trace_global, project_handle, guid_text):
+    """The ScriptTraceObject for an existing trace object, or None.
+
+    `trace` only creates; an object found by name is a plain script object
+    without the trace members. CreateScriptTraceObject wraps one. The GUID
+    goes in as a System.Guid built from its text: that is the form the
+    bench call worked with (docs/trace-research.md 15.7).
+    """
+    try:
+        import clr
+        from System import Array, Guid, Int32
+        from System.Reflection import BindingFlags
+    except ImportError:
+        return None
+    found = [kind for kind in clr.GetClrType(type(trace_global)).Assembly
+             .GetTypes() if kind.Name == SCRIPT_TRACE_TYPE]
+    if not found:
+        return None
+    create = found[0].GetMethod(
+        CREATE_SCRIPT_TRACE, BindingFlags.NonPublic | BindingFlags.Static)
+    if create is None:
+        return None
+    args = Array.CreateInstance(object, 2)
+    args[0] = Int32(project_handle)
+    args[1] = Guid(guid_text)
+    return create.Invoke(None, args)
+
+
+def loader_for(editor):
+    """load(path) -> the editor's error text or None, or None if there is none.
+
+    The script API has no load; the editor's script object keeps the real
+    editor in `_view`, whose public LoadTrace is what the Trace menu's
+    "Load Trace..." calls. Loading replaces the trace object's definition
+    with the file's (docs/trace-research.md 15.6), which is why only
+    cdsint_trace is ever loaded into.
+    """
+    view = _field(editor, EDITOR_VIEW)
+    if view is None:
+        return None
+    from System import Array
+    method = view.GetType().GetMethod(LOAD_TRACE)
+    if method is None:
+        return None
+
+    def load(path):
+        args = Array[object]([path, None])
+        if method.Invoke(view, args):
+            return None
+        return args[1] or "LoadTrace returned false and said nothing"
+    return load
 
 
 def _field(obj, name):

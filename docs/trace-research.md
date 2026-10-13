@@ -1018,3 +1018,76 @@ have its buffers sized to hold it (SPEC 6.8, "The buffers").
 - Any IDE but CODESYS 3.5.21.40: the three private members above (`_executor`,
   `_view`, `CreateScriptTraceObject`) were looked up on this one only.
 - Giving the focus back to the tab the person was in after `open_editor()`.
+
+### 15.10 Measured while building the trace commands (2026-10-12)
+
+The same IDE and bench, with the commands' own code loaded into the IDE
+from the working tree.
+
+- **Nothing is added to an application that is logged in.** While online,
+  `trace.create` raised nothing and returned a `NoScriptTraceObject`, whose
+  only member is `is_trace_object`, false; no object appeared in the tree.
+  An existing trace was reconfigured while logged in: variables replaced,
+  condition removed, `task_name` set.
+- **The IDE's numbers are .NET numbers.** `every_n_cycles` and
+  `post_trigger_samples` read back as `UInt32`, which `json` refuses to write.
+- **A trace object's settings lag behind a load.** Straight after
+  `LoadTrace`, a freshly reached script object still listed the trace's old
+  variables (none, for a trace just created); the editor already held the
+  file's three, and saved them. Section 15.6's reading, taken after other
+  probes had run, saw the settings once they had caught up.
+- **A definition round-trips.** A trace applied with `EtherCAT_Task`, `ms`,
+  every second cycle and a falling trigger at 5 with 20 post-samples read
+  back as exactly that; a record condition too.
+- **Recording through the person's login, then saving.** A 15 s recording
+  of three variables on the 4 ms task saved 3541 samples each, 3540
+  expected, no gap; loaded into `cdsint_trace` and saved again it wrote the
+  same 10623 rows.
+- **The bench's runtime has no licence.** It stops itself about two hours
+  after it starts (audit: "Logout because of broken channel", then
+  "Shutdown"), which an IDE logged in to it shows as a lost connection. Not
+  a cdsint fault; restarting the runtime starts the two hours again.
+
+### 15.11 Recording from the watcher (2026-10-13)
+
+The same IDE and bench, with this branch's watcher started in the user's
+IDE from the working tree and driven by the branch's CLI; the user's own
+login was opened by an in-IDE `Keep` login, `is_uptodate` checked true first.
+`EtherCAT_Task` ran every 1 ms that day.
+
+- **A recording through the person's login.** `plc trace --target --name
+  T_watch` for 15 s blocked the CLI for 18 s and recorded both variables
+  complete, 13748 samples each. The controller's audit log held the login
+  and nothing after it: no download, no online change.
+- **The overwrite prompt does not stop an interactive IDE.** The second and
+  later downloads of the same trace went through with no dialog left open;
+  `system.prompt_answers` covered it, or the IDE did not ask.
+- **While recording**, `list` showed the instance as `recording`, `export`
+  was refused with the end time, and `ping` answered. `--stop` from a
+  second shell ended the recording after 6.1 s, and the first CLI answered
+  complete, `stopped_early.after_s` 6.129.
+- **Host load shows as missing cycles.** The same stop with four CLI calls
+  started on the host during the recording lost 7.5% of the samples, in
+  289 gaps, all in the seconds those calls ran; the run without them lost
+  none. A 1 ms task on a WSL soft PLC is that sensitive to the host.
+- **A trace started by hand is left alone.** With `T_watch` started from
+  script as a person would, `plc trace --name T_watch` was refused and the
+  trace was still running afterwards.
+- **Changing the IDE's buffer drops what the editor holds.** Setting a
+  recorded trace's buffers back to 100 and 200 entries cut the editor's
+  data from 7169 samples per variable to 200 at once, before any download.
+  So the buffers a recording enlarged are left that way; files already
+  saved are not affected, the chart in the IDE would be.
+- **Closing the watcher mid-recording** first lost the answer: the result
+  was written and deleted with the instance directory in the same breath,
+  and the CLI said the watcher stopped before answering. Fixed; the CLI now
+  gets the result with `why` "the watcher was stopped", and the instance
+  directory is cleared after it.
+- **Not logged in** is refused saying to log in; `--stop` with nothing
+  recording says so.
+- **The CLI printed `trace apply` and `trace show` with a traceback** after
+  the work was done: their `variables` are names, and the printer took them
+  for a recording's rows. Fixed.
+- **`--name` headless.** A fresh copy holding `T_watch`, recorded for 5 s
+  by `plc trace --project ... --name T_watch`: `MATCH`, complete 0.9967,
+  nothing created, the copy not saved.

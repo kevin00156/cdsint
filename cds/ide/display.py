@@ -36,11 +36,18 @@ def describe(watcher, now=None):
 def _headline(watcher):
     if watcher.doing:
         return "BUSY: " + watcher.doing
+    held = getattr(watcher, "recording", None)
+    if held is not None:
+        until = (" until " + ipc.iso(held.until).split("T")[-1]
+                 if held.until else "")
+        return "RECORDING: %s%s" % (held.cmd.get("command"), until)
     return LISTENING
 
 
 def _level(watcher):
-    if watcher.doing:
+    """A recording paints as busy: the watcher refuses most commands then,
+    and the person should see why at a glance."""
+    if watcher.doing or getattr(watcher, "recording", None) is not None:
         return BUSY
     if watcher.last and not watcher.last.get("ok"):
         return FAILED

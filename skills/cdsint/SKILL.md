@@ -195,6 +195,57 @@ The controller's ring holds the whole recording, and a ring estimated over
 Do not raise that key without the user's word: a controller given more than it
 has stops its application.
 
+`--name T` records a trace object the project already has, as the user set
+it, instead of one made from the job: the job then holds only `duration_s`,
+`out` and optionally `formats`, `min_complete`, `max_gap_periods` (anything
+else is exit 2, pointing at `trace apply`). `data.trace` names the trace that
+recorded.
+
+### Recording through the user's open IDE
+
+When the user has the IDE open and is logged in to the controller, record
+through their login instead of closing anything:
+
+```
+cdsint plc trace --target X --name T1 --job run.json
+```
+
+`run.json` is `{"duration_s": 15, "out": "runs/t1"}`. It needs `trace` in the
+`plc` list, refuses `--gateway`, and never logs in or out: not logged in is
+exit 1, saying so; ask the user to log in. The command blocks until the
+recording is done (`--timeout` plus `duration_s`). `data.crc` is `UNKNOWN`
+there by design, and `data.uptodate` says whether the working copy matches
+what was downloaded. From another shell, `cdsint plc trace --target X --stop`
+ends it early; the first command then answers with `data.stopped_early`.
+While it records, that IDE answers only `--stop`, `ping` and `status`; other
+commands are refused with when it ends. A trace the user started by hand is
+refused rather than taken over.
+
+## Trace objects and their data: `trace`
+
+These never touch a controller and need no `plc` word. Use them when the
+user has the IDE open:
+
+- The user picked variables in an IDE trace and wants you to record them:
+  `cdsint plc trace --target X --name T1 --job run.json` while they are
+  logged in (above). To read what T1 records first, `cdsint trace job
+  --target X --name T1`.
+- You want a trace to record your selection, by the user or by
+  `plc trace --name`: `cdsint trace apply --target X -y --name T1 --job
+  job.json` (a full `plc trace` job is fine). It saves the project. Creating
+  a new trace fails while the project is logged in; changing an existing one
+  works, so make the trace once while logged out.
+- The user recorded something and you need the numbers:
+  `cdsint trace save --target X --name T1 --out runs/t1 --formats csv`. Read
+  `data.why` and `data.variables[].samples`: a hand-started trace often
+  holds only its last few thousand samples.
+- You recorded something and want the user to see it:
+  `cdsint trace show --target X -y --name T1 --file runs/t1.trace` loads it
+  into T1, replacing what T1 records, and opens it. Pick a trace the user
+  agreed to have replaced; show never creates one.
+
+`save` and `show` exist only with `--target`.
+
 ## Reading the answer
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
@@ -248,7 +299,7 @@ A question with no flag behind it comes back as `needs_input`, exit code 1, and
 
 | `arg` | flag | the question |
 |---|---|---|
-| `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify` and `plc download` |
+| `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify`, `plc download`, `trace apply` and `trace show` |
 | `app` | `--app NAME` | which application to build |
 | `delete_orphans` | `--delete-orphans` | export found sync files with no object behind them |
 

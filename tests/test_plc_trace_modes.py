@@ -176,7 +176,8 @@ def test_a_trigger_run_reports_exactly_the_spec_shape_plus_trigger():
     assert set(data) == {
         "action", "controller", "crc", "task", "period_us", "resolution",
         "duration_s", "buffer", "files", "variables", "complete", "trigger",
-        "failed_objects", "why", "notes", "workspace"}
+        "failed_objects", "why", "notes", "workspace", "trace", "uptodate",
+        "stopped_early"}
 
 
 def test_a_trigger_that_never_comes_fails_with_its_files_written():

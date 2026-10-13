@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased — trace objects in and out of an open IDE
+
+- **`cdsint trace job` and `trace apply`** move what a trace records between
+  a trace object and a job file. Pick the variables in the IDE's trace, run
+  `trace job`, add `duration_s` and `out`, and it is a `plc trace` job; or
+  hand `trace apply -y` a job and the trace in the project records it. A
+  variable switched off in the IDE is left out and listed. Both work in
+  either form; apply saves the project, as import does, and creating a
+  trace while the project is logged in is refused with the reason.
+- **`cdsint plc trace --target X --name T --job run.json`** records trace `T`
+  through the login already open in that IDE, and answers when the
+  recording is done; it never logs in or out. `plc trace --target X --stop`
+  ends it early, and the report says so in `stopped_early`. While it
+  records, that IDE answers only `--stop`, `ping` and `status`, and `list`
+  shows it as `recording`. The controller's CRC is reported as `UNKNOWN`
+  there, and whether the working copy is up to date as `uptodate`.
+- **`plc trace --name T`** in the `--project` form records a trace the
+  project already has, as it is set; with `--name` the job holds only the
+  run. The report names the trace that recorded in `trace`.
+- **`cdsint trace save` and `trace show`**, with `--target` only: write what
+  a trace recorded in the open IDE, with the same completeness report
+  `plc trace` gives but without failing on it, or load a saved `.trace` into
+  a trace the caller names (`-y --name T`) so the person at the IDE sees it.
+
 ### 0.4.1 (2026-10-12) — the import pre-flight works in the watcher
 
 - **An import from the watcher is refused while the project is logged in

@@ -18,7 +18,7 @@ import time
 
 from cds.core import commands, instances, ipc
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
-from cdsint import process
+from cdsint import job_file, process
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
 
@@ -100,12 +100,15 @@ class Target(object):
 
     def run_one(self, command, args):
         cmd = commands.new_command(command, args)
-        result = send(self.root, self.instance_id, cmd, self.timeout)
+        # A recording answers when it is done: its duration_s is time the
+        # caller asked for, on top of the time the step may take.
+        waited = self.timeout + job_file.waits_s(args)
+        result = send(self.root, self.instance_id, cmd, waited)
         if result is GONE:
             return self._gone(cmd)
         if result is None:
             raise Failure("timed out after %gs waiting for %s"
-                          % (self.timeout, self.instance_id), EXIT_TIMEOUT)
+                          % (waited, self.instance_id), EXIT_TIMEOUT)
         return result
 
     def _gone(self, cmd):
@@ -163,7 +166,7 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     watching = Watching(root, instance_id)
     try:
         while True:
-            result = commands.take_result(root, instance_id, cmd["id"])
+            result = collect(root, instance_id, cmd["id"])
             if result is not None:
                 return result
             answer = GONE if watching.gone(time.time()) else None
@@ -174,6 +177,27 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     except KeyboardInterrupt:
         commands.delete_command(root, instance_id, cmd["id"])
         raise
+
+
+def collect(root, instance_id, cmd_id):
+    """The result of cmd_id, or None if it is not there yet.
+
+    A watcher closed while it held a recording writes that answer and goes,
+    leaving its result directory for this caller and nothing else
+    (cds/core/instances.py delete). Once that answer is read, nobody else
+    will come for what is left, so it is cleared here. The command directory
+    is the sign: a missing registration alone is also every live watcher's
+    rewrite on IronPython, which renames it aside and back (Watching).
+    """
+    result = commands.take_result(root, instance_id, cmd_id)
+    if result is not None and _left_for_us(root, instance_id):
+        instances.delete(root, instance_id)
+    return result
+
+
+def _left_for_us(root, instance_id):
+    return not (os.path.exists(ipc.registration_path(root, instance_id))
+                or os.path.isdir(ipc.command_dir(root, instance_id)))
 
 
 class Watching(object):

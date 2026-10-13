@@ -29,9 +29,10 @@ the action at all (cds/ide/permit.py), and for download, -y says the caller
 means this call. By the time a function in this file runs, they have been
 passed. trace needs no -y: it changes nothing the caller would confirm.
 
-Only the headless form reaches this file, so it has no menu stub and its
-flags arrive as `command_args` rather than as answers to dialogs
-(cds/ide/silent.py). The exception is the download confirmation, which is a
+connect and download are reached only in the --project form; trace in both,
+the watcher's through engine/plc_trace_watch.py. Neither form is the menu,
+so there is no menu stub and the flags arrive as `command_args` rather than
+as answers to dialogs (cds/ide/silent.py). The exception is the download confirmation, which is a
 question a person would have been asked and so goes through the same
 ask_yes_no the import confirmation does.
 """
@@ -40,9 +41,10 @@ from __future__ import print_function
 from engine import entry, plc_crc, unhandled
 from engine.plc_download import DownloadTrip
 from engine.plc_trace import TraceTrip
+from engine.plc_trace_watch import WatchedTrip
 from engine.plc_trip import Trip, first_problem
 
-from cds.core import dialogs
+from cds.core import dialogs, trace_run
 
 # The flags this run was given, put here by cds/ide/silent.py once this
 # module's own code has run (silent.ARGS_GLOBAL). Defined so that importing
@@ -55,6 +57,9 @@ DOWNLOAD_QUESTION = (
     "survives a power cycle, and start it again. Online change is switched "
     "off, so the running state is lost and every init runs from the "
     "beginning.\n\nProceed?")
+
+STOP_HERE = ("plc trace --stop ends a recording a watcher is holding; this "
+             "run records within its own process and ends by itself")
 
 
 def connect():
@@ -109,8 +114,29 @@ def record():
     its scripts, and `trace` is that namespace's own trace plug-in object,
     which the trip borrows by that name. A function of the same name would
     shadow it, and did.
+
+    Which form runs is told by the wait: the --project launcher lends one
+    (cds/ide/hold.py), the watcher does not, because its timer may not wait
+    (SPEC D5) and its ticks poll the recording instead. --stop never gets
+    here in the watcher, which answers it itself (cds/ide/watcher.py).
     """
+    if command_args.get("stop"):
+        return entry.result(False, "trace: " + STOP_HERE, action="trace")
+    if entry.borrowed(globals(), trace_run.HOLD_GLOBAL) is None:
+        return watched(WatchedTrip(command_args, globals()))
     return traced(TraceTrip(command_args, globals()))
+
+
+def watched(trip):
+    """The watcher's form: every check and the start, then a Recording the
+    watcher polls (engine/plc_trace_watch.py). Split from record() for the
+    same reason traced() is."""
+    unhandled.start()
+    started = trip.start()
+    if isinstance(started, dict):
+        return started
+    return entry.recording(started, "trace: recording %s for %s s"
+                           % (trip.found["trace"], trip.job["duration_s"]))
 
 
 def traced(trip):
@@ -120,6 +146,15 @@ def traced(trip):
     fake buffer setter; record() is the only other caller.
     """
     unhandled.start()
+    if trip.named():
+        the_trace = [
+            trip.take_the_named_trace,  # --name: as the project has it
+            trip.find_the_period]       # of the task the trace samples in
+    else:
+        the_trace = [
+            trip.find_the_period,     # the task's period, from its configuration
+            trip.no_trace_of_ours,    # nothing already called cdsint_trace
+            trip.make_the_trace]      # in memory only; buffers wait for step 5
     return in_order(trip, [
         trip.may_run,             # a wait lent to us
         trip.read_the_job,        # checked again: the wire is not trusted
@@ -127,9 +162,7 @@ def traced(trip):
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y
         trip.the_ide_agrees,      # the IDE's download info names it too
         trip.the_program_is_unchanged,  # or Keep would download the change
-        trip.find_the_period,     # the task's period, from its configuration
-        trip.no_trace_of_ours,    # nothing already called cdsint_trace
-        trip.make_the_trace,      # in memory only; buffers wait for step 5
+    ] + the_trace + [
         trip.recording,           # log in, names, types, memory, run state,
                                   # buffers, record, save
     ]) or trip.verdict()

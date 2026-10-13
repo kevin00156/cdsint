@@ -82,13 +82,9 @@ class Trip(object):
         """
         if not self.args.get("gateway"):
             return NO_GATEWAY
-        self.projects = entry.borrowed(self.globals, "projects")
-        if self.projects is None or not getattr(self.projects, "primary", None):
-            return "no project is open, so there is no device to talk to"
-        self.online = entry.borrowed(self.globals, "online")
-        if self.online is None:
-            return ("the CODESYS 'online' API is not reachable from this "
-                    "script run, so nothing can connect to a controller")
+        problem = self.find_the_project()
+        if problem:
+            return problem
         note, problem = plc_link.silence_credential_dialogs(self.online,
                                                             self.globals)
         if problem:
@@ -98,6 +94,17 @@ class Trip(object):
         if problem:
             return problem
         return self.name_the_application() or self.point_at_gateway()
+
+    def find_the_project(self):
+        """The open project and the `online` API. None when both are there."""
+        self.projects = entry.borrowed(self.globals, "projects")
+        if self.projects is None or not getattr(self.projects, "primary", None):
+            return "no project is open, so there is no device to talk to"
+        self.online = entry.borrowed(self.globals, "online")
+        if self.online is None:
+            return ("the CODESYS 'online' API is not reachable from this "
+                    "script run, so nothing can connect to a controller")
+        return None
 
     def name_the_application(self):
         """Find the active application, and so where the controller keeps

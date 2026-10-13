@@ -25,6 +25,11 @@ from cds.core import commands, ipc
 
 STATE_IDLE = "idle"
 STATE_BUSY = "busy"
+# A watcher holding a plc trace between ticks. It still beats every tick, so
+# it is alive by its heartbeat like an idle one (every check below tests for
+# STATE_BUSY alone), and a caller with a short --timeout still finds it to
+# send --stop however long the recording is.
+STATE_RECORDING = "recording"
 
 # Starting points, not settled numbers (docs/WATCHER.md 2.1).
 HEARTBEAT_INTERVAL_S = 2.0
@@ -160,9 +165,18 @@ def read_all(root):
     return out
 
 
-def delete(root, instance_id):
-    """Drop an instance: its registration file and its whole directory."""
+def delete(root, instance_id, keep_results=False):
+    """Drop an instance: its registration file and its whole directory.
+
+    keep_results leaves the result directory for a caller still waiting on
+    an answer written a moment ago (a recording a closing watcher just
+    finished); that caller clears the rest once it has read it
+    (cdsint/target.py collect).
+    """
     ipc.remove_file(ipc.registration_path(root, instance_id))
+    if keep_results:
+        shutil.rmtree(ipc.command_dir(root, instance_id), ignore_errors=True)
+        return
     shutil.rmtree(ipc.instance_dir(root, instance_id), ignore_errors=True)
 
 

@@ -2,7 +2,7 @@
 """plc trace, online: log in, check what the controller says, record, judge.
 
 SPEC 6.8 steps 4 to 9, on the trace object engine/plc_trace_setup.py made in
-memory; engine/entry_plc.py runs the steps in that order. Reaching the
+memory or found by --name; engine/entry_plc.py runs the steps in that order. Reaching the
 controller and judging its CRC are already engine/plc_trip.py's, so
 TraceTrip is that trip with the trace steps added, not a second copy of it.
 
@@ -28,7 +28,9 @@ from engine.plc_trip import RUNNING, Trip, first_problem, one_line
 from engine.strings import safe_str
 
 # D7's one self-answered prompt: "The trace already exists on the device.
-# Delete?" (research 7.1). Safe only while the trace's name is cdsint's alone.
+# Delete?" (research 7.1). Safe only while the trace's name is cdsint's own
+# or the one the caller named: the controller's copy is then that trace's
+# own earlier download.
 OVERWRITE_PROMPT = "Strings.OverwriteExistingOnlineTrace"
 
 # str() of the trace editor's packet and trigger states (research 13.4).
@@ -51,7 +53,8 @@ CONFIGURED_CSV = "configured.csv"
 # The report's own keys (SPEC 6.8), beside the ones every plc command has.
 # A run with a trigger adds "trigger".
 REPORT_KEYS = ("controller", "crc", "task", "period_us", "resolution",
-               "duration_s", "buffer", "files", "variables", "complete", "why")
+               "duration_s", "buffer", "files", "variables", "complete", "why",
+               "trace", "uptodate", "stopped_early")
 
 
 class TraceTrip(TraceSetup):
@@ -223,14 +226,10 @@ class TraceTrip(TraceSetup):
 
     def record(self):
         """Download the trace, start it, hold until it is done, stop it."""
-        prompts = entry.borrowed(self.globals, "PromptResult")
-        if prompts is None:
-            return ("this IDE did not provide PromptResult, so the trace "
-                    "download's overwrite prompt cannot be answered")
+        problem = self.start_recording()
+        if problem:
+            return problem
         try:
-            self.editor = self.api.open_editor()
-            self._download(prompts.OK)
-            self.editor.start()
             try:
                 holds = trace_run.wait(self.hold, self.clock,
                                        self.job["duration_s"], self._done)
@@ -240,6 +239,24 @@ class TraceTrip(TraceSetup):
             return "the trace did not record: " + one_line(exc)
         self.note("recorded for %s s at most (%d holds of %d ms)"
                   % (self.job["duration_s"], holds, trace_run.HOLD_MS))
+        return None
+
+    def start_recording(self):
+        """Download the trace and start it. None, or why it did not start.
+
+        Its own step because the watcher starts a recording and then lets
+        its ticks wait (engine/plc_trace_watch.py); only the wait differs.
+        """
+        prompts = entry.borrowed(self.globals, "PromptResult")
+        if prompts is None:
+            return ("this IDE did not provide PromptResult, so the trace "
+                    "download's overwrite prompt cannot be answered")
+        try:
+            self.editor = self.api.open_editor()
+            self._download(prompts.OK)
+            self.editor.start()
+        except Exception as exc:
+            return "the trace did not record: " + one_line(exc)
         return None
 
     def _download(self, ok):
