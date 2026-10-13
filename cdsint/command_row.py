@@ -80,6 +80,11 @@ def format_words(text):
     return value
 
 
+# The key in a row's refuses that words every flag an action does not take
+# and has no sentence of its own for.
+OTHERWISE = "*"
+
+
 # What shape a flag is. The kind decides both how argparse is told about it
 # and what the IDE side receives; every one of them defaults to None rather
 # than False or 0, so "not said" and "said no" stay different all the way
@@ -131,9 +136,10 @@ CONFIRM_IMPORT = ("-y/--yes", CONFIRM,
 class Command(object):
     """One subcommand, and everything the command line knows about it."""
 
-    def __init__(self, summary, form, flags=(), action=None, needs=None,
-                 refuses=None, action_forms=None, action_help=None,
-                 form_needs=None, form_refuses=None, variant=None):
+    def __init__(self, summary, form, flags=(), action=None, takes=None,
+                 needs=None, refuses=None, action_forms=None,
+                 action_help=None, form_needs=None, form_refuses=None,
+                 variant=None):
         self.summary = summary
         self.form = form
         self.flags = tuple(flags)
@@ -145,9 +151,16 @@ class Command(object):
         # apart needs no dispatcher to read the difference back out
         # (SPEC 4.2).
         self.action = action
+        # {key: (dest, ...)}: the flags each action takes. Every other flag
+        # of the row is refused, so a flag added to the row and to no list
+        # is refused everywhere rather than parsed and never read
+        # (kevin00156/cdsint#8). The key is the action, or the action with
+        # its variant (key_of).
+        self.takes = takes or {}
         # {key: {dest: why}}: the flags one action cannot run without, and
-        # the ones it will not take, each with the sentence that refuses.
-        # The key is the action, or the action with its variant (key_of).
+        # the sentence that says why; and, for a flag it does not take, a
+        # sentence better than "only <the actions that take it> take it",
+        # under OTHERWISE for every such flag at once.
         self.needs = needs or {}
         self.refuses = refuses or {}
         # {action: (form, why)}: an action with fewer forms than its row,
@@ -184,7 +197,7 @@ class Command(object):
         if not (self.variant and said.get(self.variant[0])):
             return action
         key = "%s %s" % (action, self.variant[1])
-        tables = [self.needs, self.refuses] + list(
+        tables = [self.takes, self.needs, self.refuses] + list(
             self.form_needs.values()) + list(self.form_refuses.values())
         return key if any(key in table for table in tables) else action
 

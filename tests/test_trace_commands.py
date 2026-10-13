@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""trace job, apply, save and show, pressed the way the IDE side presses them.
+"""trace list, job, apply, save and show, pressed as the IDE side presses them.
 
 Through cds/ide/entries.py, so the stand-in dialogs answer apply's question
 and the result record is the one a caller reads. The two private members are
@@ -25,9 +25,16 @@ TASK = plc_fakes.TASK  # the sample CSV was recorded at its 1000 us
 
 
 class TraceObjects(plc_fakes.TraceProject):
-    """The open project, finding real nodes by name rather than names."""
+    """The open project, finding real nodes by name rather than names.
+
+    Shaped as the IDE's: the parent of its top objects, with no name of its
+    own (docs/trace-research.md 15.12, 15.13).
+    """
 
     handle = 0
+
+    def get_name(self):
+        raise AttributeError("get_name")
 
     def find(self, name, recursive=False):
         found, level = [], list(self.get_children(False))
@@ -41,6 +48,21 @@ class TraceObjects(plc_fakes.TraceProject):
 
 class NoScriptTraceObject(object):
     is_trace_object = False
+
+
+class Fetched(object):
+    """What CreateScriptTraceObject hands out: a new object per call, over
+    the one trace's settings, so nothing can lean on holding the same one.
+    """
+
+    def __init__(self, settings):
+        object.__setattr__(self, "_settings", settings)
+
+    def __getattr__(self, name):
+        return getattr(self._settings, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._settings, name, value)
 
 
 class Bench(object):
@@ -60,6 +82,7 @@ class Bench(object):
         self.project = TraceObjects(
             [self.application], self.application,
             plc_fakes.read_data(plc_fakes.TASK_CONFIG_XML))
+        self.application.parent = self.project
         self.apis = {}       # node guid -> the trace object's settings
         self.files = {}      # a saved .trace -> the CSV text it holds
         self.loads = []
@@ -87,7 +110,9 @@ class Bench(object):
         return api
 
     def script_trace(self, tracer, handle, guid):
-        return self.apis.get(guid) if self.reachable else None
+        if not self.reachable or guid not in self.apis:
+            return None
+        return Fetched(self.apis[guid])
 
     def loader_for(self, editor):
         """As measured: the load replaces what the editor holds at once, and
@@ -372,14 +397,14 @@ def test_job_of_a_trigger_with_no_numeric_level_is_unusable(bench):
 # --- what plan 1's review left -------------------------------------------------
 
 def test_two_traces_of_one_name_are_told_apart_by_their_whole_path(bench):
-    folder = Node("Traces", TYPE_GUIDS["folder"], parent=bench.application)
+    folder = Node("TraceEnum", TYPE_GUIDS["folder"], parent=bench.application)
     bench.application._children.append(folder)
     bench.press("apply", yes=True, name="T1", job=definition())
     other = Node("T1", TYPE_GUIDS["trace"], parent=folder)
     folder._children.append(other)
     refused = bench.press("job", name="T1")
     assert "Application/T1" in refused["error"]
-    assert "Application/Traces/T1" in refused["error"]
+    assert "Application/TraceEnum/T1" in refused["error"]
 
 
 def test_show_of_a_file_that_is_not_there_says_so(bench):
@@ -434,12 +459,6 @@ def test_show_into_a_trace_that_is_recording_is_refused(bench):
 
 # --- trace list ----------------------------------------------------------------
 
-def folder(bench, name="Traces"):
-    node = Node(name, TYPE_GUIDS["folder"], parent=bench.application)
-    bench.application._children.append(node)
-    return node
-
-
 def test_list_names_every_trace_with_its_path_task_and_variables(bench):
     bench.press("apply", yes=True, name="T1", job=definition("a.x", "a.y"))
     bench.press("apply", yes=True, name="T2", job=definition("b.z"))
@@ -450,14 +469,31 @@ def test_list_names_every_trace_with_its_path_task_and_variables(bench):
     assert rows["T1"]["path"] == "Application/T1"
     assert rows["T1"]["task"] == TASK
     assert rows["T1"]["variables"] == ["a.x", "a.y"]
+    # The whole definition trace job would print: it was read anyway.
+    assert rows["T1"]["every_n_cycles"] == 1
+    assert rows["T1"]["resolution"] == "us"
 
 
 def test_list_finds_a_trace_inside_a_folder(bench):
-    folder(bench)
     bench.press("apply", yes=True, name="T1", job=definition(),
-                folder="Traces")
+                folder="TraceEnum")
     rows = bench.press("list")["data"]["traces"]
-    assert [row["path"] for row in rows] == ["Application/Traces/T1"]
+    assert [row["path"] for row in rows] == ["Application/TraceEnum/T1"]
+
+
+def test_list_reads_two_traces_of_one_name_each_from_its_own(bench):
+    """Two objects of one name are two objects: each row is read through
+    its own GUID, not through the name the two share."""
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    folder = bench.project.find("TraceEnum", True)[0]
+    other = Node("T1", TYPE_GUIDS["trace"], parent=folder)
+    folder._children.append(other)
+    api = plc_fakes.TraceApi(bench.log, bench.csv_text, None)
+    api.task_name, api.variables = TASK, ["b.y"]
+    bench.apis[other.guid] = api
+    rows = bench.press("list")["data"]["traces"]
+    assert sorted((row["path"], row["variables"]) for row in rows) == [
+        ("Application/T1", ["a.x"]), ("Application/TraceEnum/T1", ["b.y"])]
 
 
 def test_list_of_a_project_with_no_trace_is_ok_and_empty(bench):
@@ -473,6 +509,63 @@ def test_list_still_names_a_trace_it_cannot_read(bench):
     assert ide_private.CREATE_SCRIPT_TRACE in rows[0]["unread"]
 
 
+class Unreadable(Node):
+    """An object whose plug-in is missing: it will not say what it is."""
+
+    @property
+    def type(self):
+        raise SystemError("no plug-in")
+
+    @type.setter
+    def type(self, value):
+        pass
+
+
+def test_list_of_a_tree_it_could_not_read_whole_is_not_ok(bench):
+    """SPEC D11/D13: ok means every object was handled. The traces it could
+    read are still listed, and the object it could not is named once."""
+    bench.press("apply", yes=True, name="T1", job=definition())
+    bench.application._children.append(
+        Unreadable("Broken", None, parent=bench.application))
+    listed = bench.press("list")
+    assert not listed["ok"]
+    assert [row["name"] for row in listed["data"]["traces"]] == ["T1"]
+    assert listed["data"]["failed_objects"] == ["Broken"]
+    assert "Broken" in listed["error"]
+
+
+def test_list_of_a_tree_that_will_not_list_is_not_ok(bench):
+    def refuses(recursive=False):
+        raise SystemError("no plug-in")
+    bench.project.get_children = refuses
+    listed = bench.press("list")
+    assert not listed["ok"] and listed["data"]["traces"] == []
+
+
+@pytest.mark.parametrize("action,args", [
+    ("list", {}), ("job", {"name": "T1"}),
+    ("apply", {"yes": True, "name": "T1", "job": definition()}),
+    ("save", {"name": "T1", "out": "x"}),
+    ("show", {"yes": True, "name": "T1", "file": "x.trace"})])
+def test_every_action_refuses_when_no_project_is_open(bench, action, args):
+    bench.project = None
+    refused = bench.press(action, **args)
+    assert not refused["ok"] and "no project open" in refused["error"]
+    assert "Traceback" not in refused["error"]
+
+
+def test_an_unread_trace_with_a_blank_reason_still_says_it(bench,
+                                                           monkeypatch):
+    from engine import trace_config
+    bench.press("apply", yes=True, name="T1", job=definition())
+
+    def blank(*args):
+        raise RuntimeError("\r\n")
+    monkeypatch.setattr(trace_config, "describe", blank)
+    row = bench.press("list")["data"]["traces"][0]
+    assert row["unread"] == "RuntimeError"
+
+
 def test_list_saves_nothing(bench):
     bench.press("apply", yes=True, name="T1", job=definition())
     saves = bench.project.saves
@@ -483,12 +576,11 @@ def test_list_saves_nothing(bench):
 # --- trace apply --folder ------------------------------------------------------
 
 def test_apply_puts_a_new_trace_in_the_folder(bench):
-    folder(bench)
     applied = bench.press("apply", yes=True, name="T1", job=definition("a.x"),
-                          folder="Traces")
+                          folder="TraceEnum")
     assert applied["ok"], applied["error"]
     node = [n for n in bench.project.find("T1", True)][0]
-    assert node.parent.get_name() == "Traces"
+    assert node.parent.get_name() == "TraceEnum"
     assert bench.trace_named("T1").variables == ["a.x"]
 
 
@@ -507,37 +599,123 @@ def test_apply_into_a_name_that_is_not_a_folder_is_refused(bench):
 
 
 def test_apply_with_a_folder_to_a_trace_already_there_changes_it(bench):
-    folder(bench)
     bench.press("apply", yes=True, name="T1", job=definition("a.x"),
-                folder="Traces")
+                folder="TraceEnum")
     again = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
-                        folder="Traces")
+                        folder="TraceEnum")
     assert again["ok"], again["error"]
     assert bench.trace_named("T1").variables == ["b.y"]
 
 
 def test_apply_with_another_folder_does_not_move_an_existing_trace(bench):
-    folder(bench)
     bench.press("apply", yes=True, name="T1", job=definition("a.x"))
     refused = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
-                          folder="Traces")
+                          folder="TraceEnum")
     assert not refused["ok"] and "Application/T1" in refused["error"]
     assert bench.trace_named("T1").variables == ["a.x"]
 
 
-class TopOfTheTree(object):
-    """The project itself, where every object's chain of parents ends in
-    the IDE: it has no name to give (seen on the bench, research 15.12)."""
+def test_apply_into_a_folder_of_another_application_creates_nothing(bench):
+    """A trace moved there would be that application's, without the task it
+    was made with (kevin00156/cdsint#5, seen on CODESYS 3.5.21.40)."""
+    sub = Node("SubApp", TYPE_GUIDS["application"], parent=bench.application)
+    sub._children.append(Node("F", TYPE_GUIDS["folder"], parent=sub))
+    bench.application._children.append(sub)
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="F")
+    assert not refused["ok"]
+    assert "not in Application" in refused["error"]
+    assert "Application/SubApp/F" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_with_an_empty_folder_creates_nothing(bench):
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="")
+    assert not refused["ok"] and "--folder is empty" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_an_empty_folder_does_not_pass_an_existing_trace_elsewhere(bench):
+    bench.press("apply", yes=True, name="T1", job=definition("a.x"))
+    refused = bench.press("apply", yes=True, name="T1", job=definition("b.y"),
+                          folder="")
+    assert not refused["ok"]
+    assert bench.trace_named("T1").variables == ["a.x"]
+
+
+def test_apply_into_a_folder_path_says_only_a_name_is_taken(bench):
+    refused = bench.press("apply", yes=True, name="T1", job=definition(),
+                          folder="Application/TraceEnum")
+    assert not refused["ok"]
+    assert "name, not a path" in refused["error"]
+    assert bench.trace_named("T1") is None
+
+
+def test_apply_into_a_folder_needs_no_private_member(bench):
+    """The settings create handed back configure the trace after the move
+    (docs/trace-research.md 15.13); only an existing trace needs the private
+    member to be reached."""
+    bench.reachable = False
+    applied = bench.press("apply", yes=True, name="T1", job=definition("a.x"),
+                          folder="TraceEnum")
+    assert applied["ok"], applied["error"]
+    node = bench.project.find("T1", True)[0]
+    assert node.parent.get_name() == "TraceEnum"
+    assert bench.apis[node.guid].variables == ["a.x"]
+
+
+class Nameless(object):
+    """An object whose plug-in is missing: no name, and no parent to give
+    (engine/ide_read.py parent_of), like the project at the top."""
 
     def get_name(self):
-        raise AttributeError("get_name")
+        raise SystemError("no plug-in")
+
+    @property
+    def parent(self):
+        raise SystemError("no plug-in")
 
     def __str__(self):
-        return "Project(Project=0, stPath=C:/p/x.project)"
+        return "Nameless"
+
+
+def test_a_nameless_orphan_is_not_taken_for_the_project(bench):
+    from engine import trace_objects
+    assert trace_objects.path_of(bench.project, Nameless()) == "Nameless"
+
+
+class Counted(Node):
+    """A node that counts how often its parent is read."""
+
+    reads = 0
+
+    @property
+    def parent(self):
+        Counted.reads += 1
+        return self._parent
+
+    @parent.setter
+    def parent(self, value):
+        self._parent = value
+
+
+def test_a_path_reads_each_parent_once(bench):
+    from engine import trace_objects
+    top = Counted("Device", TYPE_GUIDS["folder"])
+    top.parent = bench.project
+    node = top
+    for name in ("Plc Logic", "Application", "TraceEnum", "T1"):
+        child = Counted(name, TYPE_GUIDS["folder"], parent=node)
+        node = child
+    Counted.reads = 0
+    path = trace_objects.path_of(bench.project, node)
+    assert path == "Device/Plc Logic/Application/TraceEnum/T1"
+    assert Counted.reads == 5
 
 
 def test_a_path_does_not_start_with_the_project_itself(bench):
-    bench.application.parent = TopOfTheTree()
+    """The bench's project is its application's parent, as in the IDE."""
     bench.press("apply", yes=True, name="T1", job=definition())
     rows = bench.press("list")["data"]["traces"]
     assert rows[0]["path"] == "Application/T1"

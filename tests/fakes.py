@@ -39,7 +39,9 @@ class Project(object):
         return Info(self.values)
 
     def get_children(self, recursive=False):
-        return list(self._children)
+        if not recursive:
+            return list(self._children)
+        return list(_every_below(self._children))
 
     def get_name(self):
         return "FakeProject"
@@ -59,13 +61,18 @@ class Node(object):
     """One object in the project tree.
 
     The four things a real script object exposes and the engine reads: a name,
-    a type GUID, a parent and a GUID of its own.
+    a type GUID, a parent and a GUID of its own. The GUID is the object's,
+    not its name's: two objects of one name in two places are two objects,
+    and code that confused them would pass on GUIDs made from names.
     """
 
+    made = 0
+
     def __init__(self, name, type_guid, children=None, parent=None):
+        Node.made += 1
         self._name = name
         self.type = type_guid
-        self.guid = "guid-" + name
+        self.guid = "guid-%s-%d" % (name, Node.made)
         self.parent = parent
         self._children = list(children or [])
         for child in self._children:
@@ -84,11 +91,20 @@ class Node(object):
     def get_children(self, recursive=False):
         if not recursive:
             return list(self._children)
-        out = []
-        for child in self._children:
-            out.append(child)
-            out.extend(child.get_children(recursive=True))
-        return out
+        return list(_every_below(self._children))
+
+
+def _every_below(children):
+    """get_children(recursive=True): every object below, parents first.
+
+    The IDE enumerates on its own side, without asking each child to list
+    itself, so a child whose own get_children raises is still descended
+    into here, and a stand-in with no children of its own is a leaf.
+    """
+    for child in children:
+        yield child
+        for below in _every_below(getattr(child, "_children", ())):
+            yield below
 
 
 class DeafUI(object):

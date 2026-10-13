@@ -14,6 +14,7 @@ from __future__ import print_function
 import argparse
 
 from cdsint import flags, job_file
+from cdsint.command_row import OTHERWISE
 
 
 def check(parser, ns):
@@ -76,6 +77,8 @@ def _action_flags(parser, ns, row):
     caller it had confirmed something, and a --job on connect would read as
     a trace that silently did not happen.
     """
+    if row.action is None:
+        return
     said = vars(ns)
     key = row.key_of(ns.action, said)
     form = flags.HEADLESS if ns.project else flags.WATCHER
@@ -83,11 +86,32 @@ def _action_flags(parser, ns, row):
         if not said[dest]:
             parser.error("%s %s needs --%s. %s"
                          % (ns.command, key, _spelled(dest), why))
-    for dest, why in _merged(row.refuses, row.form_refuses, form,
-                             key).items():
+    for dest, why in _refused(row, ns.command, form, key).items():
         if said[dest]:
             parser.error("%s %s does not take --%s. %s"
                          % (ns.command, key, _spelled(dest), why))
+
+
+def _refused(row, command, form, key):
+    """{dest: why} for every flag of the row this ask does not take.
+
+    Worked out from what each action takes, so a flag nobody listed is
+    refused, not ignored; refuses only words the refusal better.
+    """
+    worded = row.refuses.get(key, {})
+    refused = dict((dest, worded.get(dest) or worded.get(OTHERWISE)
+                    or _taken_by(row, command, dest))
+                   for dest in row.dests()
+                   if dest not in row.takes.get(key, ()))
+    refused.update(row.form_refuses.get(form, {}).get(key, {}))
+    return refused
+
+
+def _taken_by(row, command, dest):
+    """'Only trace job or trace save takes it.'"""
+    return "Only %s takes it." % " or ".join(
+        "%s %s" % (command, action) for action in row.action
+        if dest in row.takes.get(action, ()))
 
 
 def _merged(table, by_form, form, key):

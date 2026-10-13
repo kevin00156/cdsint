@@ -241,7 +241,9 @@ user has the IDE open:
   a new trace fails while the project is logged in; changing an existing one
   works, so make the trace once while logged out. Add `--folder F` to put a
   new trace in the user's existing folder `F` (see where theirs live with
-  `trace list`); it never moves an existing trace.
+  `trace list`; pass the folder's name, not its path). It never moves a
+  trace: an existing one outside `F` is refused, so leave `--folder` out to
+  change it where it is.
 - The user recorded something and you need the numbers:
   `cdsint trace save --target X --name T1 --out runs/t1 --formats csv`. Read
   `data.why` and `data.variables[].samples`: a hand-started trace often

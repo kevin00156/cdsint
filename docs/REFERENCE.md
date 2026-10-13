@@ -174,9 +174,9 @@ Every command that touches a project takes one of two forms, and never both:
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
-| `trace list` | yes | yes | every trace object in the project: its whole path, task and variables |
+| `trace list` | yes | yes | every trace object in the project: its whole path and what it records |
 | `trace job --name T [--out FILE]` | yes | yes | write what trace object `T` records as a job file |
-| `trace apply -y --name T --job FILE` | yes | yes | make trace `T` record a job file's variables, creating it if needed |
+| `trace apply -y --name T --job FILE [--folder F]` | yes | yes | make trace `T` record a job file's variables, creating it if needed, in folder `F` if given |
 | `trace save --name T --out PATH [--formats LIST]` | yes | — | write what `T` recorded in this IDE, and say whether samples are missing |
 | `trace show -y --name T --file FILE` | yes | — | load a saved `.trace` into trace `T` for a person to look at |
 
@@ -471,9 +471,11 @@ Five commands for trace objects in the project and what they recorded. None
 of them talks to a controller, so none needs a word in the `plc` list.
 
 - **`trace list`** names every trace object in the project, wherever it
-  sits, with its whole path, its task and the variables it records
-  (`data.traces`). Use it to find a trace kept in a folder; `--name` takes
-  the trace's own name, not its path.
+  sits, with its whole path and what it records, as `trace job` would write
+  it (`data.traces`). Use it to find a trace kept in a folder; `--name` and
+  `--folder` take a name, the path's last part, not the path. An object it
+  could not read is named in `failed_objects`, and the list is then not ok:
+  a trace could be hiding behind it.
 
 - **`trace job`** writes what trace `T1` records — task, variables,
   resolution, every-nth-cycle, trigger or record condition — as a job file.
@@ -487,8 +489,9 @@ of them talks to a controller, so none needs a word in the `plc` list.
   POU is refused, and so is creating a trace while the project is logged in
   to the controller: CODESYS adds no object to an application that is online.
   An existing trace can be changed while logged in. `--folder F` puts a new
-  trace in an existing folder `F`; it never moves a trace that is already
-  there, and refuses one that sits elsewhere.
+  trace in the existing folder named `F` in the active application. It never
+  moves a trace: an existing trace already in `F` is changed there, and one
+  that sits elsewhere is refused.
 - **`trace save`** writes what `T1` recorded in this IDE (`--formats`, any of
   `trace`, `csv`, `txt`; default `trace,csv`) and judges the samples as
   `plc trace` does. Missing samples do not fail it: they are reported in

@@ -28,7 +28,7 @@ import os
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
-from engine.ide_read import kind_of, name_of, parent_of
+from engine.ide_read import guid_of, name_of, parent_of
 from engine.plc_trip import one_line
 
 # The flags this run was given, put here by cds/ide/silent.py once this
@@ -36,7 +36,7 @@ from engine.plc_trip import one_line
 command_args = {}
 
 APPLY_QUESTION = ("This replaces what trace object %s records with the job "
-                  "file's definition, creating it if there is none, and "
+                  "file's definition, creating it %s if there is none, and "
                   "saves the project.\n\nProceed?")
 SHOW_QUESTION = ("This loads %s into trace object %s, which replaces what %s "
                  "records with the file's definition. The project is changed "
@@ -48,6 +48,8 @@ JUDGING = dict((name, default) for name, _kind, default, _meaning
                in trace_job.SCHEMA if name in trace_job.JUDGING)
 
 DEFAULT_FORMATS = ("trace", "csv")
+
+NO_PROJECT = "'projects' object not found or no project open"
 
 # A trace that has not recorded since the IDE opened still lists its
 # variables in the file, with no rows; judged as samples it would read as
@@ -67,19 +69,27 @@ def list_traces():
 
     A trace that cannot be read is still listed, with why: its name and
     place are what the caller came for, and they need no private member.
+    An object that will not say what it is might be a trace, so the list
+    is not ok then (SPEC D11, D13): the rows are what could be seen.
     """
     unhandled.start()
-    _args, project = _inputs()
+    _args, project, refused = _inputs("list")
+    if refused:
+        return refused
     rows = sorted((_listed(project, obj)
                    for obj in trace_objects.every(project)),
                   key=lambda row: row["path"].lower())
+    summary = "trace list: %d trace object(s)" % len(rows)
+    if unhandled.any_so_far():
+        summary += " -- " + unhandled.summary()
     return entry.result(
-        True, "trace list: %d trace object(s)" % len(rows), action="list",
-        traces=rows, failed_objects=unhandled.names())
+        not unhandled.any_so_far(), summary, action="list", traces=rows,
+        failed_objects=unhandled.names())
 
 
 def _listed(project, obj):
-    row = {"name": name_of(obj), "path": trace_objects.path_of(obj),
+    path = trace_objects.path_of(project, obj)
+    row = {"name": path.rsplit("/", 1)[-1], "path": path,
            "task": None, "variables": [], "left_out": [], "unread": None}
     api, problem = trace_objects.scripted(globals(), project, obj)
     if problem:
@@ -89,17 +99,18 @@ def _listed(project, obj):
         definition, left_out = trace_config.describe(
             api, entry.borrowed(globals(), "Resolution"))
     except Exception as exc:
-        row["unread"] = one_line(exc)
+        row["unread"] = one_line(exc) or type(exc).__name__
         return row
-    row.update(task=definition["task"], variables=definition["variables"],
-               left_out=left_out)
+    row.update(definition, left_out=left_out)
     return row
 
 
 def to_job():
     """trace job: what a trace object records, as a job file's definition."""
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("job")
+    if refused:
+        return refused
     api, problem = trace_objects.reach(globals(), project, args.get("name"))
     if problem:
         return _failed("job", problem)
@@ -126,13 +137,15 @@ def to_job():
 def from_job():
     """trace apply: make a trace object record a job file's definition.
 
-    The definition and the name are checked before the question: both
-    checks only read, and a refusal for either is worth more than a
-    question whose yes leads only to it.
+    The definition, the name and the folder are checked before the
+    question: each check only reads, and a refusal for any of them is worth
+    more than a question whose yes leads only to it.
     """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("apply")
+    if refused:
+        return refused
     name = args.get("name")
     definition, problem = trace_job.normalise_definition(args.get("job"))
     if problem:
@@ -143,7 +156,10 @@ def from_job():
     folder, problem = _the_folder(project, args.get("folder"), existing)
     if problem:
         return _failed("apply", problem)
-    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY, APPLY_QUESTION % name):
+    where = trace_objects.path_of(project, folder if folder is not None
+                                  else project.active_application)
+    if not ask_yes_no(dialogs.CONFIRM_TRACE_APPLY,
+                      APPLY_QUESTION % (name, "in " + where)):
         return _failed("apply", "not confirmed")
     api, replaced, problem = _the_trace_to_apply(project, name, definition,
                                                  existing, folder)
@@ -178,12 +194,12 @@ def _existing_trace(project, name):
     """
     traces, others = trace_objects.named(project, name)
     if len(traces) > 1:
-        return None, trace_objects.several(name, traces)
+        return None, trace_objects.several(project, name, traces)
     if traces:
         return traces[0], None
     if others:
         return None, ("%s is not a trace object%s"
-                      % (name, trace_objects.what_else(others)))
+                      % (name, trace_objects.what_else(project, others)))
     return None, None
 
 
@@ -192,19 +208,20 @@ def _the_folder(project, wanted, existing):
 
     --folder places a trace apply creates; it never moves one, so a trace
     already somewhere else is refused rather than left where it is while
-    the caller believes it was put in the folder.
+    the caller believes it was put in the folder. An empty --folder is a
+    folder nobody can have, not a missing flag.
     """
-    if not wanted:
+    if wanted is None:
         return None, None
-    if existing is None:
-        return trace_objects.folder_named(project.active_application, wanted)
-    parent = parent_of(existing)
-    if (parent is not None and name_of(parent).lower() == wanted.lower()
-            and kind_of(parent) == trace_objects.FOLDER):
+    folder, problem = trace_objects.folder_named(project, wanted)
+    if problem or existing is None:
+        return folder, problem
+    if guid_of(parent_of(existing)) == guid_of(folder):
         return None, None
     return None, ("%s already exists at %s, and apply changes a trace where "
                   "it is: leave out --folder, or move it in the IDE"
-                  % (name_of(existing), trace_objects.path_of(existing)))
+                  % (name_of(existing),
+                     trace_objects.path_of(project, existing)))
 
 
 def _the_trace_to_apply(project, name, definition, existing, folder):
@@ -217,8 +234,8 @@ def _the_trace_to_apply(project, name, definition, existing, folder):
     api, problem = trace_objects.create(globals(), project.active_application,
                                         name, definition["task"])
     if problem is None and folder is not None:
-        api, problem = trace_objects.move_into(globals(), project, name,
-                                               folder)
+        made, problem = trace_objects.find(project, name)
+        problem = problem or trace_objects.move(project, made, folder)
     return api, None, problem
 
 
@@ -230,7 +247,9 @@ def save_data():
     default keeps only its last few thousand samples (research 15.8).
     """
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("save")
+    if refused:
+        return refused
     api, problem = trace_objects.reach(globals(), project, args.get("name"))
     if problem:
         return _failed("save", problem)
@@ -297,7 +316,9 @@ def show_data():
     """
     from engine.codesys_ui import ask_yes_no
     unhandled.start()
-    args, project = _inputs()
+    args, project, refused = _inputs("show")
+    if refused:
+        return refused
     name, path = args.get("name"), args.get("file")
     if not ask_yes_no(dialogs.CONFIRM_TRACE_SHOW,
                       SHOW_QUESTION % (path, name, name)):
@@ -346,10 +367,14 @@ def _loaded(project, editor):
                       "read back: " + one_line(exc))
 
 
-def _inputs():
-    """(this run's flags, the open project)."""
-    return (entry.flags(globals()),
-            entry.borrowed(globals(), "projects").primary)
+def _inputs(action):
+    """(this run's flags, the open project, None), or a failed result when
+    no project is open."""
+    projects = entry.borrowed(globals(), "projects")
+    project = projects.primary if projects is not None else None
+    if project is None:
+        return None, None, _failed(action, NO_PROJECT)
+    return entry.flags(globals()), project, None
 
 
 def _failed(action, problem, **data):

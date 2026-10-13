@@ -10,7 +10,8 @@ All notable changes to this project will be documented in this file.
   whole path, its task and what it records, in either form, so a trace kept
   in a folder can be found by name.
 - **`trace apply --folder F`** puts a trace it creates into the existing
-  folder `F`; an existing trace is never moved.
+  folder named `F` in the active application. An existing trace is never
+  moved: one elsewhere is refused.
 
 - **`cdsint trace job` and `trace apply`** move what a trace records between
   a trace object and a job file. Pick the variables in the IDE's trace, run

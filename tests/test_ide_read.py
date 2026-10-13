@@ -42,7 +42,8 @@ def empty_register():
 
 class TestReadsThatWork:
     def test_guid_of_reads_the_guid(self):
-        assert ide_read.guid_of(Node("Main", "t")) == "guid-Main"
+        node = Node("Main", "t")
+        assert ide_read.guid_of(node) == node.guid
 
     def test_kind_of_maps_the_type_guid_to_a_kind(self):
         from engine.codesys_constants import TYPE_GUIDS

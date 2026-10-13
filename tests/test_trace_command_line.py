@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """What `cdsint trace` looks like from outside the IDE.
 
-Four actions on one row. job and apply have both forms; save and show only
-the watcher's, because recorded data lives in the IDE that recorded it, and
-the refusal says so rather than "unrecognized". Files are flags, as plc
+Five actions on one row. list, job and apply have both forms; save and show
+only the watcher's, because recorded data lives in the IDE that recorded it,
+and the refusal says so rather than "unrecognized". Files are flags, as plc
 trace's --job is, and every path arrives at the IDE side absolute: its
 working directory is not the shell's.
 """
@@ -160,3 +160,44 @@ def test_trace_list_prints_a_line_per_trace(capsys):
     shown = capsys.readouterr().out
     assert "App/Traces/T1  MainTask  2 variable(s), 1 switched off" in shown
     assert "App/T2  (not read: no member)" in shown
+
+
+def test_trace_list_marks_a_trace_it_could_not_read_even_without_a_reason(
+        capsys):
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace list"), True,
+                                 data={"traces": [
+                                     {"name": "T2", "path": "App/T2",
+                                      "task": None, "variables": [],
+                                      "left_out": [], "unread": ""}]})
+    report.show(record)
+    assert "App/T2  (not read" in capsys.readouterr().out
+
+
+def test_a_list_another_command_names_like_a_trace_list_prints_plainly(
+        capsys):
+    """Row printers belong to the command whose rows they were written for
+    (#9): a plc command reporting trace names is not trace list."""
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("plc connect"), True,
+                                 data={"traces": ["T1", "T2"],
+                                       "variables": ["a.x"]})
+    report.show(record)
+    shown = capsys.readouterr().out
+    assert "T1" in shown and "T2" in shown and "a.x" in shown
+
+
+def test_trace_save_prints_how_much_of_each_variable_came_back(capsys):
+    from cds.core import commands
+    from cdsint import report
+    record = commands.new_result(commands.new_command("trace save"), True,
+                                 data={"variables": [
+                                     {"name": "a.x", "samples": 9,
+                                      "expected": 10, "complete": 0.9,
+                                      "gaps": [{}],
+                                      "longest_interval": 2}]})
+    report.show(record)
+    assert "a.x  9/10 samples  complete 0.9  gaps 1" in \
+        capsys.readouterr().out

@@ -78,7 +78,7 @@ def show(result, want_json=False):
     said = [message["text"] for message in result["messages"]]
     for message in result["messages"]:
         print("%s: %s" % (message["level"], message["text"]))
-    _show_data(result["data"] or {})
+    _show_data(result["command"], result["data"] or {})
     question = _show_needs(result)
     # A needs_input record IS the error: cds/ide/outcome.py error_text()
     # returns the question when a dialog went unanswered. That one is
@@ -259,7 +259,7 @@ def notes_of(results):
     return []
 
 
-def _show_data(data):
+def _show_data(command, data):
     for key, value in sorted(data.items()):
         # A list or a mapping gets a line each. Those are the ones the reader
         # has to go and look up: the objects a command could not handle, the
@@ -268,7 +268,8 @@ def _show_data(data):
         if isinstance(value, dict):
             lines = ["%s %s" % (name, value[name]) for name in sorted(value)]
         elif isinstance(value, list):
-            lines = [ROWS.get(key, _one_line)(item) for item in value]
+            lines = [ROWS.get((command, key), _one_line)(item)
+                     for item in value]
         else:
             print("  %-16s %s" % (key, UNSET if value is None else value))
             continue
@@ -302,11 +303,8 @@ def _traced(row):
     and a reader deciding whether the run can be trusted wants the count
     (SPEC 6.8 says what each field means). A row recorded under a
     condition has no count to hold its samples against, so it prints only
-    what it has. trace apply and trace show name their variables without
-    judging them, and a name is printed as it is.
+    what it has.
     """
-    if not isinstance(row, dict):
-        return _one_line(row)
     if row["complete"] is None:
         return "%s  %s samples  longest interval %s" % (
             row["name"], row["samples"], row["longest_interval"])
@@ -321,8 +319,8 @@ def _listed(row):
     Its variables are counted, not spelled out: --json has them, and a line
     per trace is what lets a reader find the one they mean.
     """
-    if row["unread"]:
-        return "%s  (not read: %s)" % (row["path"], row["unread"])
+    if row["unread"] is not None:
+        return "%s  (not read: %s)" % (row["path"], row["unread"] or "?")
     shown = "%s  %s  %d variable(s)" % (row["path"], row["task"],
                                          len(row["variables"]))
     if row["left_out"]:
@@ -330,9 +328,14 @@ def _listed(row):
     return shown
 
 
-# The data lists whose rows need their own words; every other list's rows go
-# through _one_line.
-ROWS = {"variables": _traced, "traces": _listed}
+# The data lists whose rows need their own words, by the command whose rows
+# they were written for; every other list's rows go through _one_line. Keyed
+# by the key alone, a printer met every command's list of that name: trace
+# apply's variables are names, and _traced died on them after the IDE had
+# done the work (docs/trace-research.md 15.11).
+ROWS = {("plc trace", "variables"): _traced,
+        ("trace save", "variables"): _traced,
+        ("trace list", "traces"): _listed}
 
 
 def _show_needs(result):
