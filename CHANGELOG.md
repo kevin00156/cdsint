@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased — trace objects in and out of an open IDE
+### 0.5.0 (2026-10-13) — trace objects in and out of an open IDE
 
 - **`cdsint trace list`** names every trace object in the project with its
   whole path, its task and what it records, in either form, so a trace kept
