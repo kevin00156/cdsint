@@ -9,7 +9,7 @@ looking for a typo when what they need is to know what the name is.
 from __future__ import print_function
 
 from engine import entry, ide_private
-from engine.ide_read import children_of, kind_of, name_of, parent_of
+from engine.ide_read import kind_of, name_of, parent_of
 from engine.plc_trip import one_line
 from engine.strings import safe_str
 
@@ -99,14 +99,3 @@ def create(ide_globals, application, name, task):
                       "again; a trace that already exists can be changed "
                       "while logged in" % name)
     return api, None
-
-
-def first_task(application):
-    """The name of the application's first task, or None."""
-    for child in children_of(application):
-        if kind_of(child) != "task_config":
-            continue
-        for task in children_of(child):
-            if kind_of(task) == "task":
-                return name_of(task)
-    return None

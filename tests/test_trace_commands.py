@@ -266,29 +266,53 @@ def test_the_headless_launcher_refuses_save(bench):
 
 # --- trace show ----------------------------------------------------------------
 
-def test_show_makes_cdsint_trace_and_reports_what_it_loaded(bench):
+def saved_trace(bench):
+    """T1 in the project, and a saved .trace the loader knows."""
+    bench.press("apply", yes=True, name="T1", job=definition())
     bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
-    shown = bench.press("show", file="C:/r.trace")
+    return "C:/r.trace"
+
+
+def test_show_loads_into_the_named_trace_and_reports_what_it_loaded(bench):
+    shown = bench.press("show", yes=True, name="T1", file=saved_trace(bench))
     assert shown["ok"], shown["error"]
+    assert shown["data"]["name"] == "T1"
     assert shown["data"]["variables"] == plc_fakes.TRACED
     assert bench.loads == ["C:/r.trace"]
 
 
-def test_show_twice_keeps_one_cdsint_trace(bench):
-    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
-    bench.press("show", file="C:/r.trace")
-    bench.press("show", file="C:/r.trace")
-    assert len(bench.project.find("cdsint_trace", True)) == 1
+def test_show_without_yes_asks_and_loads_nothing(bench):
+    asked = bench.press("show", name="T1", file=saved_trace(bench))
+    assert not asked["ok"] and asked["needs_input"]
+    assert bench.loads == []
+
+
+def test_show_into_a_trace_that_is_not_there_creates_nothing(bench):
+    refused = bench.press("show", yes=True, name="T9", file="C:/r.trace")
+    assert not refused["ok"]
+    assert "no trace object named T9" in refused["error"]
+    assert bench.trace_named("T9") is None
+    assert bench.trace_named("cdsint_trace") is None
+
+
+def test_show_does_not_save_the_project(bench):
+    path = saved_trace(bench)
+    saves = bench.project.saves
+    bench.press("show", yes=True, name="T1", file=path)
+    assert bench.project.saves == saves
 
 
 def test_show_passes_on_what_the_loader_said(bench):
-    shown = bench.press("show", file="C:/not-a-trace.txt")
+    saved_trace(bench)
+    shown = bench.press("show", yes=True, name="T1",
+                        file="C:/not-a-trace.txt")
     assert not shown["ok"] and "the file is not a trace" in shown["error"]
 
 
 def test_show_without_the_loader_is_refused_by_name(bench, monkeypatch):
+    path = saved_trace(bench)
     monkeypatch.setattr(ide_private, "loader_for", lambda editor: None)
-    shown = bench.press("show", file="C:/r.trace")
+    shown = bench.press("show", yes=True, name="T1", file=path)
     assert not shown["ok"] and ide_private.EDITOR_VIEW in shown["error"]
 
 
@@ -309,11 +333,11 @@ def test_apply_to_an_existing_trace_while_logged_in_works(bench):
     assert again["ok"], again["error"]
 
 
-def test_show_while_logged_in_without_cdsint_trace_says_why(bench):
-    bench.files["C:/r.trace"] = plc_fakes.read_data(plc_fakes.SAMPLE_CSV)
+def test_show_into_an_existing_trace_while_logged_in_works(bench):
+    path = saved_trace(bench)
     bench.online = True
-    shown = bench.press("show", file="C:/r.trace")
-    assert not shown["ok"] and "logged in" in shown["error"]
+    shown = bench.press("show", yes=True, name="T1", file=path)
+    assert shown["ok"], shown["error"]
 
 
 def test_save_of_a_file_it_cannot_read_says_so(monkeypatch, tmp_path):

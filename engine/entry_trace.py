@@ -4,14 +4,15 @@
 None of these touches a PLC. job and apply move what a trace records between
 a trace object and a job file, so a person can pick variables in the IDE and
 an agent can record them with plc trace, or the other way round. save writes
-what a trace in this IDE recorded; show loads a saved trace into this IDE
-for a person to look at. The last two are the watcher's only: recorded data
-lives in the IDE that recorded it (cds/ide/entries.py HEADLESS_REFUSES).
+what a trace in this IDE recorded; show loads a saved trace into a trace
+the caller names, for a person to look at. The last two are the watcher's
+only: recorded data lives in the IDE that recorded it (cds/ide/entries.py
+HEADLESS_REFUSES).
 
 apply saves the project, as import does: in the --project form nothing
 else would, and the change would go with the IDE that made it. show leaves
-the project unsaved: cdsint_trace holding a loaded file is for looking at,
-and the person whose IDE it is decides whether that is kept.
+the project unsaved: a trace holding a loaded file is for looking at, and
+the person whose IDE it is decides whether that is kept.
 
 The function names avoid `trace`: this file is exec'd into the namespace
 CODESYS gives its scripts, where `trace` is the trace plug-in, which the
@@ -25,7 +26,6 @@ import os
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
 from engine import trace_config, trace_objects, unhandled
-from engine.plc_trace_setup import TRACE_NAME
 from engine.plc_trip import one_line
 
 # The flags this run was given, put here by cds/ide/silent.py once this
@@ -35,6 +35,9 @@ command_args = {}
 APPLY_QUESTION = ("This replaces what trace object %s records with the job "
                   "file's definition, creating it if there is none, and "
                   "saves the project.\n\nProceed?")
+SHOW_QUESTION = ("This loads %s into trace object %s, which replaces what %s "
+                 "records with the file's definition. The project is changed "
+                 "in memory and not saved.\n\nProceed?")
 
 # What a trace someone else recorded is judged against: the job's own
 # defaults, since nobody wrote limits for it (SPEC 6.8 "Completeness").
@@ -196,17 +199,23 @@ def _judged(project, api, csv_path):
 
 
 def show_data():
-    """trace show: a saved trace, loaded into cdsint_trace for a person.
+    """trace show: a saved trace, loaded into a trace the caller names.
 
-    Always cdsint_trace: loading replaces the target's definition with the
-    file's (research 15.6), and that is only cdsint's to do to its own
-    object. What was loaded is read back from the editor, not from the
-    object's settings: on the bench those still named the old variables
-    straight after the load, and only caught up later.
+    Loading replaces the target's definition with the file's (research
+    15.6), so the caller names the target and confirms, as for apply. It
+    never creates one: CODESYS adds no object while logged in, which is when
+    a person most wants to look. What was loaded is read back from the
+    editor, not from the object's settings: on the bench those still named
+    the old variables straight after the load, and only caught up later.
     """
+    from engine.codesys_ui import ask_yes_no
     unhandled.start()
     args, project = _inputs()
-    api, problem = _cdsint_trace(project)
+    name, path = args.get("name"), args.get("file")
+    if not ask_yes_no(dialogs.CONFIRM_TRACE_SHOW,
+                      SHOW_QUESTION % (path, name, name)):
+        return _failed("show", "not confirmed")
+    api, problem = trace_objects.reach(globals(), project, name)
     if problem:
         return _failed("show", problem)
     editor = api.open_editor()
@@ -217,18 +226,18 @@ def show_data():
             "members cdsint loads a trace file through (docs/trace-research."
             "md 15.6), so nothing was loaded"
             % (ide_private.EDITOR_VIEW, ide_private.LOAD_TRACE)))
-    said = load(args.get("file"))
+    said = load(path)
     if said:
         return _failed("show", "the IDE could not load %s: %s"
-                       % (args.get("file"), one_line(said)))
+                       % (path, one_line(said)))
     variables, problem = _loaded(project, editor)
     if problem:
         return _failed("show", problem)
     return entry.result(
         True, "trace show: %s loaded into %s, %d variable(s)"
-        % (args["file"], TRACE_NAME, len(variables)),
-        action="show", name=TRACE_NAME, file=args["file"],
-        variables=variables, failed_objects=unhandled.names())
+        % (path, name, len(variables)),
+        action="show", name=name, file=path, variables=variables,
+        failed_objects=unhandled.names())
 
 
 def _loaded(project, editor):
@@ -241,22 +250,6 @@ def _loaded(project, editor):
         return None, ("the file was loaded, but what it holds could not be "
                       "read back: " + one_line(exc))
     return [each["name"] for each in saved["variables"]], None
-
-
-def _cdsint_trace(project):
-    """(cdsint_trace's settings, made if it is not there, None), or a why."""
-    traces, others = trace_objects.named(project, TRACE_NAME)
-    if traces:
-        return trace_objects.reach(globals(), project, TRACE_NAME)
-    if others:
-        return None, ("%s is cdsint's name for its own trace object%s"
-                      % (TRACE_NAME, trace_objects.what_else(others)))
-    application = project.active_application
-    task = trace_objects.first_task(application)
-    if task is None:
-        return None, ("the application has no task, and %s needs one to "
-                      "exist in before the file replaces it" % TRACE_NAME)
-    return trace_objects.create(globals(), application, TRACE_NAME, task)
 
 
 def _inputs():

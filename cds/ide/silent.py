@@ -46,6 +46,7 @@ YES_NO = {
     dialogs.CONFIRM_IMPORT: ("yes", None),
     dialogs.CONFIRM_PLC_DOWNLOAD: ("yes", None),
     dialogs.CONFIRM_TRACE_APPLY: ("yes", None),
+    dialogs.CONFIRM_TRACE_SHOW: ("yes", None),
 }
 
 # The name the command's flags appear under inside a body's namespace. The
