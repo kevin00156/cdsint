@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased
+### 0.5.2 (2026-10-14) — the missing-Trace hint says how to download the package
 
 - **The hint for a missing CODESYS Trace package now says how to download
   it.** The CODESYS Store has no download page for the package that we
