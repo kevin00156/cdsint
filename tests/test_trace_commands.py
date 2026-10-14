@@ -88,6 +88,7 @@ class Bench(object):
         self.loads = []
         self.reachable = True
         self.online = False     # logged in: CODESYS adds no objects then
+        self.plugin = True      # the CODESYS Trace package is installed
         monkeypatch.setattr(ide_private, "script_trace", self.script_trace)
         monkeypatch.setattr(ide_private, "loader_for", self.loader_for)
 
@@ -127,9 +128,11 @@ class Bench(object):
         return load
 
     def globals(self):
-        return {"system": plc_fakes.TraceSystem(self.log),
-                "projects": Projects(self.project),
-                "trace": self, "Resolution": plc_fakes.Resolution}
+        ide = {"system": plc_fakes.TraceSystem(self.log),
+               "projects": Projects(self.project)}
+        if self.plugin:
+            ide.update(trace=self, Resolution=plc_fakes.Resolution)
+        return ide
 
     def press(self, action, **args):
         return entries.answer(self.globals(), {
@@ -350,6 +353,25 @@ def test_show_without_the_loader_is_refused_by_name(bench, monkeypatch):
     monkeypatch.setattr(ide_private, "loader_for", lambda editor: None)
     shown = bench.press("show", yes=True, name="T1", file=path)
     assert not shown["ok"] and ide_private.EDITOR_VIEW in shown["error"]
+
+
+# --- no CODESYS Trace package -------------------------------------------------
+
+@pytest.mark.parametrize("action, args", [
+    ("list", {}),
+    ("job", {"name": "T1", "out": "t1.json"}),
+    ("apply", {"yes": True, "name": "T1", "job": definition()}),
+    ("save", {"name": "T1", "out": "o"}),
+    ("show", {"yes": True, "name": "T1", "file": "r.trace"}),
+])
+def test_without_the_trace_package_every_action_says_how_to_install_it(
+        bench, action, args):
+    bench.plugin = False
+    refused = bench.press(action, **args)
+    assert not refused["ok"]
+    assert "CODESYS Trace package" in refused["error"]
+    assert "PackageManagerCLI.exe" in refused["error"]
+    assert bench.apis == {} and bench.loads == []
 
 
 # --- logged in -----------------------------------------------------------------

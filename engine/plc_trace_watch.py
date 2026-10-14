@@ -52,10 +52,10 @@ class WatchedTrip(TraceTrip):
         return Recording(self)
 
     def steps(self):
-        return [self.needs_a_name, self.read_the_job, self.find_the_project,
-                self.name_the_application, self.take_the_named_trace,
-                self.find_the_period, self.logged_in,
-                self.not_recording_already, self.names_resolve,
+        return [self.can_script_traces, self.needs_a_name, self.read_the_job,
+                self.find_the_project, self.name_the_application,
+                self.take_the_named_trace, self.find_the_period,
+                self.logged_in, self.not_recording_already, self.names_resolve,
                 self.types_reported, self.types_fit, self.memory_fits,
                 self.application_runs, self.size_the_buffers,
                 self.report_the_program, self.start_recording]

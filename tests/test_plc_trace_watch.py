@@ -104,6 +104,13 @@ def test_not_logged_in_is_refused_and_nothing_starts(bench):
     assert bench.calls("download", "start") == []
 
 
+def test_without_the_trace_package_nothing_is_asked_of_the_session(bench):
+    bench.plugin = False
+    answer = bench.watch(run_only(), "T1")
+    assert not answer["ok"] and "CODESYS Trace package" in answer["summary"]
+    assert bench.log == []
+
+
 def test_a_trace_already_recording_is_left_alone(bench):
     bench.named_api.editor.running = True
     answer = bench.watch(run_only(), "T1")

@@ -932,7 +932,8 @@ measurements behind every rule here are in `docs/trace-research.md`.
 **One run, in order.** Each step that refuses stops the run there.
 
 1. Refuse with exit 5 unless the `plc` list holds `trace` (6.5), and with
-   exit 2 unless `--gateway` is given (6.6).
+   exit 2 unless `--gateway` is given (6.6). Then refuse if the IDE cannot
+   script traces, with the command that makes it able to (6.11).
 2. Pull `Application.crc` and compare it with this working copy's record, as
    `connect` does (6.6). Anything but `MATCH` is exit 1, and the message
    points at `plc download -y`. Then check that the IDE will agree, because
@@ -1403,6 +1404,15 @@ are checked like any other and then dropped. A variable switched off in the
 IDE is not part of what the trace records, so `job` leaves it out and names
 it in `data.left_out`; `data.usable` says whether `plc trace` would take the
 definition as it stands.
+
+**The IDE has to be able to script traces.** All five, and `plc trace`, work
+through the script driver of the CODESYS Trace package, and an IDE built on
+CODESYS can ship without it (`docs/trace-research.md` 16). So each checks
+for it first, before the project or a controller is touched, and an IDE
+without it is refused with the command that installs the package into that
+IDE: its own `PackageManagerCLI.exe` and its profile. cdsint never installs
+it: that changes the IDE for every project opened in it, which is the
+person's to decide.
 
 **Apply replaces, and never doubles a name.** An existing trace loses its
 variables, trigger and condition before the definition goes in, since

@@ -223,6 +223,14 @@ def test_without_a_gateway_nothing_is_touched():
     assert bench.log == [] and bench.online.credentials is None
 
 
+def test_without_the_trace_package_nothing_is_touched():
+    bench = TraceBench()
+    bench.plugin = False
+    result = bench.run()
+    assert not result["ok"] and "CODESYS Trace package" in result["summary"]
+    assert bench.log == [] and bench.online.credentials is None
+
+
 def test_the_body_is_reached_by_its_command_name():
     # Through cds/ide/entries.py, the way the headless launcher presses it.
     bench = TraceBench()

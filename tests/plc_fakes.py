@@ -728,6 +728,7 @@ class TraceBench(object):
         self.log = []
         self.clock = FakeClock()
         self.buffers = Buffers()
+        self.plugin = True      # the CODESYS Trace package is installed
         self.settings_file = settings_file or {}
         self.tracer = Tracer(self.log, read_data(SAMPLE_CSV)
                              if csv_text is None else csv_text,
@@ -772,13 +773,15 @@ class TraceBench(object):
         written = {"plc": ["trace"]}
         written.update(self.settings_file)
         settings.write(settings.path_for(PROJECT_PATH), written)
-        return {"system": TraceSystem(self.log),
-                "projects": Projects(self.project), "online": self.online,
-                "trace": self.tracer, "Resolution": Resolution,
-                "PromptResult": PromptResult,
-                "CredentialSourceKind": CredentialSourceKind,
-                "OnlineChangeOption": OnlineChangeOption,
-                trace_run.HOLD_GLOBAL: None if ui else self.hold_ms}
+        ide = {"system": TraceSystem(self.log),
+               "projects": Projects(self.project), "online": self.online,
+               "PromptResult": PromptResult,
+               "CredentialSourceKind": CredentialSourceKind,
+               "OnlineChangeOption": OnlineChangeOption,
+               trace_run.HOLD_GLOBAL: None if ui else self.hold_ms}
+        if self.plugin:
+            ide.update(trace=self.tracer, Resolution=Resolution)
+        return ide
 
     def args(self, job=None, gateway=GATEWAY, name=None):
         args = {"gateway": gateway, "port": PORT,

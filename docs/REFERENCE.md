@@ -479,6 +479,34 @@ cdsint trace show  --target softplc -y --name T1 --file runs/t1.trace
 Five commands for trace objects in the project and what they recorded. None
 of them talks to a controller, so none needs a word in the `plc` list.
 
+**The IDE needs the CODESYS Trace package.** These five and `plc trace` work
+through the script driver that package brings. Stock CODESYS 3.5.20 and
+3.5.21 have it, and so does Lenze PLC Designer 4.0.1; DIADesigner-AX 1.8 and
+1.10 and Lenze PLC Designer 3.24 do not. In an IDE without it each of them
+stops before it touches the project or a controller, and prints the command
+that installs the package into that IDE, for example:
+
+```
+"C:\...\DIADesigner-AX 1.10\CODESYS\Common\PackageManagerCLI.exe" --profile="DIADesigner-AX 1.10" --install="C:\pkg\CODESYS_Trace_4.2.0.0.package"
+```
+
+Run it from an administrator prompt with the IDE closed, then start the IDE
+again. Windows PowerShell mangles the quotes unless the line reads
+`& "...\PackageManagerCLI.exe" --% --profile=...`. cdsint does not run it
+for you: it changes the IDE for every project opened there.
+
+Download the package yourself from the CODESYS Store (store.codesys.com),
+directly or through the CODESYS Installer; cdsint neither ships it nor
+fetches it. It has to be CODESYS Trace 4.2 or later, the first version with
+the script driver. 4.2.0.0 asks for an IDE built on CODESYS 3.5.17 or later;
+it was installed and tested in DIADesigner-AX 1.10, where `list`, `job` and
+`apply` worked headless and the project built. A project saved in an IDE
+that has it, opened in one that does not, asks once whether to upgrade its
+storage format, and then opens with its traces and builds. In DIADesigner-AX
+1.8, creating a trace with `--project` fails even with the package, through
+a fault of that IDE's own that 1.10 no longer has (`docs/trace-research.md`
+16).
+
 - **`trace list`** names every trace object in the project, wherever it
   sits, with its whole path and what it records, as `trace job` would write
   it (`data.traces`). Use it to find a trace kept in a folder; `--name` and

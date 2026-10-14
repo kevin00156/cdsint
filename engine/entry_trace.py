@@ -27,7 +27,7 @@ import os
 
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
-from engine import trace_config, trace_objects, unhandled
+from engine import trace_config, trace_objects, trace_plugin, unhandled
 from engine.ide_read import guid_of, name_of, parent_of
 from engine.plc_trip import one_line
 
@@ -369,7 +369,10 @@ def _loaded(project, editor):
 
 def _inputs(action):
     """(this run's flags, the open project, None), or a failed result when
-    no project is open."""
+    this IDE cannot script traces or no project is open."""
+    problem = trace_plugin.missing(globals())
+    if problem:
+        return None, None, _failed(action, problem)
     projects = entry.borrowed(globals(), "projects")
     project = projects.primary if projects is not None else None
     if project is None:

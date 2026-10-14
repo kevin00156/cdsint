@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **An IDE without the CODESYS Trace package is told so.** Every `trace`
+  command and `plc trace` work through that package's script driver, which
+  DIADesigner-AX and Lenze PLC Designer 3.24 ship without. There each of
+  them used to die on "'NoneType' object has no attribute 'create'"; now
+  each stops before it touches the project or a controller, and prints the
+  `PackageManagerCLI.exe` command that installs the package into that IDE,
+  with its profile filled in, and says to download the package from the
+  CODESYS Store. cdsint does not run it. What was tested:
+  docs/REFERENCE.md.
+
 ### 0.5.0 (2026-10-13) — trace objects in and out of an open IDE
 
 - **`cdsint trace list`** names every trace object in the project with its

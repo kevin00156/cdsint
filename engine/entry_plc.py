@@ -157,6 +157,7 @@ def traced(trip):
             trip.make_the_trace]      # in memory only; buffers wait for step 5
     return in_order(trip, [
         trip.may_run,             # a wait lent to us
+        trip.can_script_traces,   # the CODESYS Trace package
         trip.read_the_job,        # checked again: the wire is not trusted
         trip.reach_the_device,    # --gateway, the device, its application
         trip.holds_our_download,  # CRC MATCH, or point at plc download -y

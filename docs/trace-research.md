@@ -1169,3 +1169,94 @@ project, never saved, for the review of `trace list` and `trace apply
   `AttributeError` on both `get_name()` and `.parent`.
 - **One recursive `get_children(True)` lists what a walk does.** On the
   project, 404 objects either way.
+
+## 16. IDEs without the CODESYS Trace package (2026-10-13, 2026-10-14)
+
+A session recording a cutter on DIADesigner-AX 1.10 found every trace
+command failing on "'NoneType' object has no attribute 'create'". The
+`trace` and `Resolution` globals were missing: nothing in that IDE puts them
+into a script's namespace.
+
+### 16.1 Who has the script driver
+
+The globals come from `ScriptDriverTraceObject.plugin.dll` (plug-in GUID
+55555555-c9af-4e02-b35d-bdcf90d7a2cd). In stock CODESYS it ships in the
+separate "CODESYS Trace" package (package GUID
+4E530EC4-2E4E-4639-B965-5B6267572C9B), beside the trace object and the trace
+editor, not in "CODESYS Scripting".
+
+| IDE | built on | ScriptEngine | trace plug-ins | script driver |
+|---|---|---|---|---|
+| CODESYS 3.5.20.40, 3.5.21.40 | itself | 4.1, 4.2 | 4.2/4.3 | yes |
+| Lenze PLC Designer 4.0.1 | 3.5.19.70 | 4.1 | 4.2 | yes |
+| Lenze PLC Designer 3.24 | 3.5.17.20 | 4.0 | 4.0 | no |
+| DIADesigner-AX 1.8, 1.10 | 3.5.18.50 (1.10) | 4.0 | 4.0/4.1 | no |
+
+CODESYS's release notes for CODESYS Trace 4.2.0.0 list the script driver
+as new in that version, so the 4.0 and 4.1 these IDEs carry never had it:
+nothing was removed. Any IDE whose trace package is older than 4.2 fails
+the same way. CODESYS distributes the package through the CODESYS Store and
+the CODESYS Installer.
+
+### 16.2 Installing the package
+
+Each of these IDEs has `PackageManagerCLI.exe` beside its executable.
+CODESYS Trace 4.2.0.0 (manifest: RequiredInstallerVersion 3.5.17.0), copied
+out of a stock CODESYS 3.5.21.40's `PackageDB\FileStorage`, went into
+DIADesigner-AX 1.8 and 1.10 with
+
+```
+PackageManagerCLI.exe --profile="DIADesigner-AX 1.10" --install="...\CODESYS_Trace_4.2.0.0.package" --verbose
+```
+
+Windows PowerShell 5.1 strips the inner quotes of such a line, so the
+installer does not get its arguments as written; `& "...exe" --%
+--profile=...` passes them unchanged. Both installs had a full copy of the install folder taken
+first, which is the whole of the way back that was tried.
+
+In 1.10, on a copy of a customer project, headless: `trace list` read all
+three existing traces, `trace job` wrote one out, `trace apply --folder`
+created a fourth in the user's folder, `apply` changed it, and the build had
+0 errors. Delta's own trace extension (`DIASP.Trace.plugin`) still loaded.
+
+The same project saved there opened in a 1.10 without the package after one
+`UpgradeProjectConfirmation` prompt, with all its traces, and built with 0
+errors.
+
+### 16.3 DIADesigner-AX 1.8 adds no object headless
+
+In 1.8 with the package, `trace.create` handed back a NoScriptTraceObject.
+Decompiled, `ScriptDriverTraceImpl.create` returns one when the parent is
+not an application or a device, and also on any exception, which it
+swallows. Repeating its steps by hand showed the exception:
+`DiaToolBoxManager.ObjectModified()` in Delta's toolbox add-on throws a
+NullReferenceException in `--noUI` on every object added, a POU or a GVL
+as much as a trace. The object lands anyway; a folder did not. The copy of
+1.8 taken before the install does the same, and 1.10 does not.
+
+So "could not be created: the project is logged in", which cdsint prints
+for a NoScriptTraceObject, is wrong there: nothing was logged in.
+
+### 16.4 The profile name, from inside the IDE
+
+The installer wants the profile by name. The version string CODESYS hands
+IronPython holds it after the executable's file name, in every IDE run here:
+
+```
+CODESYS.exe CODESYS V3.5 SP21 Patch 4, ScriptEngine.plugin 4.2.0.0
+2.7.7 (DIADesigner-AX.exe DIADesigner-AX 1.10, ScriptEngine.plugin 4.0.0.0)
+2.7.7 (PlcDesigner.exe PLC Designer V3.24.0, ScriptEngine.plugin 4.0.0.0)
+PlcDesigner.exe PLC Designer V4.0.1, ScriptEngine.plugin 4.1.0.0
+```
+
+`engine/trace_plugin.py` reads it from there, and says so when a string of
+another shape gives none.
+
+### 16.5 Not verified
+
+- Recording (`plc trace`) in an IDE that got the package by install.
+- The IDE's own trace editor, in its window, after the install.
+- The install into Lenze PLC Designer 3.24: it was not run. Whether
+  Trace 4.2 loads in an IDE built on 3.5.17.20, and in a 32-bit one, is
+  open.
+- Removing the package with the installer.

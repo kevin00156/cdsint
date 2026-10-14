@@ -22,7 +22,7 @@ import time
 
 from cds.core import trace_job, trace_run
 from engine import entry, plc_crc, plc_identity
-from engine import ide_private, trace_config, trace_objects
+from engine import ide_private, trace_config, trace_objects, trace_plugin
 from engine.ide_read import name_of
 from engine.plc_trip import Trip, one_line
 
@@ -74,6 +74,11 @@ class TraceSetup(Trip):
                     "duration_s, and that is only allowed in a --noUI run, "
                     "where there is no window to freeze (SPEC D5)")
         return None
+
+    def can_script_traces(self):
+        """The CODESYS Trace package, before the controller is reached: a
+        run without it could only fail later, at the trace."""
+        return trace_plugin.missing(self.globals)
 
     def named(self):
         """Whether the caller named a trace object to record (--name)."""
@@ -238,9 +243,6 @@ class TraceSetup(Trip):
         """
         tracer = entry.borrowed(self.globals, "trace")
         resolution = entry.borrowed(self.globals, "Resolution")
-        if tracer is None or resolution is None:
-            return ("this IDE's scripting API has no trace plug-in (no "
-                    "'trace' or 'Resolution' global), so nothing can record")
         try:
             self.api = tracer.create(self.application, TRACE_NAME,
                                      self.job["task"])
