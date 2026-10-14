@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased
+### 0.5.1 (2026-10-14) — IDEs without the CODESYS Trace package are told how to get it
 
 - **An IDE without the CODESYS Trace package is told so.** Every `trace`
   command and `plc trace` work through that package's script driver, which
