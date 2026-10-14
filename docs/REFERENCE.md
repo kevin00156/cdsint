@@ -483,22 +483,36 @@ of them talks to a controller, so none needs a word in the `plc` list.
 through the script driver that package brings. Stock CODESYS 3.5.20 and
 3.5.21 have it, and so does Lenze PLC Designer 4.0.1; DIADesigner-AX 1.8 and
 1.10 and Lenze PLC Designer 3.24 do not. In an IDE without it each of them
-stops before it touches the project or a controller, and prints the command
-that installs the package into that IDE, for example:
+stops before it touches the project or a controller, and prints two
+commands. The first downloads the package with the CODESYS Installer, which
+comes with stock CODESYS; no login is needed:
 
 ```
-"C:\...\DIADesigner-AX 1.10\CODESYS\Common\PackageManagerCLI.exe" --profile="DIADesigner-AX 1.10" --install="C:\pkg\CODESYS_Trace_4.2.0.0.package"
+"C:\Program Files (x86)\CODESYS\APInstaller\APInstaller.CLI.exe" --downloadAddOn --targetDirectory C:\pkg --packageIds "[{\"Guid\":\"4e530ec4-2e4e-4639-b965-5b6267572c9b\",\"Version\":\"4.2.0.0\"}]"
 ```
 
-Run it from an administrator prompt with the IDE closed, then start the IDE
-again. Windows PowerShell mangles the quotes unless the line reads
-`& "...\PackageManagerCLI.exe" --% --profile=...`. cdsint does not run it
-for you: it changes the IDE for every project opened there.
+It leaves `C:\pkg\CODESYS Trace 4.2.0.0.package`. The second installs that
+file into this IDE, for example:
 
-Download the package yourself from the CODESYS Store (store.codesys.com),
-directly or through the CODESYS Installer; cdsint neither ships it nor
-fetches it. It has to be CODESYS Trace 4.2 or later, the first version with
-the script driver. 4.2.0.0 asks for an IDE built on CODESYS 3.5.17 or later;
+```
+"C:\...\DIADesigner-AX 1.10\CODESYS\Common\PackageManagerCLI.exe" --profile="DIADesigner-AX 1.10" --install="C:\pkg\CODESYS Trace 4.2.0.0.package"
+```
+
+Run the install from an administrator prompt with the IDE closed, then
+start the IDE again. Windows PowerShell mangles the quotes of both lines
+unless they read `& "...\APInstaller.CLI.exe" --% --downloadAddOn ...`;
+cmd and Git Bash take them as written. cdsint runs neither for you: the
+install changes the IDE for every project opened there.
+
+The `--packageIds` element has to name its fields `Guid` and `Version`
+exactly. Any other shape (`Id`, `Item1`/`Item2`, `Key`/`Value`) makes the
+installer download the all-zero guid and fail without saying why, and a
+relative `--targetDirectory` fails as "Failed to download" too. The
+CODESYS Store has no download page for the package that we found, so the
+CODESYS Installer is the way in.
+
+It has to be CODESYS Trace 4.2 or later, the first version with the script
+driver. 4.2.0.0 asks for an IDE built on CODESYS 3.5.17 or later;
 it was installed and tested in DIADesigner-AX 1.10, where `list`, `job` and
 `apply` worked headless and the project built. A project saved in an IDE
 that has it, opened in one that does not, asks once whether to upgrade its

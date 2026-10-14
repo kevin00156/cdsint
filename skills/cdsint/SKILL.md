@@ -259,11 +259,13 @@ user has the IDE open:
 
 An error saying the IDE has no trace scripting means the CODESYS Trace
 package is missing from that IDE (DIADesigner-AX and Lenze PLC Designer 3.24
-ship without it). The error holds the install command for that IDE. Show it
-to the user and run it only with their word: it changes their IDE, needs
-the IDE closed and an administrator prompt, and needs the package file.
-Tell the user to download CODESYS Trace 4.2 or later from the CODESYS Store
-themselves; do not look for a copy elsewhere (docs/REFERENCE.md).
+ship without it). The error holds two commands: one downloads CODESYS Trace
+4.2.0.0 with the CODESYS Installer, the other installs it into that IDE.
+Show them to the user and run them only with their word. The install
+changes their IDE and needs the IDE closed and an administrator prompt.
+Copy the download line as printed: `--packageIds` fails silently in any
+other shape. Do not look for a copy of the package elsewhere
+(docs/REFERENCE.md).
 
 ## Reading the answer
 

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **The hint for a missing CODESYS Trace package now says how to download
+  it.** The CODESYS Store has no download page for the package that we
+  found. The refusal now prints the CODESYS Installer's `APInstaller.CLI.exe
+  --downloadAddOn` line that fetches CODESYS Trace 4.2.0.0 into `C:\pkg`,
+  then the install line pointed at that file. docs/REFERENCE.md names the
+  two ways `--packageIds` fails without saying why.
+
 ### 0.5.1 (2026-10-14) — IDEs without the CODESYS Trace package are told how to get it
 
 - **An IDE without the CODESYS Trace package is told so.** Every `trace`

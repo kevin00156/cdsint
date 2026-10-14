@@ -1195,8 +1195,8 @@ editor, not in "CODESYS Scripting".
 CODESYS's release notes for CODESYS Trace 4.2.0.0 list the script driver
 as new in that version, so the 4.0 and 4.1 these IDEs carry never had it:
 nothing was removed. Any IDE whose trace package is older than 4.2 fails
-the same way. CODESYS distributes the package through the CODESYS Store and
-the CODESYS Installer.
+the same way. CODESYS distributes the package through the CODESYS
+Installer; no download page for it was found on the CODESYS Store.
 
 ### 16.2 Installing the package
 
@@ -1213,6 +1213,31 @@ Windows PowerShell 5.1 strips the inner quotes of such a line, so the
 installer does not get its arguments as written; `& "...exe" --%
 --profile=...` passes them unchanged. Both installs had a full copy of the install folder taken
 first, which is the whole of the way back that was tried.
+
+The package file can also be fetched without a CODESYS install that holds
+it (found on a colleague's machine, GitHub issue 15; repeated here
+2026-10-14 with APInstaller.CLI 2.6.1.0):
+
+```
+"C:\Program Files (x86)\CODESYS\APInstaller\APInstaller.CLI.exe" --downloadAddOn --targetDirectory C:\pkg --packageIds "[{\"Guid\":\"4e530ec4-2e4e-4639-b965-5b6267572c9b\",\"Version\":\"4.2.0.0\"}]"
+```
+
+It needs no login and no installation target, and leaves
+`CODESYS Trace 4.2.0.0.package`, byte for byte the file installed above
+(sha256 `23a234f8...0fb7`). The same line worked from cmd, from Git Bash,
+and from Windows PowerShell 5.1 with `--%`. `--help` only calls
+`--packageIds` "a json serialised list of package guid and version
+tuples"; the element's fields have to be named `Guid` and `Version`. A
+relative `--targetDirectory` fails as well, with the right guid:
+`Failed to download '4e530ec4-...'`.
+
+| `--packageIds` element | result |
+|---|---|
+| `{"Item1":"<guid>","Item2":"4.2.0.0"}` | `Failed to download '00000000-0000-0000-0000-000000000000'.` |
+| `{"Id":"<guid>","Version":"4.2.0.0"}` | the same all-zero guid |
+| `{"Key":"<guid>","Value":"4.2.0.0"}` | the same all-zero guid |
+| `[["<guid>","4.2.0.0"]]` | `Could not deserialize 'packageIds'` |
+| `{"Guid":"<guid>","Version":"4.2.0.0"}` | downloads |
 
 In 1.10, on a copy of a customer project, headless: `trace list` read all
 three existing traces, `trace job` wrote one out, `trace apply --folder`

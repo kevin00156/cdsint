@@ -1409,10 +1409,11 @@ definition as it stands.
 through the script driver of the CODESYS Trace package, and an IDE built on
 CODESYS can ship without it (`docs/trace-research.md` 16). So each checks
 for it first, before the project or a controller is touched, and an IDE
-without it is refused with the command that installs the package into that
-IDE: its own `PackageManagerCLI.exe` and its profile. cdsint never installs
-it: that changes the IDE for every project opened in it, which is the
-person's to decide.
+without it is refused with two commands: the CODESYS Installer's
+`APInstaller.CLI.exe` line that downloads the package, and the line that
+installs it into that IDE with its own `PackageManagerCLI.exe` and its
+profile. cdsint runs neither: the install changes the IDE for every project
+opened in it, which is the person's to decide.
 
 **Apply replaces, and never doubles a name.** An existing trace loses its
 variables, trigger and condition before the definition goes in, since
