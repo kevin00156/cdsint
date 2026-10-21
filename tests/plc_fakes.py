@@ -72,9 +72,23 @@ class DeviceNode(BaseNode):
     def __init__(self, name, type_guid="not-a-device"):
         BaseNode.__init__(self, name, type_guid)
         self.gateway_set_to = None
+        # Where the node points, as get_address() and get_gateway() say it
+        # (research 17.6). None is a node that cannot say.
+        self.address = None
+        self.gateway = None
 
     def set_gateway_and_ip_address(self, gateway, address, port):
         self.gateway_set_to = (gateway, address, port)
+
+    def get_address(self):
+        if self.address is None:
+            raise AttributeError("get_address")
+        return self.address
+
+    def get_gateway(self):
+        if self.gateway is None:
+            raise AttributeError("get_gateway")
+        return self.gateway
 
 
 class Application(object):
@@ -89,6 +103,9 @@ class Application(object):
 
     def __init__(self, name="Application"):
         self.name = name
+        # An unchanged copy, as the IDE says it; a test that edits sets these.
+        self.is_uptodate = True
+        self.is_online_change_possible = True
 
     def get_name(self):
         return self.name
@@ -162,11 +179,21 @@ class Session(object):
     def __init__(self, device=None, writes=None):
         self.calls = []
         self.application_state = "run"
+        self.is_logged_in = False
+        # The state each OnlineChangeOption leaves the application in; an
+        # option not in it leaves the state as it was.
+        self.states_after_login = {}
+        self.refuse_login = None     # the IDE's words for a refused login
         self.device = device
         self.writes = [CRC_C] if writes is None else list(writes)
 
     def login(self, option, delete_foreign_apps):
         self.calls.append(("login", option, delete_foreign_apps))
+        if self.refuse_login:
+            raise RuntimeError(self.refuse_login)
+        self.is_logged_in = True
+        if option in self.states_after_login:
+            self.application_state = self.states_after_login[option]
 
     def create_boot_application(self):
         self.calls.append(("create_boot_application",))
@@ -176,8 +203,13 @@ class Session(object):
     def start(self):
         self.calls.append(("start",))
 
+    def stop(self):
+        self.calls.append(("stop",))
+        self.application_state = "stop"
+
     def logout(self):
         self.calls.append(("logout",))
+        self.is_logged_in = False
 
 
 class Online(object):
@@ -257,6 +289,8 @@ setattr(CredentialSourceKind, "None", "no-dialog")
 class OnlineChangeOption(object):
     Never = "never"
     Keep = "keep"
+    Try = "try"
+    Force = "force"
 
 
 # Where every connect and download here is aimed: every plc command names its

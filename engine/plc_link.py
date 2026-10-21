@@ -2,15 +2,13 @@
 """The link to a controller: the login, which device, through which gateway.
 
 Everything between "this project is open" and "there is a connection to talk
-over". Credentials come from the environment and nowhere else (SPEC D14),
-and the credential dialog is switched off before anything connects -- under
---noUI an unanswerable dialog is not a failure, it is a hang.
+over". Credentials come from the caller's environment and nowhere else (SPEC
+D14), and the credential dialog is switched off before anything connects --
+an unanswerable dialog is not a failure, it is a hang.
 """
 from __future__ import print_function
 
-import os
-
-from cds.core.credentials import PASS_ENV, USER_ENV
+from cds.core.credentials import PASS_ENV, USER_ENV, from_environment
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 from engine.ide_read import children_of, kind_of, name_of
@@ -20,27 +18,39 @@ from engine.ide_read import children_of, kind_of, name_of
 # somebody moved it: the port behind --gateway when no --port is given.
 DEFAULT_DEVICE_PORT = 11740
 
+# The IDE's words when another client holds the controller (research 3.2).
+ALREADY_LOGGED_IN = "already logged in"
+
 
 # --------------------------------------------------------------------------
 # Who we log in as
 # --------------------------------------------------------------------------
 
-def credentials():
-    """The device login, from the environment and nowhere else (D14).
+def credentials(given=None):
+    """The device login as {"user", "password"}, or None (D14).
+
+    `given` is what the CLI forwarded from its own environment into a
+    watcher command (cds/core/credentials.py): the watcher lives in the IDE's
+    process and never sees the caller's shell. Without it, this process's
+    own environment, which is the caller's in the --project form. One rule
+    for both: half a login is no login.
 
     A report gets committed or pasted into a ticket, and a command line ends
     up in a shell history, so neither may carry these.
     """
-    return os.environ.get(USER_ENV, ""), os.environ.get(PASS_ENV, "")
+    login = given or from_environment()
+    if not login or not login.get("user") or not login.get("password"):
+        return None
+    return login
 
 
-def silence_credential_dialogs(online_api, ide_globals):
-    """Switch the dialog off and hand over the environment's login.
+def silence_credential_dialogs(online_api, ide_globals, given=None):
+    """Switch the dialog off and hand over the caller's login.
 
     Returns (note, problem); one is None. This is the line that makes the
     whole command unattended: without it a controller that wants a login pops
-    a window, and under --noUI that is not a failure anyone can read — it is
-    a process that never returns.
+    a window, and with nobody to answer it that is not a failure anyone can
+    read -- it is a call that never returns.
 
     A problem here stops the trip. It used to print "will hang this run" and
     carry on into exactly that hang, which on the WSL bench cost four runs of
@@ -54,10 +64,10 @@ def silence_credential_dialogs(online_api, ide_globals):
         return None, ("this IDE's scripting API has no way to switch the "
                       "credential dialog off (neither an auth_fallback_modes "
                       "property nor a set_auth_fallback_modes method), and "
-                      "under --noUI a controller that asks for a login opens "
-                      "a window nothing can close, so the connection would "
-                      "never return. Nothing was tried.")
-    return "; ".join([off, hand_over_credentials(online_api)]), None
+                      "a controller that asks for a login would open a "
+                      "window nobody is there to close, so the connection "
+                      "would never return. Nothing was tried.")
+    return "; ".join([off, hand_over_credentials(online_api, given)]), None
 
 
 def switch_fallback_off(online_api, kinds):
@@ -96,19 +106,29 @@ def switch_fallback_off(online_api, kinds):
         return None
 
 
-def hand_over_credentials(online_api):
-    """Give the API what the environment holds, and say which it was.
+def hand_over_credentials(online_api, given=None):
+    """Give the API the caller's login, and say which it was.
 
     Both variable names appear when there is no login, because a reader who
     sets only the one named in the message gets the same failure again.
     """
-    user, password = credentials()
-    if not user:
-        return ("no %s in the environment, so the controller gets no "
-                "credentials; set %s and %s to log in"
-                % (USER_ENV, USER_ENV, PASS_ENV))
-    online_api.set_default_credentials(user, password)
-    return "logging in as %s (from %s and %s)" % (user, USER_ENV, PASS_ENV)
+    login = credentials(given)
+    if login is None:
+        return ("no credentials: %s and %s were not both set where cdsint "
+                "ran, so the controller gets none, and one with user "
+                "management may refuse the connection" % (USER_ENV, PASS_ENV))
+    online_api.set_default_credentials(login["user"], login["password"])
+    return ("logging in as %s (from %s and %s)"
+            % (login["user"], USER_ENV, PASS_ENV))
+
+
+def login_refusal(said):
+    """What to tell the caller when login() raised `said`, on one line."""
+    if ALREADY_LOGGED_IN in said.lower():
+        return ("another client is logged in to the controller and it takes "
+                "only one, so downloading would not help: log that client "
+                "out and run again. The IDE said: " + said)
+    return "the login was refused: " + said
 
 
 # --------------------------------------------------------------------------
@@ -139,6 +159,35 @@ def find_device(project):
 
 def gateway_name(gateway):
     return safe_str(getattr(gateway, "name", gateway))
+
+
+def node_address(device_node, gateways):
+    """Where the device node points, as text for a report, or None.
+
+    The node address and the gateway it is reached through, as the node
+    holds them (research 17.6). The address is shown as the IDE gives it:
+    its last words looked like port and IPv4 on two TCP routes, which is
+    not enough to decode it by.
+    """
+    try:
+        address = safe_str(device_node.get_address())
+        guid = device_node.get_gateway()
+    except Exception:
+        return None
+    named = [g for g in gateways if getattr(g, "guid", None) == guid]
+    if not named:
+        return "%s through gateway %s" % (address, safe_str(guid))
+    return "%s through %s%s" % (address, gateway_name(named[0]),
+                                _host_port(named[0]))
+
+
+def _host_port(gateway):
+    """" at host:port" from a gateway's config_params ({0: host, 1: port})."""
+    try:
+        params = gateway.config_params
+        return " at %s:%s" % (safe_str(params[0]), safe_str(params[1]))
+    except Exception:
+        return ""
 
 
 def pick_gateway(gateways, name, address):

@@ -21,9 +21,8 @@ from __future__ import print_function
 import time
 
 from cds.core import trace_job, trace_run
-from engine import entry, plc_crc, plc_identity
+from engine import entry, plc_crc, plc_keep
 from engine import ide_private, trace_config, trace_objects, trace_plugin
-from engine.ide_read import name_of
 from engine.plc_trip import Trip, one_line
 
 # The only name this command gives a trace. D7's one self-answered prompt
@@ -127,47 +126,21 @@ class TraceSetup(Trip):
 
         MATCH alone does not stop a Keep login downloading: without these
         files beside the project it downloaded the whole application,
-        unasked (engine/plc_identity.py). None when they agree.
+        unasked (engine/plc_keep.py). None when they agree.
         """
-        return self.connected(self._judge_the_identity)
-
-    def _judge_the_identity(self):
-        local, problem = self.pull(self.remote["app"])
-        if problem:
-            return "%s; %s" % (problem, plc_identity.DOWNLOAD)
-        code, problem = plc_identity.judged(
-            plc_crc.read_bytes(local), self.project_path(),
-            name_of(self.device_node), name_of(self.application))
-        if problem:
-            return problem
-        self.note("download info agrees with the controller: code %s" % code)
-        return None
+        return plc_keep.the_ide_agrees(self)
 
     def the_program_is_unchanged(self):
         """The working copy still compiles to what was last downloaded.
 
-        A Keep login is not "change nothing": with the download info in
-        place it applied a program edited in memory and a remapped IO channel
-        by online change, and a changed EtherCAT cycle by a full download
-        that left the application stopped, all without a prompt (research
-        12.1, as corrected; docs/ethercat-research.md 5.2). is_uptodate
-        answers without a build and was false for each of those and true for
-        an unchanged copy, cdsint_trace included, so it is asked before
-        cdsint_trace exists. An IDE without it cannot promise the login
-        changes nothing, and is refused rather than trusted.
+        is_uptodate answers without a build and was false for a program
+        edited in memory, a remapped IO channel and a changed EtherCAT cycle,
+        and true for an unchanged copy, cdsint_trace included (research
+        12.1, as corrected), so it is asked before cdsint_trace exists.
         """
-        uptodate = getattr(self.application, "is_uptodate", None)
-        if uptodate is None:
-            return ("this IDE's application object has no is_uptodate, so "
-                    "there is no way to tell whether a Keep login would "
-                    "download; nothing was logged in to")
-        if not isinstance(uptodate, bool):
-            # A method, or a proxy that is truthy whatever it holds, would
-            # read as "unchanged" to a bare `if not`; the gate only opens on
-            # an answer that can only mean yes.
-            return ("this IDE's is_uptodate is %r, not true or false, so "
-                    "there is no way to tell whether a Keep login would "
-                    "download; nothing was logged in to" % (uptodate,))
+        uptodate, problem = plc_keep.uptodate(self.application)
+        if problem:
+            return problem
         if not uptodate:
             return ("the working copy's program differs from what was last "
                     "downloaded (the IDE's is_uptodate is false): code, IO "

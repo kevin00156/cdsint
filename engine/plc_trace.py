@@ -39,9 +39,6 @@ STARTED = "Started"
 STOPPED = "Stopped"
 TRIGGER_REACHED = "TriggerReached"
 
-# The IDE's words when another client holds the controller (research 3.2).
-ALREADY_LOGGED_IN = "already logged in"
-
 # Step 9 reads the CSV whether or not the job asked for one; when it did not,
 # the file goes to the trip's workspace instead of beside the other outputs.
 WORKSPACE_CSV = "trace.csv"
@@ -93,13 +90,7 @@ class TraceTrip(TraceSetup):
         try:
             self.session.login(keep, False)
         except Exception as exc:
-            said = one_line(exc)
-            if ALREADY_LOGGED_IN in said.lower():
-                return ("another client is logged in to the controller and "
-                        "it takes only one, so downloading would not help: "
-                        "log that client out and run again. The IDE said: "
-                        + said)
-            return "the login was refused: " + said
+            return plc_link.login_refusal(one_line(exc))
         self.note("logged in with OnlineChangeOption.Keep")
         return None
 

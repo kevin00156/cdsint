@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""plc connect, download and trace: the commands that talk to a controller.
+"""plc connect, download, trace, login and logout: the commands that talk to
+a controller.
 
 `connect` and `download` end in the same question, and it is the only one
 worth asking: **is the machine running what cdsint put on it?** `download`
@@ -14,11 +15,16 @@ is the first thing a reader sees.
 MATCHes, because a recording of variables from a program that is not this
 working copy's cannot be read against it (SPEC 6.8).
 
-This file is only the surface: the three names cds/ide/entries.py presses,
-the question -y answers, and the order the steps run in. The steps themselves
-are engine/plc_trip.py, with download's own in engine/plc_download.py and
+`login` and `logout` are the watcher's own session with the controller. A
+plain login changes nothing on it: it logs in only when nothing would be
+applied, and otherwise says which --method would.
+
+This file is only the surface: the names cds/ide/entries.py presses, the
+question -y answers, and the order the steps run in. The steps themselves
+are engine/plc_trip.py, with download's own in engine/plc_download.py,
 trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
-(online); reaching a controller is
+(online), and login's and logout's in engine/plc_session.py; reaching a
+controller is
 engine/plc_link.py, and how the question is actually answered —
 why the offline CRC alone cannot answer it, what the record holds, and the
 three verdicts — is engine/plc_crc.py.
@@ -29,8 +35,9 @@ the action at all (cds/ide/permit.py), and for download, -y says the caller
 means this call. By the time a function in this file runs, they have been
 passed. trace needs no -y: it changes nothing the caller would confirm.
 
-connect and download are reached only in the --project form; trace in both,
-the watcher's through engine/plc_trace_watch.py. Neither form is the menu,
+connect and download are reached only in the --project form; login and
+logout only in the watcher; trace in both, the watcher's through
+engine/plc_trace_watch.py. Neither form is the menu,
 so there is no menu stub and the flags arrive as `command_args` rather than
 as answers to dialogs (cds/ide/silent.py). The exception is the download confirmation, which is a
 question a person would have been asked and so goes through the same
@@ -40,6 +47,7 @@ from __future__ import print_function
 
 from engine import entry, plc_crc, unhandled
 from engine.plc_download import DownloadTrip
+from engine.plc_session import SessionTrip
 from engine.plc_trace import TraceTrip
 from engine.plc_trace_watch import WatchedTrip
 from engine.plc_trip import Trip, first_problem
@@ -102,6 +110,43 @@ def download():
         trip.remember,           # what it left, for a later connect
         trip.left_running,       # after the record: it does hold this
     ]) or trip.verdict()
+
+
+def log_in():
+    """Log the IDE's active application in, changing nothing on the
+    controller (watcher only; engine/plc_session.py).
+
+    Not login(): the IDE's script namespace this file is exec'd into is no
+    place to guess which plain names are free (see record()).
+    """
+    unhandled.start()
+    trip = a_trip(SessionTrip, "login")
+    return trip.run([
+        trip.plain_login_only,      # a --method is not a plain login
+        trip.find_the_project,      # the project and the online API
+        trip.name_the_application,  # the active application
+        trip.find_the_device,       # the node, and where it points
+        trip.open_session,          # the online application
+        trip.not_logged_in_yet,     # or done: already logged in
+        trip.nothing_to_change,     # is_uptodate, or name the --method
+        trip.the_ide_agrees,        # the controller holds this download
+        trip.log_in_keep,           # which therefore applies nothing
+        trip.read_state,            # logged in, and the state, read back
+    ])
+
+
+def log_out():
+    """Log the IDE's active application out (watcher only)."""
+    unhandled.start()
+    trip = a_trip(SessionTrip, "logout")
+    return trip.run([
+        trip.find_the_project,      # the project and the online API
+        trip.name_the_application,  # the active application
+        trip.open_session,          # the online application
+        trip.still_logged_in,       # or done: nothing to log out of
+        trip.log_out,
+        trip.read_state,            # logged out, read back
+    ])
 
 
 def record():
