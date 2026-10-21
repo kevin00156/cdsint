@@ -16,6 +16,15 @@ from cdsint import flags, refusals, target
 PROJECT = ["--project", "p.project", "--install", "3.5.21.40"]
 
 
+
+@pytest.fixture(autouse=True)
+def a_login_in_the_environment(monkeypatch):
+    """The flags are what these pin; a watcher online command without the
+    device login is refused as well (tests/test_plc_credentials.py)."""
+    monkeypatch.setenv("CDS_DEV_USER", "dev")
+    monkeypatch.setenv("CDS_DEV_PASS", "pw")
+
+
 def parse(argv):
     parser = flags.build_parser()
     ns = parser.parse_args(argv)

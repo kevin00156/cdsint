@@ -30,9 +30,11 @@ All notable changes to this project will be documented in this file.
   applies the difference by online change, only when the IDE says one can
   carry it, never as a quiet download, and reports the state read back
   afterwards. Both write the boot application unless `--no-boot-app`, and both
-  refuse an application already logged in. The CRC record now loses only the
+  refuse an application already logged in. An online change with nothing
+  different is a plain `Keep` login. The CRC record now loses only the
   entries recording the CRC the controller held before the change, or every
-  entry if that could not be read, so a later `plc connect` cannot say `MATCH`
+  entry if the controller answered but that CRC would not come (one that does
+  not answer stops the command with nothing changed), so a later `plc connect` cannot say `MATCH`
   for a controller holding something else.
 - **Four new words in the `plc` list**: `login`, `online_change`, `run` and
   `stop`. `logout` is allowed by any of `login`, `download` and
@@ -42,19 +44,21 @@ All notable changes to this project will be documented in this file.
   node points at.
 - **The device login is forwarded from the CLI's environment.** For these
   commands and the watcher's `plc trace`, the CLI copies `CDS_DEV_USER` and
-  `CDS_DEV_PASS` into the command it hands the watcher when both are set, and
-  the watcher hands them to the IDE, with the logon dialog switched off,
+  `CDS_DEV_PASS` into the command it hands the watcher, and refuses the
+  command before sending anything (exit 2) when either is unset or empty,
+  a controller without user management included; the watcher hands them to the IDE, with the logon dialog switched off,
   immediately before every online call: a dialog nobody answers holds the IDE
   indefinitely, and credentials handed over earlier went stale. The
   password never appears in a result, note, stdout or log (the user name does,
   in the notes); the watcher rewrites its claimed
   command file without them as soon as it has it, and the CLI removes its file
-  whenever it stops waiting. Two rare cases leave the password in the claimed
-  file: a watcher killed between the claim and the rewrite (it goes at a later
+  whenever it stops waiting. Three rare cases leave the password on disk: a
+  watcher killed between the claim and the rewrite (it goes at a later
   watcher start-up's prune, no sooner than `ABANDONED_AFTER_S`, and stays if
   none starts), and a rewrite and release that both fail (it stays while that
   watcher lives, and goes when it stops cleanly or at a later start-up's prune
-  if it dies).
+  if it dies), and under IronPython a set-aside `<id>.running.old` that will
+  not delete (the command is not run, and its error names the file).
 - **The watcher's `plc trace` refusals point at the new commands**: not logged
   in says to run `plc login`, not running says to run `plc run -y`.
 - **A command that worked now says what came of it.** Its one-line summary

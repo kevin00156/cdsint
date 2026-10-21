@@ -5,14 +5,17 @@ The watcher cannot read the CLI's environment, so the CLI copies the two
 variables into the command it queues (spec R4). The password is then on disk
 for as long as that command file is, and nowhere else.
 """
+import errno
 import json
+import os
 
 import pytest
 
-from cds.core import commands, credentials
+from cds.core import commands, credentials, ipc
+from cds.core.exits import EXIT_TARGET
 from cds.ide import session, watcher
 from tests.fakes import make_globals
-from cdsint import cli, target
+from cdsint import cli, flags, refusals, target
 from engine import plc_link
 
 SECRET = "s3cret-do-not-print"
@@ -195,3 +198,139 @@ def test_a_failed_scrub_fails_the_command_and_removes_the_file(
                                   cmd["id"])
     assert result["ok"] is False and "login" in result["error"]
     assert SECRET not in json.dumps(result)
+
+
+# IronPython 2.7 has no os.replace, so the rewrite renames the old .running,
+# password and all, aside before the new one goes in (ipc._replace).
+
+def without_os_replace(monkeypatch):
+    monkeypatch.delattr(commands.os, "replace", raising=False)
+
+
+def holding_the_password(watching):
+    directory = ipc.command_dir(watching.root, watching.instance_id)
+    found = []
+    for name in os.listdir(directory):
+        with open(os.path.join(directory, name), encoding="utf-8") as handle:
+            if SECRET in handle.read():
+                found.append(os.path.join(directory, name))
+    return found
+
+
+def test_without_os_replace_the_aside_copy_goes_too(watching, monkeypatch):
+    without_os_replace(monkeypatch)
+    seen = {}
+
+    def answer(ide, cmd, started):
+        seen["left"] = holding_the_password(watching)
+        return commands.new_result(cmd, True)
+    monkeypatch.setattr(watcher.entries, "answer", answer)
+    queue(watching)
+    watching.run_one(commands.next_command(watching.root,
+                                           watching.instance_id))
+    assert seen["left"] == []
+
+
+def test_an_aside_copy_that_will_not_delete_is_not_run_and_named(
+        watching, monkeypatch):
+    without_os_replace(monkeypatch)
+    ran = []
+    monkeypatch.setattr(watcher.entries, "answer", lambda *a: ran.append(1))
+    real_remove = os.remove
+
+    def remove(path):
+        if path.endswith(commands.RUNNING + ipc.ASIDE):
+            raise OSError(errno.EACCES, "sharing violation", path)
+        real_remove(path)
+    monkeypatch.setattr(os, "remove", remove)
+    cmd = queue(watching)
+    watching.run_one(commands.next_command(watching.root,
+                                           watching.instance_id))
+    assert ran == []
+    result = commands.read_result(watching.root, watching.instance_id,
+                                  cmd["id"])
+    assert result["ok"] is False
+    assert SECRET not in json.dumps(result)
+    # It cannot be deleted, so it is the one file left, and the caller is
+    # told which.
+    left = holding_the_password(watching)
+    assert [os.path.basename(path) for path in left] == [
+        cmd["id"] + commands.RUNNING + ipc.ASIDE]
+    assert left[0] in result["error"]
+
+
+# --------------------------------------------------------------------------
+# No login, no command: refused on the command line (SPEC 4.3, exit 2)
+# --------------------------------------------------------------------------
+
+def watcher_argv(command, tmp_path):
+    """The watcher form of each command that makes an online call."""
+    if command == "plc trace":
+        job = tmp_path / "job.json"
+        job.write_text('{"duration_s": 1, "out": "o"}', encoding="utf-8")
+        return ["plc", "trace", "--target", "i", "--name", "T", "--job",
+                str(job)]
+    return command.split() + ["--target", "i"] + (
+        ["-y"] if command in ("plc run", "plc stop") else [])
+
+
+@pytest.fixture
+def instances_dir(tmp_path, monkeypatch):
+    root = tmp_path / "instances"
+    monkeypatch.setenv(ipc.ROOT_ENV, str(root))
+    return root
+
+
+def sends(monkeypatch):
+    """What the CLI queued, answered ok, with no watcher to resolve."""
+    sent = []
+
+    def send(root, instance_id, cmd, timeout):
+        sent.append(cmd)
+        return commands.new_result(cmd, True)
+    monkeypatch.setattr(target, "send", send)
+    monkeypatch.setattr(target, "_resolve", lambda *a: {"instance_id": "i"})
+    return sent
+
+
+@pytest.mark.parametrize("command", FORWARDED)
+@pytest.mark.parametrize("unset", [credentials.USER_ENV,
+                                   credentials.PASS_ENV])
+@pytest.mark.parametrize("how", ["missing", "empty"])
+def test_a_watcher_online_command_without_a_login_is_refused_unsent(
+        monkeypatch, both_set, instances_dir, tmp_path, capsys, command,
+        unset, how):
+    if how == "missing":
+        monkeypatch.delenv(unset)
+    else:
+        monkeypatch.setenv(unset, "")
+    sent = sends(monkeypatch)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(watcher_argv(command, tmp_path))
+    assert stopped.value.code == EXIT_TARGET
+    err = capsys.readouterr().err
+    assert credentials.USER_ENV in err and credentials.PASS_ENV in err
+    assert "Device User Logon" in err
+    assert sent == [] and not instances_dir.exists()
+
+
+def test_trace_stop_needs_no_login(monkeypatch, instances_dir):
+    monkeypatch.delenv(credentials.USER_ENV, raising=False)
+    monkeypatch.delenv(credentials.PASS_ENV, raising=False)
+    sent = sends(monkeypatch)
+    assert cli.main(["plc", "trace", "--stop", "--target", "i"]) == 0
+    assert [cmd["command"] for cmd in sent] == ["plc trace"]
+
+
+def test_the_project_form_is_not_asked_for_a_forwarded_login(
+        monkeypatch, tmp_path):
+    monkeypatch.delenv(credentials.USER_ENV, raising=False)
+    monkeypatch.delenv(credentials.PASS_ENV, raising=False)
+    job = tmp_path / "job.json"
+    job.write_text('{"task": "MainTask", "variables": ["GVL.x"], '
+                   '"duration_s": 1, "out": "o"}', encoding="utf-8")
+    parser = flags.build_parser()
+    ns = parser.parse_args(["plc", "trace", "--project", "p.project",
+                            "--install", "3.5", "--gateway", "10.0.0.1",
+                            "--job", str(job)])
+    refusals.check(parser, ns)

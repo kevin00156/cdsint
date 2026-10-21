@@ -23,13 +23,19 @@ from cdsint import cli, target
 from engine import ide_private, plc_crc, plc_session
 from tests import plc_fakes
 from tests.plc_fakes import (APP_HEADER_OLD, Application, Device, Online,
-                             OnlineChangeOption, Session, download_info, ide,
-                             press)
+                             OnlineChangeOption, Session, download_info, ide)
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
 
 SECRET = "pa55-never-printed"
 LOGIN = {"user": "dev", "password": SECRET}
+
+
+def press(ide_globals, word, args):
+    """plc_fakes.press with the login every command the CLI sends carries
+    (cdsint/refusals.py); credentials=None in args is a command without."""
+    return plc_fakes.press(ide_globals, word,
+                           dict({"credentials": dict(LOGIN)}, **args))
 
 
 @pytest.fixture(autouse=True)
@@ -407,23 +413,26 @@ def test_credentials_are_handed_over_before_every_online_call():
         assert SECRET not in written
 
 
-def test_half_a_login_is_no_login():
-    ide_globals = an_ide()
-    result = log_in(ide_globals, credentials={"user": "dev", "password": ""})
+@pytest.mark.parametrize("word,logged_in", [("login", False),
+                                            ("logout", True), ("run", True),
+                                            ("stop", True)])
+@pytest.mark.parametrize("given", [None, {"user": "dev", "password": ""},
+                                   {"user": "", "password": SECRET}])
+def test_a_command_without_a_login_fails_before_any_online_call(
+        word, logged_in, given):
+    # The CLI refuses these without one (cdsint/refusals.py), so only a
+    # hand-written command file gets here; half a login is none.
+    log = []
+    ide_globals = an_ide(allowed=allowing(word))
+    ide_globals["online"] = LoggedOnline(log)
+    ide_globals["online"].session.is_logged_in = logged_in
+    outcome = press(ide_globals, word, {"yes": True, "credentials": given})
+    assert not outcome.ok()
+    assert [event for event in log if event in ONLINE_CALLS] == []
     assert ide_globals["online"].credentials is None
-    assert any("given no credentials" in note
-               for note in result["data"]["notes"])
-
-
-def test_without_credentials_the_notes_say_none_were_given():
-    ide_globals = an_ide()
-    result = log_in(ide_globals)
-    assert result["ok"], result["summary"]
-    assert ide_globals["online"].credentials is None
-    notes = [n for n in result["data"]["notes"] if "credentials" in n]
-    # Only what this command had: the IDE may still hold an earlier login.
-    assert any("this command was given no credentials" in n for n in notes)
-    assert not any("controller gets" in n for n in notes)
+    summary = outcome.result["summary"]
+    assert "CDS_DEV_USER" in summary and "CDS_DEV_PASS" in summary
+    assert "nothing was sent to the controller" in summary
 
 
 @pytest.mark.parametrize("word,logged_in", [("login", False),
@@ -449,8 +458,8 @@ def test_the_ide_s_own_environment_is_not_the_caller_s(monkeypatch):
     monkeypatch.setenv("CDS_DEV_USER", "ide-side")
     monkeypatch.setenv("CDS_DEV_PASS", "ide-side-secret")
     ide_globals = an_ide()
-    result = log_in(ide_globals)
-    assert result["ok"], result["summary"]
+    result = log_in(ide_globals, credentials=None)
+    assert not result["ok"]
     assert ide_globals["online"].credentials is None
     assert "ide-side" not in json.dumps(result)
 
@@ -476,8 +485,9 @@ class Watched(Application):
 
 def test_force_refusal_text_is_never_the_only_guard():
     log = []
-    ide_globals = an_ide(allowed=("online_change",),
-                         application=Watched(log))
+    application = Watched(log)
+    application.is_uptodate = False
+    ide_globals = an_ide(allowed=("online_change",), application=application)
     online = LoggedOnline(log)
     ide_globals["online"] = online
     result = log_in(ide_globals, method="online_change", yes=True)
@@ -646,14 +656,15 @@ def test_an_online_change_after_one_without_boot_app_still_logs_in():
         getattr(OnlineChangeOption, plc_session.ONLINE_CHANGE)] * 2
 
 
-def test_online_change_with_nothing_different_writes_no_boot_application():
+def test_online_change_with_nothing_different_is_a_keep_login():
+    # Keep on an unchanged copy the controller holds is the measured
+    # no-change path (research 17.4, 17.13); Force there was never measured.
     path = plc_fakes.recorded()
     ide_globals, outcome = by("online_change")
     result = outcome.result
     assert result["ok"], result["summary"]
     assert session_of(ide_globals).calls == [
-        ("login", getattr(OnlineChangeOption, plc_session.ONLINE_CHANGE),
-         False)]
+        ("login", OnlineChangeOption.Keep, False)]
     assert result["data"]["changed"] == "nothing"
     assert result["data"]["boot_application"] is False
     assert "nothing on the controller changed" in result["summary"]
@@ -670,6 +681,23 @@ def test_a_method_while_logged_in_says_log_out_first(method):
     assert session_of(ide_globals).calls == []
     assert "log out first" in result["summary"]
     assert "plc logout" in result["summary"]
+
+
+@pytest.mark.parametrize("method", ["download", "online_change"])
+def test_a_method_refuses_a_login_state_it_cannot_read(method):
+    ide_globals = an_ide(allowed=(method,), application=changed_copy())
+    session = session_of(ide_globals)
+
+    class Unreadable(type(session)):
+        @property
+        def is_logged_in(self):
+            raise RuntimeError("the IDE would not say")
+    session.__class__ = Unreadable
+    result = log_in(ide_globals, method=method, yes=True)
+    assert not result["ok"]
+    assert session.calls == []
+    assert "could not be read" in result["summary"]
+    assert "nothing was done" in result["summary"]
 
 
 def test_a_download_that_raises_says_the_controller_may_be_stopped():
@@ -787,6 +815,33 @@ def test_a_crc_that_cannot_be_read_clears_every_entry_saying_so(method):
     assert plc_crc.read_records(path) == {}
     assert any("could not be read" in note and OTHER_BENCH in note
                for note in result["data"]["notes"])
+
+
+def test_the_cleared_record_note_names_the_file_after_removed():
+    path = plc_fakes.recorded()
+    ide_globals = an_ide(allowed=("download",), device=NoCrc())
+    result = log_in(ide_globals, method="download", yes=True)
+    assert result["ok"], result["summary"]
+    assert any(note.startswith("removed from the CRC record in %s every "
+                               "entry, since" % path)
+               for note in result["data"]["notes"]), result["data"]["notes"]
+
+
+def test_a_download_to_a_controller_that_does_not_answer_touches_nothing():
+    # The connection itself failed, so nothing was sent: the record of
+    # another bench stays, and the summary does not say this controller
+    # may be stopped.
+    path = plc_fakes.recorded()
+    plc_fakes.recorded(plc_crc="99999999", controller=OTHER_BENCH)
+    before = plc_crc.read_records(path)
+    ide_globals = an_ide(allowed=("download",), device=Silent())
+    result = log_in(ide_globals, method="download", yes=True)
+    assert not result["ok"]
+    assert logins(ide_globals) == []
+    assert plc_crc.read_records(path) == before
+    assert "did not answer" in result["summary"]
+    assert "nothing was done" in result["summary"]
+    assert "may now be stopped" not in result["summary"]
 
 
 def test_a_download_that_raises_has_already_forgotten_the_record():
@@ -974,7 +1029,8 @@ ALREADY = [("login", "login: already logged in, application run; nothing was "
 def test_a_call_with_nothing_to_do_says_so_in_its_record(word, said):
     # The summary was surfaced only as a failure's error, so these records
     # could not be told from calls that acted.
-    cmd = commands.new_command("plc " + word, {"yes": True})
+    cmd = commands.new_command("plc " + word,
+                               {"yes": True, "credentials": dict(LOGIN)})
     record = entries.answer(already(word), cmd, ipc.now())
     assert record["ok"], record["error"]
     assert {"level": "info", "text": said} in record["messages"]
@@ -982,6 +1038,8 @@ def test_a_call_with_nothing_to_do_says_so_in_its_record(word, said):
 
 @pytest.mark.parametrize("extra", [[], ["--json"]])
 def test_the_cli_shows_it_once(monkeypatch, capsys, extra):
+    monkeypatch.setenv("CDS_DEV_USER", LOGIN["user"])
+    monkeypatch.setenv("CDS_DEV_PASS", LOGIN["password"])
     ide_globals = already("run")
     monkeypatch.setattr(target, "send", lambda root, instance_id, cmd,
                         timeout: entries.answer(ide_globals, cmd, ipc.now()))

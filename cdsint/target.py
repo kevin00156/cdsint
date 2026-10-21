@@ -39,15 +39,21 @@ GONE_AFTER_S = 1.0
 NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace")
 
 
+def forwards_a_login(command, args):
+    """Does this command carry the environment's device login to the
+    watcher? cdsint/refusals.py refuses it when there is none to carry."""
+    # plc trace --stop shares the wire name and makes no online call.
+    return command in NEEDS_A_LOGIN and not args.get("stop")
+
+
 def _with_login(command, args):
     """`args`, plus the environment's device login when this command needs it.
 
     A copy: the caller's args are what it prints and reports from, and the
     password must be in the command file and nowhere else.
     """
-    # plc trace --stop shares the wire name and makes no online call.
-    wants = command in NEEDS_A_LOGIN and not args.get("stop")
-    login = credentials.from_environment() if wants else None
+    login = credentials.from_environment() if forwards_a_login(
+        command, args) else None
     if login is None:
         return args
     return dict(args, credentials=login)

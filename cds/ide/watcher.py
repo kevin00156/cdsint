@@ -210,20 +210,22 @@ class Watcher(HoldsARecording):
 
         If the rewrite fails the file still holds it, so the command does not
         run: the file is removed and the caller is told, rather than left to
-        wait out its timeout. False: do not run it.
+        wait out its timeout; the reason goes with it, since it names a copy
+        that would not delete (scrub_running). False: do not run it.
         """
         try:
             commands.scrub_running(self.root, self.instance_id, cmd)
             return True
-        except EnvironmentError:
+        except EnvironmentError as exc:
             print("watcher: could not scrub %s\n%s"
                   % (cmd.get("id"), traceback.format_exc()))
+            why = exc
         self._release(cmd)
         try:
             self._write(commands.new_result(
                 cmd, False, error="the watcher could not remove the device "
                                   "login from the command file, so it did "
-                                  "not run the command"))
+                                  "not run the command: %s" % (why,)))
         except EnvironmentError:
             print("watcher: could not answer %s" % cmd.get("id"))
         return False

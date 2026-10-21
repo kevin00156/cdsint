@@ -128,27 +128,33 @@ file has the same name and lives in `result\`.
   exit 5.
 - `args` may carry `credentials` (`user`, `password`) for the `plc` commands
   that make an online call. The CLI copies them from its own
-  `CDS_DEV_USER`/`CDS_DEV_PASS`, and only when both are set, into `plc login`,
-  `logout`, `run`, `stop` and `plc trace` (not `plc trace --stop`). The watcher
+  `CDS_DEV_USER`/`CDS_DEV_PASS` into `plc login`, `logout`, `run`, `stop` and
+  `plc trace` (not `plc trace --stop`), and refuses those commands (exit 2)
+  before writing a command file when either is unset or empty. A command file
+  without both fails before its first online call. The watcher
   hands them to the IDE immediately before each online call and never reads the
   IDE's own environment. The password is in no result, note, stdout or log (the user name is in
   the notes), and the
   watcher rewrites the claimed `<id>.running` file without them right after
   the claim (section 5); a command it cannot rewrite is not run, and the caller
-  is told. Two windows remain in which the password stays in that file, under
-  `%LOCALAPPDATA%`. A watcher killed between the claim's rename and the rewrite
+  is told. Three cases leave the password on disk under `%LOCALAPPDATA%`. A watcher killed between the claim's rename and the rewrite
   leaves it until a later watcher start-up prunes the instance, no sooner than
   `ABANDONED_AFTER_S` after the claim (section 2.1), and for good if none
   starts. A rewrite and a release that both fail leave it with the watcher alive
   and beating, which the prune spares, so it stays as long as that watcher lives
   and goes when the watcher stops cleanly or, if it dies, at a later start-up's
-  prune.
+  prune. Under IronPython, which has no `os.replace`, the rewrite renames the
+  old file aside to `<id>.running.old` first and deletes it after; a refused
+  delete leaves the password there, so the command is not run, its error names
+  that file, and it goes with the instance directory as above.
 - Every write goes to `<name>.tmp` first and is then renamed to the final name;
   the reading side never sees half a file, and always ignores `.tmp`.
-- The CLI deletes a result file as soon as it has read it. At start-up the
-  watcher clears anything in `result\` older than an hour. A result Windows
-  refuses to open (`EACCES`/`EPERM`, the watcher still renaming it into
-  place) counts as not there yet, and the CLI reads again until its timeout.
+- The CLI deletes a result file as soon as it has read it. A delete Windows
+  refuses (`EACCES`/`EPERM`) is tolerated: the result is still the answer, and
+  the file is left for the watcher's prune, which runs at start-up and after
+  every result it writes and clears anything in `result\` older than an hour.
+  A result Windows refuses to open (the watcher still renaming it into place)
+  counts as not there yet, and the CLI reads again until its timeout.
 
 ## 4. The commands
 

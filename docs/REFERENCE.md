@@ -387,26 +387,33 @@ Every state the result reports (`data.logged_in`, `data.state`) is read back
 from the application after the action. After a download or an online change
 the controller no longer holds what the CRC record in
 `<project>.cdsint-plc.json` says, so the entries recording the old CRC are
-removed (all of them if it could not be read), and a `plc connect` answers
+removed (all of them if the controller answered but its CRC would not come;
+one that does not answer stops the command with nothing changed), and a
+`plc connect` answers
 `UNKNOWN` for a removed entry until a `--project` `plc download -y` records it
 again.
 
 **Credentials.** The IDE running the watcher does not have
-`CDS_DEV_USER` and `CDS_DEV_PASS`; the CLI does, and when both are set it
-forwards them in the command it hands over (for these four and for
-`plc trace --target`). The watcher gives them to the IDE immediately before
+`CDS_DEV_USER` and `CDS_DEV_PASS`; the CLI does, and forwards them in the
+command it hands over (for these four and for `plc trace --target`). The watcher gives them to the IDE immediately before
 each online call, because a logon dialog nobody answers holds the IDE for
 good. The password is in no result, note, stdout or log; the user name is in
-the notes. Without them the command
-still runs and its notes say it was given none. The command file that carries
-them is removed when the CLI stops waiting, and the watcher rewrites the
-claimed copy without them as soon as it has it. Two rare cases leave the
-password in that claimed file under `%LOCALAPPDATA%`. A watcher killed between
+the notes. With either unset or empty
+the CLI refuses the command before sending anything, exit 2: an IDE without
+valid credentials can stop on its Device User Logon dialog, and nobody is at
+a watcher to close it. A controller without user management needs them set
+too. The command file that carries them is removed when the CLI stops
+waiting, and the watcher rewrites the claimed copy without them as soon as it
+has it. Three rare cases leave the password on disk under
+`%LOCALAPPDATA%`. A watcher killed between
 claim and rewrite leaves it until a later watcher start-up prunes the instance,
 no sooner than `ABANDONED_AFTER_S` after the claim (docs/WATCHER.md section
 2.1), and for good if none starts. A rewrite and
 release that both fail leave it for as long as that watcher lives; it goes when
-the watcher stops cleanly, or at a later start-up's prune if it dies.
+the watcher stops cleanly, or at a later start-up's prune if it dies. An IDE
+whose Python has no `os.replace` (IronPython) sets the old copy aside as
+`<id>.running.old` during the rewrite; if that will not delete, the command
+is not run and its error names the file.
 
 ### Recording a trace: `plc trace`
 

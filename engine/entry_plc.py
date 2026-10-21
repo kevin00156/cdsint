@@ -209,7 +209,7 @@ def log_in_by_method():
         trip.method_applies,        # what changes, or why it may not
     ] + the_controller + [
         trip.forget_the_record,     # no MATCH for what is about to change
-        trip.log_in_by_method,      # Never, or Force
+        trip.log_in_by_method,      # Never, Force, or Keep if no change
         trip.write_boot_application,  # unless --no-boot-app or no change
         trip.read_state,            # logged in, and the state, read back
     ])

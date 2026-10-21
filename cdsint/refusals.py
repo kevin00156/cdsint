@@ -13,7 +13,8 @@ from __future__ import print_function
 
 import argparse
 
-from cdsint import flags, job_file
+from cds.core import credentials
+from cdsint import flags, job_file, target
 from cdsint.command_row import OTHERWISE
 
 
@@ -29,6 +30,31 @@ def check(parser, ns):
     _project_flags_need_a_project(parser, ns, row)
     _action_flags(parser, ns, row)
     _check_the_job(parser, ns)
+    _a_login_to_forward(parser, ns)
+
+
+def _a_login_to_forward(parser, ns):
+    """A watcher online command with no device login to hand over.
+
+    Refused before anything is sent (owner decision, 2026-10-21): the IDE
+    is somebody's, and one left without valid credentials can stop on its
+    Device User Logon dialog (docs/trace-research.md 17.5), which nobody at
+    a watcher is there to close. The --project form reads the environment
+    in its own IDE and is not asked.
+    """
+    shown = flags.wire_name(ns)
+    if ns.project or not target.forwards_a_login(shown, vars(ns)):
+        return
+    if credentials.from_environment() is not None:
+        return
+    parser.error(
+        "%s in the watcher form needs %s and %s, both set and not empty, in "
+        "the environment cdsint runs in: the watcher hands them to the IDE "
+        "before every online call, and an IDE without valid credentials can "
+        "stop on its Device User Logon dialog, which nobody is there to "
+        "close (docs/trace-research.md 17.5). A controller without user "
+        "management needs them set as well. Nothing was sent"
+        % (shown, credentials.USER_ENV, credentials.PASS_ENV))
 
 
 def _one_form_only(parser, ns, row):

@@ -239,6 +239,10 @@ rule it has to satisfy.
   result, a note, stdout or a log, and a command file that carries them is
   removed when the CLI stops waiting for it, answered or not. Without them
   the command still runs, and says in its notes that none were given.
+  **Superseded in the final review (owner, 2026-10-21):** the CLI refuses
+  these commands before sending anything when either variable is unset or
+  empty (exit 2), since an IDE without valid credentials can stop on the
+  logon dialog; a command file without them fails before any online call.
 - **R5. The CRC record after a watcher download** (5.6).
 - **R6. The nested script run** (`docs/trace-research.md` 15.2). Every
   online call here must go through it, as the watcher's `plc trace` does.

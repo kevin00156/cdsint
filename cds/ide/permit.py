@@ -23,11 +23,6 @@ import json
 from cds.core import settings
 from cds.ide import project
 
-# The only values the list recognises (SPEC 6.5). A word that is not one
-# of these is refused by cds/core/settings.py when the file is read, so
-# nothing here has to guess what somebody meant.
-ACTIONS = settings.PLC_WORDS
-
 KEY = "plc"
 
 # Logging out only releases a login, so whichever word let the session in
@@ -52,7 +47,8 @@ def words_for(action, args):
 def granted(projects_obj):
     """The actions this project allows, in the order SPEC 6.5 lists them."""
     written = _written(projects_obj)
-    return [action for action in ACTIONS if action in written]
+    return [action for action in settings.PLC_WORDS
+            if action in written]
 
 
 def refusal(projects_obj, action, args=None):
@@ -66,7 +62,8 @@ def refusal(projects_obj, action, args=None):
     words = words_for(action, args)
     if any(word in allowed for word in words):
         return None
-    wanted = [a for a in ACTIONS if a in allowed or a == words[0]]
+    wanted = [a for a in settings.PLC_WORDS
+              if a in allowed or a == words[0]]
     return ("this project does not allow plc %s. Its %s list is %s in %s. "
             "Add %s to that list: %s: %s."
             % (action, KEY, json.dumps(allowed), _path(projects_obj),

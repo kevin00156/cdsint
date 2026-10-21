@@ -321,21 +321,31 @@ The watcher forms cannot read the caller's environment, only the IDE's, so the
 exception is a narrow one, decided by the project owner on 2026-10-21. For
 `plc login`, `logout`, `run`, `stop` and `plc trace` (not `trace --stop`, which
 makes no online call), the CLI copies `CDS_DEV_USER` and `CDS_DEV_PASS` from
-its own environment into the command file, and only when both are set. The
+its own environment into the command file, and refuses the command before
+sending anything (exit 2, 4.3) when either is unset or empty: an IDE without
+valid credentials can stop on its Device User Logon dialog (research 17.5),
+and nobody is at a watcher to close it. The owner decided that refusal in
+the final review of the same day; it holds for a controller without user
+management too, which needs some values set. A hand-written command file
+without them fails before its first online call, saying so. The
 watcher hands them to the IDE with the logon dialog switched off immediately
 before every online call, and never reads the IDE's own environment. The
 password appears in no result, note, stdout or log; the user name does appear
 in the notes, as above. The watcher rewrites its claimed
 `.running` file without them right after claiming (and does not run the
 command if it cannot), and the CLI removes its command file whenever it stops
-waiting, answered or not. Two windows remain in which the password stays on
-disk, in the claimed `.running` file under `%LOCALAPPDATA%`. A watcher killed
+waiting, answered or not. Three cases leave the password on disk under
+`%LOCALAPPDATA%`. A watcher killed
 between the claim's rename and the rewrite leaves it until a later watcher
 start-up prunes the instance, no sooner than `ABANDONED_AFTER_S` after the
 claim; with no later start-up it stays. A rewrite and a release that both fail
 leave it with the watcher alive and beating, which `prune_stale` spares, so it
 stays as long as that watcher lives and goes when the watcher stops cleanly or,
-if it dies, at a later start-up's prune. The
+if it dies, at a later start-up's prune. Under IronPython, which has no
+`os.replace`, the rewrite renames the old file aside to `<id>.running.old`
+before the new one goes in, then deletes it; a delete that is refused leaves
+the password there, so the command is not run, its error names that file,
+and it goes with the instance directory as above. The
 `--project` form is unchanged, including that a user without a password is
 handed over as it was.
 
@@ -481,7 +491,7 @@ Why `plc connect` and `plc download` refuse the `--target` form is in D8.
 |---|---|
 | 0 | done |
 | 1 | the command failed, including `needs_input` for a missing flag |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (any `--project` `plc` command without `--gateway`), or no single live IDE found |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command requires is missing (any `--project` `plc` command without `--gateway`), an input the command requires is missing (a watcher `plc` command that makes an online call, with `CDS_DEV_USER` or `CDS_DEV_PASS` unset or empty, D14), or no single live IDE found |
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
@@ -1610,9 +1620,11 @@ project's device node points, as the IDE's Login button does. `--gateway`,
 does not aim it anywhere else. The result names the address the device node
 points at, read from the node's gateway and address and not decoded; when the
 node will not say, the notes say so. If the IDE asks "the address differs from
-the one stored in the project", the command has no answer for it and should
-fail saying so, as every unanswered prompt does (D7); no case produced that
-prompt, so this is unmeasured (research 17.11). `--project` refuses all four at
+the one stored in the project", the command has no answer for it. No case
+produced that prompt, so what follows is unmeasured (research 17.11). It
+would not fail the way an unanswered prompt does under `--project` (D7): only
+that form sets `system.prompt_handling`, and in an interactive IDE the prompt
+is a modal window, so the command would stop in it until someone closes it. `--project` refuses all four at
 the parser (exit 2): that form logs out at the end of every run, so a login, a
 run or a stop there would outlive nothing.
 
@@ -1640,8 +1652,9 @@ the watcher's `plc trace` each variable read, the trace download and the
 start. Held credentials went stale across a runtime restart and a project
 reopen (17.5), which is why once is not enough. The credentials come from the
 CLI's environment and nowhere else (D14); the IDE's own environment is never
-read. Without them the command still runs, and its notes say it was given
-none.
+read. The CLI refuses these commands without both (D14, exit 2), and a
+hand-written command file without them fails before its first online call,
+saying so.
 
 **`plc login`, no method.** A `Keep` login applies any difference between the
 working copy and the controller by itself, without asking (research 12.1;
@@ -1675,7 +1688,8 @@ A missing or non-boolean `is_uptodate` is refused without `data.methods`, since
 it says nothing about which method would work.
 
 **`plc login --method download`.** Asks `-y` before anything connects. Already
-logged in: exit 1, "log out first". It logs in with
+logged in: exit 1, "log out first"; a login state that will not read is
+refused too, saying so, for both methods. It logs in with
 `OnlineChangeOption.Never`, `delete_foreign_apps` false, as the `--project`
 download does, and downloads even when nothing differs, since the caller asked
 for one. Unless `--no-boot-app` it then writes the boot application, so a
@@ -1696,8 +1710,9 @@ change is not possible; `Force` refuses instead, but with a bare "Login
 failed" that names no reason and after logging in and out again, which is why
 `is_online_change_possible` is read first (research 17.2). So an online change
 never becomes a download here, and nothing falls back from one method to the
-other. With nothing different it is a plain login, reports `changed` as
-`nothing` and writes no boot application. Otherwise the boot application is
+other. With nothing different it is a plain login with `Keep`, the measured
+no-change login (research 17.4, 17.13; `Force` on that state is unmeasured),
+reports `changed` as `nothing` and writes no boot application. Otherwise the boot application is
 written unless `--no-boot-app`. The application's state is read back and
 reported, as every command here does; it is not compared with a state from
 before the login, because a session not yet logged in has none to give (it
@@ -1719,7 +1734,10 @@ which these commands do not have, and the device node's address is not decoded
 into one, so before the login the controller's CRC is read (over the identity
 check's connection for an online change, over one of its own for a download)
 and only the entries whose recorded CRC equals it are removed; another bench's
-entry stays. If that read fails, every entry is removed, and the notes say so.
+entry stays. A controller that does not answer that connection stops the
+command there, with the record and the controller untouched; one that answers
+but whose CRC file will not come has every entry removed, and the notes say
+so.
 A change with `--no-boot-app` is covered too, because the CRC stays put while
 the running code changes. A `plc connect` then answers `UNKNOWN` for a removed
 entry until a `--project` `plc download -y` records it again. Removal comes

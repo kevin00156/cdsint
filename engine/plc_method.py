@@ -6,6 +6,7 @@ controller; these are the two ways the caller asks for that change instead
 (design 2026-10-21-watcher-online 5.2, 5.3). Each is one OnlineChangeOption
 and nothing else: a download is always a full one, and an online change that
 cannot be made is refused, never carried out as a download (research 17.2).
+An online change with nothing different is the plain login, Keep.
 
 Split from SessionTrip because these steps are the ones that write to the
 controller and to the CRC record; the session's own steps never do.
@@ -42,9 +43,14 @@ class MethodTrip(SessionTrip):
 
     def logged_out_first(self):
         """A method logs in itself: over a live session it would be a second
-        path to the same thing, so the caller logs out first (design 5.2)."""
-        if self.found["logged_in"] is not True:
+        path to the same thing, so the caller logs out first (design 5.2).
+        A login state that would not read may be that live session."""
+        if self.found["logged_in"] is False:
             return None
+        if self.found["logged_in"] is None:
+            return ("whether the application is already logged in could not "
+                    "be read, and --method %s logs in itself; nothing was "
+                    "done" % self.method)
         self.found["state"] = state_of(self.session)
         return ("already logged in, application %s; --method %s logs in "
                 "itself, so log out first (plc logout) and run again; "
@@ -80,11 +86,13 @@ class MethodTrip(SessionTrip):
 
     def crc_before(self):
         """The controller's CRC, over a device connection of its own: the
-        download has no identity check to read it in. Never a refusal: a
-        CRC not read only widens what forget_the_record removes."""
+        download has no identity check to read it in. A controller that
+        cannot be reached stops the command here, before the record or the
+        controller is touched; one that answers but whose CRC file will not
+        come only widens what forget_the_record removes (R5)."""
         problem = self.connected(self._read_the_crc)
         if problem:
-            self.note(problem)
+            return "%s; nothing was done" % problem
         return None
 
     def _holds_this_download(self):
@@ -121,13 +129,18 @@ class MethodTrip(SessionTrip):
                     "something else; nothing was done: %s"
                     % (self.method, problem))
         if removed:
-            self.note("removed %s from the CRC record in %s: a plc connect "
+            self.note("removed from the CRC record in %s %s: a plc connect "
                       "answers UNKNOWN for %s until the --project plc "
                       "download -y records again"
-                      % (_which(held), path, ", ".join(removed)))
+                      % (path, _which(held), ", ".join(removed)))
         return None
 
     def log_in_by_method(self):
+        """With nothing different there is nothing for Force to carry, and
+        Keep on that state is the measured no-change login (research 17.4,
+        17.13); method_applies leaves "nothing" only for online_change."""
+        if self.changes == "nothing":
+            return self.log_in_with("Keep")
         return self.log_in_with(OPTIONS[self.method])
 
     def write_boot_application(self):

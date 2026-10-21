@@ -195,21 +195,22 @@ def test_credentials_and_the_dialog_switch_come_before_every_online_call(bench):
     assert SECRET not in json.dumps(answer, default=repr)
 
 
-def test_without_credentials_the_note_says_this_command_was_given_none(bench):
+def test_without_credentials_it_fails_before_any_online_call(bench):
+    # The CLI refuses a watcher trace without them (cdsint/refusals.py);
+    # only a hand-written command file gets here.
     bench.online = LoggedOnline(bench.log, bench.online)
-    result = finished(bench, started_and_due(bench))
+    answer = bench.watch(run_only(), "T1", credentials=None)
+    assert not answer["ok"]
+    assert "nothing was sent to the controller" in answer["summary"]
     assert bench.online.credentials is None
-    assert any("this command was given no credentials" in note
-               for note in result["data"]["notes"])
-    assert bench.log.index(("dialog off",)) < bench.log.index(
-        ("create_online_application",))
+    assert ("create_online_application",) not in bench.log
 
 
 def test_the_ide_s_own_environment_is_not_handed_over(bench, monkeypatch):
     monkeypatch.setenv("CDS_DEV_USER", "ide-side")
     monkeypatch.setenv("CDS_DEV_PASS", "ide-side-secret")
-    answer = bench.watch(run_only(), "T1")
-    assert answer["ok"], answer["summary"]
+    answer = bench.watch(run_only(), "T1", credentials=None)
+    assert not answer["ok"]
     assert bench.online.credentials is None
 
 

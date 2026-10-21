@@ -439,6 +439,8 @@ VALUES = {"PRG_AxisControl._uFlags": "UDINT#0",
 TASK = "EtherCAT_Task"
 GATEWAY = "127.0.0.1"
 PORT = 11741
+# What the CLI forwards to a watcher online command (cdsint/target.py).
+WATCHER_LOGIN = {"user": "dev", "password": "watcher-pw"}
 
 
 def read_data(path):
@@ -837,10 +839,12 @@ class TraceBench(object):
                          clock=self.clock, buffers_for=self.buffers)
         return entry_plc.traced(trip)
 
-    def watch(self, job, name, credentials=None):
+    def watch(self, job, name, credentials=WATCHER_LOGIN):
         """The watcher's form on this bench: checks and start, a Recording.
 
-        No hold in the globals, as in an IDE with a window.
+        No hold in the globals, as in an IDE with a window. With the login
+        every command the CLI sends carries (cdsint/refusals.py), unless
+        credentials=None.
         """
         from engine import entry_plc
         from engine.plc_trace_watch import WatchedTrip

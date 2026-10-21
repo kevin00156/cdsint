@@ -277,8 +277,11 @@ the exit code alone. A watcher `plc trace` refused for "not logged in" or "not
 running" says to run `plc login` and `plc run -y`; the second needs the user's
 word as above. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS`
 in your own environment, forwarded to the IDE for these commands and never
-printed; a login that needs one and was not given it fails, and its notes say
-so.
+printed. With either unset or empty, `plc login`, `logout`, `run`, `stop` and
+`plc trace --target` are refused before anything is sent (exit 2): an IDE
+without valid credentials can stop on its logon dialog with nobody to close
+it. Ask the user for them; a controller without user management needs them
+set too.
 
 ## Trace objects and their data: `trace`
 

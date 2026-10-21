@@ -149,12 +149,23 @@ def scrub_running(root, instance_id, cmd):
     lives as long as the command runs. The body gets the secret from the
     in-memory record; the disk copy has no use for it. The rewrite is atomic
     and refreshes the mtime, which is when the command started anyway.
+
+    Without os.replace (IronPython 2.7) the rewrite renames the old file,
+    password and all, aside, and ipc._replace drops that copy without saying
+    whether it could. So it is deleted again here, where a refusal raises
+    and the command is not run, the raise naming the file left behind.
     """
     args = dict(cmd.get("args") or {})
     if args.pop("credentials", None) is None:
         return
-    ipc.write_json(_running_path(root, instance_id, cmd["id"]),
-                   dict(cmd, args=args))
+    path = _running_path(root, instance_id, cmd["id"])
+    ipc.write_json(path, dict(cmd, args=args))
+    try:
+        ipc.remove_file(path + ipc.ASIDE)
+    except EnvironmentError as exc:
+        raise IOError(getattr(exc, "errno", None),
+                      "the device login is still in %s, which would not be "
+                      "deleted: %s" % (path + ipc.ASIDE, exc))
 
 
 def release_command(root, instance_id, cmd_id):
@@ -261,8 +272,9 @@ def take_result(root, instance_id, cmd_id):
     A result refused while the watcher puts it in place is not there yet:
     the caller polls until its deadline anyway. Here and not in
     ipc.read_json, whose other readers must hear a refusal. A result that
-    was read but would not be deleted is still the answer; the watcher's
-    next start sweeps the file (prune_results).
+    was read but would not be deleted is still the answer; the file stays
+    until prune_results, which the watcher runs at its start and after each
+    result it writes, finds it older than RESULT_TTL_S.
     """
     path = _result_path(root, instance_id, cmd_id)
     try:

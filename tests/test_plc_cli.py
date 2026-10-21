@@ -182,6 +182,15 @@ def test_the_gateway_flags_reach_the_body():
 # plc login, logout, run and stop: the watcher's own application
 # --------------------------------------------------------------------------
 
+
+@pytest.fixture(autouse=True)
+def a_login_in_the_environment(monkeypatch):
+    """The flags are what these pin; a watcher online command without the
+    device login is refused as well (tests/test_plc_credentials.py)."""
+    monkeypatch.setenv("CDS_DEV_USER", "dev")
+    monkeypatch.setenv("CDS_DEV_PASS", "pw")
+
+
 def parse(argv):
     parser = flags.build_parser()
     ns = parser.parse_args(argv)

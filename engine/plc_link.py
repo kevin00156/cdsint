@@ -134,15 +134,8 @@ def hand_over_forwarded(online_api, given):
     """Give the API the login the watcher command carried, and say so.
 
     Only that: the IDE process's own environment is not the caller's
-    (design R4). The CLI forwards both or neither (cds/core/credentials.py),
-    and a hand-written command file is held to the same rule. Without one,
-    the note says only that this command had none: credentials an earlier
-    command handed over may still be held by the IDE.
+    (design R4).
     """
-    if not given or not given.get("user") or not given.get("password"):
-        return ("this command was given no credentials (%s and %s were not "
-                "both set where cdsint ran), so none were handed over"
-                % (USER_ENV, PASS_ENV))
     online_api.set_default_credentials(given["user"], given["password"])
     return handed_over(given["user"])
 
@@ -154,8 +147,18 @@ def hand_over_for(trip):
     Every call, not once: held credentials went stale across a runtime
     restart and a project reopen, and the dialog came back (17.5). The note
     is the same every time, so it is said once.
+
+    A command without both is refused before its first online call. The CLI
+    never sends one (cdsint/refusals.py), so this is a hand-written command
+    file: run on, it would ride on whatever the IDE held from before, or
+    stop on the logon dialog.
     """
     given = trip.args.get("credentials")
+    if not given or not given.get("user") or not given.get("password"):
+        return ("this command carried no device login (%s and %s, both set, "
+                "are what the CLI forwards), and an IDE without valid "
+                "credentials can stop on its Device User Logon dialog, so "
+                "nothing was sent to the controller" % (USER_ENV, PASS_ENV))
     note, problem = silence_credential_dialogs(
         trip.online, trip.globals,
         lambda online: hand_over_forwarded(online, given))
