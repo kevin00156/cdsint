@@ -11,7 +11,7 @@ from __future__ import print_function
 import argparse
 import os
 
-from cds.core import trace_job
+from cds.core import settings, trace_job
 from cdsint import job_file
 
 # Seconds one command step may take (SPEC 4.2). The one number: the help text
@@ -31,6 +31,7 @@ DEFAULT_TIMEOUT_S = 120.0
 #              and download, which log in to a controller (SPEC D8). Still
 #              offered --target, so that asking for the other form is
 #              answered with the reason rather than with "unrecognized"
+#              (the online commands are the mirror image: WATCHER)
 NO_IDE = "none"
 WATCHER = "target"
 EITHER = "both"
@@ -99,6 +100,7 @@ JOB = "job"           # --job FILE: parsed here, checked once --name is known
 DEFINITION = "definition"  # --job FILE, read as what to record only
 PATH = "path"         # --out PATH: made absolute here, where the shell is
 WORDS = "words"       # --formats csv,trace
+METHOD = "method"     # --method download: one of the PLC_METHODS spellings
 
 KINDS = {
     SWITCH: {"action": "store_true", "default": None},
@@ -114,6 +116,7 @@ KINDS = {
     # the shell's (cdsint/job_file.py says the same of a job's `out`).
     PATH: {"type": os.path.abspath, "default": None, "metavar": "PATH"},
     WORDS: {"type": format_words, "default": None, "metavar": "LIST"},
+    METHOD: {"choices": settings.PLC_METHODS, "default": None},
 }
 
 # A kind says how a flag is shaped; a flag may still name what its value is

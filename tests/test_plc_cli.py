@@ -12,7 +12,7 @@ import pytest
 from cds.core import commands
 from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK
 from cds.ide import entries, permit
-from cdsint import cli, flags
+from cdsint import cli, flags, refusals
 from tests.plc_fakes import ide
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
@@ -158,7 +158,8 @@ def test_the_cli_spells_the_action_into_the_command_name():
     assert flags.command_args(parsed) == {"yes": True, "gateway": None,
                                         "port": None, "gateway_name": None,
                                         "job": None, "name": None,
-                                        "stop": None}
+                                        "stop": None, "method": None,
+                                        "no_boot_app": None}
 
 
 def test_the_gateway_flags_reach_the_body():
@@ -170,7 +171,101 @@ def test_the_gateway_flags_reach_the_body():
                                         "port": 11740,
                                         "gateway_name": "Gateway-3",
                                         "job": None, "name": None,
-                                        "stop": None}
+                                        "stop": None, "method": None,
+                                        "no_boot_app": None}
 
 
 # --------------------------------------------------------------------------
+
+
+# --------------------------------------------------------------------------
+# plc login, logout, run and stop: the watcher's own application
+# --------------------------------------------------------------------------
+
+def parse(argv):
+    parser = flags.build_parser()
+    ns = parser.parse_args(argv)
+    refusals.check(parser, ns)
+    return ns
+
+
+def refused(argv, capsys):
+    with pytest.raises(SystemExit) as raised:
+        parse(argv)
+    assert raised.value.code == 2
+    return capsys.readouterr().err
+
+
+def test_a_bare_login_says_nothing_it_did_not_say():
+    ns = parse(["plc", "login", "--target", "X"])
+    assert flags.wire_name(ns) == "plc login"
+    args = flags.command_args(ns)
+    assert args["method"] is None and args["no_boot_app"] is None
+    assert args["yes"] is None
+
+
+def test_login_takes_a_method_a_yes_and_no_boot_app():
+    ns = parse(["plc", "login", "--target", "X", "--method", "online_change",
+                "-y", "--no-boot-app"])
+    args = flags.command_args(ns)
+    assert (args["method"], args["yes"], args["no_boot_app"]) == (
+        "online_change", True, True)
+
+
+@pytest.mark.parametrize("method", ["online-change", "full"])
+def test_a_method_outside_the_two_is_refused(method, capsys):
+    refused(["plc", "login", "--target", "X", "--method", method], capsys)
+
+
+@pytest.mark.parametrize("action", ["login", "logout", "run", "stop"])
+def test_the_four_have_only_the_target_form(action, capsys):
+    err = refused(["plc", action, "--project", "P", "--install", "I"], capsys)
+    assert "--target" in err and "no --project form" in err
+
+
+def test_login_cannot_aim_the_controller(capsys):
+    err = refused(["plc", "login", "--target", "X", "--gateway", "1.2.3.4"],
+                  capsys)
+    assert "does not take --gateway" in err and "device" in err
+
+
+@pytest.mark.parametrize("argv", [
+    ["plc", "logout", "--target", "X", "--method", "download"],
+    ["plc", "run", "--target", "X", "--method", "download"],
+    ["plc", "stop", "--target", "X", "--no-boot-app"],
+    ["plc", "logout", "--target", "X", "-y"],
+])
+def test_the_rest_refuse_what_they_never_read(argv, capsys):
+    refused(argv, capsys)
+
+
+@pytest.mark.parametrize("action", ["run", "stop"])
+def test_run_and_stop_take_a_yes(action):
+    assert parse(["plc", action, "--target", "X", "-y"]).yes is True
+
+
+def test_trace_takes_no_yes_and_the_sentence_names_who_does(tmp_path, capsys):
+    job = tmp_path / "j.json"
+    job.write_text('{"duration_s": 1, "out": "o"}', encoding="utf-8")
+    err = refused(["plc", "trace", "--target", "X", "--name", "T", "--job",
+                   str(job), "-y"], capsys)
+    assert "plc download" in err and "plc login" in err
+    assert "plc run" in err and "plc stop" in err
+
+
+def test_the_watcher_points_a_download_at_login(capsys):
+    err = refused(["plc", "download", "--target", "X", "-y"], capsys)
+    assert "plc login --method download" in err
+
+
+def test_the_four_reach_distinct_functions():
+    # Not run/stop: entry_plc.py is exec'd into the IDE's namespace.
+    assert entries.SCRIPTS["plc login"] == ("entry_plc.py", "log_in")
+    assert entries.SCRIPTS["plc logout"] == ("entry_plc.py", "log_out")
+    assert entries.SCRIPTS["plc run"] == ("entry_plc.py", "run_application")
+    assert entries.SCRIPTS["plc stop"] == ("entry_plc.py", "stop_application")
+
+
+def test_the_headless_launcher_refuses_the_four_by_name():
+    for name in ("plc login", "plc logout", "plc run", "plc stop"):
+        assert "--target" in entries.HEADLESS_REFUSES[name]

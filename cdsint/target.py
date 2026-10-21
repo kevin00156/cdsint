@@ -16,7 +16,7 @@ from __future__ import print_function
 import os
 import time
 
-from cds.core import commands, instances, ipc
+from cds.core import commands, credentials, instances, ipc
 from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
 from cdsint import job_file, process
 from cdsint.exits import Failure
@@ -31,6 +31,24 @@ GONE = "gone"  # the watcher shut down while we were waiting
 # renames the file aside and the new one into place — for a moment there is
 # no registration, and a single missed read would call a healthy IDE dead.
 GONE_AFTER_S = 1.0
+
+
+# The commands whose watcher may have to log in to the controller. The login
+# is asked of the environment only here, so every other command file is free
+# of it.
+NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace")
+
+
+def _with_login(command, args):
+    """`args`, plus the environment's device login when this command needs it.
+
+    A copy: the caller's args are what it prints and reports from, and the
+    password must be in the command file and nowhere else.
+    """
+    login = credentials.from_environment() if command in NEEDS_A_LOGIN else None
+    if login is None:
+        return args
+    return dict(args, credentials=login)
 
 
 def _resolve(root, target, timeout):
@@ -99,7 +117,7 @@ class Target(object):
         return results
 
     def run_one(self, command, args):
-        cmd = commands.new_command(command, args)
+        cmd = commands.new_command(command, _with_login(command, args))
         # A recording answers when it is done: its duration_s is time the
         # caller asked for, on top of the time the step may take.
         waited = self.timeout + job_file.waits_s(args)
@@ -153,12 +171,13 @@ class Target(object):
 def send(root, instance_id, cmd, timeout, poll=POLL_S):
     """Queue a command and wait for its result.
 
-    None means it timed out; GONE means the watcher went away. Either way the
-    command is un-queued, so it cannot fire later against an IDE whose owner
-    has walked away. If the watcher already claimed it, the result it writes
-    is swept by that watcher's next start instead. The deadline travels with
-    the command for the case un-queueing cannot cover: this process killed
-    outright, with the command still in the queue.
+    None means it timed out; GONE means the watcher went away. However the
+    wait ends the command file is removed: a timed-out command must not fire
+    later against an IDE whose owner has walked away, and one that may carry
+    the device password must not outlive the wait. If the watcher already
+    claimed it, the result it writes is swept by that watcher's next start
+    instead. The deadline travels with the command for the case this cannot
+    cover: this process killed outright, with the command still in the queue.
     """
     deadline = time.time() + timeout
     commands.write_command(root, instance_id, cmd["command"], cmd["args"],
@@ -171,12 +190,10 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
                 return result
             answer = GONE if watching.gone(time.time()) else None
             if answer is GONE or time.time() >= deadline:
-                commands.delete_command(root, instance_id, cmd["id"])
                 return answer
             time.sleep(poll)
-    except KeyboardInterrupt:
+    finally:
         commands.delete_command(root, instance_id, cmd["id"])
-        raise
 
 
 def collect(root, instance_id, cmd_id):

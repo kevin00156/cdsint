@@ -18,23 +18,33 @@ import argparse
 
 from cdsint.command_row import (  # noqa: F401  the table's vocabulary
     CONFIRM, CONFIRM_IMPORT, DEFAULT_TIMEOUT_S, DEFINITION, EITHER, HEADLESS,
-    JOB, KINDS, METAVAR, NAME, NO_IDE, NUMBER, PAIRS, PATH, PROMPT_RESULTS,
+    JOB, KINDS, METAVAR, METHOD, NAME, NO_IDE, NUMBER, PAIRS, PATH,
+    PROMPT_RESULTS,
     PROJECT_FLAGS, PROJECT_ONLY, SWITCH, WATCHER, WORDS, Command, _dest,
     OTHERWISE, format_words, key_value)
 from engine.codesys_constants import SCRIPT_VERSION
 
 
-ONLY_DOWNLOAD = ("Only plc download changes the controller, so only it has "
-                 "anything to confirm.")
+ONLY_ONLINE = ("Only plc download, plc login, plc run and plc stop change "
+               "what the controller runs, so only they have anything to "
+               "confirm.")
 ONLY_CHANGES = ("Only trace apply and trace show change a trace object, so "
                 "only they have anything to confirm.")
 TRACE_NAMED = "Which trace object in the project is meant."
 DATA_IN_THE_IDE = ("Recorded data lives only in the IDE that recorded it: an "
                    "IDE this command starts has none, and nobody would see "
                    "a trace loaded into it.")
-CONTROLLER_LOGIN = ("The watcher runs inside an IDE somebody is using, and "
-                    "logging into a controller would take their online "
-                    "session away from them (SPEC D8).")
+CONTROLLER_LOGIN = ("It logs in to the controller through a connection of "
+                    "its own, and the watcher runs inside an IDE somebody "
+                    "is using: that would take their online session away "
+                    "from them (SPEC D8).")
+DOWNLOAD_LOGIN = (CONTROLLER_LOGIN + " To download through that IDE's own "
+                  "application, use plc login --method download -y.")
+SESSION_IN_THE_IDE = ("It logs this IDE's own application in or out, or "
+                      "starts or stops it, so it runs in the watcher of the "
+                      "IDE that holds the session.")
+BY_DEVICE = ("The project's device node chooses the controller; cdsint does "
+             "not aim it anywhere else.")
 WATCHER_NAMES = ("In the watcher it records through the login already open "
                  "in that IDE, and CODESYS adds no object to an application "
                  "that is logged in, so the trace has to exist already: name "
@@ -47,7 +57,9 @@ STOP_ALONE = ("--stop ends the recording a watcher is holding, and takes "
 STOP_IN_THE_WATCHER = ("--stop ends a recording a watcher is holding; a "
                        "--project run records within its own process and "
                        "ends by itself.")
-PLC_COMMANDS = ("connect", "download", "trace")
+PLC_COMMANDS = ("connect", "download", "trace", "login", "logout", "run",
+                "stop")
+ONLINE_COMMANDS = ("login", "logout", "run", "stop")
 TRACE_ACTIONS = ("list", "job", "apply", "save", "show")
 # The flags that aim every plc action at its controller.
 REACH = ("gateway", "port", "gateway_name")
@@ -103,17 +115,28 @@ COMMANDS = {
                 "confirm the import step; without it verify only looks and "
                 "says what the import would have done")]),
     "plc": Command(
-        "talk to the controller: read what it runs, download to it, or "
-        "record a trace from it",
+        "talk to the controller: read what it runs, download to it, log the "
+        "IDE's application in or out, run or stop it, or record a trace "
+        "from it",
         EITHER,
         # Commands, not the settings file's permission words: the two lists
         # overlap but are not the same (cds/core/settings.py PLC_WORDS).
         action=PLC_COMMANDS,
         action_help="connect reads what the controller holds; download "
                     "writes this project to it; trace records a trace "
-                    "(--stop ends one a watcher is recording)",
+                    "(--stop ends one a watcher is recording); login, "
+                    "logout, run and stop work on the application of the "
+                    "IDE a watcher is in (--target only)",
         flags=[("-y/--yes", CONFIRM,
-                "confirm the download; only plc download takes it"),
+                "confirm what changes the controller; only plc download, "
+                "login, run and stop take it"),
+               ("--method", METHOD,
+                "plc login: how to apply a changed project, download or "
+                "online_change; left out, it logs in only when nothing has "
+                "to change and says which methods would apply the "
+                "difference"),
+               ("--no-boot-app", SWITCH,
+                "plc login --method: skip writing the boot application"),
                ("--gateway", NAME,
                 "reach the controller through this address; every --project "
                 "plc action needs it", "IP"),
@@ -144,11 +167,17 @@ COMMANDS = {
             "connect": REACH,
             "download": REACH + ("yes",),
             "trace": REACH + ("job", "name", "stop"),
-            "trace --stop": ("stop",)},
-        refuses={
-            "connect": {"yes": ONLY_DOWNLOAD},
-            "trace": {"yes": ONLY_DOWNLOAD},
-            "trace --stop": {OTHERWISE: STOP_ALONE}},
+            "trace --stop": ("stop",),
+            "login": ("method", "no_boot_app", "yes"),
+            "logout": (),
+            "run": ("yes",),
+            "stop": ("yes",)},
+        refuses=dict(
+            [("connect", {"yes": ONLY_ONLINE}),
+             ("trace", {"yes": ONLY_ONLINE}),
+             ("trace --stop", {OTHERWISE: STOP_ALONE})]
+            + [(action, dict((dest, BY_DEVICE) for dest in REACH))
+               for action in ONLINE_COMMANDS]),
         form_needs={
             WATCHER: {"trace": {"name": WATCHER_NAMES}},
             HEADLESS: {"trace": {"gateway": WRONG_CONTROLLER
@@ -159,8 +188,11 @@ COMMANDS = {
             WATCHER: {"trace": dict((dest, THROUGH_THE_LOGIN) for dest in
                                     ("gateway", "port", "gateway_name"))},
             HEADLESS: {"trace --stop": {"stop": STOP_IN_THE_WATCHER}}},
-        action_forms={"connect": (HEADLESS, CONTROLLER_LOGIN),
-                      "download": (HEADLESS, CONTROLLER_LOGIN)},
+        action_forms=dict(
+            [("connect", (HEADLESS, CONTROLLER_LOGIN)),
+             ("download", (HEADLESS, DOWNLOAD_LOGIN))]
+            + [(action, (WATCHER, SESSION_IN_THE_IDE))
+               for action in ONLINE_COMMANDS]),
         variant=("stop", "--stop")),
     "trace": Command(
         "list the project's traces, or move a trace's definition or its "

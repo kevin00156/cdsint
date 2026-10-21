@@ -42,6 +42,12 @@ SCRIPTS = {
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),
     "plc trace": ("entry_plc.py", "record"),
+    # Not `run` and `stop`: this file is exec'd into the IDE's script
+    # namespace, where a bare run or stop would shadow the IDE's own names.
+    "plc login": ("entry_plc.py", "log_in"),
+    "plc logout": ("entry_plc.py", "log_out"),
+    "plc run": ("entry_plc.py", "run_application"),
+    "plc stop": ("entry_plc.py", "stop_application"),
     "trace list": ("entry_trace.py", "list_traces"),
     "trace job": ("entry_trace.py", "to_job"),
     "trace apply": ("entry_trace.py", "from_job"),
@@ -49,30 +55,46 @@ SCRIPTS = {
     "trace show": ("entry_trace.py", "show_data"),
 }
 
-# What the watcher will not run, whoever asks. Logging into a PLC takes the
-# online session away from the person sitting in front of that IDE, so the
-# watcher has no business doing it (SPEC D8). plc trace is not among them:
-# in the watcher it records through the login that person already has open
-# and never logs in itself (SPEC 6.8). The CLI stops connect and download
-# with --target at the parser; this is the same rule where a hand-written
-# command file would otherwise land, and it answers by name rather than by
-# pretending the command does not exist.
-WATCHER_REFUSES = dict(
-    (name, "%s only runs in the --project form. The watcher lives inside an "
-           "IDE somebody is using, and logging into a PLC would take their "
-           "online session away from them (SPEC D8)." % name)
-    for name in ("plc connect", "plc download"))
+# What the watcher will not run, whoever asks. plc connect and plc download
+# log in to a controller through a device connection of their own, which
+# takes the online session away from the person sitting in front of that IDE
+# (SPEC D8). The other plc commands work through the IDE's own application
+# and session, so they are the watcher's. The CLI stops these two with
+# --target at the parser; this is the same rule where a hand-written command
+# file would otherwise land, and it answers by name rather than by pretending
+# the command does not exist.
+WATCHER_REFUSES = {
+    "plc connect": (
+        "plc connect only runs in the --project form. It reads the "
+        "controller through a device connection of its own, and the watcher "
+        "lives inside an IDE somebody is using: that would take their online "
+        "session away from them (SPEC D8)."),
+    "plc download": (
+        "plc download only runs in the --project form. It logs in to the "
+        "controller through a connection of its own, and the watcher lives "
+        "inside an IDE somebody is using: that would take their online "
+        "session away from them (SPEC D8). To download through this IDE's "
+        "own application, use plc login --method download -y."),
+}
 
 # What the headless launcher will not run. Recorded data lives in the IDE
 # that recorded it: one this run started has none to save, and a trace
-# loaded into it is seen by nobody. The CLI refuses these at the parser
-# (cdsint/flags.py DATA_IN_THE_IDE); this is the same rule for a job object
-# written by hand.
+# loaded into it is seen by nobody. The online commands act on the session of
+# an IDE somebody has open; an IDE this run starts has no session to log in,
+# run or stop. The CLI refuses these at the parser (cdsint/flags.py); this is
+# the same rule for a job object written by hand.
+_DATA_IN_THE_IDE = (
+    "%s only runs in the --target form. Recorded data lives only in the IDE "
+    "that recorded it: an IDE this command starts has none, and nobody "
+    "would see a trace loaded into it.")
+_SESSION_IN_THE_IDE = (
+    "%s only runs in the --target form. It logs this IDE's own application "
+    "in or out, or starts or stops it, so it runs in the watcher of the IDE "
+    "that holds the session.")
 HEADLESS_REFUSES = dict(
-    (name, "%s only runs in the --target form. Recorded data lives only in "
-           "the IDE that recorded it: an IDE this command starts has none, "
-           "and nobody would see a trace loaded into it." % name)
-    for name in ("trace save", "trace show"))
+    [(name, _DATA_IN_THE_IDE % name) for name in ("trace save", "trace show")]
+    + [(name, _SESSION_IN_THE_IDE % name)
+       for name in ("plc login", "plc logout", "plc run", "plc stop")])
 
 # Every command the watcher answers by pressing an engine body.
 COMMANDS = sorted(set(SCRIPTS) - set(WATCHER_REFUSES))

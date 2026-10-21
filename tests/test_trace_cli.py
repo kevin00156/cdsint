@@ -189,7 +189,8 @@ def test_the_ide_side_is_handed_the_job_not_the_file(tmp_path, runner,
         assert command == "plc trace"
         assert args == {"yes": None, "gateway": "192.168.1.5", "port": None,
                         "gateway_name": None, "job": expected,
-                        "name": None, "stop": None}
+                        "name": None, "stop": None, "method": None,
+                        "no_boot_app": None}
 
 
 # --- what comes back ---------------------------------------------------------

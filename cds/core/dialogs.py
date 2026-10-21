@@ -18,5 +18,8 @@ from __future__ import print_function
 DELETE_ORPHANS = "Delete Orphaned Files?"
 CONFIRM_IMPORT = "Confirm Import"
 CONFIRM_PLC_DOWNLOAD = "Confirm PLC Download"
+CONFIRM_PLC_ONLINE_CHANGE = "Confirm PLC Online Change"
+CONFIRM_PLC_RUN = "Confirm PLC Run"
+CONFIRM_PLC_STOP = "Confirm PLC Stop"
 CONFIRM_TRACE_APPLY = "Confirm Trace Apply"
 CONFIRM_TRACE_SHOW = "Confirm Trace Show"

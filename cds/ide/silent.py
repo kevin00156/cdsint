@@ -45,6 +45,9 @@ YES_NO = {
     dialogs.DELETE_ORPHANS: ("delete_orphans", False),
     dialogs.CONFIRM_IMPORT: ("yes", None),
     dialogs.CONFIRM_PLC_DOWNLOAD: ("yes", None),
+    dialogs.CONFIRM_PLC_ONLINE_CHANGE: ("yes", None),
+    dialogs.CONFIRM_PLC_RUN: ("yes", None),
+    dialogs.CONFIRM_PLC_STOP: ("yes", None),
     dialogs.CONFIRM_TRACE_APPLY: ("yes", None),
     dialogs.CONFIRM_TRACE_SHOW: ("yes", None),
 }

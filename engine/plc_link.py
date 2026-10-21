@@ -10,14 +10,11 @@ from __future__ import print_function
 
 import os
 
+from cds.core.credentials import PASS_ENV, USER_ENV
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 from engine.ide_read import children_of, kind_of, name_of
 
-# The only place either credential is read (D14). Named constants so the
-# password's name appears once in the code and the grep for it stays honest.
-USER_ENV = "CDS_DEV_USER"
-PASS_ENV = "CDS_DEV_PASS"
 
 # What every CODESYS runtime listens on for device connections unless
 # somebody moved it: the port behind --gateway when no --port is given.

@@ -181,6 +181,18 @@ def test_confirm_import_has_no_default_and_asks(tmp_path, ide, fake_codesys_ui):
     assert not outcome.ok()
 
 
+@pytest.mark.parametrize("title", [
+    dialogs.CONFIRM_PLC_ONLINE_CHANGE, dialogs.CONFIRM_PLC_RUN,
+    dialogs.CONFIRM_PLC_STOP])
+def test_the_online_confirmations_are_answered_by_yes_and_never_guessed(
+        tmp_path, ide, fake_codesys_ui, title):
+    path = yes_no_script(tmp_path, title)
+    assert silent.run(ide, path, "main", {"yes": True}).messages[0][
+        "text"] == "answered True"
+    outcome = silent.run(ide, path, "main", {})
+    assert outcome.needs.arg == "yes" and not outcome.ok()
+
+
 def test_an_unknown_dialog_is_refused_rather_than_guessed(tmp_path, ide,
                                                           fake_codesys_ui):
     path = yes_no_script(tmp_path, "Some New Question")
