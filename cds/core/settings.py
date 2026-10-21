@@ -30,10 +30,14 @@ STRING = type(u"")
 TEXT = "a string"
 FLAG = "true or false"
 COUNT = "a whole number"
-# The only words the `plc` list recognises (SPEC 6.5), one per plc command
-# that talks to a controller.
-PLC_ACTIONS = ("connect", "download", "trace")
-ACTIONS = "a list of the words " + ", ".join(PLC_ACTIONS)
+# The only words the `plc` list recognises (SPEC 6.5): one per thing a
+# project may allow, not one per command -- `plc login` is gated by the word
+# of the method it logs in with, and `plc logout` by any of the login words.
+PLC_WORDS = ("connect", "download", "trace", "login", "online_change", "run",
+             "stop")
+# The words that name how a login may change the controller.
+PLC_METHODS = ("download", "online_change")
+ACTIONS = "a list of the words " + ", ".join(PLC_WORDS)
 
 # name, kind, default, what it is for. `sync_folder` is the one setting with
 # no default -- there is no sensible guess for where somebody's files go, so
@@ -239,10 +243,10 @@ def _actions(path, key, value):
     for word in value:
         if not isinstance(word, STRING):
             raise Invalid(_wrong_type(path, key, value))
-        if word.strip().lower() not in PLC_ACTIONS:
+        if word.strip().lower() not in PLC_WORDS:
             raise Invalid(_refusal(
                 path, "%s is not one of %s, so plc %s allows nothing"
-                % (json.dumps(word), ", ".join(PLC_ACTIONS),
+                % (json.dumps(word), ", ".join(PLC_WORDS),
                    json.dumps(value))))
     return [word.strip().lower() for word in value]
 

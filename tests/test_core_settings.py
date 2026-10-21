@@ -150,11 +150,22 @@ def test_plc_takes_the_three_words(tmp_path):
     assert settings.read(path) == {"plc": ["connect", "download", "trace"]}
 
 
-def test_plc_recognises_exactly_the_words_spec_names():
-    # SPEC 6.5: connect, download and trace, one per command that talks to a
-    # controller. A fourth word here without a command behind it would be a
-    # gate on nothing.
-    assert settings.PLC_ACTIONS == ("connect", "download", "trace")
+def test_plc_recognises_exactly_the_seven_words():
+    assert settings.PLC_WORDS == ("connect", "download", "trace", "login",
+                                  "online_change", "run", "stop")
+    assert settings.PLC_METHODS == ("download", "online_change")
+
+
+def test_plc_takes_online_change_and_run_in_any_case(tmp_path):
+    path = write_file(tmp_path, u'{"plc": ["online_change", "Run"]}')
+    assert settings.read(path) == {"plc": ["online_change", "run"]}
+
+
+def test_plc_refuses_online_change_spelt_with_a_hyphen(tmp_path):
+    path = write_file(tmp_path, u'{"plc": ["online-change"]}')
+    with pytest.raises(settings.Invalid) as caught:
+        settings.read(path)
+    assert "is not one of" in str(caught.value)
 
 
 def test_plc_accepts_them_in_capitals(tmp_path):

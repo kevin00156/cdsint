@@ -33,6 +33,54 @@ def test_every_word_is_allowed_in_the_order_spec_lists_them():
         ide(allowed=["trace", "download", "connect"])["projects"])         == ["connect", "download", "trace"]
 
 
+def test_the_seven_words_are_allowed_in_the_order_spec_lists_them():
+    reversed_words = list(reversed(settings.PLC_WORDS))
+    assert len(reversed_words) == 7
+    assert permit.granted(
+        ide(allowed=reversed_words)["projects"]) == list(settings.PLC_WORDS)
+
+
+def test_login_with_a_method_needs_that_methods_word():
+    said = permit.refusal(ide(allowed=["login"])["projects"], "login",
+                          {"method": "download"})
+    assert said is not None
+    assert '"download"' in said
+    assert permit.refusal(ide(allowed=["download"])["projects"], "login",
+                          {"method": "download"}) is None
+
+
+def test_plain_login_needs_the_login_word():
+    said = permit.refusal(
+        ide(allowed=["download", "online_change"])["projects"], "login", {})
+    assert said is not None
+
+
+def test_any_login_word_allows_logout():
+    for word in ("login", "download", "online_change"):
+        assert permit.refusal(ide(allowed=[word])["projects"], "logout",
+                              {}) is None
+    said = permit.refusal(ide(allowed=["run", "stop"])["projects"], "logout",
+                          {})
+    assert said is not None
+    assert 'Add one of "login", "download", "online_change"' in said
+
+
+def test_run_and_stop_are_separate_words():
+    projects = ide(allowed=["run"])["projects"]
+    assert permit.refusal(projects, "run", {}) is None
+    assert permit.refusal(projects, "stop", {}) is not None
+
+
+def test_a_refused_login_method_does_not_load_the_engine(monkeypatch):
+    ran = []
+    monkeypatch.setattr(silent, "run",
+                        lambda *args, **kwargs: ran.append(args))
+    outcome = press(ide(allowed=["login"]), "login",
+                    {"method": "download", "yes": True})
+    assert ran == []
+    assert outcome.denied["action"] == "download"
+
+
 def test_trace_alone_allows_neither_connect_nor_download():
     assert permit.granted(ide(allowed=["trace"])["projects"]) == ["trace"]
 

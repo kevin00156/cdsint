@@ -183,7 +183,7 @@ def run(ide_globals, command, args):
     The verdict is the body's return value (SPEC D11); its dialogs are just
     what a person would have read.
     """
-    refused = _not_allowed(ide_globals, command)
+    refused = _not_allowed(ide_globals, command, args)
     if refused is not None:
         return refused
     script, entry = SCRIPTS[command]
@@ -192,7 +192,7 @@ def run(ide_globals, command, args):
                       entry, args)
 
 
-def _not_allowed(ide_globals, command):
+def _not_allowed(ide_globals, command, args):
     """The refusal when the project does not allow this PLC command, else None.
 
     Checked here rather than inside the body because the body is the thing
@@ -211,12 +211,13 @@ def _not_allowed(ide_globals, command):
     action = command[len(PLC_PREFIX):]
     projects_obj = ide_globals.get("projects")
     try:
-        reason = permit.refusal(projects_obj, action)
+        reason = permit.refusal(projects_obj, action, args)
     except settings.Invalid as bad:
         return Outcome.not_run(as_text(bad))
     if reason is None:
         return None
-    return Outcome.not_run(reason, denied=permit.record(projects_obj, action))
+    return Outcome.not_run(reason, denied=permit.record(
+        projects_obj, permit.words_for(action, args)[0]))
 
 
 def tail(ide_globals, command, outcome):

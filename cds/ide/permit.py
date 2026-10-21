@@ -26,9 +26,27 @@ from cds.ide import project
 # The only values the list recognises (SPEC 6.5). A word that is not one
 # of these is refused by cds/core/settings.py when the file is read, so
 # nothing here has to guess what somebody meant.
-ACTIONS = settings.PLC_ACTIONS
+ACTIONS = settings.PLC_WORDS
 
 KEY = "plc"
+
+# Logging out only releases a login, so whichever word let the session in
+# is enough to let it go; demanding a fourth word would trap a login the
+# project allowed.
+LOGIN_WORDS = ("login",) + settings.PLC_METHODS
+
+
+def words_for(action, args):
+    """The words of which any one allows this command.
+
+    A login by a method is the same act as that method's own command, so it
+    needs that method's word; `login` alone is only a login.
+    """
+    if action == "login":
+        return ((args or {}).get("method") or "login",)
+    if action == "logout":
+        return LOGIN_WORDS
+    return (action,)
 
 
 def granted(projects_obj):
@@ -37,31 +55,38 @@ def granted(projects_obj):
     return [action for action in ACTIONS if action in written]
 
 
-def refusal(projects_obj, action):
-    """None when the action is allowed, otherwise why it is not.
+def refusal(projects_obj, action, args=None):
+    """None when the command is allowed, otherwise why it is not.
 
     The sentence names the file, what is in it now and what to add, because
     the reader's next move is to open that file in an editor — there is no
     flag that answers this one.
     """
     allowed = granted(projects_obj)
-    if action in allowed:
+    words = words_for(action, args)
+    if any(word in allowed for word in words):
         return None
-    wanted = [a for a in ACTIONS if a in allowed or a == action]
+    wanted = [a for a in ACTIONS if a in allowed or a == words[0]]
     return ("this project does not allow plc %s. Its %s list is %s in %s. "
             "Add %s to that list: %s: %s."
-            % (action, KEY, json.dumps(allowed), _path(projects_obj), action,
-               json.dumps(KEY), json.dumps(wanted)))
+            % (action, KEY, json.dumps(allowed), _path(projects_obj),
+               _to_add(words), json.dumps(KEY), json.dumps(wanted)))
 
 
-def record(projects_obj, action):
+def _to_add(words):
+    if len(words) == 1:
+        return words[0]
+    return "one of " + ", ".join(json.dumps(word) for word in words)
+
+
+def record(projects_obj, word):
     """What the result record carries so the CLI can answer with exit 5.
 
     Separate from the sentence because the exit code is a decision and the
     sentence is prose: a caller must not have to match on wording to tell a
     refusal from a failure. The three fields are SPEC 4.3's `denied`.
     """
-    return {"file": _path(projects_obj), "key": KEY, "action": action}
+    return {"file": _path(projects_obj), "key": KEY, "action": word}
 
 
 def _path(projects_obj):

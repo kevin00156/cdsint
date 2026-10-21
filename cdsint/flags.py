@@ -16,7 +16,6 @@ from __future__ import print_function
 
 import argparse
 
-from cds.core import settings
 from cdsint.command_row import (  # noqa: F401  the table's vocabulary
     CONFIRM, CONFIRM_IMPORT, DEFAULT_TIMEOUT_S, DEFINITION, EITHER, HEADLESS,
     JOB, KINDS, METAVAR, NAME, NO_IDE, NUMBER, PAIRS, PATH, PROMPT_RESULTS,
@@ -48,6 +47,7 @@ STOP_ALONE = ("--stop ends the recording a watcher is holding, and takes "
 STOP_IN_THE_WATCHER = ("--stop ends a recording a watcher is holding; a "
                        "--project run records within its own process and "
                        "ends by itself.")
+PLC_COMMANDS = ("connect", "download", "trace")
 TRACE_ACTIONS = ("list", "job", "apply", "save", "show")
 # The flags that aim every plc action at its controller.
 REACH = ("gateway", "port", "gateway_name")
@@ -106,8 +106,9 @@ COMMANDS = {
         "talk to the controller: read what it runs, download to it, or "
         "record a trace from it",
         EITHER,
-        # The words the settings file's plc list allows are the actions.
-        action=settings.PLC_ACTIONS,
+        # Commands, not the settings file's permission words: the two lists
+        # overlap but are not the same (cds/core/settings.py PLC_WORDS).
+        action=PLC_COMMANDS,
         action_help="connect reads what the controller holds; download "
                     "writes this project to it; trace records a trace "
                     "(--stop ends one a watcher is recording)",
