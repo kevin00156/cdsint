@@ -49,19 +49,32 @@ def the_ide_agrees(trip, cure=plc_identity.DOWNLOAD):
 
 
 def judged(trip, cure=plc_identity.DOWNLOAD):
-    """The judgement on a connected trip: None, or why it does not agree.
-
-    `cure` replaces what every plc_identity refusal ends with: the watcher
-    has no plc download, and sends the caller elsewhere.
-    """
-    local, problem = trip.pull(trip.remote["app"])
+    """The judgement on a connected trip: None, or why it does not agree."""
+    header, problem = fetched(trip)
     if problem:
         # A controller holding no application lands here too: its .app is
         # not there to fetch.
         return "%s; %s" % (problem, cure)
+    return judgement(trip, header, cure)
+
+
+def fetched(trip):
+    """(the controller's Application.app, None), or (None, why not)."""
+    local, problem = trip.pull(trip.remote["app"])
+    if problem:
+        return None, problem
+    return plc_crc.read_bytes(local), None
+
+
+def judgement(trip, header, cure=plc_identity.DOWNLOAD):
+    """None when `header` names this copy's last download, or why not.
+
+    `cure` replaces what every plc_identity refusal ends with: the watcher
+    has no plc download, and sends the caller elsewhere.
+    """
     code, problem = plc_identity.judged(
-        plc_crc.read_bytes(local), trip.project_path(),
-        name_of(trip.device_node), name_of(trip.application))
+        header, trip.project_path(), name_of(trip.device_node),
+        name_of(trip.application))
     if problem:
         return problem.replace(plc_identity.DOWNLOAD, cure)
     trip.note("download info agrees with the controller: code %s" % code)

@@ -10,7 +10,8 @@ A plain login never changes the controller. It logs in with Keep, and Keep
 applies any difference by itself, so the login happens only when the IDE
 finds nothing changed and the controller holds this copy's last download
 (engine/plc_keep.py); otherwise nothing is done and the report names the
---method values that would apply the change.
+--method values that would apply the change. A login by a --method, which
+does change it, adds its own steps (engine/plc_method.py).
 
 Two rules for every online call (docs/trace-research.md 17.5, 17.10): the
 credentials are handed over and the logon dialog switched off immediately
@@ -42,6 +43,22 @@ CHANGED = {"nothing": "nothing on the controller changed",
 WATCHER_DOWNLOAD = ("use plc login --method download -y to put this working "
                     "copy on it")
 
+# The OnlineChangeOption member --method online_change logs in with. Not
+# Try, which falls back to a full download where an online change is not
+# possible; Force refuses instead, but with a bare "Login failed..." that
+# names no reason, so is_online_change_possible is read before it
+# (docs/trace-research.md 17.2).
+ONLINE_CHANGE = "Force"
+
+# What a login that raised may have left, by what it was asked to change.
+# A login asked to change nothing is plc_link.login_refusal's to word.
+INTERRUPTED = {
+    "download": ("the download did not complete, and the controller may now "
+                 "be stopped or partly written: "),
+    "online_change": ("the online change did not complete; it never falls "
+                      "back to a full download. The IDE said: "),
+}
+
 
 class Done(object):
     """A step's answer that ends the command early, successfully: there was
@@ -57,6 +74,7 @@ class SessionTrip(Trip):
     def __init__(self, action, args, ide_globals):
         Trip.__init__(self, action, args, ide_globals)
         self.session = None
+        self.changes = "nothing"    # what the login is about to change
         self.expected = {}          # what found must read back as afterwards
         self.found.update({"logged_in": None, "state": None, "address": None,
                            "changed": "nothing", "boot_application": False,
@@ -67,23 +85,23 @@ class SessionTrip(Trip):
         """Every step inside one nested script run; then the answer."""
         answer = ide_private.in_script_run(
             entry.borrowed(self.globals, "online"),
-            lambda: first_problem(steps))
+            lambda: self._through(steps))
         if isinstance(answer, Done):
             return self.result(True, "%s: %s" % (self.action, answer.summary))
         if answer:
             return self.failed(answer)
         return self.verdict()
 
-    # -- before any online call ---------------------------------------------
+    def _through(self, steps):
+        """The steps' answer. A failure once there is a session still
+        reports what the session is: one after the login is logged in."""
+        answer = first_problem(steps)
+        if answer and not isinstance(answer, Done) and \
+                self.session is not None:
+            self.read_state()
+        return answer
 
-    def plain_login_only(self):
-        """--method is not built yet; refused rather than read as a plain
-        login, which is the one thing it must never become."""
-        method = self.args.get("method")
-        if method:
-            return ("--method %s is not available in this version; nothing "
-                    "was done" % method)
-        return None
+    # -- before any online call ---------------------------------------------
 
     def find_the_device(self):
         """The device node, and where it points (research 17.6)."""
@@ -104,23 +122,30 @@ class SessionTrip(Trip):
         only reason a caller is ever given for an online change that cannot
         be made, since Force's own refusal names none (research 17.2).
         """
+        problem = self.read_the_change()
+        if problem:
+            return problem
+        if self.found["uptodate"]:
+            return None
+        self.found["methods"] = ["download"] + (
+            ["online_change"] if self.found["online_change_possible"]
+            else [])
+        return ("the working copy differs from what was last downloaded (the "
+                "IDE's is_uptodate is false): code, IO mapping, device "
+                "settings or libraries changed. A plain login would put that "
+                "on the controller, so nothing was done. %s"
+                % _methods_line(self.found["methods"]))
+
+    def read_the_change(self):
+        """is_uptodate and is_online_change_possible into found, both read
+        offline. None, or why is_uptodate cannot be trusted."""
         uptodate, problem = plc_keep.uptodate(self.application)
         possible = getattr(self.application, "is_online_change_possible",
                            None)
         self.found["uptodate"] = uptodate
         self.found["online_change_possible"] = (
             possible if isinstance(possible, bool) else None)
-        if problem:
-            return problem
-        if uptodate:
-            return None
-        self.found["methods"] = ["download"] + (
-            ["online_change"] if possible is True else [])
-        return ("the working copy differs from what was last downloaded (the "
-                "IDE's is_uptodate is false): code, IO mapping, device "
-                "settings or libraries changed. A plain login would put that "
-                "on the controller, so nothing was done. %s"
-                % _methods_line(self.found["methods"]))
+        return problem
 
     def the_ide_agrees(self):
         """The controller holds this copy's last download (research 17.4)."""
@@ -130,10 +155,32 @@ class SessionTrip(Trip):
         return None
 
     def _holds_this_download(self):
-        """The judgement alone, so that only a controller found holding
-        another program or none is said to need a download: one that did
-        not answer may hold exactly this one."""
-        problem = plc_keep.judged(self, WATCHER_DOWNLOAD)
+        """The judgement, with data.methods set only for a controller found
+        holding another program or none: one that did not answer, or whose
+        file would not come, may hold exactly this one."""
+        header, unread = plc_keep.fetched(self)
+        if unread:
+            return self._why_unread(unread)
+        return self._needs_a_download(
+            plc_keep.judgement(self, header, WATCHER_DOWNLOAD))
+
+    def _why_unread(self, unread):
+        """A fetch that failed: a download is the cure only when the
+        controller's own listing shows no application there."""
+        parent, name = self.remote["dir"].rsplit("/", 1)
+        try:
+            absent = name not in plc_link.names_in(self.device, parent)
+        except Exception as exc:
+            self.note("%s could not be listed either: %s"
+                      % (parent, one_line(exc)))
+            absent = False
+        if not absent:
+            return unread
+        return self._needs_a_download(
+            "%s, and the controller holds no application %s; %s"
+            % (unread, name, WATCHER_DOWNLOAD))
+
+    def _needs_a_download(self, problem):
         if problem:
             self.found["methods"] = ["download"]
         return problem
@@ -189,28 +236,35 @@ class SessionTrip(Trip):
             return None
         return Done("not logged in; nothing was done")
 
-    def log_in_keep(self):
-        """Log in, applying nothing: the steps before made sure of that."""
+    def log_in_with(self, option_name):
+        """login() with the OnlineChangeOption member of that name, asked
+        for by name so that no IDE default decides what it applies. What
+        it changes is self.changes, which the steps before it settled."""
         options = entry.borrowed(self.globals, "OnlineChangeOption")
         if options is None:
             return ("this IDE did not provide OnlineChangeOption, so a login "
-                    "that neither downloads nor makes an online change cannot "
-                    "be asked for explicitly; nothing was done")
-        return self.log_in(options.Keep, "Keep", "nothing")
-
-    def log_in(self, option, option_name, changed):
-        """login(option), and what the summary will say it changed."""
+                    "with OnlineChangeOption.%s cannot be asked for; nothing "
+                    "was done" % option_name)
         problem = self.hand_over()
         if problem:
             return problem
         try:
-            self.session.login(option, False)
+            # delete_foreign_apps False, as the --project download has it.
+            self.session.login(getattr(options, option_name), False)
         except Exception as exc:
-            return plc_link.login_refusal(one_line(exc))
+            return self._refused(one_line(exc))
         self.note("logged in with OnlineChangeOption.%s" % option_name)
-        self.found["changed"] = changed
+        self.found["changed"] = self.changes
         self.expected["logged_in"] = True
         return None
+
+    def _refused(self, said):
+        """What a login that raised `said` may have left on the controller.
+        Another client holding it refused before anything was sent."""
+        interrupted = INTERRUPTED.get(self.changes)
+        if interrupted is None or plc_link.ALREADY_LOGGED_IN in said.lower():
+            return plc_link.login_refusal(said)
+        return interrupted + said
 
     def log_out(self):
         problem = self.hand_over()

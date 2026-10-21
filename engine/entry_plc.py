@@ -17,21 +17,23 @@ working copy's cannot be read against it (SPEC 6.8).
 
 `login` and `logout` are the watcher's own session with the controller. A
 plain login changes nothing on it: it logs in only when nothing would be
-applied, and otherwise says which --method would.
+applied, and otherwise says which --method would. A login by --method makes
+that change, after the same -y a download asks for.
 
 This file is only the surface: the names cds/ide/entries.py presses, the
 question -y answers, and the order the steps run in. The steps themselves
 are engine/plc_trip.py, with download's own in engine/plc_download.py,
 trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
-(online), and login's and logout's in engine/plc_session.py; reaching a
-controller is
+(online), login's and logout's in engine/plc_session.py and a --method's in
+engine/plc_method.py; reaching a controller is
 engine/plc_link.py, and how the question is actually answered —
 why the offline CRC alone cannot answer it, what the record holds, and the
 three verdicts — is engine/plc_crc.py.
 
 Gates stand in front of the commands, and none is here (SPEC D8, 6.5): the
 `plc` list in the project's settings file says whether this project allows
-the action at all (cds/ide/permit.py), and for download, -y says the caller
+the action at all (cds/ide/permit.py), and for download and login --method,
+-y says the caller
 means this call. By the time a function in this file runs, they have been
 passed. trace needs no -y: it changes nothing the caller would confirm.
 
@@ -39,14 +41,16 @@ connect and download are reached only in the --project form; login and
 logout only in the watcher; trace in both, the watcher's through
 engine/plc_trace_watch.py. Neither form is the menu,
 so there is no menu stub and the flags arrive as `command_args` rather than
-as answers to dialogs (cds/ide/silent.py). The exception is the download confirmation, which is a
-question a person would have been asked and so goes through the same
-ask_yes_no the import confirmation does.
+as answers to dialogs (cds/ide/silent.py). The exception is the confirmation
+of a download or a login by --method, which is a question a person would
+have been asked and so goes through the same ask_yes_no the import
+confirmation does.
 """
 from __future__ import print_function
 
 from engine import entry, plc_crc, unhandled
 from engine.plc_download import DownloadTrip
+from engine.plc_method import MethodTrip
 from engine.plc_session import SessionTrip
 from engine.plc_trace import TraceTrip
 from engine.plc_trace_watch import WatchedTrip
@@ -65,6 +69,34 @@ DOWNLOAD_QUESTION = (
     "survives a power cycle, and start it again. Online change is switched "
     "off, so the running state is lost and every init runs from the "
     "beginning.\n\nProceed?")
+
+# What plc login --method asks. The download says where it parts from the
+# --project one: it does not start the application again.
+LOGIN_DOWNLOAD_QUESTION = (
+    "This will log in and download the whole application to the controller "
+    "the device node points at: stop what is running, write the program, and "
+    "write the boot application so it survives a power cycle (unless "
+    "--no-boot-app). Unlike plc download, it does not start the application "
+    "again: it is left stopped until plc run -y. Online change is not used, "
+    "so the running state is lost and every init runs from the beginning."
+    "\n\nProceed?")
+
+ONLINE_CHANGE_QUESTION = (
+    "This will log in and apply what differs by online change: the "
+    "application keeps running and keeps its state, then the boot "
+    "application is written so the change survives a power cycle (unless "
+    "--no-boot-app). If the IDE says an online change cannot carry the "
+    "change, nothing is done; it never falls back to a full download."
+    "\n\nProceed?")
+
+# Each --method's question: the dialog title -y answers, the text, and what
+# a "no" cancelled.
+QUESTIONS = {
+    "download": (dialogs.CONFIRM_PLC_DOWNLOAD, LOGIN_DOWNLOAD_QUESTION,
+                 "PLC download"),
+    "online_change": (dialogs.CONFIRM_PLC_ONLINE_CHANGE,
+                      ONLINE_CHANGE_QUESTION, "PLC online change"),
+}
 
 STOP_HERE = ("plc trace --stop ends a recording a watcher is holding; this "
              "run records within its own process and ends by itself")
@@ -120,9 +152,10 @@ def log_in():
     place to guess which plain names are free (see record()).
     """
     unhandled.start()
+    if command_args.get("method"):
+        return log_in_by_method()
     trip = a_trip(SessionTrip, "login")
     return trip.run([
-        trip.plain_login_only,      # a --method is not a plain login
         trip.find_the_project,      # the project and the online API
         trip.name_the_application,  # the active application
         trip.find_the_device,       # the node, and where it points
@@ -130,7 +163,33 @@ def log_in():
         trip.not_logged_in_yet,     # or done: already logged in
         trip.nothing_to_change,     # is_uptodate, or name the --method
         trip.the_ide_agrees,        # the controller holds this download
-        trip.log_in_keep,           # which therefore applies nothing
+        lambda: trip.log_in_with("Keep"),  # which therefore applies nothing
+        trip.read_state,            # logged in, and the state, read back
+    ])
+
+
+def log_in_by_method():
+    """Log in by --method download or online_change, changing the controller
+    as asked and in no other way (engine/plc_method.py).
+
+    The question is asked here, before the script run and before anything is
+    resolved or connected: a run without -y costs nothing, and the dialog
+    stand-in raises a BaseException that the nested run would not park.
+    """
+    trip = a_trip(MethodTrip, "login")
+    refused = trip.known_method() or confirm(*QUESTIONS[trip.method])
+    if refused:
+        return trip.failed(refused)
+    return trip.run([
+        trip.find_the_project,      # the project and the online API
+        trip.name_the_application,  # the active application
+        trip.find_the_device,       # the node, and where it points
+        trip.open_session,          # the online application
+        trip.logged_out_first,      # a method logs in itself
+        trip.method_applies,        # what changes, or why it may not
+        trip.forget_the_record,     # no MATCH for what is about to change
+        trip.log_in_by_method,      # Never, or Force
+        trip.write_boot_application,  # unless --no-boot-app or no change
         trip.read_state,            # logged in, and the state, read back
     ])
 
@@ -225,7 +284,8 @@ def in_order(trip, steps):
     return trip.failed(problem) if problem else None
 
 
-def confirm():
+def confirm(title=dialogs.CONFIRM_PLC_DOWNLOAD, question=DOWNLOAD_QUESTION,
+            what="PLC download"):
     """Ask the question -y answers. Returns the refusal text, or None.
 
     Routed through the engine's own dialog rather than reading the flag here
@@ -236,9 +296,9 @@ def confirm():
     is the case handled here.
     """
     from engine.codesys_ui import ask_yes_no
-    if ask_yes_no(dialogs.CONFIRM_PLC_DOWNLOAD, DOWNLOAD_QUESTION):
+    if ask_yes_no(title, question):
         return None
-    return "PLC download cancelled: not confirmed."
+    return "%s cancelled: not confirmed." % what
 
 
 def a_trip(kind, action):

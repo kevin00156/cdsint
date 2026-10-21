@@ -163,6 +163,31 @@ def remember(path, key, entry):
                 "beside it to write the record")
     records = read_records(path)
     records[key] = entry
+    return _written(path, records)
+
+
+def clear_records(path):
+    """Empty the record. (the controllers it named, None), or (None, why it
+    could not be emptied).
+
+    For a change to a controller that cannot be told apart from the others
+    in it: the watcher logs in wherever the device node points, and the
+    node's address is not the gateway/host:port a record is filed under
+    (controller_key; docs/trace-research.md 17.6). Any entry may be the one
+    that now describes something else, and a removed entry answers UNKNOWN
+    where a stale one could answer MATCH.
+    """
+    records = read_records(path)
+    if not records:
+        return [], None
+    problem = _written(path, {})
+    if problem:
+        return None, problem
+    return sorted(records), None
+
+
+def _written(path, records):
+    """Write the record. None, or why it could not be written."""
     try:
         ipc.write_json(path, records)
     except (IOError, OSError) as exc:
