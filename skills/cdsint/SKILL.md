@@ -1,6 +1,6 @@
 ---
 name: cdsint
-description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, building a PLC application, changing its libraries or EtherCAT device settings and IO mapping, downloading to a controller and checking what it runs, or recording variables from a running controller (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC、函式庫、EtherCAT 設定、下載到 PLC、錄 PLC 變數).
+description: Drive a CODESYS or DIADesigner-AX IDE from the shell with the cdsint command — edit .st files, compare, import them into the IDE, build, and read the compile errors, whether or not anyone has the IDE open. Use when the user mentions CODESYS, DIADesigner, PLC Designer, a .st file, PLC/IEC 61131 code, structured text, importing into the IDE, building a PLC application, changing its libraries or EtherCAT device settings and IO mapping, downloading to a controller and checking what it runs, logging its application in or out, starting or stopping it, or recording variables from a running controller (CODESYS、DIADesigner、PLC 程式、.st 檔、匯入 IDE、編譯 PLC、函式庫、EtherCAT 設定、下載到 PLC、錄 PLC 變數).
 ---
 
 # Driving a CODESYS IDE from the shell
@@ -108,7 +108,7 @@ it; the rest take their default:
 | Key | Type | Default |
 |---|---|---|
 | `sync_folder` | string; a relative path (`./sync`, `../export`) is relative to the `.project`'s directory | none — the first export asks |
-| `plc` | list of `connect`, `download` and `trace` | `[]` |
+| `plc` | list of `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` | `[]` |
 | `debug` | boolean — write `sync_metadata.json` and the `*.log` files | `false` |
 | `devices` | boolean — let `import` apply EtherCAT `.device` files | `false` |
 | `export_xml` | boolean — also export visualisations, alarms and text lists as XML | `false` |
@@ -131,15 +131,18 @@ cdsint plc connect --project C:\p\line.project --install 3.5.21.40 --sync-dir C:
 cdsint plc download -y --project C:\p\line.project --install 3.5.21.40 --sync-dir C:\p\exported --gateway 192.168.1.5
 ```
 
-`plc download` is the only command that changes a machine, and it has two gates in
-front of it. **The project has to allow it**: the `plc` key in the settings file
-lists any of `connect`, `download` and `trace`, and a command that is not listed
-is exit 5 with the file, the current list and what to add named in the message. No flag
-answers that one — ask the user to add the word. **And the call has to be
-confirmed**: `plc download` takes `-y`, exactly as `import` does.
+The `plc` commands touch a machine, and each has two gates in front of it.
+**The project has to allow it**: the `plc` key in the settings file lists the
+words `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop`,
+and a command that is not allowed is exit 5 with the file, the current list and
+what to add named in the message. No flag answers that one — ask the user to
+add the word. **And the call has to be confirmed**: `plc download`,
+`plc login --method`, `plc run` and `plc stop` take `-y`, exactly as `import`
+does.
 
-There is no `--target` form. The watcher runs inside an IDE somebody is using, and
-a PLC login would take their online session away from them.
+`plc connect` and `plc download` have no `--target` form: each logs in through a
+connection of its own, which would take the online session of whoever is using
+the IDE. `login`, `logout`, `run` and `stop` are the other way round, below.
 
 Both commands answer one question — is this controller still holding what cdsint
 downloaded to it from this project. `download` writes the controller's CRC into
@@ -153,7 +156,7 @@ running is exit 1 too, though it is recorded. It does not answer "has the projec
 since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 `compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
-Every `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
+Every `--project` `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
 by the project's device name, the controller can be the wrong one, and the
 wrong one passes every check. An IDE profile with more than one gateway also
 needs `--gateway-name NAME` to say which one reaches it; the refusal lists the
@@ -213,8 +216,8 @@ cdsint plc trace --target X --name T1 --job run.json
 ```
 
 `run.json` is `{"duration_s": 15, "out": "runs/t1"}`. It needs `trace` in the
-`plc` list, refuses `--gateway`, and never logs in or out: not logged in is
-exit 1, saying so; ask the user to log in. The command blocks until the
+`plc` list, refuses `--gateway`, and never logs in or out itself: not logged in
+is exit 1, saying so; `plc login` (below), or ask the user to. The command blocks until the
 recording is done (`--timeout` plus `duration_s`). `data.crc` is `UNKNOWN`
 there by design, and `data.uptodate` says whether the working copy matches
 what was downloaded. From another shell, `cdsint plc trace --target X --stop`
@@ -222,6 +225,51 @@ ends it early; the first command then answers with `data.stopped_early`.
 While it records, that IDE answers only `--stop`, `ping` and `status`; other
 commands are refused with when it ends. A trace the user started by hand is
 refused rather than taken over.
+
+### Logging in, out, running and stopping through the user's open IDE
+
+`plc login`, `plc logout`, `plc run` and `plc stop` take `--target X` and no
+`--project`, `--gateway`, `--port` or `--gateway-name`: the IDE logs its
+active application in to wherever the project's device node points.
+
+```
+cdsint plc login  --target X
+cdsint plc logout --target X
+cdsint plc run    -y --target X
+cdsint plc stop   -y --target X
+```
+
+When to use them. Log in when the work needs the application online: before
+`plc trace --target` (which also needs the application running), or to see the
+device online. Log out before anything an online project refuses: `import`,
+and creating a trace object with `trace apply`. Not
+logged in is exit 1 for `run` and `stop`, which never log in on their own.
+
+**A plain `plc login` never changes the controller.** It logs in only when the
+IDE finds the working copy unchanged since its last download and the
+controller holds that download. When it does not, it does nothing and exits 1
+(an ordinary failure, not `needs_input`) saying what differs, with
+`data.methods` listing the `--method` values that would apply the difference.
+**That refusal is a decision to bring back to the user, not a flag to add.**
+`--method download -y` stops the machine and leaves it stopped;
+`--method online_change -y` keeps it running but is only offered when the IDE
+says it can carry the change. Which one, or neither, is about the machine, so
+ask; do not reach for `-y --method download` to make the error go away. An
+unreachable controller, or one holding another program or none, is refused
+too: never decide on your own to download over it.
+
+`--method ... -y` needs `download` or `online_change` in the `plc` list,
+writes the boot application unless `--no-boot-app`, and refuses an application
+that is already logged in (log out first). `plc run` and `plc stop` need `-y`
+and their own words `run` and `stop`; `plc login` needs `login`; `plc logout`
+is allowed by any of `login`, `download`, `online_change`. A word that is
+missing is exit 5: ask the user to add it, there is no flag. The state the
+result reports is read back, so trust `data.state` and `data.logged_in`, not
+the exit code alone. A watcher `plc trace` refused for "not logged in" or "not
+running" now says to run `plc login` and `plc run -y`, both with the user's
+word. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS` in your
+own environment, forwarded to the IDE for these commands and never printed; a
+login that needs one and was not given it fails, and its notes say so.
 
 ## Trace objects and their data: `trace`
 
@@ -271,7 +319,7 @@ other shape. Do not look for a copy of the package elsewhere
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
 itself is wrong — flags that do not go together, a `plc` command without
-`--gateway`, `plc trace` without its job file, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
+`--gateway` (in the `--project` form), `plc trace` without its job file, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
 report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`
@@ -320,7 +368,7 @@ A question with no flag behind it comes back as `needs_input`, exit code 1, and
 
 | `arg` | flag | the question |
 |---|---|---|
-| `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify`, `plc download`, `trace apply` and `trace show` |
+| `yes` | `--yes` | "change the IDE / the controller?" — required for `import`, `verify`, `plc download`, `plc login --method`, `plc run`, `plc stop`, `trace apply` and `trace show` |
 | `app` | `--app NAME` | which application to build |
 | `delete_orphans` | `--delete-orphans` | export found sync files with no object behind them |
 
@@ -341,6 +389,9 @@ time and wait for it.
 - Edit the `.project` file, or anything outside the sync folder.
 - Import while the PLC is logged in — the tool refuses, and the IDE would reject
   every create, move and delete anyway.
+- Pick `plc login --method download` or `--method online_change` to get past a
+  refused plain login, or `plc run` or `plc stop` a machine, without the
+  user's word. Those are decisions about the machine, not flags.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
 - Run `cdsint update`, `cdsint link` or `cdsint unlink`, or `setup.ps1

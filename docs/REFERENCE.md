@@ -174,6 +174,9 @@ Every command that touches a project takes one of two forms, and never both:
 | `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
+| `plc login [-y --method download\|online_change] [--no-boot-app]` | yes | — | log the IDE's application in; without `--method` only when nothing on the controller changes, otherwise say what differs and which method would apply it |
+| `plc logout` | yes | — | log it out |
+| `plc run -y`, `plc stop -y` | yes | — | start or stop the application of the open login, and read the state back |
 | `trace list` | yes | yes | every trace object in the project: its whole path and what it records |
 | `trace job --name T [--out FILE]` | yes | yes | write what trace object `T` records as a job file |
 | `trace apply -y --name T --job FILE [--folder F]` | yes | yes | make trace `T` record a job file's variables, creating it if needed, in folder `F` if given |
@@ -266,25 +269,33 @@ created and deleted, `needs_input`, exit 1, and an untouched IDE.
 
 ### Talking to a controller
 
-`plc download` is the only command that changes a machine, so it is the only
-one with a permission layer in front of it, and the layer has two parts that
+The `plc` commands are the ones that touch a machine, so they are the only
+ones with a permission layer in front of them, and the layer has two parts that
 cannot stand in for each other.
 
 - **The project has to allow it.** The `plc` key in the project's settings
-  file is a list, and it recognises exactly `connect`, `download` and
-  `trace`:
+  file is a list, and it recognises exactly `connect`, `download`, `trace`,
+  `login`, `online_change`, `run` and `stop`:
 
   ```json
-  { "plc": ["connect", "download", "trace"] }
+  { "plc": ["connect", "download", "trace", "login", "run", "stop"] }
   ```
+
+  A command is allowed by the word of its own name; `plc login` by `login`,
+  `plc login --method download` by `download` and `plc login --method
+  online_change` by `online_change`, and `plc logout` by any one of those
+  three. `download` thus allows both the `--project` download and the
+  watcher's.
 
   A command that is not in the list comes back as exit 5, and the message
   names the file, what the list holds now, and what to add. This is a policy,
   not a wall — whoever can write the file can write this key — so the gate
   that actually stops a download is the `-y` below.
-- **This call has to be confirmed.** `plc download` needs `-y`, the same `-y`
-  as `import` and `verify`. Without it: what the download would do,
-  `needs_input`, exit 1, controller untouched.
+- **This call has to be confirmed.** `plc download`, `plc login --method`,
+  `plc run` and `plc stop` need `-y`, the same `-y` as `import` and `verify`.
+  Without it: what the command would do, `needs_input`, exit 1, controller
+  untouched. A plain `plc login`, `plc logout`, `plc connect` and `plc trace`
+  take none (a `-y` on `connect` or `trace` is exit 2).
 
 Every `plc` command in the `--project` form also needs `--gateway`, and is
 exit 2 without it: a
@@ -297,11 +308,13 @@ more than one. Without it such a profile is refused with the names listed,
 and a name the profile does not have is refused too. `-y` on `connect` or
 `trace` is exit 2, since neither has anything to confirm.
 
-`plc` has no `--target` form at all. The watcher lives inside an IDE somebody
-is using, and a PLC login would take their online session away from them, so a
-PLC command always starts an IDE of its own.
+`plc connect` and `plc download` have no `--target` form. The watcher lives
+inside an IDE, and each of them logs in through a connection of its own, which
+would take the online session of whoever is using that IDE, so they always start
+an IDE of their own. To download through an open IDE's own application, use
+`plc login --method download -y` (below).
 
-Both commands end in the same comparison: the CRC the controller reports now,
+`connect` and `download` end in the same comparison: the CRC the controller reports now,
 against the one it reported right after the last `plc download` from this
 project, kept in `<project>.cdsint-plc.json` beside the project, one entry
 per controller. `MATCH` is the only answer that exits 0 — it means the
@@ -325,6 +338,68 @@ CODESYS Control soft PLCs under WSL, driven by CODESYS 3.5.21.40. No Lenze or
 Delta controller has been tried, and the two ways of switching the credential
 dialog off have only been checked on ScriptEngine 4.2.0.0 — on a version with
 neither, `connect` refuses rather than hanging.
+
+### Logging in and out, running and stopping: `plc login`, `logout`, `run`, `stop`
+
+These four work on the application of the IDE a watcher is in, so they take
+`--target` and nothing else: `--project` and `--gateway`, `--port` and
+`--gateway-name` are exit 2. The IDE logs in wherever the project's device
+node points, as its Login button does, and the result names the address it
+reached.
+
+```
+cdsint plc login   --target softplc
+cdsint plc login   --target softplc -y --method online_change
+cdsint plc login   --target softplc -y --method download
+cdsint plc logout  --target softplc
+cdsint plc run     --target softplc -y
+cdsint plc stop    --target softplc -y
+```
+
+A plain `plc login` never changes the controller. It logs in only when the IDE
+finds the working copy unchanged since its last download and the controller
+holds that download. Otherwise it does nothing, exits 1, and says what
+differs, with `data.methods` naming the `--method` values that would apply it.
+That is a refusal to bring back to a person, not a flag to add: choosing
+between a download and an online change decides whether the machine stops.
+
+- `--method online_change -y` applies the difference by online change: the
+  application keeps running and keeps its state. It is refused, touching
+  nothing, when the IDE says an online change cannot carry the difference, and
+  it never turns into a download.
+- `--method download -y` logs in with a full download and leaves the
+  application stopped; `plc run -y` starts it.
+- Both write the boot application so a restarted controller keeps what was
+  put on it; `--no-boot-app` skips that. Both ask `-y` before anything
+  connects, and both refuse when the application is already logged in: log
+  out first.
+- `plc logout` and `plc login` need `-y` of nobody. `plc run` and `plc stop`
+  do, and neither logs in: not logged in is exit 1, pointing at `plc login`.
+  Already in the asked state is success.
+
+Each needs a word in the project's `plc` list (see above): `login`,
+`online_change`, `run` or `stop`; `--method download` needs `download`, and
+`logout` is allowed by any of `login`, `download` and `online_change`.
+
+Every state the result reports (`data.logged_in`, `data.state`) is read back
+from the application after the action. After a download or an online change
+the controller no longer holds what the CRC record in
+`<project>.cdsint-plc.json` says, so the entries recording the old CRC are
+removed (all of them if it could not be read), and a `plc connect` answers
+`UNKNOWN` until a `plc download -y` records again.
+
+**Credentials.** The IDE running the watcher does not have
+`CDS_DEV_USER` and `CDS_DEV_PASS`; the CLI does, and when both are set it
+forwards them in the command it hands over (for these four and for
+`plc trace --target`). The watcher gives them to the IDE immediately before
+each online call, because a logon dialog nobody answers holds the IDE for
+good. They are in no result, note, stdout or log. Without them the command
+still runs and its notes say it was given none. The command file that carries
+them is removed when the CLI stops waiting, and the watcher rewrites the
+claimed copy without them as soon as it has it. Two rare cases leave the
+password in that claimed file under `%LOCALAPPDATA%` until the stale-file
+cleanup removes it, hours later: a watcher killed in the instant between claim
+and rewrite, and a rewrite and release that both fail.
 
 ### Recording a trace: `plc trace`
 
@@ -446,8 +521,9 @@ cdsint plc trace --target softplc --stop
 
 With the project open and logged in to the controller, `plc trace` records
 trace `T1` through that login, and answers when the recording is done. It
-never logs in or out, so the person's session is left as it was; not logged
-in is exit 1, saying so. `--gateway`, `--port` and `--gateway-name` are
+never logs in or out, so a session is left as it was; not logged
+in is exit 1, saying to run `plc login`, and an application that is not running
+is refused saying to run `plc run -y`. `--gateway`, `--port` and `--gateway-name` are
 exit 2: the login already chose the controller. `--name` is required,
 because CODESYS adds no object to an application that is logged in — make
 the trace with `trace apply` while logged out, or use one of your own.
@@ -563,7 +639,7 @@ that recorded it, and an IDE cdsint starts has none and nobody to see it.
 |---|---|
 | 0 | done |
 | 1 | the command failed, or it needs a flag you did not give |
-| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (any `plc` command without `--gateway`, `plc trace` without `--job`), a trace job file that is wrong, or no single live IDE matched |
+| 2 | the command line itself is wrong: flags that do not go together, a flag the command needs (any `--project` `plc` command without `--gateway`, `plc trace` without `--job`), a trace job file that is wrong, or no single live IDE matched |
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere (another IDE, or another `cdsint --project` run on it), `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
@@ -590,7 +666,7 @@ like this is complete:
 | Key | Type | Meaning | Default |
 |---|---|---|---|
 | `sync_folder` | string | where the `.st` files live. A relative path (`./sync`, `../export`, `sync`) is relative to the directory holding the `.project`, however the IDE was started; an absolute path (a drive, a UNC share) is used as written | none — the first export asks |
-| `plc` | list of strings | which PLC commands this project allows; only `connect`, `download` and `trace` are recognised | `[]` |
+| `plc` | list of strings | which PLC commands this project allows; only `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
 | `devices` | boolean | let `import` apply EtherCAT device settings (`.device` files) | `false` |
 | `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |

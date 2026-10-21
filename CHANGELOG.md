@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### 0.6.0 (2026-10-21) — log in and out, run and stop, from the watcher
+
+- **`cdsint plc login`, `logout`, `run` and `stop` with `--target`.** An agent
+  that needed the application logged in (to record a trace) or out (to change
+  what only an offline project can) used to stop and wait for a person to press
+  Login or Logout in an IDE nobody was at. Now it can do both, and start and
+  stop the application, with the state read back from the application after
+  each. They take no `--project`, `--gateway`, `--port` or `--gateway-name`: the
+  IDE logs in wherever the project's device node points, and the result names
+  the address. This reverses SPEC D8's "the watcher never logs in or out"; the
+  reason is in D8, and `plc connect` and `plc download` are still refused in the
+  watcher.
+- **A plain `plc login` never changes the controller.** A `Keep` login applies
+  any difference by itself, so it logs in only when the IDE finds the working
+  copy unchanged since its last download and the controller's `Application.app`
+  header agrees with it (a controller someone else downloaded to, or one
+  holding no application, would otherwise be downloaded to without a prompt).
+  When it does not, it does nothing and exits 1 with `data.methods`, the
+  `--method` values that would apply the difference. That is a failure, not
+  `needs_input`: choosing between a download and an online change decides
+  whether the machine stops, and is a decision for a person, not a flag to add.
+- **`plc login -y --method download` and `--method online_change`.** The first
+  logs in with a full download and leaves the application stopped; the second
+  applies the difference by online change, only when the IDE says one can
+  carry it, never as a quiet download, and checks that the application keeps
+  its state. Both write the boot application unless `--no-boot-app`, and both
+  refuse an application already logged in. The CRC record now loses only the
+  entries recording the CRC the controller held before the change, or every
+  entry if that could not be read, so a later `plc connect` cannot say `MATCH`
+  for a controller holding something else.
+- **Four new words in the `plc` list**: `login`, `online_change`, `run` and
+  `stop`. `logout` is allowed by any of `login`, `download` and
+  `online_change`. **`download` now also allows `plc login --method download`**:
+  one word for the same act, so a settings file that allowed `download` allows
+  the watcher's download to whatever controller the device node points at.
+- **The device login is forwarded from the CLI's environment.** For these
+  commands and the watcher's `plc trace`, the CLI copies `CDS_DEV_USER` and
+  `CDS_DEV_PASS` into the command it hands the watcher when both are set, and
+  the watcher hands them to the IDE, with the logon dialog switched off,
+  immediately before every online call: a dialog nobody answers holds the IDE
+  indefinitely, and credentials handed over earlier went stale. They never
+  appear in a result, note, stdout or log; the watcher rewrites its claimed
+  command file without them as soon as it has it, and the CLI removes its file
+  whenever it stops waiting. Two rare cases leave the password in the claimed
+  file until the stale-file cleanup removes it after `ABANDONED_AFTER_S`: a
+  watcher killed between the claim and the rewrite, and a rewrite and release
+  that both fail.
+- **The watcher's `plc trace` refusals point at the new commands**: not logged
+  in says to run `plc login`, not running says to run `plc run -y`.
+
 ### 0.5.2 (2026-10-14) — the missing-Trace hint says how to download the package
 
 - **The hint for a missing CODESYS Trace package now says how to download

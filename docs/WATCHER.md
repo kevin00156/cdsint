@@ -114,8 +114,9 @@ file has the same name and lives in `result\`.
 ```
 
 - `deadline_epoch` is when the CLI stops waiting: the moment it queued the
-  command plus its `--timeout`. A CLI that times out takes its command back
-  out of the queue, but one that is killed cannot, so a watcher that reaches
+  command plus its `--timeout`. A CLI that stops waiting for any reason,
+  answered, timed out or interrupted, removes its command file, but one that
+  is killed cannot, so a watcher that reaches
   a command past its deadline does not run it: it answers `ok` false with
   "the caller stopped waiting at …; not run". `null` means no deadline.
 - When `ok` is false, `error` always carries text.
@@ -123,9 +124,20 @@ file has the same name and lives in `result\`.
   `ok` is false and `needs_input` carries the question verbatim and the flag
   to answer it with.
 - `denied` only has a value when the `plc` list in the project's settings file
-  blocked the command, and the watcher never runs `plc` at all (see the command
-  table below), so in a result file that came through this protocol it is
-  always null. It is here because both forms share one result record.
+  blocked the command: `{"file", "key", "action"}`, and the CLI answers it with
+  exit 5.
+- `args` may carry `credentials` (`user`, `password`) for the `plc` commands
+  that make an online call. The CLI copies them from its own
+  `CDS_DEV_USER`/`CDS_DEV_PASS`, and only when both are set, into `plc login`,
+  `logout`, `run`, `stop` and `plc trace` (not `plc trace --stop`). The watcher
+  hands them to the IDE immediately before each online call and never reads the
+  IDE's own environment. They are in no result, note, stdout or log, and the
+  watcher rewrites the claimed `<id>.running` file without them right after
+  the claim (section 5); a command it cannot rewrite is not run, and the caller
+  is told. Two windows remain in which the password stays in that file, under
+  `%LOCALAPPDATA%`, until the instance is pruned `ABANDONED_AFTER_S` after the
+  claim (section 2.1): a watcher killed between the claim's rename and the
+  rewrite, and a rewrite and the release that both fail.
 - Every write goes to `<name>.tmp` first and is then renamed to the final name;
   the reading side never sees half a file, and always ignores `.tmp`.
 - The CLI deletes a result file as soon as it has read it. At start-up the
@@ -143,8 +155,16 @@ file has the same name and lives in `result\`.
 | `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
-| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: it runs inside an IDE somebody is using, and logging in to a controller would take that person's online session away (SPEC D8). These two commands exist only in the `--project` form |
-| `plc trace` | `name`, `job` (the run only), or `stop` | none. Records trace `name` through the login the person already has open, and is answered when the recording ends (section 5, SPEC 6.8). `stop` ends a recording early and is answered by the watcher itself |
+| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: each logs in through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). These two commands exist only in the `--project` form; the refusal of `plc download` points at `plc login --method download -y` |
+| `plc login` | `method` (`download` or `online_change`), `no_boot_app`, `yes`, `credentials` | with no `method`, none: it logs in only when nothing on the controller changes, and otherwise fails with `data.methods` (SPEC 6.12). With a `method`, `yes` is required (without it `needs_input` comes back, before anything connects), and `no_boot_app` skips writing the boot application. `yes` and `no_boot_app` without a `method` are accepted and ignored |
+| `plc logout` | `credentials` | none |
+| `plc run`, `plc stop` | `yes`, required; `credentials` | "Confirm" is answered by `yes`; without it, `needs_input` comes back. Neither logs in |
+| `plc trace` | `name`, `job` (the run only), `credentials`, or `stop` | none. Records trace `name` through the login the IDE already holds, and is answered when the recording ends (section 5, SPEC 6.8). `stop` ends a recording early and is answered by the watcher itself |
+
+The `plc` commands are gated by the project's `plc` list before they run
+(SPEC 6.5). `plc login`, `logout`, `run` and `stop` exist only in the watcher
+(SPEC 6.12); a hand-written command file carrying them to a headless run is
+refused by name.
 
 ## 5. What one tick does
 
@@ -155,7 +175,8 @@ CPython, because it takes the IDE's globals as parameters.
    holds, return at once.
 2. Pick up one command file and **claim it before running it**: rename
    `<id>.json` to `<id>.running`. If it is already gone, its caller took it
-   back, and it is neither run nor answered.
+   back, and it is neither run nor answered. Then rewrite the claimed file
+   without `args.credentials`; the body still gets them from memory.
 3. Before running, set `state` to `busy` and write `busy_since`. On Windows
    that write fails while a CLI has the registration open, so it is tried
    again at once, a few times, with no sleep in between.
