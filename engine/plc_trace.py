@@ -61,6 +61,12 @@ class TraceTrip(TraceSetup):
     not_started_here = ("this command does not start it: that would change "
                         "the controller's state, which nobody asked for")
 
+    def before_online(self):
+        """Run right before each call that reaches the controller. None, or
+        why the call must not be made. The --project form has nothing to do
+        here: its credentials are handed over once, up front."""
+        return None
+
     def __init__(self, *args, **kwargs):
         TraceSetup.__init__(self, *args, **kwargs)
         self.session = None         # the online application, while logged in
@@ -108,6 +114,9 @@ class TraceTrip(TraceSetup):
         """
         failed = []
         for name in trace_job.named(self.job):
+            problem = self.before_online()
+            if problem:
+                return problem
             try:
                 shown = safe_str(self.session.read_value(name))
             except Exception as exc:
@@ -132,6 +141,8 @@ class TraceTrip(TraceSetup):
         are not set yet.
         """
         path = os.path.join(self.workspace(), CONFIGURED_CSV)
+        # A local save of the editor's configuration: no controller call, so
+        # no hand-over.
         try:
             self.api.open_editor().save(plc_crc.forget(path))
             saved = trace_samples.read_csv(path)
@@ -246,7 +257,13 @@ class TraceTrip(TraceSetup):
                     "download's overwrite prompt cannot be answered")
         try:
             self.editor = self.api.open_editor()
+            problem = self.before_online()
+            if problem:
+                return problem
             self._download(prompts.OK)
+            problem = self.before_online()
+            if problem:
+                return problem
             self.editor.start()
         except Exception as exc:
             return "the trace did not record: " + one_line(exc)

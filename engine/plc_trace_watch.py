@@ -59,20 +59,25 @@ class WatchedTrip(TraceTrip):
                 self.find_the_project, self.name_the_application,
                 self.take_the_named_trace, self.find_the_period,
                 self.logged_in, self.not_recording_already,
-                self.handed(self.names_resolve), self.types_reported,
+                self.names_resolve, self.types_reported,
                 self.types_fit, self.memory_fits,
                 self.handed(self.application_runs), self.size_the_buffers,
-                self.report_the_program, self.handed(self.start_recording)]
+                self.report_the_program, self.start_recording]
+
+    def before_online(self):
+        """The credentials and the dialog switch, right before each call.
+
+        Every call, not once: held credentials went stale and the dialog
+        came back (research 17.5). Only what this command carried (design
+        R4), never the IDE's own.
+        """
+        return plc_link.hand_over_for(self)
 
     def handed(self, step):
-        """`step` with the credentials and the dialog switch right before it.
-
-        Each step that talks to the controller, not once at the top: held
-        credentials went stale and the dialog came back (research 17.5).
-        Only what this command carried (design R4), never the IDE's own.
-        """
+        """`step` with the hand-over right before it, for a step whose one
+        online call is a property read."""
         def handed_step():
-            return plc_link.hand_over_for(self) or step()
+            return self.before_online() or step()
         return handed_step
 
     def needs_a_name(self):

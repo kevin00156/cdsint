@@ -175,8 +175,6 @@ class LoggedOnline(plc_fakes.Online):
 
 
 SECRET = "s3cret-pw"
-ONLINE_CALLS = ("create_online_application", "read_value", "download",
-                "start")
 
 
 def test_credentials_and_the_dialog_switch_come_before_every_online_call(bench):
@@ -184,37 +182,27 @@ def test_credentials_and_the_dialog_switch_come_before_every_online_call(bench):
     answer = bench.watch(run_only(), "T1",
                          {"user": "dev", "password": SECRET})
     assert answer["ok"], answer["summary"]
-    calls = [i for i, call in enumerate(bench.log) if call[0] in ONLINE_CALLS]
-    assert bench.log[calls[0]] == ("create_online_application",)
-    assert ("download",) in bench.log and ("start",) in bench.log
-    assert bench.log[calls[0] - 2:calls[0]] == [("dialog off",),
-                                                ("credentials",)]
-    for kind in ("download", "start"):
-        at = bench.log.index((kind,))
-        since = len(bench.log[:at]) - bench.log[:at][::-1].index(
-            ("credentials",))
-        assert bench.log[since - 2] == ("dialog off",)
-        assert all(call[0] in ("open_editor", "answer set", "answer removed",
-                                "download")
-                   for call in bench.log[since:at]), bench.log
+    log = bench.log
+    reads = [call for call in log if call[0] == "read_value"]
+    assert len(reads) == 2
+    for at, call in enumerate(log):
+        if call[0] in ("create_online_application", "read_value", "start"):
+            assert log[at - 2:at] == [("dialog off",), ("credentials",)], log
+    at = log.index(("download",))
+    assert log[at - 3:at] == [("dialog off",), ("credentials",),
+                              log[at - 1]] and log[at - 1][0] == "answer set"
     assert bench.online.credentials == ("dev", SECRET)
     assert SECRET not in json.dumps(answer, default=repr)
 
 
 def test_without_credentials_the_note_says_this_command_was_given_none(bench):
     bench.online = LoggedOnline(bench.log, bench.online)
-    recording = bench.watch(run_only(), "T1")[trace_run.RECORDING]
-    result = finished(bench, started_and_due_for(bench, recording))
+    result = finished(bench, started_and_due(bench))
     assert bench.online.credentials is None
     assert any("this command was given no credentials" in note
                for note in result["data"]["notes"])
     assert bench.log.index(("dialog off",)) < bench.log.index(
         ("create_online_application",))
-
-
-def started_and_due_for(bench, recording):
-    bench.clock.now += 2.0
-    return recording
 
 
 def test_the_ide_s_own_environment_is_not_handed_over(bench, monkeypatch):
