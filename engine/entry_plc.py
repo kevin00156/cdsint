@@ -180,6 +180,13 @@ def log_in_by_method():
     refused = trip.known_method() or confirm(*QUESTIONS[trip.method])
     if refused:
         return trip.failed(refused)
+    the_controller = {
+        # A download replaces whatever is there; only its CRC is wanted.
+        "download": [trip.crc_before],
+        # An online change is made against this copy's last download, so the
+        # controller must hold it (research 17.4), and the state is kept.
+        "online_change": [trip.the_ide_agrees, trip.keeps_its_state],
+    }[trip.method]
     return trip.run([
         trip.find_the_project,      # the project and the online API
         trip.name_the_application,  # the active application
@@ -187,6 +194,7 @@ def log_in_by_method():
         trip.open_session,          # the online application
         trip.logged_out_first,      # a method logs in itself
         trip.method_applies,        # what changes, or why it may not
+    ] + the_controller + [
         trip.forget_the_record,     # no MATCH for what is about to change
         trip.log_in_by_method,      # Never, or Force
         trip.write_boot_application,  # unless --no-boot-app or no change

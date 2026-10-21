@@ -549,6 +549,48 @@ def test_online_change_keeps_the_running_state():
     assert "changed online" in result["summary"]
 
 
+def test_an_online_change_that_changes_the_state_fails():
+    # The state is read before the login too: "keeps the state it had" is
+    # a comparison, not a reading of the state afterwards alone.
+    ide_globals = an_ide(allowed=("online_change",),
+                         application=changed_copy())
+    session_of(ide_globals).states_after_login = {"force": "stop"}
+    result = log_in(ide_globals, method="online_change", yes=True)
+    assert not result["ok"]
+    assert "state reads back stop, not run" in result["summary"]
+
+
+@pytest.mark.parametrize("device", [Device(app=APP_HEADER_OLD),
+                                    Device(crc=None, app=None)],
+                         ids=["another program", "no program"])
+def test_an_online_change_onto_what_this_copy_did_not_download_is_refused(
+        device):
+    # is_uptodate and is_online_change_possible both read true there
+    # (research 17.4), and what Force then does was never measured.
+    ide_globals = an_ide(allowed=("online_change",), device=device)
+    result = log_in(ide_globals, method="online_change", yes=True)
+    assert not result["ok"]
+    assert logins(ide_globals) == []
+    assert result["data"]["methods"] == ["download"]
+    assert "--method download" in result["summary"]
+    assert device.connected is False
+
+
+def test_an_online_change_after_one_without_boot_app_still_logs_in():
+    # Force rewrites only .compileinfo (research 17.2), so the .app header
+    # and .bootinfo_guids still agree on the next one.
+    ide_globals = an_ide(allowed=("online_change",),
+                         application=changed_copy())
+    first = log_in(ide_globals, method="online_change", yes=True,
+                   no_boot_app=True)
+    assert first["ok"], first["summary"]
+    assert log_out(ide_globals)["ok"]
+    second = log_in(ide_globals, method="online_change", yes=True)
+    assert second["ok"], second["summary"]
+    assert [c[1] for c in logins(ide_globals)] == [
+        getattr(OnlineChangeOption, plc_session.ONLINE_CHANGE)] * 2
+
+
 def test_online_change_with_nothing_different_writes_no_boot_application():
     path = plc_fakes.recorded()
     ide_globals, outcome = by("online_change")
@@ -645,7 +687,51 @@ def test_a_watcher_download_never_leaves_a_stale_match(method):
     result = log_in(ide_globals, method=method, yes=True, no_boot_app=True)
     assert result["ok"], result["summary"]
     assert answer_now(path, device) != plc_crc.MATCH
-    assert any(plc_fakes.CONTROLLER in note for note in result["data"]["notes"])
+    assert any(plc_fakes.CONTROLLER in note and
+               "the --project plc download -y" in note
+               for note in result["data"]["notes"])
+
+
+OTHER_BENCH = "Gateway-2/10.0.0.9:11740"
+
+
+@pytest.mark.parametrize("method", ["download", "online_change"])
+def test_only_the_entries_holding_the_controller_s_crc_are_removed(method):
+    # Another bench of the same working copy keeps its MATCH: the --project
+    # trace there needs it, and a download to get it back stops that bench.
+    device = Device()
+    path = plc_fakes.recorded(plc_crc=plc_crc.crc_field(device.crc))
+    plc_fakes.recorded(plc_crc="99999999", controller=OTHER_BENCH)
+    ide_globals = an_ide(allowed=(method,), device=device,
+                         application=changed_copy())
+    result = log_in(ide_globals, method=method, yes=True, no_boot_app=True)
+    assert result["ok"], result["summary"]
+    records = plc_crc.read_records(path)
+    assert plc_fakes.CONTROLLER not in records
+    assert records[OTHER_BENCH]["plc_crc"] == "99999999"
+
+
+class NoCrc(Device):
+    """A controller whose Application.crc will not come, the rest will."""
+
+    def upload_file(self, remote, local, overwrite):
+        if remote.endswith(".crc"):
+            self.uploaded.append(remote)
+            raise IOError("the transfer was aborted")
+        Device.upload_file(self, remote, local, overwrite)
+
+
+@pytest.mark.parametrize("method", ["download", "online_change"])
+def test_a_crc_that_cannot_be_read_clears_every_entry_saying_so(method):
+    path = plc_fakes.recorded()
+    plc_fakes.recorded(plc_crc="99999999", controller=OTHER_BENCH)
+    ide_globals = an_ide(allowed=(method,), device=NoCrc(),
+                         application=changed_copy())
+    result = log_in(ide_globals, method=method, yes=True)
+    assert result["ok"], result["summary"]
+    assert plc_crc.read_records(path) == {}
+    assert any("could not be read" in note and OTHER_BENCH in note
+               for note in result["data"]["notes"])
 
 
 def test_a_download_that_raises_has_already_forgotten_the_record():
@@ -690,7 +776,8 @@ def test_credentials_are_handed_over_before_the_boot_application():
     online_calls = ONLINE_CALLS + ("create_boot_application",)
     called = [i for i, event in enumerate(log) if event in online_calls]
     assert [log[i] for i in called] == [
-        "create_online_application", "login", "create_boot_application"]
+        "create_online_application", "create_online_device", "login",
+        "create_boot_application"]
     for i in called:
         assert log[i - 2:i] == ["dialog off", "credentials"], (i, log)
     written = (json.dumps(outcome.result) + outcome.stdout_tail

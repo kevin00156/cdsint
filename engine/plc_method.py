@@ -16,11 +16,14 @@ from cds.core import settings
 from engine import plc_crc
 from engine.plc_download import state_of
 from engine.plc_session import CHANGED, ONLINE_CHANGE, SessionTrip
-from engine.plc_trip import one_line
+from engine.plc_trip import RUNNING, one_line
 
 # The OnlineChangeOption member each --method logs in with. Never, as the
 # --project download has it; ONLINE_CHANGE says why that one.
 OPTIONS = {"download": "Never", "online_change": ONLINE_CHANGE}
+
+# The application states the bench showed (research 17.7).
+STATES = (RUNNING, "stop")
 
 
 class MethodTrip(SessionTrip):
@@ -29,6 +32,7 @@ class MethodTrip(SessionTrip):
     def __init__(self, action, args, ide_globals):
         SessionTrip.__init__(self, action, args, ide_globals)
         self.method = self.args.get("method")
+        self.held_before = None     # the controller's CRC before the change
 
     def known_method(self):
         """A method this version has. The gate lets through a word the list
@@ -56,6 +60,10 @@ class MethodTrip(SessionTrip):
         caller asked for one. An online change needs the IDE to say it can
         carry the difference; with nothing different it changes nothing.
         """
+        # Its problem (no is_uptodate) is not a refusal here: uptodate stays
+        # None, which counts as changed, so the boot application is written
+        # and the record cleaned as for any change; Force still refuses
+        # rather than downloads.
         self.read_the_change()
         if self.method == "download":
             self.changes = "download"
@@ -71,27 +79,67 @@ class MethodTrip(SessionTrip):
                         else "online_change")
         return None
 
-    def forget_the_record(self):
-        """Clear the CRC record before the controller changes (design 5.6, R5).
+    # -- the controller, before it changes ----------------------------------
 
-        Cleared rather than rewritten: the new CRC would need a device
-        connection while logged in, and the record's keys cannot name the
-        controller the device node points at (plc_crc.clear_records). Before
-        the login, so that one that fails halfway leaves no MATCH either.
+    def crc_before(self):
+        """The controller's CRC, over a device connection of its own: the
+        download has no identity check to read it in. Never a refusal: a
+        CRC not read only widens what forget_the_record removes."""
+        problem = self.connected(self._read_the_crc)
+        if problem:
+            self.note(problem)
+        return None
+
+    def _holds_this_download(self):
+        """The identity check, reading the CRC on the same connection."""
+        self._read_the_crc()
+        return SessionTrip._holds_this_download(self)
+
+    def _read_the_crc(self):
+        self.held_before, _unread = self.pull_plc_crc()
+        return None
+
+    def keeps_its_state(self):
+        """An online change keeps the state it found (research 17.7), so the
+        state read now is what must read back. A reading that is no state,
+        as a session not yet logged in may give, is noted, not expected."""
+        before = state_of(self.session)
+        if before in STATES:
+            self.expected["state"] = before
+        else:
+            self.note("the state before the online change read %s, so it is "
+                      "not compared afterwards" % before)
+        return None
+
+    def forget_the_record(self):
+        """No CRC record entry may answer MATCH after this change (design
+        5.6, R5).
+
+        Removed rather than rewritten: the new CRC would need a device
+        connection while logged in. Only the entries recording the CRC the
+        controller held before can match afterwards: a download or a boot
+        application always moves it, and without a boot application it does
+        not move at all (research 17.7). The record's keys cannot name this
+        controller (plc_crc.drop_records), so when that CRC was not read,
+        every entry goes. Before the login, so one that fails halfway leaves
+        no MATCH either.
         """
         if self.changes == "nothing":
             return None
+        held = self.held_before
         path = plc_crc.record_path(self.project_path())
-        cleared, problem = plc_crc.clear_records(path)
+        removed, problem = plc_crc.drop_records(
+            path, lambda entry: held is None or _records(entry, held))
         if problem:
-            return ("the CRC record could not be cleared, and after this %s "
+            return ("the CRC record could not be updated, and after this %s "
                     "it could answer MATCH for a controller that holds "
                     "something else; nothing was done: %s"
                     % (self.method, problem))
-        if cleared:
-            self.note("cleared the CRC record in %s (%s): a plc connect "
-                      "answers UNKNOWN until a plc download -y records again"
-                      % (path, ", ".join(cleared)))
+        if removed:
+            self.note("removed %s from the CRC record in %s: a plc connect "
+                      "answers UNKNOWN for %s until the --project plc "
+                      "download -y records again"
+                      % (_which(held), path, ", ".join(removed)))
         return None
 
     def log_in_by_method(self):
@@ -118,3 +166,15 @@ class MethodTrip(SessionTrip):
         return ("logged in and %s, but the boot application was not written, "
                 "so a restart of the controller brings back what it held "
                 "before: %s" % (CHANGED[self.changes], why))
+
+
+def _records(entry, held):
+    """The entry says the controller holds `held`."""
+    return isinstance(entry, dict) and entry.get("plc_crc") == held
+
+
+def _which(held):
+    if held is None:
+        return ("every entry, since the controller's CRC could not be read "
+                "before the change")
+    return "the entries recording %s, the CRC it held before" % held

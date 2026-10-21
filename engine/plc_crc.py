@@ -166,24 +166,26 @@ def remember(path, key, entry):
     return _written(path, records)
 
 
-def clear_records(path):
-    """Empty the record. (the controllers it named, None), or (None, why it
-    could not be emptied).
+def drop_records(path, doomed):
+    """Remove every entry for which doomed(entry) is true. (the controllers
+    removed, None), or (None, why the record could not be written).
 
-    For a change to a controller that cannot be told apart from the others
-    in it: the watcher logs in wherever the device node points, and the
-    node's address is not the gateway/host:port a record is filed under
-    (controller_key; docs/trace-research.md 17.6). Any entry may be the one
-    that now describes something else, and a removed entry answers UNKNOWN
+    For a change to a controller that cannot be found among the keys: the
+    watcher logs in wherever the device node points, and the node's address
+    is not the gateway/host:port a record is filed under (controller_key;
+    docs/trace-research.md 17.6). So the caller says which entries could
+    describe it by their contents instead. A removed entry answers UNKNOWN
     where a stale one could answer MATCH.
     """
     records = read_records(path)
-    if not records:
+    removed = sorted(key for key, entry in records.items() if doomed(entry))
+    if not removed:
         return [], None
-    problem = _written(path, {})
+    problem = _written(path, dict((key, entry) for key, entry
+                                  in records.items() if key not in removed))
     if problem:
         return None, problem
-    return sorted(records), None
+    return removed, None
 
 
 def _written(path, records):
