@@ -16,6 +16,10 @@ import json
 
 import pytest
 
+from cds.core import commands, ipc
+from cds.core.exits import EXIT_OK
+from cds.ide import entries
+from cdsint import cli, target
 from engine import ide_private, plc_crc, plc_session
 from tests import plc_fakes
 from tests.plc_fakes import (APP_HEADER_OLD, Application, Device, Online,
@@ -45,6 +49,11 @@ def last_download_from_here(workspace):    # noqa: F811  the project's path
 
 def an_ide(allowed=("login",), **more):
     return ide(allowed=list(allowed), **more)
+
+
+def allowing(word):
+    """The plc list that lets `word` run: logout is no word of its own."""
+    return ("login",) if word == "logout" else (word,)
 
 
 def session_of(ide_globals):
@@ -199,6 +208,25 @@ def test_a_controller_holding_no_program_refuses_the_plain_login():
     assert "--method download" in result["summary"]
     assert result["data"]["methods"] == ["download"]
     assert device.connected is False
+
+
+class Emptied(Device):
+    """A controller with no application, refusing the fetch in the words
+    the bench's IDE used, CRLF and all (research 17.13)."""
+
+    def __init__(self):
+        Device.__init__(self, crc=None, app=None)
+
+    def upload_file(self, remote, local, overwrite):
+        self.uploaded.append(remote)
+        raise IOError("Value cannot be null.\r\nParameter name: path")
+
+
+def test_the_no_application_refusal_is_one_line():
+    result = log_in(an_ide(device=Emptied()))
+    assert not result["ok"]
+    assert "Value cannot be null. Parameter name: path" in result["summary"]
+    assert "\r" not in result["summary"] and "\n" not in result["summary"]
 
 
 class Silent(Device):
@@ -398,6 +426,24 @@ def test_without_credentials_the_notes_say_none_were_given():
     assert not any("controller gets" in n for n in notes)
 
 
+@pytest.mark.parametrize("word,logged_in", [("login", False),
+                                            ("logout", True), ("run", True),
+                                            ("stop", True)])
+def test_the_credential_note_is_true_of_every_command(word, logged_in):
+    # It said "logging in as dev" on a run, a stop and a logout, none of
+    # which logs in (research 17.13).
+    ide_globals = an_ide(allowed=allowing(word))
+    session = session_of(ide_globals)
+    session.is_logged_in = logged_in
+    session.application_state = "stop" if word == "run" else "run"
+    outcome = press(ide_globals, word,
+                    {"yes": True, "credentials": dict(LOGIN)})
+    notes = " ".join(outcome.result["data"]["notes"])
+    assert "credentials for dev handed over (from CDS_DEV_USER and " \
+        "CDS_DEV_PASS)" in notes
+    assert "logging in as" not in notes and SECRET not in notes
+
+
 def test_the_ide_s_own_environment_is_not_the_caller_s(monkeypatch):
     # Design R4: in the watcher the login comes from the caller only.
     monkeypatch.setenv("CDS_DEV_USER", "ide-side")
@@ -539,7 +585,7 @@ def test_online_change_that_is_not_possible_touches_nothing():
     assert plc_crc.read_records(path).get(plc_fakes.CONTROLLER)
 
 
-def test_online_change_keeps_the_running_state():
+def test_online_change_logs_in_with_force_and_writes_the_boot_application():
     ide_globals, outcome = by("online_change", changed_copy())
     result = outcome.result
     assert result["ok"], result["summary"]
@@ -553,15 +599,20 @@ def test_online_change_keeps_the_running_state():
     assert "changed online" in result["summary"]
 
 
-def test_an_online_change_that_changes_the_state_fails():
-    # The state is read before the login too: "keeps the state it had" is
-    # a comparison, not a reading of the state afterwards alone.
+def test_an_online_change_reports_the_state_it_reads_back():
+    # Nothing is compared with a state from before the login: a session not
+    # yet logged in read `none` on the bench (research 17.13, D3), so there
+    # is no "before" to hold it to. That an online change keeps the state is
+    # research 17.7's measurement, not a check this command can make.
     ide_globals = an_ide(allowed=("online_change",),
                          application=changed_copy())
     session_of(ide_globals).states_after_login = {"force": "stop"}
     result = log_in(ide_globals, method="online_change", yes=True)
-    assert not result["ok"]
-    assert "state reads back stop, not run" in result["summary"]
+    assert result["ok"], result["summary"]
+    assert result["data"]["state"] == "stop"
+    assert "application stop" in result["summary"]
+    assert not any("before the online change" in note
+                   for note in result["data"]["notes"])
 
 
 @pytest.mark.parametrize("device", [Device(app=APP_HEADER_OLD),
@@ -899,3 +950,43 @@ def test_start_hands_the_credentials_over_first_in_one_script_run(
     assert len(runs) == 1
     at = log.index("start")
     assert log[at - 2:at] == ["dialog off", "credentials"], log
+
+
+# -- what a success says (research 17.13, D1) --------------------------------
+
+def already(word):
+    """An IDE where `word` has nothing to do."""
+    ide_globals = an_ide(allowed=allowing(word))
+    session = session_of(ide_globals)
+    session.is_logged_in = word != "logout"
+    session.application_state = word if word in ("run", "stop") else "run"
+    return ide_globals
+
+
+ALREADY = [("login", "login: already logged in, application run; nothing was "
+                     "done"),
+           ("logout", "logout: not logged in; nothing was done"),
+           ("run", "run: application already run; nothing was done"),
+           ("stop", "stop: application already stop; nothing was done")]
+
+
+@pytest.mark.parametrize("word,said", ALREADY)
+def test_a_call_with_nothing_to_do_says_so_in_its_record(word, said):
+    # The summary was surfaced only as a failure's error, so these records
+    # could not be told from calls that acted.
+    cmd = commands.new_command("plc " + word, {"yes": True})
+    record = entries.answer(already(word), cmd, ipc.now())
+    assert record["ok"], record["error"]
+    assert {"level": "info", "text": said} in record["messages"]
+
+
+@pytest.mark.parametrize("extra", [[], ["--json"]])
+def test_the_cli_shows_it_once(monkeypatch, capsys, extra):
+    ide_globals = already("run")
+    monkeypatch.setattr(target, "send", lambda root, instance_id, cmd,
+                        timeout: entries.answer(ide_globals, cmd, ipc.now()))
+    monkeypatch.setattr(target, "_resolve", lambda *a: {"instance_id": "i"})
+    assert cli.main(["plc", "run", "--target", "i", "-y"] + extra) == EXIT_OK
+    shown = capsys.readouterr()
+    assert (shown.out + shown.err).count(
+        "application already run; nothing was done") == 1

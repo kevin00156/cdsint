@@ -118,7 +118,16 @@ def hand_over_credentials(online_api):
                 "credentials; set %s and %s to log in"
                 % (USER_ENV, USER_ENV, PASS_ENV))
     online_api.set_default_credentials(user, password)
-    return "logging in as %s (from %s and %s)" % (user, USER_ENV, PASS_ENV)
+    return handed_over(user)
+
+
+def handed_over(user):
+    """The note for credentials given to the API, the user named and the
+    password never. It says what was done, not "logging in": a run, a stop,
+    a logout or a device connection hands them over too and logs in to
+    nothing."""
+    return "credentials for %s handed over (from %s and %s)" % (
+        user, USER_ENV, PASS_ENV)
 
 
 def hand_over_forwarded(online_api, given):
@@ -135,8 +144,7 @@ def hand_over_forwarded(online_api, given):
                 "both set where cdsint ran), so none were handed over"
                 % (USER_ENV, PASS_ENV))
     online_api.set_default_credentials(given["user"], given["password"])
-    return ("logging in as %s (from %s and %s)"
-            % (given["user"], USER_ENV, PASS_ENV))
+    return handed_over(given["user"])
 
 
 def hand_over_for(trip):

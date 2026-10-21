@@ -194,8 +194,11 @@ def log_in_by_method():
         # A download replaces whatever is there; only its CRC is wanted.
         "download": [trip.crc_before],
         # An online change is made against this copy's last download, so the
-        # controller must hold it (research 17.4), and the state is kept.
-        "online_change": [trip.the_ide_agrees, trip.keeps_its_state],
+        # controller must hold it (research 17.4). Its state is not read
+        # here: a session not yet logged in has none to give (research
+        # 17.13), so read_state reports what the change left, as for every
+        # command.
+        "online_change": [trip.the_ide_agrees],
     }[trip.method]
     return trip.run([
         trip.find_the_project,      # the project and the online API

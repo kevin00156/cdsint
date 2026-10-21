@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Tests for cds.core.commands — the command/result drop box."""
+import errno
 import io
 import os
 import re
@@ -7,6 +8,7 @@ import re
 import pytest
 
 from cds.core import commands, ipc
+from cdsint import target
 
 T0 = 1725453665.0  # a fixed "now" so nothing here depends on the clock
 
@@ -111,6 +113,80 @@ def test_take_result_reads_it_once(tmp_path):
 
 def test_a_result_that_is_not_there_yet_reads_as_none(tmp_path):
     assert commands.read_result(str(tmp_path), "p-1", "nope") is None
+
+
+# --- a result the watcher is still putting in place -------------------------
+
+def answered(root, cmd_id="1725453665123-a3f9c1"):
+    cmd = commands.new_command("plc login", cmd_id=cmd_id)
+    commands.write_result(root, "p-1", commands.new_result(cmd, True))
+    return cmd
+
+
+def refusing(monkeypatch, name, times, code=errno.EACCES):
+    """ipc.<name> raising the Windows sharing refusal `times` times (None:
+    always), then doing its job."""
+    real = getattr(ipc, name)
+    refused = []
+
+    def busy(path):
+        if times is None or len(refused) < times:
+            refused.append(path)
+            raise OSError(code, os.strerror(code), path)
+        return real(path)
+    monkeypatch.setattr(ipc, name, busy)
+    return refused
+
+
+@pytest.mark.parametrize("code", [errno.EACCES, errno.EPERM])
+def test_a_result_being_put_in_place_is_not_there_yet(tmp_path, monkeypatch,
+                                                      code):
+    root = str(tmp_path)
+    cmd = answered(root)
+    refusing(monkeypatch, "read_json", 1, code)
+    assert commands.take_result(root, "p-1", cmd["id"]) is None
+    assert commands.take_result(root, "p-1", cmd["id"])["ok"] is True
+
+
+def test_a_result_read_but_not_deletable_is_still_the_answer(tmp_path,
+                                                             monkeypatch):
+    root = str(tmp_path)
+    cmd = answered(root)
+    refusing(monkeypatch, "remove_file", None)
+    assert commands.take_result(root, "p-1", cmd["id"])["ok"] is True
+
+
+def test_other_readers_still_hear_the_refusal(tmp_path, monkeypatch):
+    # Only taking a result waits it out: a registration or a settings file
+    # that cannot be opened is not "not written yet".
+    def refuse(path, *args, **kwargs):
+        raise OSError(errno.EACCES, os.strerror(errno.EACCES), path)
+    monkeypatch.setattr(ipc.io, "open", refuse)
+    with pytest.raises(OSError):
+        ipc.read_json(str(tmp_path / "x.json"))
+
+
+def waited_on(monkeypatch):
+    monkeypatch.setattr(target.Watching, "gone", lambda self, now: False)
+
+
+def test_the_caller_is_answered_after_the_refusal(tmp_path, monkeypatch):
+    # The bench lost a download's answer this way: the CLI died with a
+    # PermissionError while the watcher's result sat in the result directory
+    # (research 17.13, D2).
+    waited_on(monkeypatch)
+    root = str(tmp_path)
+    cmd = answered(root)
+    refusing(monkeypatch, "read_json", 1)
+    assert target.send(root, "p-1", cmd, 5, poll=0.001)["ok"] is True
+
+
+def test_a_refusal_that_never_ends_is_a_timeout(tmp_path, monkeypatch):
+    waited_on(monkeypatch)
+    root = str(tmp_path)
+    cmd = answered(root)
+    refusing(monkeypatch, "read_json", None)
+    assert target.send(root, "p-1", cmd, 0.05, poll=0.001) is None
 
 
 def test_prune_results_drops_only_the_old_ones(tmp_path):

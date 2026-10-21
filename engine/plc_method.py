@@ -16,14 +16,11 @@ from cds.core import settings
 from engine import plc_crc
 from engine.plc_download import state_of
 from engine.plc_session import CHANGED, ONLINE_CHANGE, SessionTrip
-from engine.plc_trip import RUNNING, one_line
+from engine.plc_trip import one_line
 
 # The OnlineChangeOption member each --method logs in with. Never, as the
 # --project download has it; ONLINE_CHANGE says why that one.
 OPTIONS = {"download": "Never", "online_change": ONLINE_CHANGE}
-
-# The application states the bench showed (research 17.7).
-STATES = (RUNNING, "stop")
 
 
 class MethodTrip(SessionTrip):
@@ -97,18 +94,6 @@ class MethodTrip(SessionTrip):
 
     def _read_the_crc(self):
         self.held_before, _unread = self.pull_plc_crc()
-        return None
-
-    def keeps_its_state(self):
-        """An online change keeps the state it found (research 17.7), so the
-        state read now is what must read back. A reading that is no state,
-        as a session not yet logged in may give, is noted, not expected."""
-        before = state_of(self.session)
-        if before in STATES:
-            self.expected["state"] = before
-        else:
-            self.note("the state before the online change read %s, so it is "
-                      "not compared afterwards" % before)
         return None
 
     def forget_the_record(self):

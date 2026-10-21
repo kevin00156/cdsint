@@ -146,7 +146,9 @@ file has the same name and lives in `result\`.
 - Every write goes to `<name>.tmp` first and is then renamed to the final name;
   the reading side never sees half a file, and always ignores `.tmp`.
 - The CLI deletes a result file as soon as it has read it. At start-up the
-  watcher clears anything in `result\` older than an hour.
+  watcher clears anything in `result\` older than an hour. A result Windows
+  refuses to open (`EACCES`/`EPERM`, the watcher still renaming it into
+  place) counts as not there yet, and the CLI reads again until its timeout.
 
 ## 4. The commands
 
@@ -371,8 +373,9 @@ Four pitfalls hit in the implementation:
 
 Success or failure is read from the body's return value (SPEC D11). Every path
 through a body has to return a `result()` from `engine/entry.py`: `ok` is the
-verdict, `summary` is the one line for a person (when `ok` is false it is also
-the error message the caller gets), and `data` is this command's own counts.
+verdict, `summary` is the one line for a person (when `ok` is false it is the
+error message the caller gets; when `ok` is true it ends `messages` at level
+`info`), and `data` is this command's own counts.
 Returning `None` (that is, one path forgot to return) counts as failure, with
 the message "returned no result", because that is exactly the shape of
 "quietly did nothing and reported success".

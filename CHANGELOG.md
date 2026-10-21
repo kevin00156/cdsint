@@ -28,8 +28,8 @@ All notable changes to this project will be documented in this file.
 - **`plc login -y --method download` and `--method online_change`.** The first
   logs in with a full download and leaves the application stopped; the second
   applies the difference by online change, only when the IDE says one can
-  carry it, never as a quiet download, and checks that the application keeps
-  its state. Both write the boot application unless `--no-boot-app`, and both
+  carry it, never as a quiet download, and reports the state read back
+  afterwards. Both write the boot application unless `--no-boot-app`, and both
   refuse an application already logged in. The CRC record now loses only the
   entries recording the CRC the controller held before the change, or every
   entry if that could not be read, so a later `plc connect` cannot say `MATCH`
@@ -57,6 +57,19 @@ All notable changes to this project will be documented in this file.
   if it dies).
 - **The watcher's `plc trace` refusals point at the new commands**: not logged
   in says to run `plc login`, not running says to run `plc run -y`.
+- **A command that worked now says what came of it.** Its one-line summary
+  ends `messages`, in `--json` and in the printed output, for every script
+  command. Until now only a failure's summary reached the caller, so "already
+  logged in; nothing was done" could not be told from a login that happened.
+- **A result read while the watcher was still putting it in place is waited
+  for.** On Windows that read was refused with `PermissionError`, and the CLI
+  died with a traceback after a `plc login --method download -y` that had
+  downloaded. The CLI now reads again until its timeout.
+- **The credential note says `credentials for <user> handed over`**, in every
+  form: it said "logging in as" on a run, a stop or a connect that logs in to
+  nothing.
+- **A controller file that could not be fetched is reported on one line**,
+  without the line break inside the IDE's own words.
 
 ### 0.5.2 (2026-10-14) — the missing-Trace hint says how to download the package
 

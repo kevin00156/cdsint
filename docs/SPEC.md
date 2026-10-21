@@ -502,6 +502,12 @@ The `--json` output keeps the structure of the existing result file: `ok`,
 `sync_dir` (this run's source of truth, the same value as at the top of the
 report), `report_path`, `notes`.
 
+`messages` is what the run said on its way past, `{"level", "text"}` each. A
+run that worked ends the list with its one-line summary at level `info`: for a
+call that had nothing to do ("already logged in; nothing was done") that line
+is the only thing telling it from one that acted. A failed run's summary is its
+`error` instead and is not repeated here.
+
 `notes` is what the launcher has to say about "this run" rather than about
 "the work": it cleared a lock file, it had to kill an IDE, the exit code did
 not match what the script recorded. Only the `--project` form has it, because
@@ -1684,7 +1690,7 @@ exit 1, "log out first". Before any login it refuses, with
 `data.methods` `download` and nothing touched, when the IDE does not say
 `is_online_change_possible`. It runs the identity check of step 4 above, since
 `Force` onto a controller holding another program or none is unmeasured
-(research 17.11), and reads the application's state. It logs in with
+(research 17.11). It logs in with
 `OnlineChangeOption.Force`. `Try` falls back to a full download when an online
 change is not possible; `Force` refuses instead, but with a bare "Login
 failed" that names no reason and after logging in and out again, which is why
@@ -1692,9 +1698,11 @@ failed" that names no reason and after logging in and out again, which is why
 never becomes a download here, and nothing falls back from one method to the
 other. With nothing different it is a plain login, reports `changed` as
 `nothing` and writes no boot application. Otherwise the boot application is
-written unless `--no-boot-app`, and the application must read back in the state
-it was found in, `run` or `stop`; a reading of anything else is noted and not
-compared, since a session not yet logged in may not give a real state.
+written unless `--no-boot-app`. The application's state is read back and
+reported, as every command here does; it is not compared with a state from
+before the login, because a session not yet logged in has none to give (it
+read `none` for a running application, research 17.13). That an online change
+keeps the state is research 17.7's measurement, not a check this command makes.
 
 A boot application that fails to write after a login that worked fails the
 command, saying so and that a restart of the controller brings back what it

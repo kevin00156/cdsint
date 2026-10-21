@@ -214,7 +214,7 @@ class Trip(object):
             self.device.upload_file(remote, local, True)
         except Exception as exc:
             return None, "%s could not be fetched: %s" % (remote,
-                                                          safe_str(exc))
+                                                          one_line(exc))
         return local, None
 
     def pull_source_archive(self):

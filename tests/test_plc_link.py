@@ -243,7 +243,7 @@ def test_the_project_form_hands_over_a_user_with_an_empty_password(
         online, {"CredentialSourceKind": CredentialSourceKind})
     assert problem is None
     assert online.credentials == ("dev", "")
-    assert "logging in as dev" in note
+    assert "credentials for dev handed over" in note
 
 
 def test_the_project_form_without_a_user_says_so_in_its_own_words(

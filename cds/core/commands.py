@@ -250,11 +250,33 @@ def read_result(root, instance_id, cmd_id):
     return ipc.read_json(_result_path(root, instance_id, cmd_id))
 
 
+# What Windows says to a process opening or deleting a file that another one
+# is renaming into place (docs/trace-research.md 17.13, D2).
+_BEING_REPLACED = (errno.EACCES, errno.EPERM)
+
+
 def take_result(root, instance_id, cmd_id):
-    """Read a result and delete it. None if it is not there yet."""
-    result = read_result(root, instance_id, cmd_id)
+    """Read a result and delete it. None if it is not there yet.
+
+    A result refused while the watcher puts it in place is not there yet:
+    the caller polls until its deadline anyway. Here and not in
+    ipc.read_json, whose other readers must hear a refusal. A result that
+    was read but would not be deleted is still the answer; the watcher's
+    next start sweeps the file (prune_results).
+    """
+    path = _result_path(root, instance_id, cmd_id)
+    try:
+        result = ipc.read_json(path)
+    except (IOError, OSError) as exc:
+        if getattr(exc, "errno", None) in _BEING_REPLACED:
+            return None
+        raise
     if result is not None:
-        ipc.remove_file(_result_path(root, instance_id, cmd_id))
+        try:
+            ipc.remove_file(path)
+        except (IOError, OSError) as exc:
+            if getattr(exc, "errno", None) not in _BEING_REPLACED:
+                raise
     return result
 
 

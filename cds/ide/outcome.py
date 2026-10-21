@@ -12,7 +12,7 @@ of a good export into a failed command.
 """
 from __future__ import print_function
 
-from cds.core import trace_run
+from cds.core import commands, trace_run
 
 
 class NeedsInput(BaseException):
@@ -77,6 +77,20 @@ class Outcome(object):
         if isinstance(self.result, dict):
             return self.result.get("data")
         return None
+
+    def said(self):
+        """The messages, ending with the summary of a run that worked.
+
+        A failure's summary is already its error (error_text). A success's
+        is the only place a body says what came of it when that was nothing
+        -- "already logged in; nothing was done" -- and kept out of the
+        record, such a call could not be told from one that acted. A body
+        that already said the same words on screen is not repeated.
+        """
+        summary = self.result.get("summary") if self.ok() else None
+        if not summary or summary in [m["text"] for m in self.messages]:
+            return list(self.messages)
+        return list(self.messages) + [commands.message("info", summary)]
 
     def error_text(self):
         """The reason this run failed, or None. Never a silent failure."""

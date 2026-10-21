@@ -147,7 +147,7 @@ def record_of(ide_globals, cmd, started, outcome):
     error = outcome.error_text()
     return commands.new_result(
         cmd, not error, started_at=started, error=error,
-        messages=outcome.messages,
+        messages=outcome.said(),
         stdout_tail=tail(ide_globals, command, outcome),
         data=outcome.data(),
         denied=outcome.denied,

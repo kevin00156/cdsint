@@ -1702,6 +1702,9 @@ under it and its application removed and put back, closing and opening the
 project from a probe showed a "Communication error: #0x18b" message box,
 gone within a second; no cdsint command was running.
 
+D1 to D3 and the first two smaller things were fixed in 0.6.0 before its
+release; its CHANGELOG entry says how.
+
 **The bench afterwards.** The runtime stopped, the `Application` directory
 put back from a tarball made at the start, the runtime started: it loaded
 the boot project (code d7f7fab5, "started"), `Application.crc` 72EB8ADB,

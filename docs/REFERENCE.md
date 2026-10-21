@@ -365,7 +365,8 @@ That is a refusal to bring back to a person, not a flag to add: choosing
 between a download and an online change decides whether the machine stops.
 
 - `--method online_change -y` applies the difference by online change: the
-  application keeps running and keeps its state. It is refused, touching
+  application keeps running and keeps its state (as measured, not checked:
+  the result reports the state read back afterwards). It is refused, touching
   nothing, when the IDE says an online change cannot carry the difference, and
   it never turns into a download.
 - `--method download -y` logs in with a full download and leaves the

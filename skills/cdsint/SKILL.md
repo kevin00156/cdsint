@@ -344,7 +344,8 @@ really does have the project open. In that case the lock stays, `notes` says
 why, and the next run needs `--force-lock` again.
 
 With `--json`: `messages` carries what the IDE would have shown a person,
-`data` carries the counts and the lists behind them (compare's `changes`, one
+ending, when the command worked, with its one-line summary (the only place a
+call that had nothing to do says so), `data` carries the counts and the lists behind them (compare's `changes`, one
 row per object with `name`, `path` and `state`; discover's `unknown`),
 `stdout_tail` carries what the script printed on the way (build's error list
 with line numbers is there; compare's is not, and a run that worked has no
