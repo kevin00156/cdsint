@@ -139,6 +139,25 @@ def hand_over_forwarded(online_api, given):
             % (given["user"], USER_ENV, PASS_ENV))
 
 
+def hand_over_for(trip):
+    """The dialog switch and the login the trip's command carried, right
+    before one of its online calls. None, or why the call must not be made.
+
+    Every call, not once: held credentials went stale across a runtime
+    restart and a project reopen, and the dialog came back (17.5). The note
+    is the same every time, so it is said once.
+    """
+    given = trip.args.get("credentials")
+    note, problem = silence_credential_dialogs(
+        trip.online, trip.globals,
+        lambda online: hand_over_forwarded(online, given))
+    if problem:
+        return problem
+    if note not in trip.notes:
+        trip.note(note)
+    return None
+
+
 def login_refusal(said):
     """What to tell the caller when login() raised `said`, on one line."""
     if ALREADY_LOGGED_IN in said.lower():

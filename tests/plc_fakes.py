@@ -837,7 +837,7 @@ class TraceBench(object):
                          clock=self.clock, buffers_for=self.buffers)
         return entry_plc.traced(trip)
 
-    def watch(self, job, name):
+    def watch(self, job, name, credentials=None):
         """The watcher's form on this bench: checks and start, a Recording.
 
         No hold in the globals, as in an IDE with a window.
@@ -847,6 +847,8 @@ class TraceBench(object):
         args = {"job": job}
         if name:
             args["name"] = name
+        if credentials:
+            args["credentials"] = credentials
         trip = WatchedTrip(args, self.globals(ui=True), clock=self.clock,
                            buffers_for=self.buffers)
         return entry_plc.watched(trip)

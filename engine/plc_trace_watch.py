@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""plc trace in the watcher: through the person's login, across the ticks.
+"""plc trace in the watcher: through the login already open, across the ticks.
 
-SPEC 6.8 "In the watcher". The person whose IDE it is has logged in, and
-cdsint neither logs in nor out there (D8): it records the trace they named
-through their session. So the gates are the ones that session leaves:
-logged in, the application running, the names, trace_memory_mb, and the
-trace not already recording. The CRC is reported as unknown rather than
-read (SPEC 6.8): reading it takes a device connection of cdsint's own, and
-closing that can end the person's session.
+SPEC 6.8 "In the watcher". The trace records through a session someone
+else opened (plc login, or the person at the IDE) and never logs in or out
+itself. So the gates are the ones that session leaves: logged in, the
+application running, the names, trace_memory_mb, and the trace not already
+recording. The CRC is reported as unknown rather than read (SPEC 6.8):
+reading it takes a device connection of cdsint's own, and closing that can
+end the session the recording runs through.
 
 The watcher's timer may not wait (D5), so this file never does. start()
 runs every check and starts the trace inside one nested script run, which
@@ -17,7 +17,7 @@ poll() hands back the run's result.
 """
 from __future__ import print_function
 
-from engine import entry, ide_private
+from engine import entry, ide_private, plc_link
 from engine.plc_trace import TraceTrip
 from engine.plc_trip import first_problem, one_line
 
@@ -30,17 +30,20 @@ NEEDS_A_NAME = ("in the watcher plc trace records a trace object named with "
                 "--name: it records through the login already open in this "
                 "IDE, and CODESYS adds no object to an application that is "
                 "logged in")
-NOT_LOGGED_IN = ("the application is not logged in. In the watcher cdsint "
-                 "records through the login of the person whose IDE it is "
-                 "and never logs in itself (SPEC D8): log in, then run this "
-                 "again")
+NOT_LOGGED_IN = ("the application is not logged in. In the watcher a trace "
+                 "records through the login already open: run plc login, "
+                 "then run this again")
+NOT_STARTED_HERE = ("this command does not start it: run plc run -y, then "
+                    "run this again")
 CRC_NOT_READ = ("the controller's CRC is not read in the watcher: that takes "
                 "a device connection of cdsint's own, and closing it can end "
-                "the session of the person logged in through this IDE")
+                "the session this recording runs through")
 
 
 class WatchedTrip(TraceTrip):
     """One plc trace in the watcher, up to the moment the trace starts."""
+
+    not_started_here = NOT_STARTED_HERE
 
     def start(self):
         """A Recording, or the failed result of the check that refused."""
@@ -55,16 +58,31 @@ class WatchedTrip(TraceTrip):
         return [self.can_script_traces, self.needs_a_name, self.read_the_job,
                 self.find_the_project, self.name_the_application,
                 self.take_the_named_trace, self.find_the_period,
-                self.logged_in, self.not_recording_already, self.names_resolve,
-                self.types_reported, self.types_fit, self.memory_fits,
-                self.application_runs, self.size_the_buffers,
-                self.report_the_program, self.start_recording]
+                self.logged_in, self.not_recording_already,
+                self.handed(self.names_resolve), self.types_reported,
+                self.types_fit, self.memory_fits,
+                self.handed(self.application_runs), self.size_the_buffers,
+                self.report_the_program, self.handed(self.start_recording)]
+
+    def handed(self, step):
+        """`step` with the credentials and the dialog switch right before it.
+
+        Each step that talks to the controller, not once at the top: held
+        credentials went stale and the dialog came back (research 17.5).
+        Only what this command carried (design R4), never the IDE's own.
+        """
+        def handed_step():
+            return plc_link.hand_over_for(self) or step()
+        return handed_step
 
     def needs_a_name(self):
         return None if self.named() else NEEDS_A_NAME
 
     def logged_in(self):
         """The person's login, which this run records through."""
+        problem = plc_link.hand_over_for(self)
+        if problem:
+            return problem
         try:
             self.session = self.online.create_online_application(
                 self.application)

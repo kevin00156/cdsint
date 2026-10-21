@@ -17,8 +17,8 @@ from engine.plc_trip import RUNNING, one_line
 
 STOPPED = "stop"
 
-# The action's name is the state it leaves: what the verdict expects, and the
-# session method that gets it there.
+# The state each action leaves (what the verdict expects), mapped to the
+# session method that gets it there: run calls start(), stop calls stop().
 CALLS = {RUNNING: "start", STOPPED: "stop"}
 
 

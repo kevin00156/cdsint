@@ -57,6 +57,10 @@ REPORT_KEYS = ("controller", "crc", "task", "period_us", "resolution",
 class TraceTrip(TraceSetup):
     """One plc trace run: the trip to the controller, plus the recording."""
 
+    # Ends application_runs' refusal; the watcher has plc run to point at.
+    not_started_here = ("this command does not start it: that would change "
+                        "the controller's state, which nobody asked for")
+
     def __init__(self, *args, **kwargs):
         TraceSetup.__init__(self, *args, **kwargs)
         self.session = None         # the online application, while logged in
@@ -193,10 +197,8 @@ class TraceTrip(TraceSetup):
         state = safe_str(getattr(self.session, "application_state", None))
         if state != RUNNING:
             return ("the application on the controller is in state %s, not "
-                    "%s. A stopped application records nothing, and this "
-                    "command does not start it: that would change the "
-                    "controller's state, which nobody asked for"
-                    % (state, RUNNING))
+                    "%s. A stopped application records nothing, and %s"
+                    % (state, RUNNING, self.not_started_here))
         return None
 
     def size_the_buffers(self):

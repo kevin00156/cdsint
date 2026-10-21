@@ -42,8 +42,9 @@ SCRIPTS = {
     "plc connect": ("entry_plc.py", "connect"),
     "plc download": ("entry_plc.py", "download"),
     "plc trace": ("entry_plc.py", "record"),
-    # Not `run` and `stop`: this file is exec'd into the IDE's script
-    # namespace, where a bare run or stop would shadow the IDE's own names.
+    # Not `run` and `stop`: engine/entry_plc.py is exec'd into the IDE's
+    # script namespace, where a bare run or stop would shadow the IDE's own
+    # names.
     "plc login": ("entry_plc.py", "log_in"),
     "plc logout": ("entry_plc.py", "log_out"),
     "plc run": ("entry_plc.py", "run_application"),

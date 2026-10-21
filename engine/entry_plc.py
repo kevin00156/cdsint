@@ -15,37 +15,37 @@ is the first thing a reader sees.
 MATCHes, because a recording of variables from a program that is not this
 working copy's cannot be read against it (SPEC 6.8).
 
-`run` and `stop` start and stop the application through that session, after
-the same kind of -y. `login` and `logout` are the watcher's own session with the controller. A
+`login` and `logout` are the watcher's own session with the controller. A
 plain login changes nothing on it: it logs in only when nothing would be
 applied, and otherwise says which --method would. A login by --method makes
-that change, after the same -y a download asks for.
+that change, after the same -y a download asks for. `run` and `stop` start
+and stop the application through that session, after the same kind of -y.
 
 This file is only the surface: the names cds/ide/entries.py presses, the
 question -y answers, and the order the steps run in. The steps themselves
 are engine/plc_trip.py, with download's own in engine/plc_download.py,
 trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
 (online), login's and logout's in engine/plc_session.py and a --method's in
-engine/plc_method.py, run's and stop's in engine/plc_power.py; reaching a controller is
-engine/plc_link.py, and how the question is actually answered —
-why the offline CRC alone cannot answer it, what the record holds, and the
-three verdicts — is engine/plc_crc.py.
+engine/plc_method.py, run's and stop's in engine/plc_power.py; reaching a
+controller is engine/plc_link.py, and how the question is actually answered
+-- why the offline CRC alone cannot answer it, what the record holds, and
+the three verdicts -- is engine/plc_crc.py.
 
 Gates stand in front of the commands, and none is here (SPEC D8, 6.5): the
 `plc` list in the project's settings file says whether this project allows
-the action at all (cds/ide/permit.py), and for download and login --method,
--y says the caller
-means this call. By the time a function in this file runs, they have been
-passed. trace needs no -y: it changes nothing the caller would confirm.
+the action at all (cds/ide/permit.py), and for download, login --method, run
+and stop, -y says the caller means this call. By the time a function in this
+file runs, they have been passed. trace needs no -y: it changes nothing the
+caller would confirm.
 
-connect and download are reached only in the --project form; login and
-logout only in the watcher; trace in both, the watcher's through
-engine/plc_trace_watch.py. Neither form is the menu,
-so there is no menu stub and the flags arrive as `command_args` rather than
-as answers to dialogs (cds/ide/silent.py). The exception is the confirmation
-of a download or a login by --method, which is a question a person would
-have been asked and so goes through the same ask_yes_no the import
-confirmation does.
+connect and download are reached only in the --project form; login, logout,
+run and stop only in the watcher; trace in both, the watcher's through
+engine/plc_trace_watch.py. Neither form is the menu, so there is no menu stub
+and the flags arrive as `command_args` rather than as answers to dialogs
+(cds/ide/silent.py). The exception is the confirmation of a download, a
+login by --method, a run or a stop, which is a question a person would have
+been asked and so goes through the same ask_yes_no the import confirmation
+does.
 """
 from __future__ import print_function
 
@@ -108,7 +108,7 @@ STOP_QUESTION = (
     "This will stop the application on the controller the IDE is logged in "
     "to. Whatever it drives stops being controlled by it.\n\nProceed?")
 
-STOP_HERE =("plc trace --stop ends a recording a watcher is holding; this "
+STOP_HERE = ("plc trace --stop ends a recording a watcher is holding; this "
              "run records within its own process and ends by itself")
 
 

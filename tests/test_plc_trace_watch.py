@@ -5,6 +5,8 @@ The engine half: every check before the start, then a Recording whose poll()
 the watcher calls once a tick. Nothing here waits; the fake clock moves only
 when a test moves it.
 """
+import json
+
 import pytest
 
 from cds.core import trace_run
@@ -100,7 +102,7 @@ def test_finish_saves_at_once(bench):
 def test_not_logged_in_is_refused_and_nothing_starts(bench):
     bench.online.session.is_logged_in = False
     answer = bench.watch(run_only(), "T1")
-    assert not answer["ok"] and "log in" in answer["summary"]
+    assert not answer["ok"] and "plc login" in answer["summary"]
     assert bench.calls("download", "start") == []
 
 
@@ -135,6 +137,92 @@ def test_a_stopped_application_is_refused(bench):
     bench.online.session.application_state = "stop"
     answer = bench.watch(run_only(), "T1")
     assert not answer["ok"] and "records nothing" in answer["summary"]
+
+
+def test_the_refusals_point_at_the_commands_that_fix_them(bench):
+    bench.online.session.is_logged_in = False
+    assert "plc login" in bench.watch(run_only(), "T1")["summary"]
+    bench.online.session.is_logged_in = True
+    bench.online.session.application_state = "stop"
+    assert "plc run -y" in bench.watch(run_only(), "T1")["summary"]
+
+
+class LoggedOnline(plc_fakes.Online):
+    """The online API, writing its switch and its login into the bench log."""
+
+    def __init__(self, log, source):
+        plc_fakes.Online.__init__(self, device=source.device,
+                                  gateways=source.gateways)
+        self.session = source.session
+        self.log = log
+
+    @property
+    def auth_fallback_modes(self):
+        return self._fallback
+
+    @auth_fallback_modes.setter
+    def auth_fallback_modes(self, kinds):
+        self.log.append(("dialog off",))
+        self._fallback = kinds
+
+    def set_default_credentials(self, user, password):
+        self.log.append(("credentials",))
+        plc_fakes.Online.set_default_credentials(self, user, password)
+
+    def create_online_application(self, application):
+        self.log.append(("create_online_application",))
+        return plc_fakes.Online.create_online_application(self, application)
+
+
+SECRET = "s3cret-pw"
+ONLINE_CALLS = ("create_online_application", "read_value", "download",
+                "start")
+
+
+def test_credentials_and_the_dialog_switch_come_before_every_online_call(bench):
+    bench.online = LoggedOnline(bench.log, bench.online)
+    answer = bench.watch(run_only(), "T1",
+                         {"user": "dev", "password": SECRET})
+    assert answer["ok"], answer["summary"]
+    calls = [i for i, call in enumerate(bench.log) if call[0] in ONLINE_CALLS]
+    assert bench.log[calls[0]] == ("create_online_application",)
+    assert ("download",) in bench.log and ("start",) in bench.log
+    assert bench.log[calls[0] - 2:calls[0]] == [("dialog off",),
+                                                ("credentials",)]
+    for kind in ("download", "start"):
+        at = bench.log.index((kind,))
+        since = len(bench.log[:at]) - bench.log[:at][::-1].index(
+            ("credentials",))
+        assert bench.log[since - 2] == ("dialog off",)
+        assert all(call[0] in ("open_editor", "answer set", "answer removed",
+                                "download")
+                   for call in bench.log[since:at]), bench.log
+    assert bench.online.credentials == ("dev", SECRET)
+    assert SECRET not in json.dumps(answer, default=repr)
+
+
+def test_without_credentials_the_note_says_this_command_was_given_none(bench):
+    bench.online = LoggedOnline(bench.log, bench.online)
+    recording = bench.watch(run_only(), "T1")[trace_run.RECORDING]
+    result = finished(bench, started_and_due_for(bench, recording))
+    assert bench.online.credentials is None
+    assert any("this command was given no credentials" in note
+               for note in result["data"]["notes"])
+    assert bench.log.index(("dialog off",)) < bench.log.index(
+        ("create_online_application",))
+
+
+def started_and_due_for(bench, recording):
+    bench.clock.now += 2.0
+    return recording
+
+
+def test_the_ide_s_own_environment_is_not_handed_over(bench, monkeypatch):
+    monkeypatch.setenv("CDS_DEV_USER", "ide-side")
+    monkeypatch.setenv("CDS_DEV_PASS", "ide-side-secret")
+    answer = bench.watch(run_only(), "T1")
+    assert answer["ok"], answer["summary"]
+    assert bench.online.credentials is None
 
 
 def test_the_crc_is_not_read_and_says_why(bench):

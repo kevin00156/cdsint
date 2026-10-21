@@ -25,13 +25,13 @@ DEFAULT_TIMEOUT_S = 120.0
 #              version, update, link, unlink
 #   WATCHER    only --target: the watcher's own life, which needs a watcher,
 #              and, through a row's action_forms, trace save and show,
-#              whose data lives in the IDE somebody has open
+#              whose data lives in the IDE somebody has open, and plc login,
+#              logout, run and stop, which act on that IDE's session
 #   EITHER     both forms, the ordinary case
 #   HEADLESS   only --project, through a row's action_forms: plc connect
 #              and download, which log in to a controller (SPEC D8). Still
 #              offered --target, so that asking for the other form is
 #              answered with the reason rather than with "unrecognized"
-#              (the online commands are the mirror image: WATCHER)
 NO_IDE = "none"
 WATCHER = "target"
 EITHER = "both"

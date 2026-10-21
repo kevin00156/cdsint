@@ -133,6 +133,24 @@ def test_while_recording_other_commands_are_refused_with_when(root, watch,
     assert reg["state"] == instances.STATE_RECORDING
 
 
+@pytest.mark.parametrize("name", ["plc login", "plc logout", "plc stop",
+                                  "plc run"])
+def test_while_recording_the_online_commands_are_refused(root, watch, handle,
+                                                         name):
+    # A logout or a stop would end the trace under the recording; only
+    # ping and status pass the gate, and poll() goes on as before.
+    first = recording(root, watch, handle, polls=3)
+    other = send(root, watch, name, {"yes": True})
+    watch.tick()
+    refused = result(root, watch, other)
+    assert refused["ok"] is False and "recording" in refused["error"]
+    assert watch.recording is not None
+    assert result(root, watch, first) is None
+    handle.polls_left = 1
+    watch.tick()
+    assert result(root, watch, first)["ok"] is True
+
+
 def test_while_recording_a_second_trace_is_refused(root, watch, handle):
     recording(root, watch, handle)
     second = send(root, watch, "plc trace", TRACE_ARGS)

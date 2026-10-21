@@ -188,21 +188,8 @@ class SessionTrip(Trip):
     # -- online -------------------------------------------------------------
 
     def hand_over(self):
-        """Credentials and the dialog switch, right before an online call.
-
-        Every call, not once: held credentials went stale across a runtime
-        restart and a project reopen, and the dialog came back (17.5). The
-        note is said once; it is the same every time.
-        """
-        given = self.args.get("credentials")
-        note, problem = plc_link.silence_credential_dialogs(
-            self.online, self.globals,
-            lambda online: plc_link.hand_over_forwarded(online, given))
-        if problem:
-            return problem
-        if note not in self.notes:
-            self.note(note)
-        return None
+        """Credentials and the dialog switch, right before an online call."""
+        return plc_link.hand_over_for(self)
 
     def connected(self, job):
         """Trip.connected, with the credentials handed over first."""

@@ -834,6 +834,23 @@ def test_while_logged_out_points_at_plc_login(word):
     assert outcome.result["data"]["logged_in"] is False
 
 
+@pytest.mark.parametrize("word", ["run", "stop"])
+def test_an_unreadable_login_state_is_refused_as_not_logged_in(word):
+    ide_globals = an_ide(allowed=(word,))
+    session = session_of(ide_globals)
+
+    class Unreadable(type(session)):
+        @property
+        def is_logged_in(self):
+            raise RuntimeError("the IDE would not say")
+    session.__class__ = Unreadable
+    outcome = press(ide_globals, word, {"yes": True})
+    assert not outcome.ok()
+    assert "not logged in" in outcome.result["summary"]
+    assert session.calls == []
+    assert outcome.result["data"]["logged_in"] is None
+
+
 @pytest.mark.parametrize("word,before", [("run", "stop"), ("stop", "run")])
 def test_a_state_that_does_not_follow_fails(word, before):
     ide_globals = an_ide(allowed=(word,))
