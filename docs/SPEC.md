@@ -325,8 +325,9 @@ its own environment into the command file, and refuses the command before
 sending anything (exit 2, 4.3) when either is unset or empty: an IDE without
 valid credentials can stop on its Device User Logon dialog (research 17.5),
 and nobody is at a watcher to close it. The owner decided that refusal in
-the final review of the same day; it holds for a controller without user
-management too, which needs some values set. A hand-written command file
+the final review of the same day; the CLI asks for them for a controller
+without user management too, and whether any values log in there is
+unmeasured (research 17.14). A hand-written command file
 without them fails before its first online call, saying so. The
 watcher hands them to the IDE with the logon dialog switched off immediately
 before every online call, and never reads the IDE's own environment. The
@@ -496,9 +497,8 @@ Why `plc connect` and `plc download` refuse the `--target` form is in D8.
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
 
-2 has two causes, flags that do not go together and no single live IDE found,
-in one row because the caller's response is the same: do not retry the same
-line, read the message first. 2 and 4 are two causes of "is there a live IDE
+2 has several causes, all in one row because the caller's response is the
+same: do not retry the same line, read the message first. 2 and 4 are two causes of "is there a live IDE
 for this project", split because the difference is useful to an agent. `list`
 is outside 2's scope: it asks "who is listening", and when nobody is it prints
 one line, `--json` gives an empty array, exit 0, because an empty list is an

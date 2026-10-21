@@ -20,8 +20,8 @@ from __future__ import print_function
 
 EXIT_OK = 0
 EXIT_FAILED = 1     # the command failed; a missing flag counts
-EXIT_TARGET = 2     # the command line is wrong: flags that do not go
-                    # together, or no single live IDE to talk to
+EXIT_TARGET = 2     # the command line is wrong or incomplete, or no
+                    # single live IDE to talk to (SPEC 4.3)
 EXIT_TIMEOUT = 3    # nobody answered in time
 EXIT_HEADLESS = 4   # the project is open elsewhere, or the IDE would not start
 EXIT_DENIED = 5     # the settings file's plc list does not allow this

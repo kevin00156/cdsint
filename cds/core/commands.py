@@ -152,14 +152,22 @@ def scrub_running(root, instance_id, cmd):
 
     Without os.replace (IronPython 2.7) the rewrite renames the old file,
     password and all, aside, and ipc._replace drops that copy without saying
-    whether it could. So it is deleted again here, where a refusal raises
-    and the command is not run, the raise naming the file left behind.
+    whether it could, or leaves it there when the rewrite fails and cannot
+    be rolled back. So it is deleted again here, whether or not the rewrite
+    landed, where a refusal raises and the command is not run, the raise
+    naming the file left behind.
     """
     args = dict(cmd.get("args") or {})
     if args.pop("credentials", None) is None:
         return
     path = _running_path(root, instance_id, cmd["id"])
-    ipc.write_json(path, dict(cmd, args=args))
+    try:
+        ipc.write_json(path, dict(cmd, args=args))
+    finally:
+        _discard_aside(path)
+
+
+def _discard_aside(path):
     try:
         ipc.remove_file(path + ipc.ASIDE)
     except EnvironmentError as exc:

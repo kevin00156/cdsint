@@ -259,6 +259,31 @@ def test_an_aside_copy_that_will_not_delete_is_not_run_and_named(
     assert left[0] in result["error"]
 
 
+def test_an_aside_copy_goes_even_when_the_rewrite_cannot_be_put_back(
+        watching, monkeypatch):
+    # Both the rename into place and _replace's rollback fail, so the new
+    # .running never lands and the old one stays aside.
+    without_os_replace(monkeypatch)
+    ran = []
+    monkeypatch.setattr(watcher.entries, "answer", lambda *a: ran.append(1))
+    cmd = queue(watching)
+    real_rename = os.rename
+
+    def rename(src, dst):
+        if src.endswith((".tmp", ipc.ASIDE)) and dst.endswith(
+                commands.RUNNING):
+            raise OSError(errno.EACCES, "sharing violation", dst)
+        real_rename(src, dst)
+    monkeypatch.setattr(os, "rename", rename)
+    watching.run_one(commands.next_command(watching.root,
+                                           watching.instance_id))
+    assert ran == []
+    assert holding_the_password(watching) == []
+    result = commands.read_result(watching.root, watching.instance_id,
+                                  cmd["id"])
+    assert result["ok"] is False
+
+
 # --------------------------------------------------------------------------
 # No login, no command: refused on the command line (SPEC 4.3, exit 2)
 # --------------------------------------------------------------------------
