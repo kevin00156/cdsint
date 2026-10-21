@@ -338,6 +338,11 @@ itself; see section 9 on D7.
 
 ### 7.2 Controllers found by name can be the wrong controller
 
+(Outdated on the bench, 2026-10-21: each WSL distribution now has its own
+host name, so the benches no longer answer to one device name. The rule it
+led to, aiming every `--project` `plc` command at `--gateway`, stays; two
+controllers can still share a name elsewhere.)
+
 Every WSL distribution reports the Windows host name, so two soft PLCs
 running at once answer to the same device name. A project that finds its
 controller by name, and answers the IDE's "the address differs from the one

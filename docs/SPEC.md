@@ -869,7 +869,7 @@ their own steps on top of the trip, in `plc_download.py` and `plc_trace.py`
 A few more things. Every `plc` command needs `--gateway` and exits 2 without
 it; the IDE side refuses it again before anything is switched or connected.
 A project that finds its controller by device name can reach the wrong one
-(two WSL soft PLCs report the same host name), and the IDE's "the address
+(two controllers can answer to one name; `docs/trace-research.md` 7.2), and the IDE's "the address
 differs from the project" prompt defaults to Yes. What the wrong controller
 answers passes every check: a download to it passes its own read-back, since
 that controller's CRC moves too; a connect to it answers `MATCH` if a download
