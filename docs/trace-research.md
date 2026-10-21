@@ -1549,6 +1549,19 @@ s. A login waiting on a dialog has no bound: one waited 426 s.
   puts `CDS_DEV_USER`/`CDS_DEV_PASS` in the CLI's environment, and the IDE
   that answered without a dialog after a manual login did so only until the
   runtime restarted.
+- **D7 cannot be kept by the timeout alone.** A login or device
+  connection that meets stale or missing credentials waits on the logon
+  dialog with no bound (17.5; one waited 426 s, 17.8), and the CLI's
+  `--timeout` would expire while the IDE stays stuck on it. Handing the
+  credentials over before every online call is therefore a prerequisite of
+  every new command, not a refinement.
+- **Where the credentials come from: decided by the owner, 2026-10-21**,
+  which settles the open question in the R4 bullet above. They come
+  from the caller's environment, as D14 says for the `--project` form: the
+  CLI forwards `CDS_DEV_USER`/`CDS_DEV_PASS` in the command it hands the
+  watcher, and the watcher calls `set_default_credentials` and switches the
+  credential dialog off immediately before each online call. The rest is in
+  `docs/superpowers/specs/2026-10-21-watcher-online-design.md`, R4.
 
 ### 17.11 Not verified
 
