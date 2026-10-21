@@ -231,6 +231,31 @@ def test_no_environment_login_is_reported_rather_than_invented(monkeypatch):
     assert plc.USER_ENV in note and plc.PASS_ENV in note
 
 
+def test_the_project_form_hands_over_a_user_with_an_empty_password(
+        monkeypatch):
+    # A device user may have no password; the --project form has always
+    # handed the user over alone, and the watcher's rule is not this one's.
+    plc = plc_link
+    monkeypatch.setenv(plc.USER_ENV, "dev")
+    monkeypatch.delenv(plc.PASS_ENV, raising=False)
+    online = Online()
+    note, problem = plc.silence_credential_dialogs(
+        online, {"CredentialSourceKind": CredentialSourceKind})
+    assert problem is None
+    assert online.credentials == ("dev", "")
+    assert "logging in as dev" in note
+
+
+def test_the_project_form_without_a_user_says_so_in_its_own_words(
+        monkeypatch):
+    plc = plc_link
+    monkeypatch.delenv(plc.USER_ENV, raising=False)
+    note, _ = plc.silence_credential_dialogs(
+        Online(), {"CredentialSourceKind": CredentialSourceKind})
+    assert ("no CDS_DEV_USER in the environment, so the controller gets no "
+            "credentials; set CDS_DEV_USER and CDS_DEV_PASS to log in") in note
+
+
 def test_the_password_reaches_no_part_of_what_gets_written_down(monkeypatch):
     # A report is committed or pasted into a ticket, so this is the test that
     # D14 is actually about. The user name is allowed through — knowing who

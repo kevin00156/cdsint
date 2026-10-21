@@ -189,6 +189,26 @@ def test_a_controller_holding_no_program_refuses_the_plain_login():
     assert logins(ide_globals) == []
     assert "Application.app" in result["summary"]
     assert "--method download" in result["summary"]
+    assert result["data"]["methods"] == ["download"]
+    assert device.connected is False
+
+
+class Silent(Device):
+    """A controller that does not answer."""
+
+    def connect(self):
+        raise IOError("no route to the device")
+
+
+def test_a_controller_that_does_not_answer_is_not_said_to_need_a_download():
+    device = Silent()
+    ide_globals = an_ide(device=device)
+    result = log_in(ide_globals)
+    assert not result["ok"]
+    assert logins(ide_globals) == []
+    assert "did not answer" in result["summary"]
+    assert result["data"]["methods"] == []
+    assert "--method" not in result["summary"]
     assert device.connected is False
 
 
@@ -324,7 +344,8 @@ def test_half_a_login_is_no_login():
     ide_globals = an_ide()
     result = log_in(ide_globals, credentials={"user": "dev", "password": ""})
     assert ide_globals["online"].credentials is None
-    assert any("no credentials" in note for note in result["data"]["notes"])
+    assert any("given no credentials" in note
+               for note in result["data"]["notes"])
 
 
 def test_without_credentials_the_notes_say_none_were_given():
@@ -332,7 +353,21 @@ def test_without_credentials_the_notes_say_none_were_given():
     result = log_in(ide_globals)
     assert result["ok"], result["summary"]
     assert ide_globals["online"].credentials is None
-    assert any("no credentials" in note for note in result["data"]["notes"])
+    notes = [n for n in result["data"]["notes"] if "credentials" in n]
+    # Only what this command had: the IDE may still hold an earlier login.
+    assert any("this command was given no credentials" in n for n in notes)
+    assert not any("controller gets" in n for n in notes)
+
+
+def test_the_ide_s_own_environment_is_not_the_caller_s(monkeypatch):
+    # Design R4: in the watcher the login comes from the caller only.
+    monkeypatch.setenv("CDS_DEV_USER", "ide-side")
+    monkeypatch.setenv("CDS_DEV_PASS", "ide-side-secret")
+    ide_globals = an_ide()
+    result = log_in(ide_globals)
+    assert result["ok"], result["summary"]
+    assert ide_globals["online"].credentials is None
+    assert "ide-side" not in json.dumps(result)
 
 
 # -- Force's bare refusal (research 17.2) --------------------------------------

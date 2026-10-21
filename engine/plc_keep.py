@@ -43,26 +43,26 @@ def the_ide_agrees(trip, cure=plc_identity.DOWNLOAD):
 
     None when it does, or the problem. Through trip.connected, so the
     device connection is cdsint's own and always closed again, and nothing
-    logs in to the application (research 17.4). `cure` replaces what every
-    plc_identity refusal ends with: the watcher has no plc download, and
-    sends the caller elsewhere.
+    logs in to the application (research 17.4).
     """
-    problem = trip.connected(lambda: _judged(trip))
-    if problem:
-        return problem.replace(plc_identity.DOWNLOAD, cure)
-    return None
+    return trip.connected(lambda: judged(trip, cure))
 
 
-def _judged(trip):
+def judged(trip, cure=plc_identity.DOWNLOAD):
+    """The judgement on a connected trip: None, or why it does not agree.
+
+    `cure` replaces what every plc_identity refusal ends with: the watcher
+    has no plc download, and sends the caller elsewhere.
+    """
     local, problem = trip.pull(trip.remote["app"])
     if problem:
         # A controller holding no application lands here too: its .app is
         # not there to fetch.
-        return "%s; %s" % (problem, plc_identity.DOWNLOAD)
+        return "%s; %s" % (problem, cure)
     code, problem = plc_identity.judged(
         plc_crc.read_bytes(local), trip.project_path(),
         name_of(trip.device_node), name_of(trip.application))
     if problem:
-        return problem
+        return problem.replace(plc_identity.DOWNLOAD, cure)
     trip.note("download info agrees with the controller: code %s" % code)
     return None

@@ -124,11 +124,19 @@ class SessionTrip(Trip):
 
     def the_ide_agrees(self):
         """The controller holds this copy's last download (research 17.4)."""
-        problem = plc_keep.the_ide_agrees(self, WATCHER_DOWNLOAD)
+        problem = self.connected(self._holds_this_download)
         if problem:
-            self.found["methods"] = ["download"]
             return "%s; nothing was done" % problem
         return None
+
+    def _holds_this_download(self):
+        """The judgement alone, so that only a controller found holding
+        another program or none is said to need a download: one that did
+        not answer may hold exactly this one."""
+        problem = plc_keep.judged(self, WATCHER_DOWNLOAD)
+        if problem:
+            self.found["methods"] = ["download"]
+        return problem
 
     # -- online -------------------------------------------------------------
 
@@ -139,8 +147,10 @@ class SessionTrip(Trip):
         restart and a project reopen, and the dialog came back (17.5). The
         note is said once; it is the same every time.
         """
+        given = self.args.get("credentials")
         note, problem = plc_link.silence_credential_dialogs(
-            self.online, self.globals, self.args.get("credentials"))
+            self.online, self.globals,
+            lambda online: plc_link.hand_over_forwarded(online, given))
         if problem:
             return problem
         if note not in self.notes:

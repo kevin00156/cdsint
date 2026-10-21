@@ -8,7 +8,9 @@ an unanswerable dialog is not a failure, it is a hang.
 """
 from __future__ import print_function
 
-from cds.core.credentials import PASS_ENV, USER_ENV, from_environment
+import os
+
+from cds.core.credentials import PASS_ENV, USER_ENV
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 from engine.ide_read import children_of, kind_of, name_of
@@ -26,26 +28,23 @@ ALREADY_LOGGED_IN = "already logged in"
 # Who we log in as
 # --------------------------------------------------------------------------
 
-def credentials(given=None):
-    """The device login as {"user", "password"}, or None (D14).
+def credentials():
+    """The device login, from the environment and nowhere else (D14).
 
-    `given` is what the CLI forwarded from its own environment into a
-    watcher command (cds/core/credentials.py): the watcher lives in the IDE's
-    process and never sees the caller's shell. Without it, this process's
-    own environment, which is the caller's in the --project form. One rule
-    for both: half a login is no login.
-
-    A report gets committed or pasted into a ticket, and a command line ends
+    The --project form's: its IDE is a child of the caller's shell. A
+    report gets committed or pasted into a ticket, and a command line ends
     up in a shell history, so neither may carry these.
     """
-    login = given or from_environment()
-    if not login or not login.get("user") or not login.get("password"):
-        return None
-    return login
+    return os.environ.get(USER_ENV, ""), os.environ.get(PASS_ENV, "")
 
 
-def silence_credential_dialogs(online_api, ide_globals, given=None):
+def silence_credential_dialogs(online_api, ide_globals,
+                               hand_over=None):
     """Switch the dialog off and hand over the caller's login.
+
+    `hand_over(online_api)` gives the API the login and returns the note
+    saying which; by default the environment's (hand_over_credentials), and
+    in the watcher only what the command carried (hand_over_forwarded).
 
     Returns (note, problem); one is None. This is the line that makes the
     whole command unattended: without it a controller that wants a login pops
@@ -67,7 +66,8 @@ def silence_credential_dialogs(online_api, ide_globals, given=None):
                       "a controller that asks for a login would open a "
                       "window nobody is there to close, so the connection "
                       "would never return. Nothing was tried.")
-    return "; ".join([off, hand_over_credentials(online_api, given)]), None
+    hand_over = hand_over or hand_over_credentials
+    return "; ".join([off, hand_over(online_api)]), None
 
 
 def switch_fallback_off(online_api, kinds):
@@ -106,20 +106,37 @@ def switch_fallback_off(online_api, kinds):
         return None
 
 
-def hand_over_credentials(online_api, given=None):
-    """Give the API the caller's login, and say which it was.
+def hand_over_credentials(online_api):
+    """Give the API what the environment holds, and say which it was.
 
     Both variable names appear when there is no login, because a reader who
     sets only the one named in the message gets the same failure again.
     """
-    login = credentials(given)
-    if login is None:
-        return ("no credentials: %s and %s were not both set where cdsint "
-                "ran, so the controller gets none, and one with user "
-                "management may refuse the connection" % (USER_ENV, PASS_ENV))
-    online_api.set_default_credentials(login["user"], login["password"])
+    user, password = credentials()
+    if not user:
+        return ("no %s in the environment, so the controller gets no "
+                "credentials; set %s and %s to log in"
+                % (USER_ENV, USER_ENV, PASS_ENV))
+    online_api.set_default_credentials(user, password)
+    return "logging in as %s (from %s and %s)" % (user, USER_ENV, PASS_ENV)
+
+
+def hand_over_forwarded(online_api, given):
+    """Give the API the login the watcher command carried, and say so.
+
+    Only that: the IDE process's own environment is not the caller's
+    (design R4). The CLI forwards both or neither (cds/core/credentials.py),
+    and a hand-written command file is held to the same rule. Without one,
+    the note says only that this command had none: credentials an earlier
+    command handed over may still be held by the IDE.
+    """
+    if not given or not given.get("user") or not given.get("password"):
+        return ("this command was given no credentials (%s and %s were not "
+                "both set where cdsint ran), so none were handed over"
+                % (USER_ENV, PASS_ENV))
+    online_api.set_default_credentials(given["user"], given["password"])
     return ("logging in as %s (from %s and %s)"
-            % (login["user"], USER_ENV, PASS_ENV))
+            % (given["user"], USER_ENV, PASS_ENV))
 
 
 def login_refusal(said):
