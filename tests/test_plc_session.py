@@ -320,6 +320,10 @@ class LoggedSession(Session):
         self.log.append("create_boot_application")
         Session.create_boot_application(self)
 
+    def start(self):
+        self.log.append("start")
+        Session.start(self)
+
 
 class LoggedOnline(Online):
     """The online API, writing every call that matters into one log."""
@@ -783,3 +787,98 @@ def test_credentials_are_handed_over_before_the_boot_application():
     written = (json.dumps(outcome.result) + outcome.stdout_tail
                + repr(outcome.messages))
     assert SECRET not in written
+
+
+# -- plc run, plc stop (design 5.5) ----------------------------------------------
+
+def power(word, state, logged_in=True, **args):
+    """An IDE with the application in `state`, and the result of `word`."""
+    ide_globals = an_ide(allowed=(word,))
+    session = session_of(ide_globals)
+    session.application_state = state
+    session.is_logged_in = logged_in
+    args.setdefault("yes", True)
+    return ide_globals, press(ide_globals, word, args)
+
+
+def test_run_starts_and_reads_run_back():
+    ide_globals, outcome = power("run", "stop")
+    assert outcome.ok(), outcome.result["summary"]
+    assert session_of(ide_globals).calls == [("start",)]
+    assert outcome.result["data"]["state"] == "run"
+    assert "application run" in outcome.result["summary"]
+
+
+def test_stop_stops_and_reads_stop_back():
+    ide_globals, outcome = power("stop", "run")
+    assert outcome.ok(), outcome.result["summary"]
+    assert session_of(ide_globals).calls == [("stop",)]
+    assert outcome.result["data"]["state"] == "stop"
+
+
+@pytest.mark.parametrize("word", ["run", "stop"])
+def test_already_in_the_asked_state_succeeds_saying_so(word):
+    ide_globals, outcome = power(word, word)
+    assert outcome.ok(), outcome.result["summary"]
+    assert session_of(ide_globals).calls == []
+    assert "already" in outcome.result["summary"]
+    assert outcome.result["data"]["state"] == word
+
+
+@pytest.mark.parametrize("word", ["run", "stop"])
+def test_while_logged_out_points_at_plc_login(word):
+    ide_globals, outcome = power(word, "stop", logged_in=False)
+    assert not outcome.ok()
+    assert "plc login" in outcome.result["summary"]
+    assert session_of(ide_globals).calls == []
+    assert outcome.result["data"]["logged_in"] is False
+
+
+@pytest.mark.parametrize("word,before", [("run", "stop"), ("stop", "run")])
+def test_a_state_that_does_not_follow_fails(word, before):
+    ide_globals = an_ide(allowed=(word,))
+    session = session_of(ide_globals)
+    session.application_state = before
+    session.is_logged_in = True
+    session.state_after_start = session.state_after_stop = before
+    outcome = press(ide_globals, word, {"yes": True})
+    assert not outcome.ok()
+    assert "reads back %s, not %s" % (before, word) in \
+        outcome.result["summary"]
+
+
+@pytest.mark.parametrize("word", ["run", "stop"])
+def test_without_yes_it_asks_and_does_nothing(word, monkeypatch):
+    runs = counted_script_runs(monkeypatch)
+    ide_globals = an_ide(allowed=(word,))
+    session_of(ide_globals).is_logged_in = True
+    outcome = press(ide_globals, word, {})
+    assert outcome.needs is not None and outcome.needs.arg == "yes"
+    assert session_of(ide_globals).calls == []
+    assert runs == []
+
+
+@pytest.mark.parametrize("word", ["run", "stop"])
+def test_saying_no_changes_nothing(word):
+    ide_globals, outcome = power(word, "stop" if word == "run" else "run",
+                                 yes=False)
+    assert outcome.needs is None and not outcome.ok()
+    assert "cancelled" in outcome.result["summary"]
+    assert session_of(ide_globals).calls == []
+
+
+def test_start_hands_the_credentials_over_first_in_one_script_run(
+        monkeypatch):
+    runs = counted_script_runs(monkeypatch)
+    log = []
+    ide_globals = an_ide(allowed=("run",))
+    ide_globals["online"] = LoggedOnline(log)
+    session = ide_globals["online"].session
+    session.is_logged_in = True
+    session.application_state = "stop"
+    outcome = press(ide_globals, "run",
+                    {"yes": True, "credentials": dict(LOGIN)})
+    assert outcome.ok(), outcome.result["summary"]
+    assert len(runs) == 1
+    at = log.index("start")
+    assert log[at - 2:at] == ["dialog off", "credentials"], log

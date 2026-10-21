@@ -15,7 +15,8 @@ is the first thing a reader sees.
 MATCHes, because a recording of variables from a program that is not this
 working copy's cannot be read against it (SPEC 6.8).
 
-`login` and `logout` are the watcher's own session with the controller. A
+`run` and `stop` start and stop the application through that session, after
+the same kind of -y. `login` and `logout` are the watcher's own session with the controller. A
 plain login changes nothing on it: it logs in only when nothing would be
 applied, and otherwise says which --method would. A login by --method makes
 that change, after the same -y a download asks for.
@@ -25,7 +26,7 @@ question -y answers, and the order the steps run in. The steps themselves
 are engine/plc_trip.py, with download's own in engine/plc_download.py,
 trace's in engine/plc_trace_setup.py (offline) and engine/plc_trace.py
 (online), login's and logout's in engine/plc_session.py and a --method's in
-engine/plc_method.py; reaching a controller is
+engine/plc_method.py, run's and stop's in engine/plc_power.py; reaching a controller is
 engine/plc_link.py, and how the question is actually answered —
 why the offline CRC alone cannot answer it, what the record holds, and the
 three verdicts — is engine/plc_crc.py.
@@ -51,6 +52,7 @@ from __future__ import print_function
 from engine import entry, plc_crc, unhandled
 from engine.plc_download import DownloadTrip
 from engine.plc_method import MethodTrip
+from engine.plc_power import PowerTrip
 from engine.plc_session import SessionTrip
 from engine.plc_trace import TraceTrip
 from engine.plc_trace_watch import WatchedTrip
@@ -98,7 +100,15 @@ QUESTIONS = {
                       ONLINE_CHANGE_QUESTION, "PLC online change"),
 }
 
-STOP_HERE = ("plc trace --stop ends a recording a watcher is holding; this "
+RUN_QUESTION = (
+    "This will start the application on the controller the IDE is logged in "
+    "to. Whatever it drives will begin moving.\n\nProceed?")
+
+STOP_QUESTION = (
+    "This will stop the application on the controller the IDE is logged in "
+    "to. Whatever it drives stops being controlled by it.\n\nProceed?")
+
+STOP_HERE =("plc trace --stop ends a recording a watcher is holding; this "
              "run records within its own process and ends by itself")
 
 
@@ -199,6 +209,36 @@ def log_in_by_method():
         trip.log_in_by_method,      # Never, or Force
         trip.write_boot_application,  # unless --no-boot-app or no change
         trip.read_state,            # logged in, and the state, read back
+    ])
+
+
+def run_application():
+    """Start the application through the login the IDE holds (watcher only;
+    engine/plc_power.py)."""
+    return powered("run", dialogs.CONFIRM_PLC_RUN, RUN_QUESTION)
+
+
+def stop_application():
+    """Stop the application through the login the IDE holds (watcher only)."""
+    return powered("stop", dialogs.CONFIRM_PLC_STOP, STOP_QUESTION)
+
+
+def powered(action, title, question):
+    """Ask, then the same steps for both. The question comes before the
+    script run for the reason log_in_by_method gives."""
+    unhandled.start()
+    trip = a_trip(PowerTrip, action)
+    refused = confirm(title, question, "PLC " + action)
+    if refused:
+        return trip.failed(refused)
+    return trip.run([
+        trip.find_the_project,      # the project and the online API
+        trip.name_the_application,  # the active application
+        trip.open_session,          # the online application
+        trip.logged_in_first,       # or point at plc login
+        trip.already,               # or done: it is in that state
+        trip.switch,                # start or stop
+        trip.read_state,            # the state, read back
     ])
 
 

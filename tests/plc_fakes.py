@@ -184,6 +184,10 @@ class Session(object):
         # option not in it leaves the state as it was.
         self.states_after_login = {}
         self.refuse_login = None     # the IDE's words for a refused login
+        # The state start() and stop() leave; a test that wants a state that
+        # does not follow sets it.
+        self.state_after_start = "run"
+        self.state_after_stop = "stop"
         self.device = device
         self.writes = [CRC_C] if writes is None else list(writes)
 
@@ -202,10 +206,11 @@ class Session(object):
 
     def start(self):
         self.calls.append(("start",))
+        self.application_state = self.state_after_start
 
     def stop(self):
         self.calls.append(("stop",))
-        self.application_state = "stop"
+        self.application_state = self.state_after_stop
 
     def logout(self):
         self.calls.append(("logout",))
