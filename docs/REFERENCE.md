@@ -402,7 +402,8 @@ them is removed when the CLI stops waiting, and the watcher rewrites the
 claimed copy without them as soon as it has it. Two rare cases leave the
 password in that claimed file under `%LOCALAPPDATA%`. A watcher killed between
 claim and rewrite leaves it until a later watcher start-up prunes the instance,
-at least six hours after the claim, and for good if none starts. A rewrite and
+no sooner than `ABANDONED_AFTER_S` after the claim (docs/WATCHER.md section
+2.1), and for good if none starts. A rewrite and
 release that both fail leave it for as long as that watcher lives; it goes when
 the watcher stops cleanly, or at a later start-up's prune if it dies.
 

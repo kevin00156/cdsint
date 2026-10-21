@@ -156,9 +156,9 @@ running is exit 1 too, though it is recorded. It does not answer "has the projec
 since": an edited POU nobody downloaded leaves the verdict at `MATCH`, and
 `compare` and `verify` are the commands that read every object to answer that.
 Credentials come only from `CDS_DEV_USER` and `CDS_DEV_PASS` in the environment.
-Every `--project` `plc` command needs `--gateway IP [--port N]` (exit 2 without it): found
-by the project's device name, the controller can be the wrong one, and the
-wrong one passes every check. An IDE profile with more than one gateway also
+Every `--project` `plc` command needs `--gateway IP [--port N]` (exit 2
+without it): found by the project's device name, the controller can be the
+wrong one, and the wrong one passes every check. An IDE profile with more than one gateway also
 needs `--gateway-name NAME` to say which one reaches it; the refusal lists the
 names. `-y` on `connect` or `trace` is exit 2 too.
 
@@ -217,8 +217,8 @@ cdsint plc trace --target X --name T1 --job run.json
 
 `run.json` is `{"duration_s": 15, "out": "runs/t1"}`. It needs `trace` in the
 `plc` list, refuses `--gateway`, and never logs in or out itself: not logged in
-is exit 1, saying so; `plc login` (below), or ask the user to. The command blocks until the
-recording is done (`--timeout` plus `duration_s`). `data.crc` is `UNKNOWN`
+is exit 1, saying so; `plc login` (below), or ask the user to. The command
+blocks until the recording is done (`--timeout` plus `duration_s`). `data.crc` is `UNKNOWN`
 there by design, and `data.uptodate` says whether the working copy matches
 what was downloaded. From another shell, `cdsint plc trace --target X --stop`
 ends it early; the first command then answers with `data.stopped_early`.
@@ -266,17 +266,19 @@ unreachable controller, or one holding another program or none, is refused
 too: never decide on your own to download over it.
 
 `--method download -y` needs `download` in the `plc` list and `--method
-online_change -y` needs `online_change`; either writes the boot application unless `--no-boot-app`, and refuses an application
-that is already logged in (log out first). `plc run` and `plc stop` need `-y`
+online_change -y` needs `online_change`; either writes the boot application
+unless `--no-boot-app`, and refuses an application that is already logged in
+(log out first). `plc run` and `plc stop` need `-y`
 and their own words `run` and `stop`; `plc login` needs `login`; `plc logout`
 is allowed by any of `login`, `download`, `online_change`. A word that is
 missing is exit 5: ask the user to add it, there is no flag. The state the
 result reports is read back, so trust `data.state` and `data.logged_in`, not
 the exit code alone. A watcher `plc trace` refused for "not logged in" or "not
 running" says to run `plc login` and `plc run -y`; the second needs the user's
-word as above. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS` in your
-own environment, forwarded to the IDE for these commands and never printed; a
-login that needs one and was not given it fails, and its notes say so.
+word as above. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS`
+in your own environment, forwarded to the IDE for these commands and never
+printed; a login that needs one and was not given it fails, and its notes say
+so.
 
 ## Trace objects and their data: `trace`
 
@@ -326,8 +328,9 @@ other shape. Do not look for a copy of the package elsewhere
 
 Exit codes: `0` done, `1` failed or a flag is missing, `2` the command line
 itself is wrong — flags that do not go together, a `plc` command without
-`--gateway` (in the `--project` form), `plc trace` without its job file, or no single live IDE matched — so change what you typed rather than running it again, `3` timed out with no
-report to show for it (raise `--timeout`: it bounds one step, default 120s, and
+`--gateway` (in the `--project` form), `plc trace` without its job file, or no
+single live IDE matched — so change what you typed rather than running it
+again, `3` timed out with no report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`
 the `plc` list in the project's settings file does not allow this command.

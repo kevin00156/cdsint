@@ -1582,3 +1582,131 @@ Restored as in 17.1 after the last case: `Application.crc` 72EB8ADB,
 it; a `plc connect` from a fresh copy read 72EB8ADB. The CRC record of
 `trace-enum` was not touched and still says 5E0455DC. The two copies are in
 `%TEMP%\cdsint-work\task1-a` and `task1-b`; the distro was terminated.
+
+### 17.13 Acceptance of the commands as built (2026-10-21)
+
+The rows of the design's section 8, run through the real `cdsint` command
+against the same soft PLC. The watcher was this branch's own: an interactive
+CODESYS 3.5.21.40 started as in 17.1, whose run script put the working tree
+first on `sys.path`, opened a fresh copy of `trace-enum` (`.project` and its
+three download files, never saved) and started the watcher from the tree's
+`cds/ide`; the CLI was `python -m cdsint.cli ... --target <that instance>`
+from the tree. A second timer in the same IDE ran probe files for the edits,
+in memory, as in 17.2: the code edit gives `PLC_PRG` a new `DINT` counter,
+the IO edit remaps `AIO_2` "Analog output ch0", the cycle edit sets the
+EtherCAT master's `MasterCycleTime` 1000 to 2000. The copy's `plc` list held
+all seven words. `CDS_DEV_USER` and `CDS_DEV_PASS` were in the CLI's
+environment only; the IDE's own environment had neither, read from a probe.
+A window watcher logged every window the IDE opened.
+
+**At the start** the controller held what 17.12 left: `Application.crc`
+72EB8ADB, code d7f7fab5, data 706c2e6a, running. The machine was restarted
+by its owner after row 9 of the table below; the distro came back from the
+same boot project (CRC 72EB8ADB, `Application.app` byte for byte the same),
+a new IDE was started the same way, and the rest ran in it. That IDE started
+with no credentials held and `auth_fallback_modes` reading `All`, so every
+row after the restart also shows the hand-over working from a fresh IDE; the
+plain login refused after the IO edit was run again there, with the same
+answer.
+
+Audit lines shortened as in 17. "Device check" is the identity check of
+6.12 step 4: a device login, `SRVFT_START_UPLOAD
+"PlcLogic/Application/Application.app"`, `SRVFT_END`, a logout (an online
+change and a download also pull `Application.crc` first, for the CRC record).
+
+| # | Command | Exit | `data` read back | Audit log |
+|---|---|---|---|---|
+| 1 | `plc login`, unchanged copy | 0, 15.6 s | logged in, `run`, `changed` nothing, address `3001.1000.2DDD.7F00.0001 through Gateway-1 at localhost:1217` | device check; `Login successful`. No download, no online change; CRC still 72EB8ADB |
+| 2 | `plc stop` without `-y` | 1 | `needs_input`, the PLC Stop question | nothing |
+| 3 | `plc stop -y` | 0, 0.8 s | `stop` | `Stop successful` |
+| 4 | `plc stop -y` again | 0 | `stop` | nothing |
+| 5 | `plc run -y`, then again | 0, 0 | `run`, `run` | one `Start successful` |
+| 6 | `plc logout`, then again | 0, 0 | logged out, logged out | one `Logout successful` |
+| 7 | `plc run -y`, logged out | 1 | "not logged in ... log in first (plc login), nothing was done" | nothing |
+| 8 | code edit; `plc login` | 1, 0.6 s | `uptodate` false, `methods` [download, online_change] | nothing |
+| 9 | IO edit; `plc login` | 1 | `uptodate` false, `methods` [download, online_change] | nothing |
+| 10 | IO edit; `plc login --method online_change` without `-y` | 1 | `needs_input`, the Online Change question | nothing |
+| 11 | IO edit; `plc login --method online_change -y` | 0, 18.6 s | logged in, `run`, `changed` online_change, `boot_application` true | device check; `Login successful`; `OnlineChange started`, 8 × `OnlineChange successful, create bootproject: 0`, the last with code 91d80e34; 3 × `Create boot project successful`. CRC 52AC67C7 |
+| 12 | `plc logout`; cycle edit; `plc login` | 1, 0.6 s | `uptodate` false, `online_change_possible` false, `methods` [download] | nothing |
+| 13 | cycle edit; `plc login --method online_change -y` | 1, 0.7 s | "the IDE does not say an online change can carry what differs ... only --method download -y applies it", `methods` [download], not logged in | nothing |
+| 14 | cycle edit; `plc login --method download -y` | see D2, 13.8 s | logged in, `stop`, `changed` download, `boot_application` true | `Application.crc` pulled; `Login successful`, `ReinitApplication started`, `Reinitialize for Download successful`, `Download successful, create bootproject: 1` repeated, code 6577f3d8; `Create boot project successful`. CRC B27FF4B3 |
+| 15 | `plc run -y` | 0, 0.6 s | `run` | `Start successful` |
+| 16 | `plc trace --name T_acc`, 5 s | 0, 8.4 s | complete 1.0, 1261 samples each of 3 variables, `uptodate` true | nothing after the `Start` of row 15 |
+
+Rows 11 and 14 found an entry of the copy's CRC record holding the CRC the
+controller had before (put there for the test) and removed it, and only it;
+their notes say so.
+
+**The carried checks.**
+
+- **A plain login against a controller holding no application** (the
+  `Application` directory removed, the runtime restarted): exit 1 in 1.2 s,
+  "PlcLogic/Application/Application.app could not be fetched: Value cannot be
+  null. Parameter name: path, and the controller holds no application
+  Application; use plc login --method download -y ...; nothing was done",
+  `methods` [download], `uptodate` true. Audit: a device login and a logout,
+  nothing else. This was the gap 17.10 and 17.11 left: the check refuses it.
+- **The state an online change reads before logging in** (row 11): the
+  application was running, and a session not yet logged in read its
+  `application_state` as `none`. The command noted that it would not compare
+  the state afterwards and went on; the online change worked. So the state is
+  never compared on this IDE (D3).
+- **Whether `application_state` follows `start()` and `stop()`**: at once.
+  The read straight after the call gave the asked state every time (rows 3,
+  5 and 15).
+- **A recording's polls after a runtime restart.** The runtime restarted,
+  then `plc login` (exit 0, 5.8 s, device check agreed, `Keep`), then a 20 s
+  `plc trace --name T_acc`: complete 1.0002, 4658 samples each. A second 20 s
+  recording with the runtime restarted 9 s into it: exit 1 after 22.3 s,
+  "the trace could not be stopped: Cannot stop the trace in the current
+  state.", files saved, no rows judged; the recording did not notice the
+  restart until its stop at `duration_s`. No logon dialog in either.
+- **Credentials end to end.** No "Device User Logon" dialog opened in either
+  IDE across all rows. A poller read the instance's command directory every
+  20 ms during rows 11 and 14: the command file the CLI writes held the
+  password until the watcher claimed it, as designed; the claimed `.running`
+  file did not, from the first read (under 0.2 s after the claim); the
+  directory was empty afterwards. The user name is in each result's notes;
+  the password in none, nor in stdout or stderr.
+- **The Linux test loop** (WSL Ubuntu 22.04, Python 3.10): 3367 passed, 154
+  skipped.
+
+**Defects found.**
+
+- **D1. A success's summary reaches nobody.** "already logged in ...;
+  nothing was done", "application already stop", "not logged in; nothing was
+  done" are the `summary` of an `ok` result, and `cds/ide/outcome.py` passes
+  a summary on only as the error of a failure, so neither `--json` nor the
+  printed summary carries them. Rows 4, 5 and 6 (second calls) return the
+  same record as a call that acted. SPEC 6.12 says those cases succeed
+  "saying so".
+- **D2. The CLI lost the answer to the download of row 14.** The watcher
+  finished the download and wrote its result (ok, `stop`, boot application
+  written); the CLI, reading it, got `PermissionError: [Errno 13]` from
+  `cds/core/ipc.py` `read_json`, which treats only a missing file as "not
+  there yet", printed a traceback and exited 1. The result file was left in
+  the instance's result directory. A transient sharing violation on a file
+  just renamed into place on Windows; it is the old hand-off code, not the
+  new commands, but here it hides that the controller was downloaded to.
+- **D3. `--method online_change` never checks that the state is kept.** The
+  state is read before the login, from a session not yet logged in, and on
+  this IDE that reads `none` for a running application (above), so the
+  expected state is never set. The change itself was right; the check that
+  SPEC 6.12 and the 0.6.0 CHANGELOG entry describe does not happen.
+
+**Smaller things seen.** The notes of `run`, `stop` and `logout` say
+"logging in as ..." although none logs in. The refusal for a controller with
+no application carries the IDE's raw "Value cannot be null.\r\nParameter
+name: path", line break included. After the runtime had been restarted
+under it and its application removed and put back, closing and opening the
+project from a probe showed a "Communication error: #0x18b" message box,
+gone within a second; no cdsint command was running.
+
+**The bench afterwards.** The runtime stopped, the `Application` directory
+put back from a tarball made at the start, the runtime started: it loaded
+the boot project (code d7f7fab5, "started"), `Application.crc` 72EB8ADB,
+`Application.app` byte for byte the one found. A plain `plc login` from a
+fresh copy then agreed with it (device check, `Login successful`, nothing
+else) and `plc logout` ended it. The watcher was stopped, the IDE closed by
+its pid, the distro terminated. The copy is in `%TEMP%\cdsint-work\task9`;
+its CRC record lost the two entries rows 11 and 14 removed.

@@ -11,11 +11,11 @@ All notable changes to this project will be documented in this file.
   what only an offline project can) used to stop and wait for a person to press
   Login or Logout in an IDE nobody was at. Now it can do both, and start and
   stop the application, with the state read back from the application after
-  each. They take no `--project`, `--gateway`, `--port` or `--gateway-name`: the
-  IDE logs in wherever the project's device node points, and the result names
-  the address the device node points at. This reverses SPEC D8's "the watcher never logs in or out"; the
-  reason is in D8, and `plc connect` and `plc download` are still refused in the
-  watcher.
+  each. They take no `--project`, `--gateway`, `--port` or `--gateway-name`:
+  the IDE logs in wherever the project's device node points, and the result
+  names the address the device node points at. This reverses SPEC D8's "the
+  watcher never logs in or out"; the reason is in D8, and `plc connect` and
+  `plc download` are still refused in the watcher.
 - **A plain `plc login` never changes the controller.** A `Keep` login applies
   any difference by itself, so it logs in only when the IDE finds the working
   copy unchanged since its last download and the controller's `Application.app`
@@ -36,9 +36,10 @@ All notable changes to this project will be documented in this file.
   for a controller holding something else.
 - **Four new words in the `plc` list**: `login`, `online_change`, `run` and
   `stop`. `logout` is allowed by any of `login`, `download` and
-  `online_change`. **`download` now also allows `plc login --method download`**:
-  one word for the same act, so a settings file that allowed `download` allows
-  the watcher's download to whatever controller the device node points at.
+  `online_change`. **`download` now also allows `plc login --method
+  download`**: one word for the same act, so a settings file that allowed
+  `download` allows the watcher's download to whatever controller the device
+  node points at.
 - **The device login is forwarded from the CLI's environment.** For these
   commands and the watcher's `plc trace`, the CLI copies `CDS_DEV_USER` and
   `CDS_DEV_PASS` into the command it hands the watcher when both are set, and
