@@ -1713,3 +1713,47 @@ fresh copy then agreed with it (device check, `Login successful`, nothing
 else) and `plc logout` ended it. The watcher was stopped, the IDE closed by
 its pid, the distro terminated. The copy is in `%TEMP%\cdsint-work\task9`;
 its CRC record lost the two entries rows 11 and 14 removed.
+
+### 17.14 After the final review's fixes (2026-10-21)
+
+The fixes to 17.13's D1 to D3, the refusal of a watcher online command
+without `CDS_DEV_USER` and `CDS_DEV_PASS`, and the final review's other fixes
+were to be run against the same soft PLC in the same way, the controller's
+state recorded first (`Application.crc` 72EB8ADB, `Application.app` the one
+17.13 left, running) and its `Application` directory and user management
+files saved in a tarball.
+
+**Measured.**
+
+- **No device login in the environment.** `cdsint plc login --target X`
+  with both variables unset: exit 2 in 0.4 s, before any watcher was
+  resolved, the message naming both variables and the logon dialog. The
+  instance directory root held nothing before or after.
+
+**Not verified, and why.** An interactive CODESYS 3.5.21.40 would not get
+past its start: five starts that evening, one of them with no run script at
+all and one made only after no other IDE had run for 20 s, each stopped
+answering soon after it started and stayed so (18 minutes for the longest),
+with the start page drawn as grey placeholders, no dialog among its windows,
+no socket open and almost no CPU. Headless runs of the same install by
+other work on the machine started and finished in that time. Without an
+interactive IDE there is no watcher, so these wait for a machine whose IDE
+starts:
+
+- rows 4, 5 and 6 of 17.13 again (a second `plc stop -y`, `plc run -y` and
+  `plc logout`), to see the summary once in `--json` `messages` and once in
+  the printed output (D1);
+- row 14 again (`plc login --method download -y`), to see the CLI receive
+  the download's answer (D2);
+- the refusal above against a live watcher, with its command directory
+  watched;
+- a login and logout with made-up `CDS_DEV_*` values on a controller without
+  user management. The bench's runtime has user management on, and switching
+  it off means moving its user database aside and setting
+  `SECURITY.UserMgmtEnforce=NO`; with no IDE to measure through, the bench
+  was not reconfigured.
+
+**The bench afterwards.** Untouched: `Application.crc` 72EB8ADB,
+`Application.app` and the user database byte for byte as found, the audit
+log with nothing after the runtime's own start. The IDEs started for this
+were closed by their pids and the distro terminated.
