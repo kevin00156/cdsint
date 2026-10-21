@@ -26,6 +26,7 @@ dialog left open.
 | D. Can an edited trace XML be imported? | It could not: every edited native-XML object failed to import headless, a cdsint bug rather than a trace one. Fixed since (section 6.3) | 6 |
 | Can an enumeration be recorded, and what sizes it? | Yes. `read_value()` names the type but not its base; the trace's own configuration, saved before the download, gives every variable's class and size, a library's type included. Values are saved as numbers | 14 |
 | Can the watcher record through the login of the person using the IDE, and move trace configurations and data in and out? | Yes. Online calls need a nested script run from the watcher's timer (they fail with "Stack empty" otherwise); trace calls do not. Loading a saved trace overwrites the target object's configuration | 15 |
+| Can the watcher log in and out, and make an online change, without a dialog or an unasked download? | `Force` makes an online change and never downloads; `is_uptodate` misses another program on the controller, which the `.app` identity check catches; credentials must be handed over right before each call or a logon dialog opens | 17 |
 
 ---
 
@@ -1290,3 +1291,281 @@ another shape gives none.
   Trace 4.2 loads in an IDE built on 3.5.17.20, and in a 32-bit one, is
   open.
 - Removing the package with the installer.
+
+## 17. Logging in from the watcher (2026-10-21)
+
+The questions of `docs/superpowers/specs/2026-10-21-watcher-online-design.md`
+section 7 (R1 to R4, R6, R7): what each `OnlineChangeOption` really does to
+the controller, whether `is_uptodate` is enough to keep a `Keep` login from
+changing it, which dialogs a script login opens in an IDE with a window, and
+how long a downloading login holds the IDE. Measured in CODESYS 3.5.21.40
+(ScriptEngine 4.2.0.0) against the `slitter-b` WSL soft PLC, every case read
+back from the controller's audit log. The audit lines below are shortened:
+the session number and the device user's name are left out.
+
+### 17.1 How this was measured
+
+- **An interactive IDE of our own.** `CODESYS.exe --profile="CODESYS V3.5
+  SP21 Patch 4" --culture=en --runscript=<arm.py>`, without `--noUI`. The
+  script hung a WinForms timer on the IDE's message loop and returned, as
+  `cds/ide/session.py` does; on every tick the timer ran whatever probe file
+  had been dropped into a folder, with the script's globals. So every probe
+  ran from a tick, after the arming script had ended, which is the case of
+  15.2. Every online call went through `engine/ide_private.py`
+  `in_script_run`; while one ran, the status bar said "Executing script
+  ...\_\_INTERNAL<n>\_\_.py". A second timer, every 100 ms, counted ticks, to
+  see whether the message loop was pumped during a call. The IDE was the
+  only one on the machine started for this, and was closed by its pid.
+- **Two copies** of the `trace-enum` working copy (section 14), `.project`
+  plus its three download files, never saved: A for the questions, B to put
+  a different program on the controller (17.4).
+- **The controller at the start** held the 2026-10-13 16:27 download from
+  `trace-enum`: `Application.crc` 72EB8ADB, code identity d7f7fab5, data
+  identity 706c2e6a, running. The cdsint CRC record of that copy still says
+  5E0455DC (2026-09-29), so `plc connect` answers DIFFERENT there; that
+  download was made from the IDE, not through cdsint.
+- **Every case started from that state.** `PlcLogic/Application` was saved
+  as a tarball inside the distro first. Between cases the runtime was
+  stopped, the directory put back from the tarball, the runtime started (it
+  loads the boot project: "Download successful, create bootproject: 0", code
+  d7f7fab5, "started"; `Application.app` SHA-256 identical each time), and
+  copy A's download files copied again from `trace-enum`.
+- **Where the IDE logged in.** The copy's device node points at
+  `Gateway-1`, the Windows gateway service at localhost:1217, node address
+  3001.1000.2DDD.7F00.0001; cdsint's `--project` commands aim at `Gateway-3`
+  (localhost:1218, 01D4.2000.2DDD.7F00.0001). Both reach the same runtime:
+  every login below is in slitter-b's audit log. Nothing was re-aimed.
+- **Times** are the Windows clock around the call. The bench's clock runs
+  about 0.9x real time (13.3); that touches only the runtime's share of a
+  login, which is small here (17.8).
+
+### 17.2 R3: which option makes an online change and nothing else
+
+One change in memory on a fresh copy A, then one login from a tick. The IO
+change remaps `AIO_2` "Analog output ch0" from `GVL_AO.iAO[1]` to a new
+variable; the cycle change is the EtherCAT master's `MasterCycleTime`, 1000
+to 2000 (its parameter is found by `visible_name`; its `identifier` is a
+number).
+
+| Change | `is_uptodate` / `is_online_change_possible` | Option | Audit log after `Login successful` | State before, after | Boot project |
+|---|---|---|---|---|---|
+| IO channel | false / true | `Try` | `OnlineChange started`, 8 × `OnlineChange successful, create bootproject: 0`, the last with code fb1f1279, data 7bbc6989 | run, run | untouched |
+| IO channel | false / true | `Force` | the same online change, the same identities | run, run | untouched, CRC 72EB8ADB |
+| master cycle | false / false | `Force` | `Logout successful`, nothing else | run, run | untouched, CRC 72EB8ADB |
+| master cycle | false / false | `Try` | `ReinitApplication started`, `Reinitialize for Download successful`, then `Download successful, create bootproject: 1` repeated, code d5dda160 | run, **stop** | rewritten, CRC 65E2344E |
+
+**`OnlineChangeOption.Force` is the one that never downloads in full**: where
+an online change is possible it makes one, and where it is not it logs in,
+logs out again and raises `Login failed...` (those exact words, dots
+included, no reason given). `Try` falls back to a full download without
+asking, which is what its name promises. Neither asked anything. The
+`Force` refusal says nothing about why, so the reason a caller sees has to
+come from `is_online_change_possible`, read before the login.
+
+The two IO logins took 17.0 s and 16.2 s (a build included), the refused
+`Force` 5.5 s, the downloading `Try` 15.7 s. Locally, the `Try` login
+rewrote `.compileinfo` and `.bootinfo`, the `Force` one only `.compileinfo`.
+
+### 17.3 R2: a working copy without the download files
+
+Copy A with `.compileinfo`, `.bootinfo` and `.bootinfo_guids` deleted, the
+controller holding exactly its program: on opening, before any build,
+`is_uptodate` false and `is_online_change_possible` false; the same after a
+build (6.0 s). A `Keep` login then downloaded in full, as 12.1 found:
+`ReinitApplication started`, `Download successful, create bootproject: 1`,
+code 3b75a724 (a fresh compile of the same program), application left
+stopped, CRC D2CF1130, no prompt. **`is_uptodate` catches this case.**
+
+### 17.4 R1: a controller someone else downloaded to
+
+From copy B, `PLC_PRG` was given a new `DINT` counter, then `login(Never,
+False)`, `create_boot_application()`, `start()`, logout: code 27956bb7, data
+c3f01a6d, running, CRC 81488212. Copy B was closed unsaved.
+
+Copy A, unchanged and fresh, then said `is_uptodate` **true** and
+`is_online_change_possible` true: its download files describe its own last
+download, and nothing in them knows the controller has moved on.
+
+**The identity check** of SPEC 6.8 step 2, from a tick through
+`in_script_run`, with nobody logged in: `create_online_device(node)`,
+`connect()` (0.38 s), `upload_file("PlcLogic/Application/Application.app",
+...)` (0.43 s, 2123112 bytes), `disconnect()`. `plc_identity.judged` on the
+first 96 bytes answered: "this working copy's download info describes a
+different download than the controller holds: code B5FAF7D7... data
+6A2E6C70... here, code B76B9527... data 6D1AF0C3... on the controller" (the
+header holds the identities little-endian, so B76B9527 is 27956bb7). The
+audit log holds a device login, `SRVFT_START_UPLOAD fileName
+"PlcLogic/Application/Application.app"`, `SRVFT_END or SRVFT_CANCEL` and a
+logout: no application login, nothing else. Afterwards the application was
+not logged in and A's judgement had not moved. It took 1.5 s in all.
+
+**Then a `Keep` login from copy A** (8.6 s): `Login successful`,
+`ReinitApplication started`, `Reinitialize for Download successful`,
+`Download successful, create bootproject: 1`, code d7f7fab5. B's running
+program was replaced by A's, the application left **stopped**, the boot
+project rewritten (CRC 1554FF50). No prompt.
+
+**A controller with no application at all** (the `Application` directory
+removed, runtime restarted): copy A said `is_uptodate` true, and a `Keep`
+login downloaded it without a prompt: `App Login failed: no App,
+result=0x501`, `Create for Download successful`, `Download started`, state
+stop, a new boot project. The identity check was not run against this state.
+
+So there are two cases where `is_uptodate` is true and `Keep` changes the
+controller: someone downloaded another program, and the controller holds
+none. The first was caught by the identity check, harmlessly.
+
+### 17.5 R4: dialogs
+
+- **No credentials, fallback as the IDE starts** (`auth_fallback_modes`
+  reads `All`): a `Keep` login opened the dialog "Device User Logon": "You
+  are currently not authorized to perform this operation on the device.
+  Please enter the name and password of a user account which has got the
+  sufficient rights." Device name, an empty device address, user name,
+  password; "Operation: View", "Object: "Device"". The call waited inside
+  `login()` while the dialog pumped the message loop (646 ticks of the 100
+  ms timer in 73.8 s). Cancel gave `Login failed: Unable to connect to the
+  device for item 'CODESYS_Control_for_Linux_SL.Application' due to the
+  following reason: Operation cancelled by user.Do you want to continue with
+  the items?` Nothing reached the audit log.
+- **No credentials, fallback off** (`plc_link.switch_fallback_off`, the
+  property then reads `None`): the login failed in 0.47 s with "...Invalid
+  user authentication on the target...", no dialog, no audit line.
+- **The switch outlives the command, but only for scripts.** The value is a
+  field of the IDE's one `ScriptOnline` (`_authFallbackModes`, beside
+  `_defaultCredentials`): it read `None` from every later tick, across
+  project closes and opens, until the IDE was closed. The IDE's own Online >
+  Login, clicked in the same IDE straight after, still opened the Device
+  User Logon dialog. The person's next manual login is not affected, so
+  there is nothing to restore for them.
+- **After a person has logged in by hand once** (credentials typed into that
+  dialog), a script `Keep` login with no script credentials and the fallback
+  off got in without a dialog (5.2 s, `Login successful`, nothing else). A
+  script `logout()` ended the person's login (4.9 s).
+- **Credentials handed over earlier do not keep the dialog away.** After the
+  runtime had been restarted (each restore of 17.1; the unlicensed runtime
+  forces the same every two hours) and the project closed and opened, five
+  online calls opened the same Device User Logon dialog with the fallback
+  reading `None`: two logins while the only credentials were the ones typed
+  by hand, and three calls (two logins, and the identity check's
+  `connect()`) while `_defaultCredentials` was still set from an earlier
+  `set_default_credentials`. Calling `set_default_credentials` again just
+  before the call let it through without a dialog every time it was done.
+  Which of the two events makes held credentials stale was not separated.
+- **A dialog in this IDE is on the shared desktop.** Two of those dialogs
+  were closed by somebody else, about a minute after they opened; the
+  login then failed with "Operation cancelled by user". The others stayed
+  open (one for 7 min, the probe waiting the whole time) until cancelled for
+  this research.
+- **No other prompt.** No script login asked "the address differs" or
+  whether to download: a `Keep` login onto a different program (17.4), onto
+  no program, or from a copy without download files (17.3) answered the
+  IDE's own question itself, by downloading.
+- **The bench's user management** has one user; it asks for a device login
+  before the first operation ("View Device"), for the application login and
+  for a file upload alike.
+
+### 17.6 Which address the login reaches
+
+The device node answers `get_gateway()` with the gateway's GUID (a
+`System.Guid`) and `get_address()` with the node address as text
+(`3001.1000.2DDD.7F00.0001` here); `get_simulation_mode()` was False. The
+GUID is matched against `online.gateways[i].guid`, whose `name` and
+`config_params` (`{0: host, 1: port}`) name it: `Gateway-1`, localhost:1217.
+For these TCP routes the last three words of the address are the device's
+port and IPv4 address: 2DDD is 11741, 7F00.0001 is 127.0.0.1; the leading
+words differ per gateway (01D4.2000 behind `Gateway-3`). That decoding is
+read off two addresses, not documented. `dir()` on the node lists only the
+.NET object's members, and reflection on its type
+(`ExtendedObject<IScriptObject>`) shows no script methods either; the calls
+were found by name. The audit log names the client host but not the address
+(`login via [] from [DESKTOP-...]`).
+
+### 17.7 State after a login, and the boot application
+
+- **`login(Never, False)`** on an unchanged copy: `ReinitApplication`,
+  `Download successful, create bootproject: 1`, the same code identity
+  d7f7fab5; `application_state` read `stop` straight after, and after
+  `create_boot_application()`. The download writes a boot project itself;
+  `create_boot_application()` then logged `Create boot project successful`
+  and afterwards the CRC was 05D1D6B1 against 72EB8ADB before, with the
+  code identity unchanged: the CRC moves even when the identity does not.
+- **After an online change** the state was `run` before and after (`Try` and
+  `Force` alike).
+- **`create_boot_application()` after an online change rewrites
+  `Application.crc`**: 72EB8ADB to 0448FD92 (3 × `Create boot project
+  successful`), the `.app` header now fb1f1279 / 7bbc6989, and the copy's
+  `.bootinfo_guids` rewritten. Without it the boot project keeps the old
+  program (the `Force` case: CRC still 72EB8ADB), so a restart of the
+  runtime would bring the old program back.
+
+### 17.8 R7: how long a downloading login holds the IDE
+
+| Login | Took | Ticks of the 100 ms timer during it |
+|---|---|---|
+| `Never`, unchanged copy | 9.9 s | 39 |
+| `Keep`, copy without download files | 12.2 s | 45 |
+| `Keep`, copy A over B's program | 8.6 s | 36 |
+| `Try`, master cycle changed | 15.7 s | 44 |
+| `Never` from B, code changed (build included) | 17.5 s | 50 |
+
+Logging out took 3.6 to 6.3 s. The message loop is pumped during part of a
+login (about a third of the ticks fire), so the IDE's window stays drawn,
+but the tick that called `login()` does not return before it ends. Every
+downloading login stayed under 18 s against the default `--timeout` of 120
+s. A login waiting on a dialog has no bound: one waited 426 s.
+
+### 17.9 Answers in one table
+
+| Question | Answer | Section |
+|---|---|---|
+| R3. Which option applies an online change and never downloads? | `OnlineChangeOption.Force`. With an IO change it made an online change; with the master cycle changed it logged in, logged out and raised `Login failed...`. `Try` made the same online change, and a full download where none was possible | 17.2 |
+| R2. No `.compileinfo`, `.bootinfo`, `.bootinfo_guids`: `is_uptodate`? | false, before and after a build; a `Keep` login downloads in full | 17.3 |
+| R1. Another program on the controller, the copy unchanged | `is_uptodate` true; `Keep` downloaded in full without a prompt and left the application stopped. The identity check caught it, with a device login, one file pull and a logout, and no application login | 17.4 |
+| R1. No application on the controller | `is_uptodate` true; `Keep` downloaded without a prompt. The identity check was not run here | 17.4 |
+| R4. Dialogs from a script login | "Device User Logon" when the IDE has no usable credentials. Fallback off stops it only until credentials have been in play; after a runtime restart and a project reopen, held credentials brought it back until handed over again. No address or download prompt ever appeared | 17.5 |
+| R4. Does `auth_fallback_modes` outlive the command? | Yes, for every later script in that IDE; no, for the IDE's own Login, which still asks | 17.5 |
+| Which calls give the address? | `get_gateway()` (GUID, matched to `online.gateways`) and `get_address()` (node address; last words port and IPv4 for TCP) | 17.6 |
+| State after `login(Never, False)` | `stop` | 17.7 |
+| State after an online change | unchanged (`run`) | 17.7 |
+| `create_boot_application()` after an online change | rewrites `Application.crc` (72EB8ADB to 0448FD92) | 17.7 |
+| R7. How long a downloading login blocks | 8.6 to 17.5 s on this application, under the 120 s default; unbounded while a dialog waits | 17.8 |
+| R6. Every online call through `in_script_run`? | Yes: login, logout, `create_boot_application`, `start`, `create_online_device`, `connect`, `upload_file` all worked from a tick through it | 17.1 |
+
+### 17.10 What this decides
+
+- **R1, by the spec's rule: Task 4 includes the identity check.** A case
+  was found where `is_uptodate` is true and `Keep` changes the controller
+  (17.4), and the `Application.app` header against `.bootinfo_guids`
+  comparison caught it without touching the application. A controller
+  without an application is the same hole; there the file pull would fail
+  and the check refuse, but that path was not run.
+- **R3: `--method online_change` logs in with `OnlineChangeOption.Force`**,
+  after reading `is_online_change_possible`, since `Force`'s own refusal
+  names no reason.
+- **R4: credentials have to be handed over immediately before each online
+  call**, the identity check's device connection included; held ones went
+  stale. Where the watcher's IDE is to get them from is open: the design
+  puts `CDS_DEV_USER`/`CDS_DEV_PASS` in the CLI's environment, and the IDE
+  that answered without a dialog after a manual login did so only until the
+  runtime restarted.
+
+### 17.11 Not verified
+
+- Which event makes held credentials stale: the runtime restart, the
+  project close and open, or both.
+- The identity check against a controller with no application.
+- The "address differs" prompt: no case produced it.
+- Any IDE but CODESYS 3.5.21.40, and any controller but this soft PLC.
+- `Force` with a change that is not a device change (code only), and with a
+  library change.
+- A login with the person's own session open in the same IDE (every case
+  here logged in from a logged-out IDE).
+
+### 17.12 The bench afterwards
+
+Restored as in 17.1 after the last case: `Application.crc` 72EB8ADB,
+`Application.app` byte for byte the one found, the application started from
+it; a `plc connect` from a fresh copy read 72EB8ADB. The CRC record of
+`trace-enum` was not touched and still says 5E0455DC. The two copies are in
+`%TEMP%\cdsint-work\task1-a` and `task1-b`; the distro was terminated.
