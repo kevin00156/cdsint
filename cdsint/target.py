@@ -45,7 +45,9 @@ def _with_login(command, args):
     A copy: the caller's args are what it prints and reports from, and the
     password must be in the command file and nowhere else.
     """
-    login = credentials.from_environment() if command in NEEDS_A_LOGIN else None
+    # plc trace --stop shares the wire name and makes no online call.
+    wants = command in NEEDS_A_LOGIN and not args.get("stop")
+    login = credentials.from_environment() if wants else None
     if login is None:
         return args
     return dict(args, credentials=login)

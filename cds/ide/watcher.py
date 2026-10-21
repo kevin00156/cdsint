@@ -197,12 +197,36 @@ class Watcher(HoldsARecording):
     def _claim(self, cmd):
         """Take the command off the queue. False: do not run it."""
         try:
-            return commands.claim_command(self.root, self.instance_id,
-                                          cmd["id"])
+            claimed = commands.claim_command(self.root, self.instance_id,
+                                             cmd["id"])
         except EnvironmentError:
             print("watcher: could not claim %s\n%s"
                   % (cmd.get("id"), traceback.format_exc()))
             return False
+        return claimed and self._scrubbed(cmd)
+
+    def _scrubbed(self, cmd):
+        """Keep the device password off disk once the command is claimed.
+
+        If the rewrite fails the file still holds it, so the command does not
+        run: the file is removed and the caller is told, rather than left to
+        wait out its timeout. False: do not run it.
+        """
+        try:
+            commands.scrub_running(self.root, self.instance_id, cmd)
+            return True
+        except EnvironmentError:
+            print("watcher: could not scrub %s\n%s"
+                  % (cmd.get("id"), traceback.format_exc()))
+        self._release(cmd)
+        try:
+            self._write(commands.new_result(
+                cmd, False, error="the watcher could not remove the device "
+                                  "login from the command file, so it did "
+                                  "not run the command"))
+        except EnvironmentError:
+            print("watcher: could not answer %s" % cmd.get("id"))
+        return False
 
     def _release(self, cmd):
         """Take the running mark away. Left behind, it only delays pruning."""

@@ -141,6 +141,22 @@ def claim_command(root, instance_id, cmd_id):
     return True
 
 
+def scrub_running(root, instance_id, cmd):
+    """Rewrite the running mark of a claimed command without its credentials.
+
+    The claim is a rename, so the password the CLI queued now sits in the
+    .running file, which the CLI's cleanup does not know about and which
+    lives as long as the command runs. The body gets the secret from the
+    in-memory record; the disk copy has no use for it. The rewrite is atomic
+    and refreshes the mtime, which is when the command started anyway.
+    """
+    args = dict(cmd.get("args") or {})
+    if args.pop("credentials", None) is None:
+        return
+    ipc.write_json(_running_path(root, instance_id, cmd["id"]),
+                   dict(cmd, args=args))
+
+
 def release_command(root, instance_id, cmd_id):
     ipc.remove_file(_running_path(root, instance_id, cmd_id))
 

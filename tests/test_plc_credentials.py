@@ -10,6 +10,8 @@ import json
 import pytest
 
 from cds.core import commands, credentials
+from cds.ide import session, watcher
+from tests.fakes import make_globals
 from cdsint import cli, target
 from engine import plc_link
 
@@ -125,3 +127,71 @@ def test_the_password_is_not_in_the_result_a_body_returns(tmp_path):
     cmd = commands.new_command("plc login", {"credentials": {
         "user": "dev", "password": SECRET}})
     assert SECRET not in json.dumps(commands.new_result(cmd, True))
+
+
+# --------------------------------------------------------------------------
+# On disk after the claim, and the watcher's side of it
+# --------------------------------------------------------------------------
+
+LOGIN = {"user": "dev", "password": SECRET}
+
+
+def test_stop_makes_no_online_call_and_carries_no_login(monkeypatch, both_set):
+    assert "credentials" not in sent_args(monkeypatch, "plc trace",
+                                          {"stop": True})
+
+
+@pytest.fixture
+def watching(tmp_path):
+    started = watcher.Watcher(make_globals(), str(tmp_path))
+    started.start()
+    yield started
+    if session.current() is not None:
+        delattr(session.sys, session.STATE_ATTR)
+
+
+def queue(watching):
+    return commands.write_command(watching.root, watching.instance_id,
+                                  "plc login", {"credentials": LOGIN})
+
+
+def running_text(watching, cmd):
+    path = commands._running_path(watching.root, watching.instance_id,
+                                  cmd["id"])
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def test_a_claimed_command_keeps_the_login_in_memory_only(watching,
+                                                          monkeypatch):
+    seen = {}
+
+    def answer(ide, cmd, started):
+        seen["args"] = cmd["args"]
+        seen["disk"] = running_text(watching, cmd)
+        return commands.new_result(cmd, True)
+    monkeypatch.setattr(watcher.entries, "answer", answer)
+    queue(watching)
+    watching.run_one(commands.next_command(watching.root,
+                                           watching.instance_id))
+    assert seen["args"]["credentials"] == LOGIN
+    assert "credentials" not in seen["disk"] and SECRET not in seen["disk"]
+
+
+def test_a_failed_scrub_fails_the_command_and_removes_the_file(
+        watching, monkeypatch):
+    ran = []
+    monkeypatch.setattr(watcher.entries, "answer", lambda *a: ran.append(1))
+
+    def refuse(*args):
+        raise IOError("sharing violation")
+    monkeypatch.setattr(commands, "scrub_running", refuse)
+    cmd = queue(watching)
+    watching.run_one(commands.next_command(watching.root,
+                                           watching.instance_id))
+    assert ran == []
+    assert commands.running_since(watching.root, watching.instance_id) is None
+    result = commands.read_result(watching.root, watching.instance_id,
+                                  cmd["id"])
+    assert result["ok"] is False and "login" in result["error"]
+    assert SECRET not in json.dumps(result)
