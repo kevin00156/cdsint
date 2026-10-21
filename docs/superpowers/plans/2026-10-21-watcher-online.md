@@ -102,6 +102,8 @@ The bench: a WSL soft PLC and an interactive CODESYS 3.5.21.40 with the watcher 
 - Produces: `SCRIPTS["plc login"] = ("entry_plc.py", "log_in")`, `"plc logout"` → `"log_out"`, `"plc run"` → `"run_application"`, `"plc stop"` → `"stop_application"` (not `run`/`stop`: entry_plc.py is exec'd into the IDE's script namespace, and `record()`'s docstring records what a shadowed name cost).
 - Produces: `dialogs.CONFIRM_PLC_ONLINE_CHANGE = "Confirm PLC Online Change"`, `CONFIRM_PLC_RUN = "Confirm PLC Run"`, `CONFIRM_PLC_STOP = "Confirm PLC Stop"`, each answered by `("yes", None)` in silent.py. `--method download` reuses `CONFIRM_PLC_DOWNLOAD`.
 
+**Credentials (owner's decision 2026-10-21, spec R4):** the CLI copies `CDS_DEV_USER`/`CDS_DEV_PASS` from its environment (`engine/plc_link.py` `USER_ENV`, `PASS_ENV`; the CLI may not import engine, so the names move to `cds/core`) into the command args as `credentials: {"user": ..., "password": ...}` for `plc login`, `plc logout`, `plc run`, `plc stop` and the watcher's `plc trace`; absent when either variable is unset. The CLI removes its command file when it stops waiting, answered or not. Tests: present when both are set, absent otherwise, never in the result record or `--json` output, the command file gone after a timeout.
+
 - [ ] **Step 1: Write the failing tests** (parser tests in the style of `tests/test_plc_cli.py`):
   - `--target X plc login` parses; `args == {"method": None, "no_boot_app": None, ...}`.
   - `--target X plc login --method online_change -y --no-boot-app` parses with those three values.
@@ -139,7 +141,10 @@ The bench: a WSL soft PLC and an interactive CODESYS 3.5.21.40 with the watcher 
   - `test_another_client_logged_in_says_so`: `login` raises the `ALREADY_LOGGED_IN` text `engine/plc_trace.py` matches; summary says another client is logged in.
   - `test_logout_logs_out_and_reports_it`, `test_logout_when_logged_out_succeeds_saying_so`.
   - `test_every_online_call_runs_inside_one_script_run`: monkeypatch `ide_private.in_script_run` to count calls; exactly one per command.
-  - If Task 1 step 3 kept the identity check: `test_a_controller_holding_another_program_refuses_the_plain_login`, built with `download_info` and a device whose `Application.app` header differs, as `tests/test_plc_identity.py` does.
+  - `test_credentials_are_handed_over_before_every_online_call`: with `credentials` in args, the fake `online.set_default_credentials` is called before each `create_online_application`, `login`, `logout` (and before the identity check's `create_online_device`), and the dialog switch is set each time; the password appears nowhere in the result (serialise it and search).
+  - `test_without_credentials_the_notes_say_none_were_given`.
+  - Identity check (Task 1 step 3 decided yes, research 17.4 and 17.10): `test_a_controller_holding_another_program_refuses_the_plain_login` and `test_a_controller_holding_no_program_refuses_the_plain_login`, built with `download_info` and a device whose `Application.app` header differs or is absent, as `tests/test_plc_identity.py` does. The check uses `plc_identity.judged` and a device connection that is always disconnected.
+  - `test_force_refusal_text_is_never_the_only_guard`: `is_online_change_possible` is read before any `login(Force, ...)`.
 - [ ] **Step 2: Run** `python -m pytest tests/test_plc_session.py -q`. Expected: FAIL (module missing).
 - [ ] **Step 3: Implement** `SessionTrip` and the two entries. Reuse `plc_trace.py`'s handling of "another client" by moving its matcher to a function both import, not by copying it. The refusal summary names what differs, the `--method` values, and that nothing was done.
 - [ ] **Step 4: Run** `python -m pytest -q`. Expected: all pass.
@@ -153,7 +158,7 @@ The bench: a WSL soft PLC and an interactive CODESYS 3.5.21.40 with the watcher 
 - Test: `tests/test_plc_session.py`
 
 **Interfaces:**
-- Consumes: Task 1's answer to question 1 (the `OnlineChangeOption` member that never downloads in full), as module constant `ONLINE_CHANGE = "<Member>"` in `engine/plc_session.py`, with a comment pointing at the research subsection.
+- Consumes: Task 1's answer to question 1: `ONLINE_CHANGE = "Force"` in `engine/plc_session.py`, with a comment pointing at `docs/trace-research.md` 17.2 (`Try` falls back to a full download; `Force` refuses with a bare "Login failed...", so `is_online_change_possible` is read first).
 - Produces: steps `confirmed()`, `method_applies()` (online change possible, else refuse pointing at `--method download`), `log_in_with(option_name)`, `write_boot_application()`, `forget_the_record()`.
 
 - [ ] **Step 1: Write the failing tests:**

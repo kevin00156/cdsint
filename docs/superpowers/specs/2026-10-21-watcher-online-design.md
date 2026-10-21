@@ -226,10 +226,19 @@ rule it has to satisfy.
   login raises in an interactive IDE. `plc connect` switches the credential
   dialog off through `online.auth_fallback_modes`; find out whether doing
   that in the person's IDE outlives the command, and restore it if it does.
-  The credentials in `CDS_DEV_USER`/`CDS_DEV_PASS` belong to the CLI's
-  environment, not the IDE's; a controller that asks for credentials the
-  IDE does not already have makes the login fail, saying a person has to
-  log in once by hand. Rule: no dialog is ever left open.
+  Measured (`docs/trace-research.md` 17.5): switching the dialog off is
+  not reliable, and only `set_default_credentials` called right before each
+  online call kept the "Device User Logon" dialog away; a login waiting on
+  that dialog never returns, so a timeout alone cannot honour D7.
+  **Owner's decision, 2026-10-21: credentials come from the caller's
+  environment, as D14 already says for the `--project` form.** The CLI
+  copies `CDS_DEV_USER`/`CDS_DEV_PASS` from its own environment into the
+  command it hands the watcher, for every watcher `plc` command that makes
+  an online call; the watcher hands them to the IDE immediately before each
+  online call, and switches the dialog off too. They never appear in a
+  result, a note, stdout or a log, and a command file that carries them is
+  removed when the CLI stops waiting for it, answered or not. Without them
+  the command still runs, and says in its notes that none were given.
 - **R5. The CRC record after a watcher download** (5.6).
 - **R6. The nested script run** (`docs/trace-research.md` 15.2). Every
   online call here must go through it, as the watcher's `plc trace` does.
