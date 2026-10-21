@@ -242,8 +242,15 @@ cdsint plc stop   -y --target X
 When to use them. Log in when the work needs the application online: before
 `plc trace --target` (which also needs the application running), or to see the
 device online. Log out before anything an online project refuses: `import`,
-and creating a trace object with `trace apply`. Not
-logged in is exit 1 for `run` and `stop`, which never log in on their own.
+and creating a trace object with `trace apply`. Not logged in is exit 1 for
+`run` and `stop`, which never log in on their own.
+
+**Who decides.** A plain `plc login` and `plc logout` are your call when nobody
+is using that IDE; if the user is at it or holds the session, ask first.
+`--method download`, `--method online_change`, `plc run` and `plc stop` change
+or move the machine: before the first of them on a machine in a task, get the
+user's word, unless they already gave it for this task. A refused plain login
+is brought back to them as exactly that decision.
 
 **A plain `plc login` never changes the controller.** It logs in only when the
 IDE finds the working copy unchanged since its last download and the
@@ -258,16 +265,16 @@ ask; do not reach for `-y --method download` to make the error go away. An
 unreachable controller, or one holding another program or none, is refused
 too: never decide on your own to download over it.
 
-`--method ... -y` needs `download` or `online_change` in the `plc` list,
-writes the boot application unless `--no-boot-app`, and refuses an application
+`--method download -y` needs `download` in the `plc` list and `--method
+online_change -y` needs `online_change`; either writes the boot application unless `--no-boot-app`, and refuses an application
 that is already logged in (log out first). `plc run` and `plc stop` need `-y`
 and their own words `run` and `stop`; `plc login` needs `login`; `plc logout`
 is allowed by any of `login`, `download`, `online_change`. A word that is
 missing is exit 5: ask the user to add it, there is no flag. The state the
 result reports is read back, so trust `data.state` and `data.logged_in`, not
 the exit code alone. A watcher `plc trace` refused for "not logged in" or "not
-running" now says to run `plc login` and `plc run -y`, both with the user's
-word. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS` in your
+running" says to run `plc login` and `plc run -y`; the second needs the user's
+word as above. The device login comes from `CDS_DEV_USER` and `CDS_DEV_PASS` in your
 own environment, forwarded to the IDE for these commands and never printed; a
 login that needs one and was not given it fails, and its notes say so.
 
@@ -389,9 +396,9 @@ time and wait for it.
 - Edit the `.project` file, or anything outside the sync folder.
 - Import while the PLC is logged in — the tool refuses, and the IDE would reject
   every create, move and delete anyway.
-- Pick `plc login --method download` or `--method online_change` to get past a
-  refused plain login, or `plc run` or `plc stop` a machine, without the
-  user's word. Those are decisions about the machine, not flags.
+- Run `plc login --method download`, `--method online_change`, `plc run` or
+  `plc stop` without the user's word for this task, least of all to get past a
+  refused plain login. Those are decisions about the machine, not flags.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
 - Run `cdsint update`, `cdsint link` or `cdsint unlink`, or `setup.ps1

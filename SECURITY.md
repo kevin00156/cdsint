@@ -23,8 +23,11 @@ Worth knowing before deciding whether something is a vulnerability here.
 `cdsint` runs on your machine with your permissions, and its other half runs
 inside the IDE as the IDE. Between them they read and write the whole PLC
 project, write files wherever the project's sync folder points, start and stop
-the IDE, and — when the project's settings allow it — connect to a controller
-and download to it.
+the IDE, and — when the project's settings allow it — connect to a controller,
+download to it, log its application in or out, and start or stop it. For the
+watcher's commands the device password, if `CDS_DEV_USER` and `CDS_DEV_PASS` are
+set, travels in the command file for the moment it takes the watcher to claim
+it; the watcher rewrites the claimed file without it.
 
 That last one is deliberately gated. A `plc` command is refused unless the
 project's `.cdsint.json` settings file lists it, and the refusal is exit code 5.

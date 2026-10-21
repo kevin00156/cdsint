@@ -294,8 +294,9 @@ cannot stand in for each other.
 - **This call has to be confirmed.** `plc download`, `plc login --method`,
   `plc run` and `plc stop` need `-y`, the same `-y` as `import` and `verify`.
   Without it: what the command would do, `needs_input`, exit 1, controller
-  untouched. A plain `plc login`, `plc logout`, `plc connect` and `plc trace`
-  take none (a `-y` on `connect` or `trace` is exit 2).
+  untouched. A plain `plc login` and `plc logout` need none (a `-y` or
+  `--no-boot-app` on a plain `plc login` is accepted and ignored), and `plc
+  connect` and `plc trace` take none (a `-y` on those is exit 2).
 
 Every `plc` command in the `--project` form also needs `--gateway`, and is
 exit 2 without it: a
@@ -344,8 +345,8 @@ neither, `connect` refuses rather than hanging.
 These four work on the application of the IDE a watcher is in, so they take
 `--target` and nothing else: `--project` and `--gateway`, `--port` and
 `--gateway-name` are exit 2. The IDE logs in wherever the project's device
-node points, as its Login button does, and the result names the address it
-reached.
+node points, as its Login button does, and the result names the address the
+node points at.
 
 ```
 cdsint plc login   --target softplc
@@ -386,20 +387,24 @@ from the application after the action. After a download or an online change
 the controller no longer holds what the CRC record in
 `<project>.cdsint-plc.json` says, so the entries recording the old CRC are
 removed (all of them if it could not be read), and a `plc connect` answers
-`UNKNOWN` until a `plc download -y` records again.
+`UNKNOWN` for a removed entry until a `--project` `plc download -y` records it
+again.
 
 **Credentials.** The IDE running the watcher does not have
 `CDS_DEV_USER` and `CDS_DEV_PASS`; the CLI does, and when both are set it
 forwards them in the command it hands over (for these four and for
 `plc trace --target`). The watcher gives them to the IDE immediately before
 each online call, because a logon dialog nobody answers holds the IDE for
-good. They are in no result, note, stdout or log. Without them the command
+good. The password is in no result, note, stdout or log; the user name is in
+the notes. Without them the command
 still runs and its notes say it was given none. The command file that carries
 them is removed when the CLI stops waiting, and the watcher rewrites the
 claimed copy without them as soon as it has it. Two rare cases leave the
-password in that claimed file under `%LOCALAPPDATA%` until the stale-file
-cleanup removes it, hours later: a watcher killed in the instant between claim
-and rewrite, and a rewrite and release that both fail.
+password in that claimed file under `%LOCALAPPDATA%`. A watcher killed between
+claim and rewrite leaves it until a later watcher start-up prunes the instance,
+at least six hours after the claim, and for good if none starts. A rewrite and
+release that both fail leave it for as long as that watcher lives; it goes when
+the watcher stops cleanly, or at a later start-up's prune if it dies.
 
 ### Recording a trace: `plc trace`
 

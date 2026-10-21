@@ -213,8 +213,9 @@ allows it; `-y` confirms this one call. The watcher refuses `plc connect` and
 `plc download` outright, because each logs in through a connection of its own.
 It does log the IDE's own active application in and out and start and stop it
 (`plc login`, `logout`, `run`, `stop`, 6.12), and `plc trace` records through
-that login (6.8). Each of those that changes the controller has its own word in
-the list and needs `-y`; a plain `plc login` changes nothing on it.
+that login (6.8). Each has a word in the list (6.5), and the ones that change
+or move the controller (`--method`, `run`, `stop`) also need `-y`; a plain
+`plc login` changes nothing on it.
 Reason: an agent issuing a wrong command can now download straight to a PLC.
 `export`, `import`, `compare` and `build` touch no hardware; putting them under
 the permission list would only add a pre-check to every command in exchange
@@ -306,9 +307,11 @@ drag the whole run down. The moved-over code still has a batch of bare
 
 **D14 Credentials never appear on the command line, in files or in the
 report.** They are read from environment variables only.
-Reason: reports end up in git or pasted into tickets. `USER_ENV` and
-`PASS_ENV` in `engine/plc_link.py` are the only place that reads them; once the
-password is handed to `set_default_credentials` it never appears in any string
+Reason: reports end up in git or pasted into tickets. The variable names are
+defined once, in `cds/core/credentials.py`. The `--project` form reads them in
+the IDE (`engine/plc_link.py`); the watcher forms have the CLI read them
+(below). Once the password is handed to `set_default_credentials` it never
+appears in any string
 again, while the user name does appear in the notes (who logged in is the
 basis for reading the record afterwards). One test runs a full download and
 then confirms the password is in none of the result record, stdout or
@@ -320,14 +323,19 @@ exception is a narrow one, decided by the project owner on 2026-10-21. For
 makes no online call), the CLI copies `CDS_DEV_USER` and `CDS_DEV_PASS` from
 its own environment into the command file, and only when both are set. The
 watcher hands them to the IDE with the logon dialog switched off immediately
-before every online call, and never reads the IDE's own environment. They
-appear in no result, note, stdout or log. The watcher rewrites its claimed
+before every online call, and never reads the IDE's own environment. The
+password appears in no result, note, stdout or log; the user name does appear
+in the notes, as above. The watcher rewrites its claimed
 `.running` file without them right after claiming (and does not run the
 command if it cannot), and the CLI removes its command file whenever it stops
 waiting, answered or not. Two windows remain in which the password stays on
-disk, in the claimed file under `%LOCALAPPDATA%`, until the stale-file cleanup
-removes it after `ABANDONED_AFTER_S`: a watcher killed between the claim's
-rename and the rewrite, and a rewrite and a release that both fail. The
+disk, in the claimed `.running` file under `%LOCALAPPDATA%`. A watcher killed
+between the claim's rename and the rewrite leaves it until a later watcher
+start-up prunes the instance, no sooner than `ABANDONED_AFTER_S` after the
+claim; with no later start-up it stays. A rewrite and a release that both fail
+leave it with the watcher alive and beating, which `prune_stale` spares, so it
+stays as long as that watcher lives and goes when the watcher stops cleanly or,
+if it dies, at a later start-up's prune. The
 `--project` form is unchanged, including that a user without a password is
 handed over as it was.
 
@@ -812,8 +820,9 @@ gives it:
 | `plc logout` | any of `login`, `download`, `online_change` |
 | `plc run`, `plc stop` | `run`, `stop` |
 
-A login by a method is the same act as that method's own command, so it needs
-that method's word. `download` therefore widened: it used to allow only the
+A login by a method is the same act as that method's own command, so
+`--method download` needs `download` and `--method online_change` needs
+`online_change`; each command has its own word. `download` therefore widened: it used to allow only the
 `--project` download, which always names `--gateway`, and it now also allows
 the watcher's full download to whatever controller the device node points at
 (owner, 2026-10-21; a second word for the same act would be one more name to
@@ -1089,8 +1098,8 @@ login` made (6.12), and answers when the recording is done. It never logs in
 or out itself, so its steps are fewer than the ones above:
 
 1. Refuse with exit 5 unless the `plc` list holds `trace`. `--gateway`,
-   `--port` and `--gateway-name` are refused at the parser: the person's
-   login already chose the controller. `--name` is required: CODESYS adds no
+   `--port` and `--gateway-name` are refused at the parser: the login
+   already chose the controller, a person's or one `plc login` made. `--name` is required: CODESYS adds no
    object to an application that is logged in, so the trace has to exist.
 2. Reach `T` and merge its definition with the job, as above.
 3. Refuse unless the application is logged in, saying to run `plc login`; refuse if
@@ -1588,11 +1597,12 @@ listed in `engine/entry_plc.py`.
 **What they act on.** The IDE's active application, logged in to wherever the
 project's device node points, as the IDE's Login button does. `--gateway`,
 `--port` and `--gateway-name` are exit 2: the device node chooses, and cdsint
-does not aim it anywhere else. The result names the address actually reached,
+does not aim it anywhere else. The result names the address the device node points at,
 read from the node's gateway and address and not decoded; when the node will
 not say, the notes say so. If the IDE asks "the address differs from the one
-stored in the project", the command has no answer for it and fails saying so,
-as every unanswered prompt does (D7). `--project` refuses all four at the
+stored in the project", the command has no answer for it and should fail saying
+so, as every unanswered prompt does (D7); no case produced that prompt, so this
+is unmeasured (research 17.11). `--project` refuses all four at the
 parser (exit 2): that form logs out at the end of every run, so a login, a run
 or a stop there would outlive nothing.
 
@@ -1718,8 +1728,7 @@ asked state is exit 1.
 --method download -y`. Its refusals of `plc trace` say to run `plc login` and
 `plc run -y`. The headless launcher refuses all four. Not measured as of the
 research: how long a downloading login holds the IDE beyond the bench's
-application (8.6 to 17.5 s there, far under the default `--timeout`), and
-the points research 17.11 lists.
+application (research 17.8), and the points research 17.11 lists.
 
 ---
 

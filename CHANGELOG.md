@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
   stop the application, with the state read back from the application after
   each. They take no `--project`, `--gateway`, `--port` or `--gateway-name`: the
   IDE logs in wherever the project's device node points, and the result names
-  the address. This reverses SPEC D8's "the watcher never logs in or out"; the
+  the address the device node points at. This reverses SPEC D8's "the watcher never logs in or out"; the
   reason is in D8, and `plc connect` and `plc download` are still refused in the
   watcher.
 - **A plain `plc login` never changes the controller.** A `Keep` login applies
@@ -44,13 +44,16 @@ All notable changes to this project will be documented in this file.
   `CDS_DEV_PASS` into the command it hands the watcher when both are set, and
   the watcher hands them to the IDE, with the logon dialog switched off,
   immediately before every online call: a dialog nobody answers holds the IDE
-  indefinitely, and credentials handed over earlier went stale. They never
-  appear in a result, note, stdout or log; the watcher rewrites its claimed
+  indefinitely, and credentials handed over earlier went stale. The
+  password never appears in a result, note, stdout or log (the user name does,
+  in the notes); the watcher rewrites its claimed
   command file without them as soon as it has it, and the CLI removes its file
   whenever it stops waiting. Two rare cases leave the password in the claimed
-  file until the stale-file cleanup removes it after `ABANDONED_AFTER_S`: a
-  watcher killed between the claim and the rewrite, and a rewrite and release
-  that both fail.
+  file: a watcher killed between the claim and the rewrite (it goes at a later
+  watcher start-up's prune, no sooner than `ABANDONED_AFTER_S`, and stays if
+  none starts), and a rewrite and release that both fail (it stays while that
+  watcher lives, and goes when it stops cleanly or at a later start-up's prune
+  if it dies).
 - **The watcher's `plc trace` refusals point at the new commands**: not logged
   in says to run `plc login`, not running says to run `plc run -y`.
 

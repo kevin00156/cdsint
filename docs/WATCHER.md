@@ -131,13 +131,18 @@ file has the same name and lives in `result\`.
   `CDS_DEV_USER`/`CDS_DEV_PASS`, and only when both are set, into `plc login`,
   `logout`, `run`, `stop` and `plc trace` (not `plc trace --stop`). The watcher
   hands them to the IDE immediately before each online call and never reads the
-  IDE's own environment. They are in no result, note, stdout or log, and the
+  IDE's own environment. The password is in no result, note, stdout or log (the user name is in
+  the notes), and the
   watcher rewrites the claimed `<id>.running` file without them right after
   the claim (section 5); a command it cannot rewrite is not run, and the caller
   is told. Two windows remain in which the password stays in that file, under
-  `%LOCALAPPDATA%`, until the instance is pruned `ABANDONED_AFTER_S` after the
-  claim (section 2.1): a watcher killed between the claim's rename and the
-  rewrite, and a rewrite and the release that both fail.
+  `%LOCALAPPDATA%`. A watcher killed between the claim's rename and the rewrite
+  leaves it until a later watcher start-up prunes the instance, no sooner than
+  `ABANDONED_AFTER_S` after the claim (section 2.1), and for good if none
+  starts. A rewrite and a release that both fail leave it with the watcher alive
+  and beating, which the prune spares, so it stays as long as that watcher lives
+  and goes when the watcher stops cleanly or, if it dies, at a later start-up's
+  prune.
 - Every write goes to `<name>.tmp` first and is then renamed to the final name;
   the reading side never sees half a file, and always ignores `.tmp`.
 - The CLI deletes a result file as soon as it has read it. At start-up the
@@ -156,9 +161,9 @@ file has the same name and lives in `result\`.
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
 | `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: each logs in through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). These two commands exist only in the `--project` form; the refusal of `plc download` points at `plc login --method download -y` |
-| `plc login` | `method` (`download` or `online_change`), `no_boot_app`, `yes`, `credentials` | with no `method`, none: it logs in only when nothing on the controller changes, and otherwise fails with `data.methods` (SPEC 6.12). With a `method`, `yes` is required (without it `needs_input` comes back, before anything connects), and `no_boot_app` skips writing the boot application. `yes` and `no_boot_app` without a `method` are accepted and ignored |
+| `plc login` | `method` (`download` or `online_change`), `no_boot_app`, `yes`, `credentials` | with no `method`, none: it logs in only when nothing on the controller changes, and otherwise fails with `data.methods` (SPEC 6.12). With a `method`, "Confirm PLC Download" or "Confirm PLC Online Change" is answered by `yes` (without it `needs_input` comes back, before anything connects), and `no_boot_app` skips writing the boot application. `yes` and `no_boot_app` without a `method` are accepted and ignored |
 | `plc logout` | `credentials` | none |
-| `plc run`, `plc stop` | `yes`, required; `credentials` | "Confirm" is answered by `yes`; without it, `needs_input` comes back. Neither logs in |
+| `plc run`, `plc stop` | `yes`, required; `credentials` | "Confirm PLC Run" or "Confirm PLC Stop" is answered by `yes`; without it, `needs_input` comes back. Neither logs in |
 | `plc trace` | `name`, `job` (the run only), `credentials`, or `stop` | none. Records trace `name` through the login the IDE already holds, and is answered when the recording ends (section 5, SPEC 6.8). `stop` ends a recording early and is answered by the watcher itself |
 
 The `plc` commands are gated by the project's `plc` list before they run
