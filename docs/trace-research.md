@@ -1714,7 +1714,7 @@ else) and `plc logout` ended it. The watcher was stopped, the IDE closed by
 its pid, the distro terminated. The copy is in `%TEMP%\cdsint-work\task9`;
 its CRC record lost the two entries rows 11 and 14 removed.
 
-### 17.14 After the final review's fixes (2026-10-21, 2026-10-22)
+### 17.14 After the final review's fixes (2026-10-21 to 2026-10-23)
 
 The fixes to 17.13's D1 to D3, the refusal of a watcher online command
 without `CDS_DEV_USER` and `CDS_DEV_PASS`, and the final review's other fixes
@@ -1740,8 +1740,13 @@ other work on the machine started and finished in that time. The next
 morning, with no other IDE running, two more starts the same way did the
 same: each answered for about 10 s, then stopped answering for good (90 s
 and more, CPU flat); the second got as far as drawing its menu bar, with
-no dialog among its windows and no child process. Without an interactive
-IDE there is no watcher, so these wait for a machine whose IDE starts:
+no dialog among its windows and no child process. A third pair, on
+2026-10-23 after the owner said the IDE could be started, went the same
+way: responding for 15 s, then not, with a grey, empty main window and no
+other window or child process, CPU flat for 75 and 90 s. The taskbar
+clock showed the real time that time (the day before it had stood still),
+so a frozen display is not the cause. Without an interactive IDE there is
+no watcher, so these wait for a machine whose IDE starts:
 
 - rows 4, 5 and 6 of 17.13 again (a second `plc stop -y`, `plc run -y` and
   `plc logout`), to see the summary once in `--json` `messages` and once in
@@ -1759,7 +1764,7 @@ IDE there is no watcher, so these wait for a machine whose IDE starts:
   start, so that file never matches a backup byte for byte after a
   restart; the user database does.
 
-**The bench afterwards**, both days. Untouched: `Application.crc` 72EB8ADB,
+**The bench afterwards**, all three days. Untouched: `Application.crc` 72EB8ADB,
 `Application.app` and the user database byte for byte as found, the audit
 log with nothing after the runtime's own start. The IDEs started for this
 were closed by their pids and the distro terminated.
