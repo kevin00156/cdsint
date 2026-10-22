@@ -1714,7 +1714,7 @@ else) and `plc logout` ended it. The watcher was stopped, the IDE closed by
 its pid, the distro terminated. The copy is in `%TEMP%\cdsint-work\task9`;
 its CRC record lost the two entries rows 11 and 14 removed.
 
-### 17.14 After the final review's fixes (2026-10-21)
+### 17.14 After the final review's fixes (2026-10-21, 2026-10-22)
 
 The fixes to 17.13's D1 to D3, the refusal of a watcher online command
 without `CDS_DEV_USER` and `CDS_DEV_PASS`, and the final review's other fixes
@@ -1736,9 +1736,12 @@ all and one made only after no other IDE had run for 20 s, each stopped
 answering soon after it started and stayed so (18 minutes for the longest),
 with the start page drawn as grey placeholders, no dialog among its windows,
 no socket open and almost no CPU. Headless runs of the same install by
-other work on the machine started and finished in that time. Without an
-interactive IDE there is no watcher, so these wait for a machine whose IDE
-starts:
+other work on the machine started and finished in that time. The next
+morning, with no other IDE running, two more starts the same way did the
+same: each answered for about 10 s, then stopped answering for good (90 s
+and more, CPU flat); the second got as far as drawing its menu bar, with
+no dialog among its windows and no child process. Without an interactive
+IDE there is no watcher, so these wait for a machine whose IDE starts:
 
 - rows 4, 5 and 6 of 17.13 again (a second `plc stop -y`, `plc run -y` and
   `plc logout`), to see the summary once in `--json` `messages` and once in
@@ -1751,9 +1754,12 @@ starts:
   user management. The bench's runtime has user management on, and switching
   it off means moving its user database aside and setting
   `SECURITY.UserMgmtEnforce=NO`; with no IDE to measure through, the bench
-  was not reconfigured.
+  was not reconfigured. Whoever does it should know that the runtime
+  writes a new `AsymmetricAuthKey` into `CODESYSControl_User.cfg` at every
+  start, so that file never matches a backup byte for byte after a
+  restart; the user database does.
 
-**The bench afterwards.** Untouched: `Application.crc` 72EB8ADB,
+**The bench afterwards**, both days. Untouched: `Application.crc` 72EB8ADB,
 `Application.app` and the user database byte for byte as found, the audit
 log with nothing after the runtime's own start. The IDEs started for this
 were closed by their pids and the distro terminated.
