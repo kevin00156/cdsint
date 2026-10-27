@@ -41,9 +41,15 @@ PART = re.compile(u"([0-9_.]+)(ms|us|µs|μs|s)",
 DECLARATION = re.compile(u"^\\s*<\\?xml[^>]*\\?>", re.UNICODE)
 
 
-def task_period_us(xml_text, task_name):
-    """(the task's period in whole microseconds, None), or (None, problem)."""
-    tasks = _tasks(xml_text)
+def task_period_us(xml_text, task_name, parse=None):
+    """(the task's period in whole microseconds, None), or (None, problem).
+
+    `parse` turns the document, as text without its declaration, into its
+    root element. The default is ElementTree on UTF-8 bytes, right on
+    CPython; inside an IDE the engine passes engine/native_xml.py's, because
+    the ElementTree there is not the same parser in every vendor's IDE.
+    """
+    tasks = _tasks((parse or _parse_utf8)(_document(xml_text)))
     if task_name not in tasks:
         return None, ("there is no task named %s; the tasks are %s"
                       % (task_name, ", ".join(sorted(tasks)) or "none"))
@@ -93,14 +99,14 @@ def _decimal(text):
     return value if value.is_finite() else None
 
 
-def _tasks(xml_text):
+def _tasks(root):
     """{task name: (kind, interval Time text, interval Unit text)}.
 
     A task is an entry whose Object has a Kindoftask; the task configuration
     itself is an entry in the same list and has none.
     """
     tasks = {}
-    for entry in _parse(xml_text).iter():
+    for entry in root.iter():
         meta = _named(entry, "MetaObject")
         obj = _named(entry, "Object")
         if meta is None or obj is None:
@@ -115,14 +121,13 @@ def _tasks(xml_text):
     return tasks
 
 
-def _parse(xml_text):
-    """The document's root, parsed the same way on IronPython and CPython.
+def _document(xml_text):
+    """The document as text, its BOM and declaration dropped: a declaration
+    that says utf-16 on text that is already decoded is a lie."""
+    return DECLARATION.sub(u"", as_text(xml_text).lstrip(u"﻿"), count=1)
 
-    Encoded to UTF-8 bytes with any declaration dropped: a declaration that
-    says utf-16 on text that is already decoded is a lie, and IronPython's
-    parser wants bytes.
-    """
-    text = DECLARATION.sub(u"", as_text(xml_text).lstrip(u"﻿"), count=1)
+
+def _parse_utf8(text):
     return ET.fromstring(text.encode("utf-8"))
 
 

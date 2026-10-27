@@ -74,6 +74,13 @@ All notable changes to this project will be documented in this file.
   nothing.
 - **A controller file that could not be fetched is reported on one line**,
   without the line break inside the IDE's own words.
+- **A task period in µs reads in DIADesigner-AX and older PLC Designer.**
+  `plc trace` refused and `trace save` left completeness unjudged with "an
+  interval cdsint cannot read: … Unit u'\xc2\xb5s'": the XML parser those IDEs
+  ship reads UTF-8 bytes as Latin-1, and refuses a task named in Chinese
+  outright. Inside an IDE the task configuration is now parsed by .NET's
+  XmlDocument, checked in DIADesigner-AX 1.8 and 1.10, PLC Designer 3.24 and
+  4.0.1, and CODESYS 3.5.21.40.
 
 ### 0.5.2 (2026-10-14) — the missing-Trace hint says how to download the package
 

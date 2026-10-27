@@ -8,6 +8,7 @@ misread period is a wrong buffer and a wrong verdict at once.
 """
 import io
 import os
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -47,6 +48,23 @@ def test_the_bench_projects_tasks(task, period):
 def test_bytes_with_a_bom_read_the_same():
     raw = u"﻿".encode("utf-8") + exported().encode("utf-8")
     assert trace_period.task_period_us(raw, "MainTask") == (4000, None)
+
+
+def test_the_parser_given_gets_the_document_as_text_without_its_head():
+    # Inside an IDE the engine parses with .NET (engine/native_xml.py); it
+    # must get text it can load as it is, not bytes or a declaration that
+    # says utf-16 about text already decoded.
+    seen = []
+
+    def parse(text):
+        seen.append(text)
+        return ET.fromstring(text.encode("utf-8"))
+    raw = (u'﻿<?xml version="1.0" encoding="utf-16"?>'
+           + exported()).encode("utf-8")
+    assert trace_period.task_period_us(raw, "EtherCAT_Task", parse) == (
+        1000, None)
+    assert isinstance(seen[0], type(u""))
+    assert seen[0].startswith(u"<ExportFile")
 
 
 def test_a_missing_task_lists_the_tasks_there_are():

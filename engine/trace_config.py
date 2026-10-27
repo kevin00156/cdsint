@@ -13,7 +13,7 @@ completeness against.
 from __future__ import print_function
 
 from cds.core import trace_period
-from engine import object_kind
+from engine import native_xml, object_kind
 from engine.ide_read import children_of, kind_of, name_of
 from engine.plc_trip import one_line
 from engine.strings import safe_str
@@ -143,7 +143,7 @@ def task_period_us(project, application, task):
                       "the task's period: " + one_line(exc))
     if not xml:
         return None, "exporting the task configuration wrote nothing to read"
-    return trace_period.task_period_us(xml, task)
+    return trace_period.task_period_us(xml, task, native_xml.parsed)
 
 
 def task_configuration(application):

@@ -14,6 +14,7 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
     ide_tree            finding and making places in the object tree
     git_configs         the .gitignore and .gitattributes an export leaves
     object_kind         what kind an object is when its GUID cannot say
+    native_xml          native XML parsed the same way in every vendor's IDE
     object_paths        where an object sits, as the path its file takes
     object_content      an object's text, read out and written back
     managers_base       ObjectManager, the per-kind contract; FolderManager
