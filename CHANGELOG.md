@@ -81,6 +81,15 @@ All notable changes to this project will be documented in this file.
   outright. Inside an IDE the task configuration is now parsed by .NET's
   XmlDocument, checked in DIADesigner-AX 1.8 and 1.10, PLC Designer 3.24 and
   4.0.1, and CODESYS 3.5.21.40.
+- **A trace of a direct address no longer stops the watcher in a dialog.**
+  Saving a trace that records `%QD3` or any name the IDE's symbols do not
+  hold ends in an OK-only box, "The csv export encountered some problems with
+  unknown variables/parameters"; in the watcher it was modal, `plc trace`
+  waited in it before and after the recording, and the caller timed out. Each
+  save now logs that box instead, and the trace editor's warning for each
+  such variable ("Unknown variable '%QD3' exported…") goes into `notes`
+  (`plc trace`) or the printed output (`trace save`). The samples were and
+  are recorded. The watcher has to be restarted to pick this up.
 
 ### 0.5.2 (2026-10-14) — the missing-Trace hint says how to download the package
 

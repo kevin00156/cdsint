@@ -22,6 +22,7 @@ from cds.core import settings
 from cds.core import trace_run
 from cds.ide import entries
 from engine import plc_crc as plc_crc_module
+from engine import trace_save
 from engine.codesys_constants import TYPE_GUIDS
 from tests.fakes import FakeSystem, Node as BaseNode, Project, Projects
 
@@ -473,9 +474,57 @@ class Answers(dict):
 
 
 class TraceSystem(FakeSystem):
+    """`system` for a trace run: its prompt answers and prompt handling are
+    logged, and the trace editor's messages are the ("ide says", text)
+    entries the editor put in the same log."""
+
     def __init__(self, log):
         FakeSystem.__init__(self)
+        self.log = log
         self.prompt_answers = Answers(log)
+        self._handling = PromptHandling.Default
+
+    @property
+    def prompt_handling(self):
+        return self._handling
+
+    @prompt_handling.setter
+    def prompt_handling(self, value):
+        self.log.append(("prompt handling", value))
+        self._handling = value
+
+    def _said(self):
+        return [entry[1] for entry in self.log if entry[0] == "ide says"]
+
+    def get_message_categories(self, active):
+        """Only a category holding messages is active, as on 4.0.0.0."""
+        return [TraceCategory()] if active and self._said() else []
+
+    def get_message_objects(self, category, severity):
+        assert str(category).lower() == trace_save.TRACE_CATEGORY and severity
+        return [Message(text) for text in self._said()]
+
+
+class TraceCategory(object):
+    """A message category: the IDE hands back a System.Guid."""
+
+    def __str__(self):
+        return trace_save.TRACE_CATEGORY.upper()
+
+
+class Message(object):
+    def __init__(self, text):
+        self.text = text
+
+
+class PromptHandling(object):
+    """The IDE's PromptHandling flags; values as the IDE's enum has them."""
+    Default = 0
+    LogSimplePrompts = 2
+
+
+class Severity(object):
+    FatalError, Error, Warning, Information = 1, 2, 4, 8
 
 
 # What the editor says on each packet-state poll after start(), as
@@ -487,6 +536,12 @@ TRIGGER_FIRES = [("Started", "WaitForTrigger"), ("Started", "TriggerReached"),
 TRIGGER_NEVER = [("Started", "WaitForTrigger")]
 TRIGGER_UNFINISHED = [("Started", "WaitForTrigger"),
                       ("Started", "TriggerReached")]
+
+
+# What CODESYS 3.5.21.40 wrote to its trace messages saving a CSV that
+# records %QD3 (docs/trace-research.md 18).
+UNKNOWN_QD3 = ("Unknown variable '%QD3' exported. Type ULINT is used in the "
+               "export file")
 
 
 class TraceEditor(object):
@@ -504,6 +559,9 @@ class TraceEditor(object):
         self.csv_text = csv_text
         self.api = api
         self.trigger_script = trigger_script
+        # What the IDE writes to its trace messages on each save; a direct
+        # address is not among its symbols (research 18).
+        self.warns = []
         self.script = [("Stopped", "Disabled")]
         self.polls = 0
         self.running = False    # start() to stop(), as the IDE's is_running
@@ -552,6 +610,8 @@ class TraceEditor(object):
 
     def save(self, path):
         self.log.append(("save", path))
+        for text in self.warns:
+            self.log.append(("ide says", text))
         text = self.csv_text if path.endswith(".csv") else u"not a csv"
         with io.open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -817,6 +877,7 @@ class TraceBench(object):
         ide = {"system": TraceSystem(self.log),
                "projects": Projects(self.project), "online": self.online,
                "PromptResult": PromptResult,
+               "PromptHandling": PromptHandling, "Severity": Severity,
                "CredentialSourceKind": CredentialSourceKind,
                "OnlineChangeOption": OnlineChangeOption,
                trace_run.HOLD_GLOBAL: None if ui else self.hold_ms}

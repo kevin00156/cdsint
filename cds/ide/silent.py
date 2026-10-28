@@ -117,6 +117,14 @@ class SilentSystem(object):
     def __getattr__(self, name):
         return getattr(self._real, name)
 
+    def __setattr__(self, name, value):
+        """A write reaches the real `system`: one kept on the stand-in, such
+        as prompt_handling, would read back as set and change nothing."""
+        if name in ("_real", "ui"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._real, name, value)
+
 
 def running():
     """Is this module driving a script right now?

@@ -22,8 +22,8 @@ from cds.core import trace_run
 from cds.ide import headless, hold
 from engine import plc_trace
 from tests.fakes import FakeSystem
-from tests.plc_fakes import (GATEWAY, PORT, TASK, TRACED, Buffers,
-                             TraceBench, gapped_csv, press, read_data,
+from tests.plc_fakes import (GATEWAY, PORT, TASK, TRACED, UNKNOWN_QD3,
+                             Buffers, PromptHandling, TraceBench, gapped_csv, press, read_data,
                              TASK_CONFIG_XML)
 from tests.plc_fakes import (   # noqa: F401  autouse fixtures
     fake_codesys_ui, keep_the_engine_loaded, workspace)
@@ -59,12 +59,49 @@ def test_a_good_run_records_saves_and_passes():
 def test_the_calls_come_in_the_order_spec_6_8_gives():
     bench = TraceBench()
     bench.run()
-    order = [call[0] for call in bench.log if call[0] != "hold"]
+    order = [call[0] for call in bench.log
+             if call[0] not in ("hold", "prompt handling")]
     assert order == [
         "create", "login", "read_value", "read_value", "open_editor",
         "save", "open_editor", "answer set", "download", "answer removed",
         "start", "stop", "save", "save", "logout"]
     assert ("login", "keep", False) in bench.log
+
+
+def test_every_save_logs_simple_prompts_and_puts_the_handling_back():
+    # Research 18: a CSV save can end in an OK-only box, modal in an IDE
+    # with a window. Logged, nobody has to close it; put back, the person's
+    # IDE shows its prompts again once the save is done.
+    bench = TraceBench()
+    bench.run()
+    logged = PromptHandling.Default | PromptHandling.LogSimplePrompts
+    for at, call in enumerate(bench.log):
+        if call[0] == "save":
+            assert bench.log[at - 1] == ("prompt handling", logged)
+            assert bench.log[at + 1] == ("prompt handling",
+                                         PromptHandling.Default)
+
+
+def test_the_handling_is_put_back_when_the_save_raises():
+    bench = TraceBench()
+
+    def refuses(path):
+        raise IOError("the disk is full")
+    bench.tracer.api.editor.save = refuses
+    result = bench.run()
+    assert not result["ok"]
+    assert bench.log[-2:-1] == [("prompt handling", PromptHandling.Default)]
+
+
+def test_what_the_ide_says_while_saving_is_noted_once():
+    # Three saves (the configuration, the CSV, the CSV step 9 reads) each
+    # name the same variable; the run says it once, and still passes: the
+    # samples are recorded either way.
+    bench = TraceBench()
+    bench.tracer.api.editor.warns = [UNKNOWN_QD3]
+    result = bench.run()
+    assert result["ok"], result["summary"]
+    assert result["data"]["notes"].count("the IDE: " + UNKNOWN_QD3) == 1
 
 
 def test_the_overwrite_prompt_is_answered_around_the_download_only():

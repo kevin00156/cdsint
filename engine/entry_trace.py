@@ -27,7 +27,8 @@ import os
 
 from cds.core import dialogs, trace_job, trace_samples
 from engine import backup, entry, ide_private, plc_crc, plc_trace_verdict
-from engine import trace_config, trace_objects, trace_plugin, unhandled
+from engine import trace_config, trace_objects, trace_plugin, trace_save
+from engine import unhandled
 from engine.ide_read import guid_of, name_of, parent_of
 from engine.plc_trip import one_line
 
@@ -274,8 +275,8 @@ def _saved(project, api, args):
     path = None
     try:
         for path in sorted(set(list(files.values()) + [csv_path])):
-            _ensure_directory(path)
-            editor.save(plc_crc.forget(path))
+            for line in trace_save.save(globals(), editor, path):
+                print("trace save: the IDE: " + line)
     except Exception as exc:
         return None, None, "%s could not be written: %s" % (path,
                                                             one_line(exc))
@@ -360,7 +361,7 @@ def _loaded(project, editor):
     """(the variables the editor now holds, None), or (None, why not)."""
     path = os.path.join(plc_crc.workspace(project.path), SHOWN_CSV)
     try:
-        editor.save(plc_crc.forget(path))
+        trace_save.save(globals(), editor, path)
         return trace_samples.variable_names(path), None
     except Exception as exc:
         return None, ("the file was loaded, but what it holds could not be "
@@ -387,12 +388,7 @@ def _failed(action, problem, **data):
 
 
 def _write_json(path, definition):
-    _ensure_directory(path)
+    trace_save.ensure_directory(path)
     with open(path, "w") as handle:
         handle.write(json.dumps(definition, indent=1, sort_keys=True) + "\n")
 
-
-def _ensure_directory(path):
-    folder = os.path.dirname(path)
-    if folder and not os.path.isdir(folder):
-        os.makedirs(folder)

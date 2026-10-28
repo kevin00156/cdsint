@@ -96,6 +96,14 @@ def test_everything_but_ui_still_reaches_the_real_system(tmp_path, ide):
     assert silent.run(ide, path, "main", {}).messages[0]["text"] == "False"
 
 
+def test_a_write_reaches_the_real_system(tmp_path, ide):
+    # prompt_handling kept on the stand-in would read back as set while the
+    # IDE went on showing its prompts as modal boxes (research 18).
+    path = write_script(tmp_path, u"    system.prompt_handling = 2")
+    silent.run(ide, path, "main", {})
+    assert ide["system"].prompt_handling == 2
+
+
 def test_the_real_system_is_put_back_afterwards(tmp_path, ide):
     path = write_script(tmp_path, u"    system.ui.info('x')")
     silent.run(ide, path, "main", {})

@@ -129,7 +129,9 @@ class Bench(object):
 
     def globals(self):
         ide = {"system": plc_fakes.TraceSystem(self.log),
-               "projects": Projects(self.project)}
+               "projects": Projects(self.project),
+               "PromptHandling": plc_fakes.PromptHandling,
+               "Severity": plc_fakes.Severity}
         if self.plugin:
             ide.update(trace=self, Resolution=plc_fakes.Resolution)
         return ide
@@ -269,6 +271,18 @@ def test_save_writes_each_format_and_judges_the_samples(bench, tmp_path):
     assert saved["data"]["complete"] is True
     assert [row["name"] for row in saved["data"]["variables"]] == \
         plc_fakes.TRACED
+
+
+def test_save_says_what_the_ide_said_about_the_variables(bench, tmp_path):
+    # Research 18: a direct address is not among the IDE's symbols, and the
+    # CSV save warns about it in its trace messages. The run says so.
+    bench.press("apply", yes=True, name="T1",
+                job=definition(*plc_fakes.TRACED))
+    for api in bench.apis.values():
+        api.editor.warns = [plc_fakes.UNKNOWN_QD3]
+    saved = bench.press("save", name="T1", out=str(tmp_path / "run"))
+    assert saved["ok"], saved["error"]
+    assert "trace save: the IDE: " + plc_fakes.UNKNOWN_QD3 in saved["stdout_tail"]
 
 
 def test_save_of_samples_with_gaps_is_still_ok_and_says_why(monkeypatch,

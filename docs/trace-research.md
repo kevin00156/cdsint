@@ -1768,3 +1768,64 @@ no watcher, so these wait for a machine whose IDE starts:
 `Application.app` and the user database byte for byte as found, the audit
 log with nothing after the runtime's own start. The IDEs started for this
 were closed by their pids and the distro terminated.
+
+## 18. The CSV save's "unknown variables" box (2026-10-28)
+
+Reported from a machine: a watcher `plc trace --name T_Vel` on DIADesigner-AX
+1.10, recording `%QD3`, `%QW3`, `%QD2` and ten symbols, stopped in a modal
+box, "The csv export encountered some problems with unknown
+variables/parameters. See messages for details.", once before the recording
+and once after; the caller timed out at 123 s and a person pressed OK twice.
+The CSV was written and every variable held its samples. Reproduced and
+measured in CODESYS 3.5.21.40 (ScriptEngine 4.2.0.0) against the `slitter-b`
+WSL soft PLC, on a copy of `softplc_refactor.project`.
+
+### 18.1 What raises it
+
+- **The save, not the recording.** The box is the trace editor's
+  `save(path)` to a `.csv`. A run saves twice: the configuration before the
+  download, for the variables' types (SPEC 6.8 step 5), and the samples
+  after. Hence once before and once after.
+- **Direct addresses, online.** Logged in, a trace of only
+  `GVL.udiCmdStageGen` raised nothing; one of only `%QD3`, or only `%MD10`,
+  raised it at both saves. Offline, without a build in the session, the
+  symbol raised it too: the export looks each name up among the compiled
+  symbols, and a direct address is never one.
+- **What the messages say.** The trace editor writes one warning per
+  variable, twice, to the message category `05263faf-c096-4326-bf22-
+  4af1f5404f54` ("Trace"): `Unknown variable '%QD3' exported. Type ULINT is
+  used in the export file`. The type named varied: ULINT for the
+  configuration saved before the download, USINT for the samples after.
+- **`Address.AddrFlags` 0x00000000** in the CSV does not mark the unknown
+  ones: the symbol had it too.
+- **The box itself** is a simple prompt: message key `<<no_key>>`, one
+  choice, OK. No `prompt_answers` key can answer it.
+- **The samples.** cdsint's types come from `read_value()` (14), not from
+  the CSV, and read DWORD and WORD for `%QD3` and `%QW3`. On the machine,
+  `%QD3` and `%QD2` held values to 136806 and 2575572319, so those were
+  recorded at full width; their header said Class 12, Size 4. On the bench
+  the unmapped `%QD3` had Class 10, Size 1 in the header and only zeros.
+  Whether an address no I/O channel or `AT` declaration sizes is recorded
+  at full width is not measured: the download of a program writing
+  `16#12345678` to `%QD3` failed with "Login failed" while another process
+  had the bench.
+
+### 18.2 What keeps it from stopping a run
+
+- **`LogSimplePrompts` turns it into a message**, in the "Script Messages"
+  category, and the save returns at once. Headless sets it for the whole run
+  (`cds/ide/headless.py`), which is why no `--project` run ever stopped; the
+  prompt went to stdout and the run said nothing about it.
+- **Only inside a script run.** In the watcher, with `prompt_handling` set
+  around each save: the configuration's save, made inside the nested script
+  run of `start()` (15.2, executor stack 1), returned without a box; the
+  samples' save, made from the timer tick (stack 0), showed the box all the
+  same, with the setting reading back as `LogSimplePrompts`. Made through
+  `ide_private.in_script_run`, both returned without a box.
+- **The stand-in `system` kept writes.** `cds/ide/silent.py`'s
+  `SilentSystem` forwarded reads only; `system.prompt_handling = x` set an
+  attribute on the stand-in and the IDE never saw it.
+
+With all three, a watcher `plc trace` of `%QD3` finished in 4.7 s with no
+window, and one of a symbol and three addresses in 6.5 s, `notes` naming each
+address; `trace save` in the watcher printed the same lines.

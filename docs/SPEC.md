@@ -207,6 +207,17 @@ would make every run after the first need the same `--answer` for no
 information. The exception is by key and by command: the answer is set by the
 trace step, not by `answer_prompts`, so no other command inherits it.
 
+One IDE notice is logged instead of shown, in both forms: the OK-only box a
+trace editor's CSV save ends in when the trace records a name the IDE's
+symbols do not hold, a direct address such as `%QD3` among them. It has no
+key and no choice, and in an interactive IDE it is modal, so a watcher run
+stopped in it until someone pressed OK (`docs/trace-research.md` 18). Every
+save of a trace's files by cdsint adds `LogSimplePrompts` to
+`system.prompt_handling` for that save and puts the old value back after.
+What the trace editor wrote to its own messages during the save, which names
+each variable, is reported: in `notes` for `plc trace`, in the printed output
+for `trace save`. The samples are recorded either way.
+
 **D8 Only actions that touch the PLC are under permission control, in two
 layers.** The `plc` list in the settings file decides whether this project
 allows it; `-y` confirms this one call. The watcher refuses `plc connect` and
@@ -1623,7 +1634,8 @@ node will not say, the notes say so. If the IDE asks "the address differs from
 the one stored in the project", the command has no answer for it. No case
 produced that prompt, so what follows is unmeasured (research 17.11). It
 would not fail the way an unanswered prompt does under `--project` (D7): only
-that form sets `system.prompt_handling`, and in an interactive IDE the prompt
+that form sets `system.prompt_handling` for a whole run (the watcher sets it
+around a trace file's save only), and in an interactive IDE the prompt
 is a modal window, so the command would stop in it until someone closes it. `--project` refuses all four at
 the parser (exit 2): that form logs out at the end of every run, so a login, a
 run or a stop there would outlive nothing.

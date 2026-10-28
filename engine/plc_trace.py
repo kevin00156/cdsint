@@ -22,7 +22,8 @@ from __future__ import print_function
 import os
 
 from cds.core import settings, trace_job, trace_run, trace_samples, trace_types
-from engine import entry, plc_crc, plc_link, plc_trace_verdict, unhandled
+from engine import (entry, plc_crc, plc_link, plc_trace_verdict, trace_save,
+                    unhandled)
 from engine.plc_trace_setup import TraceSetup
 from engine.plc_trip import RUNNING, Trip, first_problem, one_line
 from engine.strings import safe_str
@@ -144,7 +145,8 @@ class TraceTrip(TraceSetup):
         # A local save of the editor's configuration: no controller call, so
         # no hand-over.
         try:
-            self.api.open_editor().save(plc_crc.forget(path))
+            self.ide_said(trace_save.save(self.globals, self.api.open_editor(),
+                                          path))
             saved = trace_samples.read_csv(path)
         except Exception as exc:
             return ("the trace's configuration could not be saved and read "
@@ -307,6 +309,12 @@ class TraceTrip(TraceSetup):
         self.note("the trace was %s at the end of the wait, so it was not "
                   "stopped again" % self.end_state)
 
+    def ide_said(self, lines):
+        """What the trace editor said while saving, each line noted once."""
+        for line in lines:
+            if "the IDE: " + line not in self.notes:
+                self.note("the IDE: " + line)
+
     def save(self):
         """Each requested format, plus the CSV step 9 reads either way."""
         files = dict((kind, self.job["out"] + "." + kind)
@@ -316,8 +324,7 @@ class TraceTrip(TraceSetup):
         path = None
         try:
             for path in sorted(set(list(files.values()) + [self.csv_path])):
-                _ensure_directory(path)
-                self.editor.save(plc_crc.forget(path))
+                self.ide_said(trace_save.save(self.globals, self.editor, path))
         except Exception as exc:
             return ("the trace recorded but could not be saved to %s: %s"
                     % (path, one_line(exc)))
@@ -383,9 +390,3 @@ class TraceTrip(TraceSetup):
             keys += ("trigger",)
         return dict((key, self.found[key]) for key in keys)
 
-
-def _ensure_directory(path):
-    """The output's directory exists before the IDE is asked to write there."""
-    folder = os.path.dirname(path)
-    if folder and not os.path.isdir(folder):
-        os.makedirs(folder)
