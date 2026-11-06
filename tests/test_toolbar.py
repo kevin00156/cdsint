@@ -170,7 +170,11 @@ def machine(tmp_path, monkeypatch):
 
 
 def install(name, profile, *roots):
-    return {"name": name, "profiles": [profile],
+    """An install with the scripting plug-in, in a directory of its own."""
+    plugins = roots[0].parent / ("plugins-" + name)
+    os.makedirs(str(plugins / toolbar._SCRIPT_ENGINE_PLUGIN / "4.1.0.0"),
+                exist_ok=True)
+    return {"name": name, "profiles": [profile], "plugins": str(plugins),
             "user_options": [str(r) for r in roots]}
 
 
@@ -215,6 +219,29 @@ def test_an_ide_never_opened_is_said_and_others_still_get_theirs(machine):
     found += [install("new one", "SP22", root), install("SP21", "SP21", root)]
     assert [(r["ide"], r["state"]) for r in toolbar.add_everywhere()] == [
         ("new one", toolbar.NO_FILE), ("SP21", toolbar.ADDED)]
+
+
+def test_an_ide_without_the_plugin_is_not_written_or_called_a_failure(
+        machine, capsys):
+    """It would ignore the item and show nothing: an SP19 did, on 2026-11-06."""
+    root, found = machine
+    path = options_file(root, "SP19")
+    before = read(path)
+    bare = install("SP19", "SP19", root)
+    bare["plugins"] = str(root / "nothing-here")
+    found.append(bare)
+    assert cli.main(["toolbar"]) == EXIT_OK
+    assert "no scripting plug-in" in capsys.readouterr().out
+    assert read(path) == before
+    assert not os.path.exists(path + toolbar.BACKUP_SUFFIX)
+
+
+def test_an_ide_without_the_plugin_does_not_excuse_one_with_it(machine):
+    root, found = machine
+    bare = install("SP19", "SP19", root)
+    bare["plugins"] = str(root / "nothing-here")
+    found += [bare, install("new", "SP22", root)]
+    assert cli.main(["toolbar"]) == EXIT_FAILED
 
 
 def test_any_open_ide_stops_every_write(machine, monkeypatch):
@@ -274,3 +301,5 @@ def test_every_vendor_says_where_its_options_live(tmp_path, monkeypatch):
     described = installs._describe(str(tmp_path / "CODESYS 3.5"),
                                    installs.VENDORS[0], {})
     assert described["user_options"] == [str(tmp_path / "CODESYS")]
+    assert described["plugins"] == str(
+        tmp_path / "CODESYS 3.5" / "CODESYS" / "PlugIns")

@@ -18,6 +18,14 @@ supported IDE has Standard there. Finding it by name would break if that name
 is localised, and placing it beside another button would break for whoever
 removed that button.
 
+An IDE without the scripting plug-in that provides the command drops the item
+without a word, so "it is in the file" does not mean "it is on the toolbar".
+Measured on 2026-11-06: an SP19 install with no such plug-in showed no button
+from a correct file, while all six installs with it have the command. The
+plug-in's directory is what is checked, because the DLLs do not all spell the
+GUID the same way. Such an IDE cannot get the button however often this is run,
+so it is reported and is not a failure.
+
 A closed IDE reads this at its next start, and an unchanged toolbar is not
 written back when it closes. A first start writes the file before anything is
 customised, so only an IDE that has never been opened has none, and this must
@@ -42,18 +50,20 @@ from cdsint import installs, report, update
 from cdsint.exits import Failure
 
 COMMAND_GUID = "a9b65152-0c1c-458c-bef7-655dc955aea8"
+_SCRIPT_ENGINE_PLUGIN = "dc937c18-e9f0-434d-85b7-1b8f499e378a"
 _ITEM_TYPE = "{d7c09fff-b12f-47d8-bd4f-3d60b8672b7f}"
 BACKUP_SUFFIX = ".cdsint-backup"
 _NEW_SUFFIX = ".cdsint-new"
 
 ADDED = "button_added"
 ALREADY = "button_already"
+NO_COMMAND = "button_no_command"      # this IDE has no such command to show
 NO_FILE = "button_no_file"            # this IDE has never been opened
 IDE_OPEN = "button_ide_open"
 UNRECOGNISED = "button_unrecognised"
 FAILED = "button_failed"
 
-_DONE = (ADDED, ALREADY)
+_NOTHING_LEFT_TO_DO = (ADDED, ALREADY, NO_COMMAND)
 
 # The opening of the first toolbar's item list, up to its line end. It may not
 # cross an earlier Items, and must not be self-closed: an empty first toolbar
@@ -148,7 +158,15 @@ def files_of(install):
                   for name in names if name.endswith(wanted))
 
 
+def has_command(install):
+    return os.path.isdir(os.path.join(install["plugins"],
+                                      _SCRIPT_ENGINE_PLUGIN))
+
+
 def _rows_for(install):
+    if not has_command(install):
+        return [{"ide": install["name"], "state": NO_COMMAND,
+                 "detail": install["plugins"]}]
     files = files_of(install)
     if not files:
         return [{"ide": install["name"], "state": NO_FILE, "detail": ""}]
@@ -172,13 +190,14 @@ def add_everywhere():
 
 
 def run(ns):
-    """Exit 1 when any IDE is left without the button, or none was found.
+    """Exit 1 when an IDE that could have the button is left without, or none
+    was found.
 
     irm/setup.ps1 ignores this code, because a missing button is no reason to
     call an install failed. Asked for by name, it is the answer to the question.
     """
     rows = add_everywhere()
     report.show_toolbars(rows, ns.json)
-    if rows and all(row["state"] in _DONE for row in rows):
+    if rows and all(row["state"] in _NOTHING_LEFT_TO_DO for row in rows):
         return EXIT_OK
     return EXIT_FAILED

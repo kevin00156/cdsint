@@ -214,6 +214,8 @@ def _link_rows(rows):
 _TOOLBAR_SAYS = {
     "button_added": "on the toolbar at its next start",
     "button_already": "already on the toolbar",
+    "button_no_command": "skipped: this IDE has no scripting plug-in, so it "
+                         "cannot show the button; nothing to do",
     "button_no_file": "skipped: this IDE has no toolbar settings until it has "
                       "been opened; start it once, close it, and run `cdsint "
                       "toolbar` again",

@@ -255,6 +255,7 @@ def _describe(directory, vendor, layers):
         "script_dir_needs_admin": _under_program_files(script_dir),
         "user_options": [os.path.join(os.environ.get("APPDATA", ""), name)
                          for name in vendor["options"]],
+        "plugins": os.path.join(directory, vendor["inner"], "PlugIns"),
         "run_as_admin": layers.get(exe.lower()),
     }
 
