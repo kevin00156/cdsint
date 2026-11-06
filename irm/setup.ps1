@@ -348,6 +348,13 @@ function Install-Cdsint {
     if ($ScriptDir) { $linkArgs += @("--script-dir", $ScriptDir) }
     $linked = Invoke-Cdsint -Body $body -Arguments $linkArgs
 
+    # Its exit code is dropped on purpose: a missing button is no reason to call
+    # an install failed, and the command has already said why and what to run.
+    # -ScriptDir means this IDE's menu only, and an older -Version has no toolbar.
+    if (-not $ScriptDir -and (Test-Path (Join-Path $body "cdsint\toolbar.py"))) {
+        Invoke-Cdsint -Body $body -Arguments @("toolbar") | Out-Null
+    }
+
     Write-Host "`n[*] Installing the cdsint command" -ForegroundColor Cyan
     & python -m pip install --quiet -e $body | Out-Host
     if ($LASTEXITCODE -ne 0) {

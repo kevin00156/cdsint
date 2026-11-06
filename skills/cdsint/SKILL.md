@@ -408,8 +408,8 @@ time and wait for it.
   refused plain login. Those are decisions about the machine, not flags.
 - Start or close the IDE the user has open. That project is their workbench.
   `--project` starting one of its own is a different thing and is fine.
-- Run `cdsint update`, `cdsint link` or `cdsint unlink`, or `setup.ps1
-  -Uninstall`, unasked -- not even because stderr said one is due. Those lines
+- Run `cdsint update`, `cdsint link`, `cdsint unlink` or `cdsint toolbar`, or
+  `setup.ps1 -Uninstall`, unasked -- not even because stderr said one is due. Those lines
   are for the user: tell them, and let them decide when the tool changes under
   them or writes into their IDEs' directories.
 

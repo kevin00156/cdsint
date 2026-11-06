@@ -87,6 +87,17 @@ by `cdsint link` alone, without downloading anything.
 A directory that is already at `ScriptDir\cdsint` and is not a junction is
 not deleted: it is somebody's, and `link` names it and moves on.
 
+**Runs `cdsint toolbar` from that body**, which puts a dropdown of the ScriptDir
+scripts first on each IDE's Standard toolbar, by adding one item to the
+`.opt.tbar` file the IDE's own Customize dialog writes. The original is kept
+beside it as `.cdsint-backup`. It changes nothing while any CODESYS-family IDE is
+running, and an IDE never opened has no such file yet; either way it says so and
+the install carries on, because a missing button is no reason to fail one. Run
+`cdsint toolbar` once the IDEs are closed, or after opening the new one once.
+With `-ScriptDir` this step is skipped. `cdsint update` never runs it, so a button
+you removed stays removed, and `-Uninstall` leaves the button in place: nothing
+tells it from one added by hand, and it lists whatever else is in ScriptDir.
+
 **Installs the command:** `python -m pip install -e <body>`. The `-e` is what
 lets the command find `profiles\` and `stub\` beside its packages.
 

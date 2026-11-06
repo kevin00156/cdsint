@@ -84,19 +84,22 @@ def _delta_script_dir(directory):
 #               directory. A function rather than a template because Lenze's
 #               answer depends on the version, and that fork belongs in this
 #               row rather than in an if/elif that re-derives every vendor.
+#   options     directories under %APPDATA% holding this vendor's per-user IDE
+#               settings; Delta moved them between releases, so 1.8 has both
 VENDORS = (
     {"prefix": "", "under": (), "pattern": "CODESYS *",
      "inner": "CODESYS", "exe": "CODESYS.exe",
-     "script_dir": _codesys_script_dir},
+     "script_dir": _codesys_script_dir, "options": ("CODESYS",)},
     {"prefix": "Lenze PLC Designer ",
      "under": ("Lenze", "PlcDesigner"), "pattern": "*",
      "inner": "PlcDesigner", "exe": "PlcDesigner.exe",
-     "script_dir": _lenze_script_dir},
+     "script_dir": _lenze_script_dir, "options": ("PLCDesigner",)},
     {"prefix": "Delta ",
      "under": ("Delta Industrial Automation", "DIAStudio"),
      "pattern": "DIADesigner-AX*",
      "inner": "CODESYS", "exe": "DIADesigner-AX.exe",
-     "script_dir": _delta_script_dir},
+     "script_dir": _delta_script_dir,
+     "options": ("Delta Industrial Automation", "DIADesigner-AX")},
 )
 
 
@@ -250,6 +253,8 @@ def _describe(directory, vendor, layers):
                                            "Profiles")),
         "script_dir": script_dir,
         "script_dir_needs_admin": _under_program_files(script_dir),
+        "user_options": [os.path.join(os.environ.get("APPDATA", ""), name)
+                         for name in vendor["options"]],
         "run_as_admin": layers.get(exe.lower()),
     }
 

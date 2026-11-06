@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### 0.6.0 (2026-10-21) — log in and out, run and stop, from the watcher
 
+- **The install puts a script dropdown on each IDE's toolbar.** Reaching
+  `Project_watch` took three menu levels unless someone added the button by hand
+  in Customize, once per IDE version. `irm/setup.ps1` now runs the new `cdsint
+  toolbar`, which adds it to the IDE's `.opt.tbar` and keeps the original beside
+  it. With an IDE open, or one never opened, it says what to run later and the
+  install still succeeds. `cdsint update` does not run it, so a button you removed
+  stays removed; uninstalling leaves the button, which can't be told from one added
+  by hand.
 - **`cdsint plc login`, `logout`, `run` and `stop` with `--target`.** An agent
   that needed the application logged in (to record a trace) or out (to change
   what only an offline project can) used to stop and wait for a person to press

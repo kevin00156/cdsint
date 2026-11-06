@@ -66,6 +66,7 @@ after cdsint was, usually. Neither happens by itself:
 cdsint version    # which one this is, where it runs from, on what Python
 cdsint update     # the newest release, and any IDE added since
 cdsint link       # just the IDE menus; as administrator for Delta
+cdsint toolbar    # the script dropdown on the toolbars; every IDE closed
 ```
 
 `update` refuses while any CODESYS-family IDE is running, because one that has
@@ -163,6 +164,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `version` | — | — | which cdsint this is, where it runs from, and on what Python and Windows; paste it into a bug report |
 | `link [--script-dir D]` | — | — | put this install in every IDE's Scripts menu |
 | `unlink [--script-dir D]` | — | — | take this install out of every IDE's Scripts menu; a menu pointing at another cdsint stays |
+| `toolbar` | — | — | put the dropdown of ScriptDir scripts on every IDE's toolbar; the install runs it once, and every IDE must be closed |
 | `ping`, `status`, `stop` | yes | — | one listener's lifecycle |
 | `export [--delete-orphans]` | yes | yes | write the project out as `.st` |
 | `import -y` | yes | yes | read the `.st` back in, disk wins |

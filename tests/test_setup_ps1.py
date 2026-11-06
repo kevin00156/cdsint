@@ -34,6 +34,15 @@ def function(script, name):
     return script[start:after if after > 0 else len(script)]
 
 
+def test_the_toolbar_button_cannot_fail_or_widen_an_install(script):
+    """Its exit code is dropped, -ScriptDir means one menu, old bodies lack it."""
+    install = function(script, "Install-Cdsint")
+    assert ('if (-not $ScriptDir -and (Test-Path (Join-Path $body '
+            '"cdsint\\toolbar.py"))) {') in install
+    assert ('Invoke-Cdsint -Body $body -Arguments @("toolbar") | Out-Null'
+            in install)
+
+
 def test_setup_ps1_is_ascii(script):
     """A release asset is served as application/octet-stream, which Windows
     PowerShell 5.1 decodes as Latin-1, and a BOM-less file run from disk is

@@ -89,6 +89,10 @@ COMMANDS = {
         NO_IDE,
         flags=[("--script-dir", NAME,
                 "unlink this ScriptDir only, instead of every one found")]),
+    "toolbar": Command(
+        "put the dropdown of ScriptDir scripts on every IDE's toolbar; "
+        "irm/setup.ps1 runs it once, and every IDE must be closed",
+        NO_IDE),
     "ping": Command("check that an IDE is answering", WATCHER),
     "status": Command("show what an IDE has open right now", WATCHER),
     "stop": Command("tell a watcher to shut down", WATCHER),

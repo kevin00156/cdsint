@@ -25,7 +25,7 @@ and cdsint/refusals.py what it will not run, cdsint/job_file.py reads a
 trace job before anything starts, cdsint/target.py and cdsint/headless.py
 are the two forms, cdsint/verify.py is the round trip, cdsint/update.py
 replaces a downloaded install, cdsint/link.py puts it in the IDEs' menus
-and takes it out, cdsint/release.py says which one this is and
+and takes it out, cdsint/toolbar.py adds the toolbar button, cdsint/release.py says which one this is and
 cdsint/reminders.py says when an update or a link is due, cdsint/report.py does
 the printing, cds/core/exits.py holds SPEC 4.3's exit codes and
 cdsint/exits.py the exception that carries one. This file is what becomes of
@@ -46,6 +46,7 @@ from cds.core import ipc  # noqa: E402
 from cds.core.exits import EXIT_DENIED, EXIT_FAILED, EXIT_OK  # noqa: E402
 from cdsint import (  # noqa: E402
     flags, headless, installs, link, refusals, release, reminders, report,
+    toolbar,
     target, update, verify)
 from cdsint.exits import Failure  # noqa: E402
 
@@ -155,7 +156,8 @@ def exit_code(result):
 # says they take neither form; this says which function answers each.
 ABOUT_THIS_MACHINE = {"installs": run_installs, "list": run_list,
                       "version": run_version, "update": update.run,
-                      "link": link.run, "unlink": link.run_unlink}
+                      "link": link.run, "unlink": link.run_unlink,
+                      "toolbar": toolbar.run}
 
 
 def main(argv=None):

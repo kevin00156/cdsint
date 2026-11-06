@@ -211,6 +211,31 @@ def _link_rows(rows):
                                   row["detail"]))
 
 
+_TOOLBAR_SAYS = {
+    "button_added": "on the toolbar at its next start",
+    "button_already": "already on the toolbar",
+    "button_no_file": "skipped: this IDE has no toolbar settings until it has "
+                      "been opened; start it once, close it, and run `cdsint "
+                      "toolbar` again",
+    "button_ide_open": "skipped: close every CODESYS-family IDE and run "
+                       "`cdsint toolbar` again; running:",
+    "button_unrecognised": "left alone: this toolbar file is not the shape "
+                           "cdsint knows; add the button in Tools > Customize",
+    "button_failed": "failed",
+}
+
+
+def show_toolbars(rows, want_json=False):
+    """Print what `cdsint toolbar` did, one file at a time."""
+    if want_json:
+        return as_json(rows)
+    if not rows:
+        print("no CODESYS-family IDE found on this machine")
+    for row in rows:
+        print("%s\n  %s\n  %s" % (row["ide"], _TOOLBAR_SAYS[row["state"]],
+                                  row["detail"]))
+
+
 def show_update(record, want_json=False):
     """Print what `cdsint update` did."""
     if want_json:

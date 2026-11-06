@@ -23,6 +23,10 @@ irm https://github.com/kevin00156/cdsint/releases/latest/download/setup.ps1 | ie
 Run it from an elevated shell to include Delta, whose script folder is inside
 Program Files. Restart any IDE that was open.
 
+It also puts a dropdown of those scripts first on each IDE's toolbar. If an IDE
+was open, or has never been opened, it says so: close them, or open the new one
+once, and run `cdsint toolbar`.
+
 The skill that teaches Claude Code how to drive it:
 
 ```
