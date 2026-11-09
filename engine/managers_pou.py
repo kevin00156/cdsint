@@ -26,6 +26,7 @@ from engine.strings import safe_str
 from engine.sync_log import log_error, log_warning
 from engine.codesys_constants import IMPLEMENTATION_TYPES, kind_of
 from engine.managers_base import ObjectManager
+from engine.persistent_gvl import refuse_second as refuse_second_persistent_gvl
 from engine.object_content import (
     export_object_content,
     parse_accessor_content,
@@ -101,8 +102,10 @@ class POUManager(ObjectManager):
         declaration, implementation, pragmas = parse_st_file(file_path)
 
         obj = None
+        special_kind = kind_of(type_guid) if type_guid else None
+        if special_kind == "persistent_gvl":
+            refuse_second_persistent_gvl(container, name)
         try:
-            special_kind = kind_of(type_guid) if type_guid else None
             if special_kind in ("persistent_gvl", "task_local_gvl", "param_list"):
                 obj = self._create_special_gvl(container, name, type_guid, special_kind)
                 if obj is None:

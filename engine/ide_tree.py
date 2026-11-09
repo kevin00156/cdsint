@@ -11,6 +11,7 @@ from __future__ import print_function
 
 import os
 from engine.unhandled import name_of
+from engine.ide_read import children_of, kind_of
 from engine.codesys_constants import TYPE_GUIDS
 from engine.strings import safe_str
 from engine.sync_log import log_warning
@@ -212,3 +213,34 @@ def find_object_by_path(rel_path, project):
             return None
             
     return current_obj
+
+
+# Applications sit at Device / [PLC Logic] / Application, so three levels
+# reach one; the rest is slack for folders sitting above the device.
+MAX_DEPTH = 5
+
+# The only kinds worth walking into, so the scan never sweeps a POU pool.
+CONTAINER_KINDS = ("device", "plc_logic", "folder")
+
+
+def find_applications(project):
+    """Every application object in the project (bounded, pruned walk).
+
+    Breadth-first through containers only: a project with thousands of POUs
+    costs a handful of API calls, and nothing below an application is visited.
+    """
+    found = []
+    level = [project]
+    for _ in range(MAX_DEPTH):
+        next_level = []
+        for node in level:
+            for child in children_of(node):
+                kind = kind_of(child)
+                if kind == "application":
+                    found.append(child)
+                elif kind in CONTAINER_KINDS:
+                    next_level.append(child)
+        if not next_level:
+            break
+        level = next_level
+    return found

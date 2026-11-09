@@ -29,6 +29,21 @@ All notable changes to this project will be documented in this file.
   rename, so the folder holds the old file or the new one; a `.tmp` left
   by a killed run is gitignored, never read as an object, and overwritten
   by the next export.
+- **A project-level POU whose file moved into an application is made again
+  there, not moved.** Import paired the file with the object by name and
+  moved it with `obj.move`, and the IDE can keep compiling an object moved
+  across applications where it was, so the build did not match the code.
+  It now deletes the project-level object and creates one from the file
+  inside the application, as it already did between two applications. The
+  new object has a new GUID; nothing cdsint keeps is keyed on it. A move
+  between project-level folders is still a move.
+- **Importing a second persistent variable list fails by name instead of
+  hanging.** CODESYS allows one per application and answers a request for a
+  second with a modal dialog, which nobody presses in a headless run, so
+  the import waited out its timeout. Import now looks in the application
+  first, folders included, creates nothing, and lists the file in
+  `failed_objects` with the name of the list already there. Another
+  application's list, or a child application's, does not count.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
