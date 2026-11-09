@@ -31,6 +31,7 @@ def both_set(monkeypatch):
 def picked():
     watcher = object.__new__(target.Target)
     watcher.root, watcher.instance_id, watcher.timeout = "r", "i", 1.0
+    watcher.reg = {"project_path": None}
     return watcher
 
 
@@ -155,7 +156,8 @@ def watching(tmp_path):
 
 def queue(watching):
     return commands.write_command(watching.root, watching.instance_id,
-                                  "plc login", {"credentials": LOGIN})
+                                  "plc login", {"credentials": LOGIN},
+                                  project=watching.reg["project_path"])
 
 
 def running_text(watching, cmd):

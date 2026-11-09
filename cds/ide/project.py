@@ -21,6 +21,22 @@ def path_of(projects_obj):
     return None if path is None else str(path)
 
 
+def not_sent_for(projects_obj, cmd):
+    """Why cmd must not run on the project open now, or None when it may.
+
+    The caller names the project it saw this IDE holding when it picked it;
+    somebody can open another one before the watcher takes the command. An
+    import is disk wins, so one sent with a project's sync folder into
+    another project deletes every object that folder lacks.
+    """
+    open_now = path_of(projects_obj)
+    if open_now == cmd.get("project"):
+        return None
+    return ("the IDE has %s open, not %s that this command was sent for; "
+            "nothing was done. Send it again." % (
+                open_now or "no project", cmd.get("project") or "no project"))
+
+
 def sync_dir(projects_obj):
     """Where the .st files live, absolute, or None when we cannot say.
 

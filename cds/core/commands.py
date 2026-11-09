@@ -37,7 +37,8 @@ def new_id(now=None, suffix=None):
     return "%013d-%s" % (int(ipc.now(now) * 1000), suffix)
 
 
-def new_command(command, args=None, now=None, cmd_id=None, deadline=None):
+def new_command(command, args=None, now=None, cmd_id=None, deadline=None,
+                project=None):
     """The record that says what to run, whether or not it is ever a file.
 
     A headless run never queues anything — one process runs the whole list —
@@ -47,6 +48,11 @@ def new_command(command, args=None, now=None, cmd_id=None, deadline=None):
 
     deadline_epoch is when the caller stops waiting; None means it waits
     for as long as it takes, which is what a headless run does.
+
+    project is the project path the caller saw that IDE holding when it
+    picked it. The watcher runs a project command only while the IDE still
+    holds that one: the instance id keeps its birth name across a project
+    swap, so a target picked a minute ago can be another project by now.
     """
     now = ipc.now(now)
     return {
@@ -55,13 +61,14 @@ def new_command(command, args=None, now=None, cmd_id=None, deadline=None):
         "args": dict(args or {}),
         "created_at": ipc.iso(now),
         "deadline_epoch": deadline,
+        "project": project,
     }
 
 
 def write_command(root, instance_id, command, args=None, now=None, cmd_id=None,
-                  deadline=None):
+                  deadline=None, project=None):
     """Queue one command for an instance. Returns the record as written."""
-    cmd = new_command(command, args, now, cmd_id, deadline)
+    cmd = new_command(command, args, now, cmd_id, deadline, project)
     ipc.write_json(_command_path(root, instance_id, cmd["id"]), cmd)
     return cmd
 

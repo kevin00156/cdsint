@@ -471,6 +471,16 @@ def test_a_target_is_found_through_its_rewrite_gap(watch, monkeypatch):
     assert target.Target(watch.root).instance_id == watch.instance_id
 
 
+def test_a_command_carries_the_project_its_ide_was_picked_for(watch,
+                                                              monkeypatch):
+    sent = []
+    monkeypatch.setattr(target, "send",
+                        lambda root, instance_id, cmd, timeout:
+                        sent.append(cmd) or {"ok": True})
+    target.Target(watch.root).run_one("import", {"yes": True})
+    assert sent[0]["project"] == watch.reg["project_path"]
+
+
 def test_no_ide_at_all_is_said_at_once(root, monkeypatch):
     # The retry is for a rewrite in progress, not a tax on every miss.
     slept = []

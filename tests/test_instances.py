@@ -134,6 +134,25 @@ def test_an_exact_instance_id_wins():
     assert picked["instance_id"] == "boiler-2"
 
 
+def test_an_id_whose_ide_now_holds_another_project_is_not_a_target():
+    # The id keeps the name of the project open at start. Copied from `list`
+    # before somebody opened another project, it means the first one; an
+    # import sent there with that project's sync folder would empty the other.
+    swapped = make_reg("boiler-2", "boiler")
+    instances.set_project(swapped, r"C:\p\other.project")
+    with pytest.raises(instances.TargetError) as caught:
+        instances.resolve_target([swapped], "boiler-2", now=T0)
+    assert "other.project" in str(caught.value)
+    assert "--target other" in str(caught.value)
+
+
+def test_the_project_name_still_reaches_an_ide_whose_id_is_stale():
+    swapped = make_reg("boiler-2", "boiler")
+    instances.set_project(swapped, r"C:\p\other.project")
+    picked = instances.resolve_target([swapped], "other", now=T0)
+    assert picked["instance_id"] == "boiler-2"
+
+
 def test_a_project_name_matches_regardless_of_case():
     picked = instances.resolve_target(two_live_instances(), "SoftPLC", now=T0)
     assert picked["instance_id"] == "softplc-1"

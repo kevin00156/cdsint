@@ -570,6 +570,50 @@ def test_a_command_is_still_claimed_when_answering_fails(root, monkeypatch):
 
 # --- following the project the IDE has open now ----------------------------
 
+def queue_script(watch, name, project, monkeypatch):
+    """Queue a script command; hand back its result and what entries saw."""
+    ran = []
+    monkeypatch.setattr(watcher.entries, "answer",
+                        lambda ide, cmd, started: ran.append(cmd) or
+                        commands.new_result(cmd, True, started_at=started))
+    cmd = commands.write_command(watch.root, watch.instance_id, name,
+                                 {"yes": True}, project=project)
+    watch.run_one(commands.next_command(watch.root, watch.instance_id))
+    return commands.take_result(watch.root, watch.instance_id, cmd["id"]), ran
+
+
+def test_a_script_command_runs_while_the_ide_holds_its_project(root,
+                                                               monkeypatch):
+    watch = watcher.Watcher(make_globals(), root)
+    watch.start()
+    result, ran = queue_script(watch, "import", r"C:\p\softplc.project",
+                               monkeypatch)
+    assert result["ok"] is True and len(ran) == 1
+
+
+def test_a_script_command_sent_for_another_project_is_not_run(root,
+                                                              monkeypatch):
+    # Opened between the caller picking this IDE and the watcher taking the
+    # command: disk wins would have emptied the project now open.
+    ide = make_globals()
+    watch = watcher.Watcher(ide, root)
+    watch.start()
+    ide["projects"].primary = Project(path=r"C:\p\boiler.project")
+    result, ran = queue_script(watch, "import", r"C:\p\softplc.project",
+                               monkeypatch)
+    assert result["ok"] is False and ran == []
+    assert "boiler.project" in result["error"]
+    assert "softplc.project" in result["error"]
+
+
+def test_ping_answers_whatever_project_is_open(root):
+    ide = make_globals()
+    watch = watcher.Watcher(ide, root)
+    watch.start()
+    ide["projects"].primary = Project(path=r"C:\p\boiler.project")
+    assert run(watch, "ping")["ok"] is True
+
+
 def test_the_registration_follows_a_project_swap(root):
     # `list` is how a caller picks its target; a name frozen at start-up means
     # it picks the wrong IDE or none at all.
