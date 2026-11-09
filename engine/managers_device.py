@@ -7,13 +7,13 @@ text pass on the way back. It never creates, removes or updates a device.
 """
 from __future__ import print_function
 
-import io
 import os
 
 from cds.core import device_text
 from engine import device_changes, device_params
 from engine.managers_base import ObjectManager
 from engine.st_text import read_sync_text
+from engine.sync_write import write_text
 from engine.strings import calculate_hash, safe_str
 
 NOT_CREATED = ("%s has no device at that place in the IDE, and import does "
@@ -37,8 +37,7 @@ class DeviceManager(ObjectManager):
         """Same settings in another form: rewrite past the dirty-file guard,
         as managers_library does, since nothing unimported can be lost."""
         if read_sync_text(file_path) != text:
-            with io.open(file_path, "w", encoding="utf-8", newline="") as f:
-                f.write(text)
+            write_text(file_path, text)
             verdict = "updated"
         else:
             verdict = "identical"
