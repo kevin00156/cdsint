@@ -245,12 +245,18 @@ counted too. On one 229-file project `discover` reports 407.
 
 Disk wins. That cuts both ways: an import reads the sync folder as the answer to
 "what should this project contain", and an export must not scribble over that
-answer. Three situations are therefore refused rather than measured:
+answer. Four situations are therefore refused rather than measured:
 
 - **An empty sync folder.** No `.st` anywhere under it is not the answer
   "nothing" — it is a folder nobody has exported to, or the wrong folder — so
   `import` refuses it on all three routes (Scripts menu, `--target`,
   `--project`) instead of deleting every object in the project.
+- **A file left mid-merge.** A file the import would send that still has a
+  line starting `<<<<<<< ` followed later by one starting `>>>>>>> ` is an
+  unfinished `git merge`, not code. `import` refuses the whole run on all three
+  routes before changing anything, and names every such file in the message and
+  in `data.conflicted`. A marker inside a line, in a string or a comment, does
+  not count, and neither does a `=======` row on its own.
 - **A copy that remembers where the original synced.** A `.project` copied
   somewhere else no longer carries the original's folder — that went with the
   settings move — but the settings file beside it might, so `--sync-dir`

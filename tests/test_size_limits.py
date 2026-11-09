@@ -76,7 +76,7 @@ ALLOWED_FUNCTION_LINES = {
         "create_new_object": 141,
     },
     "engine/entry_compare.py": {
-        "compare_project": 87,
+        "compare_project": 65,
     },
     "engine/entry_export.py": {
         "export_project": 173,

@@ -16,6 +16,7 @@ from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_attrs import read_ide_attrs
 from engine.st_text import (
     canonical_st,
+    failure_text,
     unify_newlines,
     format_st_content,
     format_property_content,
@@ -160,10 +161,16 @@ def contents_are_equal(ide_content, disk_content, is_xml, rel_path="unknown",
 
 
 def read_file(file_path):
-    """Disk content for the comparison, or "" when there is none to be had."""
+    """(disk content for the comparison, why it could not be read).
+
+    An unreadable file still compares as "" -- that is what decides whether
+    it is different -- but the reason comes back with it, because a file
+    listed as changed with no word of why sends somebody hunting for an edit
+    that was never made, and import then refuses the same file.
+    """
     if not os.path.exists(file_path):
-        return ""
+        return "", None
     try:
-        return read_sync_text(file_path)
-    except:
-        return ""
+        return read_sync_text(file_path), None
+    except (IOError, OSError, ValueError) as exc:
+        return "", failure_text(exc)

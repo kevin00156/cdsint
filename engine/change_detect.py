@@ -284,7 +284,9 @@ def _compare_file(obj, rel_path, file_path, eff_type, is_xml, scan, project):
     can_have_impl = eff_type in IMPLEMENTATION_TYPES
     ide_content, ide_attrs = get_ide_content(obj, is_xml, scan.accessors,
                                              project, can_have_impl)
-    disk_content = read_file(file_path)
+    disk_content, unreadable = read_file(file_path)
+    if unreadable:
+        log_warning("Could not read %s: %s" % (rel_path, unreadable))
 
     # For ST files, parse pragmas from disk content for attribute comparison
     disk_attrs = {}
@@ -320,7 +322,8 @@ def _compare_file(obj, rel_path, file_path, eff_type, is_xml, scan, project):
         "name": obj.get_name(), "path": rel_path,
         "type_guid": eff_type,
         "obj": obj, "ide_content": full_ide_content, "disk_content": disk_content,
-        "ide_attrs": ide_attrs, "disk_attrs": disk_attrs
+        "ide_attrs": ide_attrs, "disk_attrs": disk_attrs,
+        "problem": unreadable
     }, None
 
 
