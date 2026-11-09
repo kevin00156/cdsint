@@ -208,7 +208,7 @@ def test_a_queued_command_and_a_headless_one_are_the_same_shape():
     # be two shapes there, with only one set of readers.
     queued = commands.new_command("export", {"delete_orphans": True}, now=T0)
     assert sorted(queued) == ["args", "command", "created_at",
-                              "deadline_epoch", "id"]
+                              "deadline_epoch", "id", "project"]
     assert queued["args"] == {"delete_orphans": True}
     assert queued["command"] == "export"
     # A headless run waits for as long as its process deadline allows, so

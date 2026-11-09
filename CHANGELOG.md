@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased (0.6.1)
+
+- **A command no longer lands in a project the IDE opened after you picked
+  it.** An IDE's id keeps the name of the project open when its watcher
+  started, so `--target Plant-1234` copied from `cdsint list` still reached
+  that IDE after someone opened another project in it. An `import -y` sent
+  there with the first project's sync folder would have deleted every object
+  of the second that the folder lacks, because disk wins. Now an id given to
+  `--target` is refused once its IDE holds another project, and the refusal
+  names the project to target instead. Every command also carries the
+  project the CLI saw, and the watcher refuses it, running nothing, when the
+  IDE has another one open by the time it takes the command, which covers a
+  project opened in the second between the two. `ping`, `status` and `stop`
+  are not checked. The CLI's half works at once; the watcher's half needs
+  the watcher restarted.
+
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
 - **The install puts a script dropdown on each IDE's toolbar.** Reaching

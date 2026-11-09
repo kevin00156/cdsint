@@ -125,7 +125,8 @@ class Target(object):
         return results
 
     def run_one(self, command, args):
-        cmd = commands.new_command(command, _with_login(command, args))
+        cmd = commands.new_command(command, _with_login(command, args),
+                                   project=self.reg.get("project_path"))
         # A recording answers when it is done: its duration_s is time the
         # caller asked for, on top of the time the step may take.
         waited = self.timeout + job_file.waits_s(args)
@@ -189,7 +190,8 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     """
     deadline = time.time() + timeout
     commands.write_command(root, instance_id, cmd["command"], cmd["args"],
-                           cmd_id=cmd["id"], deadline=deadline)
+                           cmd_id=cmd["id"], deadline=deadline,
+                           project=cmd["project"])
     watching = Watching(root, instance_id)
     try:
         while True:

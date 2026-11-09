@@ -261,15 +261,39 @@ def _meant(regs, target):
     """The ones target names: its exact id, else its project name."""
     if not target:
         return regs
-    exact = [r for r in regs if r.get("instance_id") == target]
+    exact = [r for r in regs
+             if r.get("instance_id") == target and _id_names_its_project(r)]
     return exact or [r for r in regs
                      if (r.get("project_name") or "").lower() == target.lower()]
+
+
+def _id_names_its_project(reg):
+    """Does the id still say which project this IDE holds?
+
+    The id is named after the project open when the watcher started and
+    keeps that name, because it is also a directory. A caller who copied it
+    from `list` meant that project; once the IDE holds another, honouring
+    the id would send an import with one project's sync folder into the
+    other, and disk wins deletes whatever that folder lacks.
+    """
+    return (ipc.stem_of_id(reg.get("instance_id") or "")
+            == ipc.instance_stem(reg.get("project_path")))
 
 
 def _why_none(regs, target, now, busy_timeout, pid_alive):
     """Nothing live matched. Busy for longer than the caller waits is not
     the same thing as not there, and saying "no live IDE" sent people
     looking for an IDE that was open in front of them."""
+    swapped = [r for r in regs if r.get("instance_id") == target
+               and not _id_names_its_project(r)
+               and is_alive(r, now, busy_timeout=busy_timeout,
+                            pid_alive=pid_alive)]
+    if swapped:
+        r = swapped[0]
+        return ("%s now has %s open, not the project its id was named after; "
+                "nothing was sent. Name the project instead: --target %s"
+                % (target, r.get("project_path") or "no project",
+                   r.get("project_name") or "<project>"))
     busy = [r for r in _meant(regs, target)
             if r.get("state") == STATE_BUSY and not process_gone(r, pid_alive)]
     if not busy:
