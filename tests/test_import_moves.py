@@ -132,3 +132,48 @@ def test_a_device_renamed_since_the_export_keeps_its_objects(
     assert result["ok"] is True and result["data"]["deleted"] == 0
     assert old.removed is False
     assert old.textual_implementation.text == u"x := 42;"
+
+
+@pytest.fixture
+def shared(monkeypatch, tmp_path):
+    """A project-level FB next to an application, as the POUs tab has it."""
+    made = Bench(monkeypatch, tmp_path, folder("A", pou("Foo")), folder("B"),
+                 Item("App", "application", [folder("Lib")]))
+    assert made.export()["ok"]
+    return made
+
+
+def test_a_project_level_pou_moved_into_an_application_is_made_again(shared):
+    # The IDE keeps compiling an object moved across applications where it
+    # was, so the build would not match the code: delete and create instead.
+    old = foo(shared)
+    lib = shared.tree.get_children()[2].get_children()[0]
+
+    def create_pou(name, kind):
+        made = pou(name, u"")
+        made.owner, made.parent = lib._children, lib
+        lib._children.append(made)
+        return made
+    lib.create_pou = lib.create_child = create_pou
+    move_on_disk(shared, "A/Foo.st", "App/Lib/Foo.st", (u"x := 1;", u"x := 42;"))
+
+    found = shared.compare()
+    result = shared.import_()
+
+    assert found["moved"] == []
+    assert [i["path"] for i in found["new_on_disk"]] == ["App/Lib/Foo.st"]
+    assert result["ok"] is True and result["data"]["moved"] == 0
+    assert result["data"]["created"] == 1 and result["data"]["deleted"] == 1
+    assert old.removed is True
+    assert foo(shared) is not old and foo(shared).parent is lib
+    assert foo(shared).textual_implementation.text == u"x := 42;"
+
+
+def test_a_project_level_pou_moved_between_project_folders_is_a_move(shared):
+    old = foo(shared)
+    move_on_disk(shared, "A/Foo.st", "B/Foo.st")
+
+    result = shared.import_()
+
+    assert result["ok"] is True and result["data"]["moved"] == 1
+    assert old.removed is False and old.parent.get_name() == "B"

@@ -19,6 +19,14 @@ All notable changes to this project will be documented in this file.
   project opened in the second between the two. `ping`, `status` and `stop`
   are not checked. The CLI's half works at once; the watcher's half needs
   the watcher restarted.
+- **A project-level POU whose file moved into an application is made again
+  there, not moved.** Import paired the file with the object by name and
+  moved it with `obj.move`, and the IDE can keep compiling an object moved
+  across applications where it was, so the build did not match the code.
+  It now deletes the project-level object and creates one from the file
+  inside the application, as it already did between two applications. The
+  new object has a new GUID; nothing cdsint keeps is keyed on it. A move
+  between project-level folders is still a move.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
