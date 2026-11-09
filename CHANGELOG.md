@@ -19,6 +19,16 @@ All notable changes to this project will be documented in this file.
   project opened in the second between the two. `ping`, `status` and `stop`
   are not checked. The CLI's half works at once; the watcher's half needs
   the watcher restarted.
+- **An export cut short no longer leaves half a `.st` in the sync folder.**
+  A headless export killed by its timeout, or an IDE that crashed while
+  writing, left the file it was on half-written, and since the disk is the
+  truth the next import pushed half a POU into the project. The same held
+  for `.libraries`, `.device` and native `.xml` files, and a native file
+  being replaced was briefly not there at all. Now every one of them is
+  written beside the target as `<name>.tmp` and swapped in with one
+  rename, so the folder holds the old file or the new one; a `.tmp` left
+  by a killed run is gitignored, never read as an object, and overwritten
+  by the next export.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 

@@ -10,10 +10,10 @@ Moved out of codesys_managers.py unchanged.
 from __future__ import print_function
 
 import os
-import io
 from engine.sync_cache import file_signature, normalize_path
 from engine.ide_hash import get_quick_ide_hash
 from engine.st_text import read_sync_text, same_file_text
+from engine.sync_write import write_text
 
 
 class ObjectManager(object):
@@ -129,8 +129,7 @@ class ObjectManager(object):
             if self._disk_moved_since_sync(rel_path, file_path, context):
                 return self._pending(rel_path, context)
 
-        with io.open(file_path, "w", encoding="utf-8", newline="") as f:
-            f.write(content)
+        write_text(file_path, content)
         return self._tracked(obj, rel_path, file_path, context, content_hash,
                              "new" if is_new else "updated")
 

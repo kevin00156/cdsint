@@ -67,7 +67,7 @@ ALLOWED_FUNCTION_LINES = {
         "get_quick_ide_hash": 68,
     },
     "engine/managers_native.py": {
-        "NativeManager.export": 67,
+        "NativeManager.export": 65,
     },
     "engine/object_kind.py": {
         "classify_object": 100,
