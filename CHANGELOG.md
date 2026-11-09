@@ -27,6 +27,13 @@ All notable changes to this project will be documented in this file.
   inside the application, as it already did between two applications. The
   new object has a new GUID; nothing cdsint keeps is keyed on it. A move
   between project-level folders is still a move.
+- **Importing a second persistent variable list fails by name instead of
+  hanging.** CODESYS allows one per application and answers a request for a
+  second with a modal dialog, which nobody presses in a headless run, so
+  the import waited out its timeout. Import now looks in the application
+  first, folders included, creates nothing, and lists the file in
+  `failed_objects` with the name of the list already there. Another
+  application's list, or a child application's, does not count.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
