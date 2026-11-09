@@ -33,11 +33,13 @@ from engine.device_pass import find_changes
 from engine.device_remap import build_device_remap, summarize_device_remap
 from engine.import_items import perform_import_items
 from engine.backup import create_safety_backup, finalize_sync_operation
+from engine.st_text import read_sync_text
 from engine.sync_dir import has_st_files
 from engine.codesys_online import find_logged_in_applications, logged_in_block_message
 from engine import entry, settings, unhandled
 
 from cds.core import dialogs
+from cds.core.conflict_markers import has_conflict
 
 
 class _Plan(object):
@@ -74,6 +76,10 @@ def import_project(base_dir, values, projects_obj=None):
     plan = _plan(find_changes(base_dir, projects_obj, values))
     if not plan.items:
         return _nothing_to_import(plan, start_time)
+
+    refused = _refuse_conflicts(plan, base_dir)
+    if refused is not None:
+        return refused
 
     refused = _confirm(plan, projects_obj)
     if refused is not None:
@@ -198,6 +204,37 @@ def _plan(results):
     print("  Missing on disk (delete): " + str(len(plan.new_in_ide)))
     print("  Unchanged: " + str(plan.unchanged_count))
     return plan
+
+
+def _conflicted(item, base_dir):
+    path = item.get("file_path") or os.path.join(
+        base_dir, item["path"].replace("/", os.sep))
+    try:
+        return has_conflict(read_sync_text(path))
+    except (IOError, OSError, ValueError):
+        # Gone, or not UTF-8: the apply step names those by file already.
+        return False
+
+
+def _refuse_conflicts(plan, base_dir):
+    """Refuse the whole import while a file it would send is mid-merge.
+
+    One file refused and the rest applied would leave the project half
+    merged, with no single answer to "what did this import do" (SPEC 4.2).
+    """
+    conflicted = [item["path"] for item in plan.items
+                  if not item.get("is_orphan") and _conflicted(item, base_dir)]
+    if not conflicted:
+        return None
+    refused = ("Unresolved git merge conflict in %d file(s): %s\n\n"
+               "Refusing to import. Their <<<<<<< and >>>>>>> lines would "
+               "become the objects' code.\n\n"
+               "Finish the merge in those files, then import again."
+               % (len(conflicted), ", ".join(conflicted)))
+    print(refused)
+    log_warning("Import refused - merge conflict in: " + ", ".join(conflicted))
+    system.ui.error(refused)
+    return entry.result(False, refused, conflicted=conflicted)
 
 
 def _nothing_to_import(plan, start_time):

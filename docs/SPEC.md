@@ -470,11 +470,19 @@ Only in the `--project` form: `--profile NAME`, `--report FILE`,
 prompts, and in the `--target` half there is a person sitting in front of the
 IDE whose prompts those are, so it does not go in the shared row.
 
-One safety line tied to "disk wins". `import` (on all three routes: the menu,
+Two safety lines tied to "disk wins". `import` (on all three routes: the menu,
 `--target`, `--project`) refuses when there is not a single `.st` in the sync
 folder, because that is not the fact "there is nothing on disk"; it is a folder
 nobody has exported to or a wrong path, and following the disk-wins rule from
 there would empty the project.
+
+On the same routes it refuses the whole import, before anything changes in the
+IDE, when a file it would send still holds an unresolved git conflict: a line
+starting `<<<<<<< ` followed later by one starting `>>>>>>> `. Taken as the
+truth, those lines would become the object's code. The refusal names every
+such file, in the message and in `data.conflicted`. Only both ends, each at
+the start of its line, count: ST has no operator spelled that way, and a
+`=======` row is an ordinary divider inside a comment.
 
 `--sync-dir` means "use this folder for this run": it is an argument of the
 command, travels into the IDE side by the same route as `-y`, and when the

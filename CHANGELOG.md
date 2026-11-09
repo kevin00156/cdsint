@@ -19,6 +19,13 @@ All notable changes to this project will be documented in this file.
   project opened in the second between the two. `ping`, `status` and `stop`
   are not checked. The CLI's half works at once; the watcher's half needs
   the watcher restarted.
+- **Import refuses a file left mid-merge.** After a `git pull` that stopped on
+  a conflict, import took the `<<<<<<<` and `>>>>>>>` lines as the POU's code,
+  and the build errors pointed at the markers instead of at the unfinished
+  merge. Now an import that would send any file still holding a conflict
+  refuses the whole run before changing anything in the IDE, on every route,
+  and names each such file (`data.conflicted`). A marker inside a line, in a
+  string or a comment, is not a conflict.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
