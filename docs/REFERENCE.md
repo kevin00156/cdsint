@@ -728,6 +728,15 @@ with `--answer UpgradeProjectConfirmation=Yes`.
 **Where do the settings live?** In a text file beside the project — see
 **Settings**.
 
+**Why is my FB `AUX` in `AUX_.st`, and my folder `IO: Inputs` in `IO_ Inputs`?**
+A file or folder name cannot hold `< > : " / \ | ? *`, so each becomes `_`.
+Windows keeps `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` and `LPT1`–`LPT9`
+(any case, with any extension) for devices, so a name that is one of those
+before its first dot gets `_` after it. A new file is created as the object
+`AUX` again; `MAIN_.st` stays `MAIN_`. Two objects that come out as one file
+name (`AUX` beside `AUX_`, `IO: A` beside `IO_ A`) are refused by name; rename
+one of them.
+
 ## Libraries: `Library Manager.libraries`
 
 Each application's Library Manager is one text file beside its code,

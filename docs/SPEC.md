@@ -608,6 +608,16 @@ The existing format is kept, not one byte changed (D15):
   object, which no flag answers and which, answered, drops `ABSTRACT`.
 - Paths follow the IDE tree; a POU's members go in a folder named after the
   POU, for example `Function Blocks/MC_BasicControl/MC_BasicControl.Main.st`.
+- A name becomes a file or folder name a part at a time (a member's file is
+  `<POU part>.<member part>.st`), and `engine/file_names.py` holds the rule
+  both ways. Each of `< > : " / \ | ? *` becomes `_`, which does not come
+  back. A part that, before its first dot, is a Windows device name (`CON`,
+  `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, any case) gets `_`
+  after that name: `AUX` is `AUX_.st`, a folder `COM1` is `COM1_`. A new
+  object made from disk loses that `_` again, and only that one: `MAIN_`
+  stays `MAIN_`. Looking up the IDE object for a disk part compares the part
+  with each object's file name, not its raw name; two objects whose names
+  come out as one part are refused by name, never one picked.
 - The `//% cds-text-sync.kind=<kind>` pragma is stamped only on kinds the
   keywords cannot express: persistent GVLs, parameter lists, actions,
   interface methods.

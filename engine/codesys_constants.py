@@ -301,10 +301,6 @@ IMPL_MARKER = "// === IMPLEMENTATION ==="
 PROPERTY_GET_MARKER = "// === GET ==="
 PROPERTY_SET_MARKER = "// === SET ==="
 
-
-# Characters forbidden in filenames
-FORBIDDEN_CHARS = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*"]
-
 # Files that should be ignored by the sync engine
 RESERVED_FILES = {
     "_metadata.json", "_config.json", "_metadata.csv", "BASE_DIR",

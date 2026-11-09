@@ -19,6 +19,20 @@ All notable changes to this project will be documented in this file.
   project opened in the second between the two. `ping`, `status` and `stop`
   are not checked. The CLI's half works at once; the watcher's half needs
   the watcher restarted.
+- **An object named like a Windows device gets a file a clone can have.** An
+  FB called `AUX` was exported as `AUX.st`, which Windows 10 writes to the
+  AUX device and git on Windows 11 refuses to index, so the POU was missing
+  from every colleague's clone. The rule now: a name that, before its first
+  dot and in any case, is `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` or
+  `LPT1`–`LPT9` gets `_` after it, for `.st` and `.xml` files, folders,
+  applications, devices and `.device` files alike (`AUX` is `AUX_.st`, a
+  folder `COM1` is `COM1_`); a new object made from such a file or folder is
+  named without the `_`, and a name like `MAIN_` keeps its `_`. Every other
+  name keeps the file it had. And a folder like `IO: Inputs`, whose file name
+  is `IO_ Inputs`, is now found by that name: a new file inside it went into
+  a second folder `IO_ Inputs` made beside it. Two objects that come out as
+  one file name (`AUX` beside `AUX_`, `IO: A` beside `IO_ A`) are refused,
+  both named, instead of one standing for the other.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 

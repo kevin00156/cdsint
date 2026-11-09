@@ -33,6 +33,7 @@ from engine.st_text import (
     build_state_hash,
     render_sync_pragmas,
 )
+from engine.file_names import name_from_file
 from engine.strings import safe_str, calculate_hash
 from engine.sync_log import log_info, log_error, log_warning
 from engine.object_paths import clear_path_caches
@@ -344,7 +345,7 @@ def scan_new_disk_files(base_dir, ide_paths):
             if doc_type in KNOWN_TYPE_SUFFIXES:
                 name = name_part
         new_files.append({
-            "name": name,
+            "name": name_from_file(name),
             "path": rel_path,
             "file_path": abs_path
         })

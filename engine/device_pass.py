@@ -19,7 +19,8 @@ from engine.managers_device import NOT_CREATED
 from engine.codesys_constants import TYPE_GUIDS, kind_of
 from engine.ide_read import children_of
 from engine.st_text import read_sync_text
-from engine.strings import clean_filename, safe_str
+from engine.file_names import clean_filename
+from engine.strings import safe_str
 from engine.sync_cache import load_sync_cache, normalize_path, save_sync_cache
 from engine.sync_log import log_info
 

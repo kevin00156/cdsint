@@ -73,7 +73,7 @@ ALLOWED_FUNCTION_LINES = {
         "classify_object": 100,
     },
     "engine/object_create.py": {
-        "create_new_object": 141,
+        "create_new_object": 140,
     },
     "engine/entry_compare.py": {
         "compare_project": 87,
