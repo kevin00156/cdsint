@@ -174,7 +174,7 @@ file has the same name and lives in `result\`.
 | `stop` | none | none |
 | `export` | `delete_orphans`, default false | "Delete Orphaned Files?" is answered by it |
 | `import` | `yes`, required | "Confirm Import" is answered by `yes`; without it, `needs_input` comes back |
-| `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
+| `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`, plus `problem` on a changed row whose file could not be read (a file that is not UTF-8 says so); the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
 | `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: each logs in through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). These two commands exist only in the `--project` form; the refusal of `plc download` points at `plc login --method download -y` |

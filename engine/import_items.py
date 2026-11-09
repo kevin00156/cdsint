@@ -40,6 +40,7 @@ from engine.object_create import (
 from engine.codesys_constants import kind_of
 from engine.managers_pou import POUManager
 from engine.ide_tree import ensure_folder_path, find_object_by_path
+from engine.st_text import failure_text
 from engine.strings import safe_str
 from engine.sync_log import log_error, log_info, log_warning
 from engine.ide_read import child_named, guid_of, parent_of
@@ -259,9 +260,10 @@ def _import_st(st_files, base_dir, import_managers, project, name_map,
                 log_info("Updated " + item["name"])
             item["landed"] = obj
         except Exception as exc:
+            reason = failure_text(exc)
             log_error("Failed to import ST " + item.get("path", "unknown")
-                      + ": " + safe_str(exc))
-            unhandled.note(item.get("path", "unknown"), exc)
+                      + ": " + reason)
+            unhandled.note(item.get("path", "unknown"), reason)
             tally.failed += 1
 
 

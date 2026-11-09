@@ -26,6 +26,12 @@ All notable changes to this project will be documented in this file.
   refuses the whole run before changing anything in the IDE, on every route,
   and names each such file (`data.conflicted`). A marker inside a line, in a
   string or a comment, is not a conflict.
+- **Compare says when a file is not UTF-8.** A GVL saved from an ANSI editor
+  on a Chinese-locale PC was listed as changed with no word of why, and import
+  then refused it. Now compare's line for it ends with "not UTF-8 text; save
+  it as UTF-8" and its row in `data.changes` carries the same text as
+  `problem`; import's failure for that file uses the same words. What counts
+  as changed is the same as before.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 

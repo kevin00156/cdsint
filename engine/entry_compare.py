@@ -39,8 +39,7 @@ def changed_objects(different, new_in_ide, new_on_disk, moved):
     one under a name of its own rather than gluing the two into `path` and
     making every caller split a string back apart.
     """
-    rows = [{"name": item["name"], "path": item["path"], "state": CHANGED}
-            for item in different]
+    rows = [_changed_row(item) for item in different]
     rows.extend({"name": item["name"], "path": item["path"],
                  "state": NEW_IN_IDE} for item in new_in_ide)
     rows.extend({"name": item["name"], "path": item["path"],
@@ -49,6 +48,36 @@ def changed_objects(different, new_in_ide, new_on_disk, moved):
                  "path": item["disk_path"], "moved_from": item["ide_path"]}
                 for item in moved)
     return rows
+
+
+def _changed_row(item):
+    """A changed object's row, with why when its file could not be read.
+
+    `problem` is there only when there is one, so the rows of ordinary edits
+    keep the shape callers already read.
+    """
+    row = {"name": item["name"], "path": item["path"], "state": CHANGED}
+    if item.get("problem"):
+        row["problem"] = item["problem"]
+    return row
+
+
+def _diff_lines(different, new_in_ide, new_on_disk, moved):
+    """The git-style list a person reads, one line per object."""
+    lines = []
+    for item in different:
+        line = "  M  " + item["path"] + "  (" + item["type"] + ")"
+        if item.get("problem"):
+            line += "  -- " + item["problem"]
+        lines.append(line)
+    for item in new_in_ide:
+        lines.append("  +  " + item["path"] + "  (" + item["type"] + ")")
+    for item in new_on_disk:
+        lines.append("  *  " + item["path"] + "  (new on disk)")
+    for item in moved:
+        lines.append("  ~  " + item["name"] + "  (" + item["type"] + ")  IDE:"
+                     + item["ide_path"] + " -> Disk:" + item["disk_path"])
+    return lines
 
 
 def compare_project(base_dir, values, projects_obj=None):
@@ -77,30 +106,8 @@ def compare_project(base_dir, values, projects_obj=None):
     unchanged_count = results["unchanged_count"]
     # ── Generate report ──
     elapsed = time.time() - start_time
-    diff_lines = []
-    
-    if different:
-        for item in different:
-            line = "  M  " + item["path"] + "  (" + item["type"] + ")"
-            diff_lines.append(line)
-    
-    if new_in_ide:
-        for item in new_in_ide:
-            line = "  +  " + item["path"] + "  (" + item["type"] + ")"
-            diff_lines.append(line)
-    
-    # deleted_from_ide is now merged into new_on_disk logic
-    
-    if new_on_disk:
-        for item in new_on_disk:
-            line = "  *  " + item["path"] + "  (new on disk)"
-            diff_lines.append(line)
-    
-    if moved:
-        for item in moved:
-            line = "  ~  " + item["name"] + "  (" + item["type"] + ")  IDE:" + item["ide_path"] + " -> Disk:" + item["disk_path"]
-            diff_lines.append(line)
-    
+    diff_lines = _diff_lines(different, new_in_ide, new_on_disk, moved)
+
     print("")
     if diff_lines:
         print("CHANGES:")

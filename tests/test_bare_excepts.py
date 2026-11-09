@@ -26,7 +26,6 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 # numbers are the record, and a date beside them only ever says how long
 # ago somebody last looked -- git blame answers that without going stale.
 ALLOWED = {
-    "engine/content_compare.py": 1,
     "engine/git_configs.py": 1,
     "engine/ide_attrs.py": 1,
     "engine/ide_tree.py": 5,

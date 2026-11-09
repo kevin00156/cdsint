@@ -177,6 +177,7 @@ class TestAByteOrderMarkIsNotCode:
         compare = content_compare
         ide_content = DECL_EMPTY + u"\n\n// === IMPLEMENTATION ==="
         path = self.write(tmp_path, ide_content, "utf-8-sig")
-        disk_content = compare.read_file(path)
+        disk_content, problem = compare.read_file(path)
+        assert problem is None
         assert compare.contents_are_equal(ide_content, disk_content, False,
                                           "PLC_PRG.st")

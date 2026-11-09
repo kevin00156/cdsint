@@ -18,7 +18,7 @@ from engine.codesys_constants import (
     PROPERTY_SET_MARKER,
 )
 from engine.text_kind import determine_object_type
-from engine.strings import calculate_hash
+from engine.strings import calculate_hash, safe_str
 from engine.sync_log import log_error, log_warning
 
 
@@ -347,6 +347,22 @@ def read_sync_text(file_path):
     """
     with io.open(file_path, "r", encoding="utf-8-sig", newline="") as handle:
         return handle.read()
+
+
+NOT_UTF8 = "not UTF-8 text; save it as UTF-8 (%s)"
+
+
+def failure_text(exc):
+    """Why a file could not be taken in, as the reason a person reads.
+
+    A decode error alone names a codec and a byte position, and says nothing
+    to somebody whose editor saved the file in the PC's ANSI code page.
+    Compare and import both say it this way, so they tell one story about
+    one file.
+    """
+    if isinstance(exc, UnicodeDecodeError):
+        return NOT_UTF8 % safe_str(exc)
+    return safe_str(exc)
 
 
 def parse_st_file(file_path):
