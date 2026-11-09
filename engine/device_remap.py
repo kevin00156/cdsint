@@ -10,7 +10,8 @@ Moved out of codesys_compare_engine.py unchanged.
 from __future__ import print_function
 
 from engine.codesys_constants import TYPE_GUIDS
-from engine.ide_tree import find_child_transparent
+from engine.file_names import clean_filename
+from engine.ide_tree import AmbiguousSegment, find_child_transparent
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 
@@ -41,13 +42,15 @@ def build_device_remap(project, to_sync):
     except Exception:
         return {}
 
+    # Disk names: the paths remapped, and looked up again, are disk paths.
     root_names_lower = set()
-    devices = []  # (name, obj)
+    devices = []  # (name on disk, obj)
     for child in root_children:
         try:
-            root_names_lower.add(safe_str(child.get_name()).lower())
+            disk_name = clean_filename(safe_str(child.get_name()))
+            root_names_lower.add(disk_name.lower())
             if safe_str(child.type) == TYPE_GUIDS["device"]:
-                devices.append((safe_str(child.get_name()), child))
+                devices.append((disk_name, child))
         except Exception:
             continue
 
@@ -76,10 +79,8 @@ def build_device_remap(project, to_sync):
         # Which IDE devices already contain one of this segment's second levels?
         matched = []
         for dev_name, dev_obj in devices:
-            for sec in second_levels.get(lead_l, ()):
-                if find_child_transparent(dev_obj, sec) is not None:
-                    matched.append(dev_name)
-                    break
+            if _holds_any(dev_obj, second_levels.get(lead_l, ())):
+                matched.append(dev_name)
 
         if len(matched) == 1:
             remap[lead_l] = matched[0]
@@ -90,6 +91,22 @@ def build_device_remap(project, to_sync):
         # or a device whose Application name also differs). Fail safe.
 
     return remap
+
+
+def _holds_any(device, segments):
+    """Does the device have a child one of these disk segments names?
+
+    A segment two of its children map to still says the device has it; the
+    import refuses that segment by name when it gets there, so the remap
+    need not stop the whole import over it.
+    """
+    for segment in segments:
+        try:
+            if find_child_transparent(device, segment) is not None:
+                return True
+        except AmbiguousSegment:
+            return True
+    return False
 
 
 def remap_path_device(path_str, remap):

@@ -11,7 +11,8 @@ Moved out of codesys_managers.py unchanged.
 from __future__ import print_function
 
 from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
-from engine.strings import safe_str, clean_filename
+from engine.file_names import clean_filename
+from engine.strings import safe_str
 from engine.codesys_constants import TYPE_GUIDS
 from engine.ide_read import guid_of, parent_of
 

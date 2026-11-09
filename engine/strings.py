@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Three string primitives every layer of the engine leans on.
+"""Two string primitives every layer of the engine leans on.
 
 safe_str() is the one way an IDE value becomes text on both runtimes:
 IronPython 2.7 hands back unicode or .NET strings, CPython 3 only str.
-calculate_hash() is the CRC that decides whether a .st changed, and
-clean_filename() is what an object name has to go through to become a
-file name.
+calculate_hash() is the CRC that decides whether a .st changed. How a name
+becomes a file name is engine/file_names.py.
 
 Moved out of codesys_utils.py unchanged.
 """
@@ -13,7 +12,6 @@ from __future__ import print_function
 
 import zlib
 import sys
-from engine.codesys_constants import FORBIDDEN_CHARS
 
 
 def calculate_hash(content):
@@ -39,11 +37,3 @@ def safe_str(value):
         return str(value)
     except:
         return "N/A"
-
-
-def clean_filename(name):
-    """Clean filename from invalid characters"""
-    clean_name = name
-    for char in FORBIDDEN_CHARS:
-        clean_name = clean_name.replace(char, "_")
-    return clean_name

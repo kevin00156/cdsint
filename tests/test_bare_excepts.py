@@ -28,7 +28,7 @@ SCANNED = ("engine", "cds", "cdsint", "stub", "tools", "tests")
 ALLOWED = {
     "engine/git_configs.py": 1,
     "engine/ide_attrs.py": 1,
-    "engine/ide_tree.py": 5,
+    "engine/ide_tree.py": 1,
     "engine/managers_base.py": 1,
     "engine/managers_native.py": 1,
     "engine/object_content.py": 2,
