@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### 0.6.0 (2026-10-21) — log in and out, run and stop, from the watcher
+### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
 - **The install puts a script dropdown on each IDE's toolbar.** Reaching
   `Project_watch` took three menu levels unless someone added the button by hand

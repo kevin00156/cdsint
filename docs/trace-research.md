@@ -1769,6 +1769,47 @@ no watcher, so these wait for a machine whose IDE starts:
 log with nothing after the runtime's own start. The IDEs started for this
 were closed by their pids and the distro terminated.
 
+### 17.15 The open items of 17.14, run (2026-11-09)
+
+Run before releasing 0.6.0, on main 194d978, against the same soft PLC. An
+interactive CODESYS 3.5.21.40 started as in 17.1 this time: it stopped
+answering for about 20 s while loading, then answered for the rest of the
+run. Its run script put the main clone first on `sys.path`, opened a fresh
+copy of `cdsi7-ui` (section 18's working copy, `.project` and its three
+download files, never saved) and started the watcher from `cds/ide`. The CLI
+was the installed `cdsint`, with `CDS_DEV_USER` and `CDS_DEV_PASS` in its
+environment only. The controller at the start held that copy's 2026-10-28
+download: `Application.crc` B0B398C3, running; its `Application` directory
+and user database were saved in a tarball first.
+
+| # | Command | Exit | Read back | Audit log |
+|---|---|---|---|---|
+| 1 | `plc login` with both variables unset, then with `CDS_DEV_PASS` empty | 2, 0.2 s each | the message naming both variables; the instance directory listing identical before and after | nothing |
+| 2 | `plc login` | 0, 11.3 s | logged in, `run`, `changed` nothing, `Keep` | device check; `Login successful` |
+| 3 | `plc stop` without `-y`, then `plc stop -y` | 1, then 0 | `needs_input`; then `stop` | one `Stop successful` |
+| 4 | `plc stop -y` twice more, `--json` and printed | 0, 0 | message "stop: application already stop; nothing was done" in `messages`, and first line of the printed output | nothing |
+| 5 | `plc run -y`, then twice more as in 4 | 0, 0, 0 | `run`; then "run: application already run; nothing was done" in both forms | one `Start successful` |
+| 6 | `plc logout`, then twice more as in 4 | 0, 0, 0 | logged out; then "logout: not logged in; nothing was done" in both forms | one `Logout successful` |
+| 7 | `plc run -y`, logged out | 1 | "not logged in, so it cannot be started; log in first" | nothing |
+| 8 | `plc login --method download -y`, three times with a `plc logout` between | 0 each, 8.8 to 10.0 s | logged in, `stop`, `changed` download, `boot_application` true, the CRC record entry for B0B398C3 removed (first time) | each: `Application.crc` pulled; `Login successful`, `Reinitialize for Download successful`, 22 × `Download successful, create bootproject: 1`, `Create boot project successful` |
+| 9 | `plc run -y`, `plc logout` | 0, 0 | `run`; logged out | `Start successful`, `Logout successful` |
+
+- **D1 is fixed**: rows 4 to 6.
+- **D2 did not recur** in three downloads; the result directory was empty
+  after each. It was a transient sharing violation, so three passes show it
+  is not common, not that it cannot happen.
+- **No password** in any command's stdout or stderr (searched for the
+  value); the user name is in `notes`, as designed. No window but the main
+  one and the watcher's opened in the IDE.
+- **Still not run**: a login with made-up credentials on a controller without
+  user management (17.14 says what reconfiguring the bench takes).
+
+**The bench afterwards.** The IDE closed by its pid, the runtime stopped, the
+`Application` directory put back from the tarball, the runtime started:
+`Application.crc` B0B398C3, `Application.app` and the user database byte for
+byte as found. The distro was terminated. The copy is in
+`%TEMP%\cdsint-work\v060-bench`; its CRC record lost the B0B398C3 entry.
+
 ## 18. The CSV save's "unknown variables" box (2026-10-28)
 
 Reported from a machine: a watcher `plc trace --name T_Vel` on DIADesigner-AX
