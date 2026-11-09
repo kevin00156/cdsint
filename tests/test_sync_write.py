@@ -119,6 +119,11 @@ class _FakeFile(object):
         cls.calls.append("Move")
         os.rename(src, dst)
 
+    @classmethod
+    def Delete(cls, path):
+        cls.calls.append("Delete")
+        os.remove(path)
+
 
 @pytest.fixture
 def ironpython(monkeypatch):
@@ -148,4 +153,19 @@ def test_without_os_replace_dotnet_replaces_an_existing_file(
     sync_write.write_text(path, u"new")
     assert _read(path) == u"new"
     assert ironpython.calls == ["Replace"]
+    assert os.listdir(str(tmp_path)) == ["PLC_PRG.st"]
+
+
+def test_a_volume_that_refuses_replace_still_gets_the_file(
+        tmp_path, ironpython, monkeypatch):
+    # ReplaceFile is refused on some network shares; the export must still
+    # land there, one step or not.
+    def refused(src, dst, backup):
+        raise IOError("The request is not supported")
+    monkeypatch.setattr(_FakeFile, "Replace", staticmethod(refused))
+    path = str(tmp_path / "PLC_PRG.st")
+    _write(path, u"old")
+    sync_write.write_text(path, u"new")
+    assert _read(path) == u"new"
+    assert ironpython.calls == ["Delete", "Move"]
     assert os.listdir(str(tmp_path)) == ["PLC_PRG.st"]

@@ -47,9 +47,16 @@ def replace(src, dst):
         native(src, dst)
         return
     from System.IO import File
-    if File.Exists(dst):
+    if not File.Exists(dst):
+        File.Move(src, dst)
+        return
+    try:
         File.Replace(src, dst, None)
-    else:
+    except Exception:
+        # ReplaceFile is refused on some network shares and non-NTFS
+        # volumes. A sync folder on one still has to be written: give up
+        # the single step there rather than the export.
+        File.Delete(dst)
         File.Move(src, dst)
 
 
