@@ -11,7 +11,7 @@ from engine import (classify, device_changes, device_pass, device_params,
 from engine.codesys_constants import TYPE_GUIDS
 from engine.managers_device import DeviceManager
 from engine.sync_cache import normalize_path
-from tests.device_fakes import Device, Ident, a_master, a_slave
+from tests.device_fakes import Device, Ident, Port, a_master, a_slave
 
 PLC = "CODESYS_Control_for_Linux_SL"
 
@@ -54,6 +54,32 @@ def test_only_the_ethercat_subtree_is_found_laid_out_like_the_tree():
     assert found == [
         ("EtherCAT_2", PLC + "/EtherCAT_2.device"),
         ("X5_7SEtherCAT_1", PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device")]
+
+
+def test_modules_under_a_coupler_port_are_found_under_the_port_folder():
+    modules = [Device("Slave_%d" % n, Ident(65, "494350_%d" % n, "1"))
+               for n in (2, 3)]
+    coupler = Device("Slave_1", Ident(65, "494350_1", "1"),
+                     children=[Port("Port 1", modules)])
+    master = a_master(children=[coupler])
+    project = Project([Device(PLC, Ident(4102, "0000 0005", "4.20.0.0"),
+                              children=[master])])
+    found = [rel for d, rel in device_pass.ethercat_devices(project)]
+    assert found == [
+        PLC + "/EtherCAT_2.device",
+        PLC + "/EtherCAT_2/Slave_1.device",
+        PLC + "/EtherCAT_2/Slave_1/Port 1/Slave_2.device",
+        PLC + "/EtherCAT_2/Slave_1/Port 1/Slave_3.device"]
+
+
+def test_a_non_device_above_the_master_is_not_walked():
+    class Application(Port):
+        def get_children(self, recursive=False):
+            raise AssertionError("walked into an application")
+
+    project, master, slave = a_project()
+    project._children.append(Application("Application"))
+    assert len(device_pass.ethercat_devices(project)) == 2
 
 
 def test_unchanged_files_count_as_unchanged(tmp_path):

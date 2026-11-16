@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Unreleased (0.6.1)
 
+- **The modules of a modular EtherCAT coupler get their `.device` files.**
+  Under an ICP DAS EC4-EP21 on DIADesigner-AX 1.10 the modules hang under a
+  `Port 1` node that is not a device, and the device pass stopped there, so
+  `export` wrote the coupler's file and none of its modules', and `import`
+  could not reach them either. The walk below a master now goes through
+  such a node, which becomes a folder: `Slave_1/Port 1/Slave_2.device`.
+  Paths of devices found before are unchanged. Takes effect on the next
+  command; the watcher need not restart.
 - **A command no longer lands in a project the IDE opened after you picked
   it.** An IDE's id keeps the name of the project open when its watcher
   started, so `--target Plant-1234` copied from `cdsint list` still reached

@@ -38,17 +38,26 @@ def _is_master(device):
 
 
 def ethercat_devices(project):
-    """(device, rel_path) for each EtherCAT master and everything below it,
-    parents first, laid out like the device tree."""
+    """(device, rel_path) for each EtherCAT master and every device below it,
+    parents first, laid out like the device tree.
+
+    Below a master the walk goes through nodes that are not devices: a
+    modular coupler's modules hang under a "Port 1" connector node, and
+    stopping there left every module without a file. The connector stays a
+    folder, so the path is the tree the IDE shows. Above a master a
+    non-device still ends the walk; it is an application or a folder, and
+    no master is under one.
+    """
     found = []
     stack = [(child, [], False) for child in reversed(children_of(project))]
     while stack:
         node, parts, under = stack.pop()
-        if not getattr(node, "is_device", False):
+        is_device = getattr(node, "is_device", False)
+        if not (is_device or under):
             continue
         parts = parts + [clean_filename(safe_str(node.get_name()))]
-        under = under or _is_master(node)
-        if under:
+        under = under or (is_device and _is_master(node))
+        if under and is_device:
             found.append((node, "/".join(parts) + device_text.SUFFIX))
         stack.extend((c, parts, under) for c in reversed(children_of(node)))
     return found

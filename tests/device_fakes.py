@@ -120,3 +120,23 @@ def a_master(children=()):
                   connectors=[Connector(2, [
                       Element("805326848", "1000", "MasterCycleTime")])],
                   children=children)
+
+
+class Port(object):
+    """A modular coupler's connector node ("Port 1" on an ICP DAS EC4-EP21,
+    DIADesigner-AX 1.10): in the device tree, holding the modules, but not a
+    device itself."""
+    is_device = False
+
+    def __init__(self, name, children=()):
+        self._name = name
+        self.parent = None
+        self._children = list(children)
+        for child in self._children:
+            child.parent = self
+
+    def get_name(self):
+        return self._name
+
+    def get_children(self, recursive=False):
+        return list(self._children)
