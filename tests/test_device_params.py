@@ -8,24 +8,44 @@ IDENT = "65|766_0001000000000001|Revision=16#00000001"
 
 
 def doc_of(device):
-    ident, values, maps, _ = dp.read(device)
+    ident, values, maps = dp.read(device)
     return dt.parse(dt.render(ident, values, maps))[0]
 
 
-def test_read_takes_readwrite_leaves_and_mapped_channels():
+def test_read_takes_readwrite_leaves_and_every_channel():
     # A channel and its bits are mappings, never values: their value is the
     # process image, and the sample project has 12296 of them.
-    ident, values, maps, mappable = dp.read(a_slave())
+    ident, values, maps = dp.read(a_slave())
     assert ident == IDENT
     # The DC cycle times follow the master's cycle times the factor
     # (research 4.2), so they are not the file's; the factor is.
     assert sorted(k for k, _, _ in values) == [
         "c1/1074855936", "c1/1610743808", "c1/1627394048/Index",
         "c1/1627394048/Value"]
-    assert maps == [("c1/33554435", "Application.GVL_Axis.aDriveErrorCodes[1]",
-                     "Error Code, %IW5")]
-    assert mappable == set(["c1/33554435", "c1/33554435/33554435_0",
-                            "c1/33554436"])
+    assert maps == [
+        ("c1/33554435", "Application.GVL_Axis.aDriveErrorCodes[1]",
+         "Error Code, %IW5"),
+        ("c1/33554435/33554435_0", "", "Bit0, %IX10.0"),
+        ("c1/33554436", "", "Torque Actual Value, %IW6")]
+
+
+def test_a_channel_with_no_variable_is_a_commented_out_map_line():
+    text = dp.render(a_slave())
+    line = [l for l in text.splitlines() if "c1/33554436 " in l][0]
+    assert line.startswith("# map c1/33554436 =")
+    assert line.endswith("# Torque Actual Value, %IW6")
+    assert dt.parse(text)[0]["maps"] == {
+        "c1/33554435": "Application.GVL_Axis.aDriveErrorCodes[1]"}
+
+
+def test_uncommenting_the_line_and_typing_a_variable_maps_the_channel():
+    slave = a_slave()
+    text = dp.render(slave).replace("# map c1/33554436 =",
+                                    "map c1/33554436 = xTorque")
+    wanted, problems = dt.parse(text)
+    assert problems == []
+    assert dp.apply(slave, wanted) == []
+    assert doc_of(slave)["maps"]["c1/33554436"] == "xTorque"
 
 
 def test_apply_writes_values_and_mappings():

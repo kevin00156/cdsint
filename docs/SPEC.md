@@ -1464,6 +1464,7 @@ c1/1074855936 = 0                      # Physical Address of the Slave
 c1/1610743808 = 'x 1'                  # DC sync0 factor
 c1/1627394048/Value = 6                # Op mode / Value
 map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
+# map c1/33554436 =                    # Torque Actual Value, %IW6
 ```
 
 - `device TYPE|ID|VERSION`: the identification the device must have. It is
@@ -1482,7 +1483,11 @@ map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
   that key. The factor is written. Everything else follows from the written
   values or is the IDE's.
 - A `map` line: a channel with a variable mapped. A mappable channel with no
-  `map` line has no variable.
+  `map` line has no variable. Export writes each channel with no variable as
+  a commented-out `map` line carrying its name and address, so the file names
+  every channel there is to map: mapping one is deleting the `# ` and typing
+  the variable. It is a comment, not an empty `map` line, so it is never read
+  and older files without these lines mean the same.
 - Comments carry the parameter's visible name and a channel's IEC address,
   for the reader; they are never read back.
 

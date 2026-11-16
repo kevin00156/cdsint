@@ -444,7 +444,9 @@ c1/1627394048/Value = 6                             # Op mode
 map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]  # Error Code, %IW5
 ```
 
-Change a value or a `map` line; delete a `map` line to unmap the channel. The
+Change a value or a `map` line; delete a `map` line to unmap the channel. A
+channel with no variable is a commented-out line, `# map c1/33554436 =`: to map
+it, delete the `# ` and type the variable after the `=`. The
 `device` line is checked, never applied: leave it alone. `import` applies these
 files only when the settings file has `"devices": true`, and without it says so —
 do not add that key without the user's word, because most device settings turn
