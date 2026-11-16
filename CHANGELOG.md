@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased (0.6.2)
+### 0.6.2 (2026-11-16) — a .device file names every channel
 
 - **A `.device` file names every channel, so an unmapped module can be
   mapped from the file.** Only channels with a variable had a line, so a
