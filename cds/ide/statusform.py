@@ -217,6 +217,8 @@ class StatusForm(object):
 
 def _screens():
     """Every monitor's working area, as on_screen() takes them."""
+    import clr
+    clr.AddReference("System.Windows.Forms")
     from System.Windows.Forms import Screen
     return [(s.WorkingArea.Left, s.WorkingArea.Top,
              s.WorkingArea.Width, s.WorkingArea.Height)
