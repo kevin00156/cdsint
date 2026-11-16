@@ -4,15 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased (0.6.1)
+### Unreleased (0.6.2)
 
-- **The watcher's status window no longer opens off the screen.** It
-  reopens where it was last dragged, and that spot was trusted blindly: on a
-  laptop that remembered x=1904 on a 1920-wide screen the watcher ran with
-  its window out of sight and, having no taskbar button, nothing to find it
-  by. A remembered spot is now used only while the whole window fits on a
-  screen that is still there; otherwise it opens in the IDE's corner again.
-  Takes effect when the watcher restarts.
 - **A `.device` file names every channel, so an unmapped module can be
   mapped from the file.** Only channels with a variable had a line, so a
   freshly added IO module's file held no channel at all and mapping it meant
@@ -22,6 +15,16 @@ All notable changes to this project will be documented in this file.
   variable, and import maps it. Being a comment, it is never read, so files
   written before mean the same. The first export after updating rewrites
   every device file that has an unmapped channel.
+
+### Unreleased (0.6.1)
+
+- **The watcher's status window no longer opens off the screen.** It
+  reopens where it was last dragged, and that spot was trusted blindly: on a
+  laptop that remembered x=1904 on a 1920-wide screen the watcher ran with
+  its window out of sight and, having no taskbar button, nothing to find it
+  by. A remembered spot is now used only while the whole window fits on a
+  screen that is still there; otherwise it opens in the IDE's corner again.
+  Takes effect when the watcher restarts.
 - **The modules of a modular EtherCAT coupler get their `.device` files.**
   Under an ICP DAS EC4-EP21 on DIADesigner-AX 1.10 the modules hang under a
   `Port 1` node that is not a device, and the device pass stopped there, so
