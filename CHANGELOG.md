@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased (0.6.1)
+### 0.6.1 (2026-11-16) — sync fixes, and modular EtherCAT couplers
 
 - **The watcher's status window no longer opens off the screen.** It
   reopens where it was last dragged, and that spot was trusted blindly: on a
