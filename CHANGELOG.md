@@ -13,6 +13,15 @@ All notable changes to this project will be documented in this file.
   by. A remembered spot is now used only while the whole window fits on a
   screen that is still there; otherwise it opens in the IDE's corner again.
   Takes effect when the watcher restarts.
+- **A `.device` file names every channel, so an unmapped module can be
+  mapped from the file.** Only channels with a variable had a line, so a
+  freshly added IO module's file held no channel at all and mapping it meant
+  clicking through the IDE. Export now writes each channel with no variable
+  as a commented-out line with its name and address,
+  `# map c1/33554434 =   # DI0, %IX206.0`; delete the `# `, type the
+  variable, and import maps it. Being a comment, it is never read, so files
+  written before mean the same. The first export after updating rewrites
+  every device file that has an unmapped channel.
 - **The modules of a modular EtherCAT coupler get their `.device` files.**
   Under an ICP DAS EC4-EP21 on DIADesigner-AX 1.10 the modules hang under a
   `Port 1` node that is not a device, and the device pass stopped there, so
