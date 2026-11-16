@@ -1453,7 +1453,10 @@ SoftMotion axes under drives. Nothing else about the device tree is touched.
 
 **The file.** One per device, laid out like the tree:
 `.../<PLC device>/EtherCAT_2.device`, `.../EtherCAT_2/X5_7SEtherCAT_1.device`,
-`.../EtherCAT_2/X5_7SEtherCAT_1/Axis_1.device`. UTF-8, `#` starts a comment:
+`.../EtherCAT_2/X5_7SEtherCAT_1/Axis_1.device`. A node below a master that
+is not a device, such as the `Port 1` connector a modular coupler's modules
+hang under, is a folder with no file: `.../Slave_1/Port 1/Slave_2.device`.
+UTF-8, `#` starts a comment:
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001
