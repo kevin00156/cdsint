@@ -84,6 +84,13 @@ def _elements(device):
     return found
 
 
+def has_channel(device):
+    for entry in _elements(device):
+        if _is_channel(entry[1]):
+            return True
+    return False
+
+
 def read(device):
     """(ident, values, maps): (key, value, comment) triples for
     device_text.render. maps has every channel, "" for no variable."""

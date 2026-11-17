@@ -531,3 +531,30 @@ one removed disappears; neither is applied back.
   measured.
 - **Why the first write half-fails** (8.1), and whether it also happens to a
   library or a POU.
+
+---
+
+## 12. Built-in IO outside a master (DIADesigner-AX 1.10, AX-8)
+
+Measured 2026-11-17 on a copy of an AX-8 project (controller description
+`4102|16f7 0412|3.5.18.46`), offline, no controller connected.
+
+- **The tree.** The controller `Device` has a `BuiltIn` device below it, and
+  that has `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder`. All four identify as
+  `4102|16f7 0412|3.5.18.46`, so neither type nor id tells them apart.
+- **The parameters are the ones 3 describes.** `BuiltIn_DIO`'s connector
+  `c1` has the byte channels `35000` (`In0`, `%IB224`) and `40000` (`Out0`,
+  `%QB190`), each with eight mappable bits `Bit0`..`Bit7` (`X0`..`X7`,
+  `Y0`..`Y7`), plus ReadWrite values for the input filters (`35601`..`35608`),
+  `X0`'s function (`36001`) and output inversion (`40601`..`40608`).
+  `BuiltIn_Pulse_Encoder` has the channels `50000` (`Counter`, `%ID57`) and
+  `50100` (`Reset`, `%QX191.0`) and four values. `BuiltIn` has no parameter.
+  The controller has device parameters (run mode, serial mode, network
+  interface switch, FTP server) and no channel.
+- **Writes.** `io_mapping.variable` on `35000` and `40000` took
+  `Application.GVL_IO.byBuiltinDI` and `byBuiltinDO`, read back as written,
+  survived saving, closing and opening the project, and the offline build
+  had 0 errors. The bits of a byte mapped as a whole keep no variable of
+  their own. Import reported `full_download: true` for the change.
+- **Second generation** (AX-816/864EP1ME1TP, description `16f7 0430`):
+  not measured, no project was at hand.

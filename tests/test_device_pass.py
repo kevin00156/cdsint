@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The EtherCAT device pass beside the object sync (SPEC 6.10)."""
+"""The device pass beside the object sync (SPEC 6.10)."""
 import io
 import os
 
@@ -11,7 +11,8 @@ from engine import (classify, device_changes, device_pass, device_params,
 from engine.codesys_constants import TYPE_GUIDS
 from engine.managers_device import DeviceManager
 from engine.sync_cache import normalize_path
-from tests.device_fakes import Device, Ident, Port, a_master, a_slave
+from tests.device_fakes import (Connector, Device, Element, Ident, Mapping,
+                                Port, a_master, a_slave)
 
 PLC = "CODESYS_Control_for_Linux_SL"
 
@@ -50,7 +51,7 @@ def empty_results():
 
 def test_only_the_ethercat_subtree_is_found_laid_out_like_the_tree():
     project, master, slave = a_project()
-    found = [(d.get_name(), rel) for d, rel in device_pass.ethercat_devices(project)]
+    found = [(d.get_name(), rel) for d, rel in device_pass.synced_devices(project)]
     assert found == [
         ("EtherCAT_2", PLC + "/EtherCAT_2.device"),
         ("X5_7SEtherCAT_1", PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device")]
@@ -64,7 +65,7 @@ def test_modules_under_a_coupler_port_are_found_under_the_port_folder():
     master = a_master(children=[coupler])
     project = Project([Device(PLC, Ident(4102, "0000 0005", "4.20.0.0"),
                               children=[master])])
-    found = [rel for d, rel in device_pass.ethercat_devices(project)]
+    found = [rel for d, rel in device_pass.synced_devices(project)]
     assert found == [
         PLC + "/EtherCAT_2.device",
         PLC + "/EtherCAT_2/Slave_1.device",
@@ -79,12 +80,46 @@ def test_a_non_device_above_the_master_is_not_walked():
 
     project, master, slave = a_project()
     project._children.append(Application("Application"))
-    assert len(device_pass.ethercat_devices(project)) == 2
+    assert len(device_pass.synced_devices(project)) == 2
+
+
+def a_builtin_tree(dio_connectors=None):
+    """A Delta AX-8 as DIADesigner-AX 1.10 shows it (research 12): the
+    controller, its BuiltIn folder and BuiltIn_DIO with one identification;
+    the controller has device parameters, only BuiltIn_DIO has channels."""
+    same = Ident(4102, "16f7 0412", "3.5.18.46")
+    dio = Device("BuiltIn_DIO", same, connectors=dio_connectors or [
+        Connector(1, [Element("35000", "", "In0", mapping=Mapping(None, "%IB224")),
+                      Element("35601", "0", "X0 Filter Select")])])
+    builtin = Device("BuiltIn", same, children=[dio])
+    controller = Device("Device", same, params=[
+        Element("55000", "TRUE", "Application Run Mode")],
+        children=[a_master(), builtin])
+    return Project([controller])
+
+
+def test_outside_a_master_only_a_device_with_channels_is_found():
+    found = [rel for d, rel in device_pass.synced_devices(a_builtin_tree())]
+    assert found == ["Device/EtherCAT_2.device",
+                     "Device/BuiltIn/BuiltIn_DIO.device"]
+
+
+def test_a_device_whose_parameters_will_not_read_is_left_out():
+    class Broken(object):
+        connector_id = 1
+
+        @property
+        def host_parameters(self):
+            raise RuntimeError("no parameters")
+
+    found = [rel for d, rel in
+             device_pass.synced_devices(a_builtin_tree([Broken()]))]
+    assert found == ["Device/EtherCAT_2.device"]
 
 
 def test_unchanged_files_count_as_unchanged(tmp_path):
     project, master, slave = a_project()
-    for device, rel in device_pass.ethercat_devices(project):
+    for device, rel in device_pass.synced_devices(project):
         write(str(tmp_path / rel), device_params.render(device))
     results = device_pass.with_device_changes(empty_results(), str(tmp_path),
                                               project, {"devices": True})
@@ -93,7 +128,7 @@ def test_unchanged_files_count_as_unchanged(tmp_path):
 
 def test_an_edited_file_is_different_and_refused_while_devices_is_off(tmp_path):
     project, master, slave = a_project()
-    for device, rel in device_pass.ethercat_devices(project):
+    for device, rel in device_pass.synced_devices(project):
         write(str(tmp_path / rel), device_params.render(device))
     rel = PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device"
     write(str(tmp_path / rel), device_params.render(slave).replace(

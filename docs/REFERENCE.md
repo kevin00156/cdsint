@@ -690,7 +690,7 @@ like this is complete:
 | `sync_folder` | string | where the `.st` files live. A relative path (`./sync`, `../export`, `sync`) is relative to the directory holding the `.project`, however the IDE was started; an absolute path (a drive, a UNC share) is used as written | none — the first export asks |
 | `plc` | list of strings | which PLC commands this project allows; only `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
-| `devices` | boolean | let `import` apply EtherCAT device settings (`.device` files) | `false` |
+| `devices` | boolean | let `import` apply device settings and IO mappings (`.device` files) | `false` |
 | `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | `false` |
 | `safety_backup` | boolean | back the `.project` up before an import | `true` |
@@ -766,11 +766,14 @@ after a library change can report 0 errors for code it did not compile; it
 remembers what each application was built with in `<project>.cdsint-build.json`
 beside the project. SPEC 6.9 has the rules.
 
-## EtherCAT devices: `<name>.device`
+## Devices: `<name>.device`
 
 Every EtherCAT master and every device below it (slaves, modules, SoftMotion
 axes) is one text file, laid out like the device tree:
-`CODESYS_Control_for_Linux_SL/EtherCAT_2/X5_7SEtherCAT_1.device`.
+`CODESYS_Control_for_Linux_SL/EtherCAT_2/X5_7SEtherCAT_1.device`. So is every
+other device with IO channels of its own, such as a controller's built-in IO
+(`Device/BuiltIn/BuiltIn_DIO.device` on a Delta AX-8); the controller itself
+is not.
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001

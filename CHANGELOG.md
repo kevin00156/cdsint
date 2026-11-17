@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **A controller's built-in IO gets a `.device` file, so its mapping is
+  in git.** Only an EtherCAT master and the devices below it had one, so a
+  Delta AX-8's `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` were mapped by
+  hand in the IDE after every rebuild. Outside a master, every device with
+  an IO channel of its own now has a file, laid out like the tree
+  (`Device/BuiltIn/BuiltIn_DIO.device`), and `import` applies it under the
+  same `"devices": true`. The controller itself has no channel, so its run
+  mode, FTP and network settings stay out. Every `.device` file's first
+  line now reads `# cdsint device settings.`, so the first export after
+  updating rewrites that line in every device file.
+
 ### 0.6.2 (2026-11-16) — a .device file names every channel
 
 - **A `.device` file names every channel, so an unmapped module can be

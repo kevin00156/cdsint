@@ -21,7 +21,7 @@ from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
 from engine.codesys_constants import RESERVED_FILES
 
 # The extensions this tool writes and reads back: code, native XML, the
-# Library Manager's list (SPEC 6.9) and EtherCAT devices' settings (6.10).
+# Library Manager's list (SPEC 6.9) and devices' settings (6.10).
 # Anything else in the folder belongs to whoever put it there.
 SYNC_SUFFIXES = (".st", ".xml", LIBRARY_SUFFIX, DEVICE_SUFFIX)
 
