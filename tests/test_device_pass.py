@@ -104,7 +104,7 @@ def test_outside_a_master_only_a_device_with_channels_is_found():
                      "Device/BuiltIn/BuiltIn_DIO.device"]
 
 
-def test_a_device_whose_parameters_will_not_read_is_left_out():
+def test_a_device_whose_parameters_will_not_read_is_named_not_skipped():
     class Broken(object):
         connector_id = 1
 
@@ -112,9 +112,13 @@ def test_a_device_whose_parameters_will_not_read_is_left_out():
         def host_parameters(self):
             raise RuntimeError("no parameters")
 
+    unhandled.start()
     found = [rel for d, rel in
              device_pass.synced_devices(a_builtin_tree([Broken()]))]
     assert found == ["Device/EtherCAT_2.device"]
+    # Its file, if there is one, must not be swept as an orphan.
+    assert unhandled.names() == ["BuiltIn_DIO"]
+    assert unhandled.any_file_unaccounted()
 
 
 def test_unchanged_files_count_as_unchanged(tmp_path):

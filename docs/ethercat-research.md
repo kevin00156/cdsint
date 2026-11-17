@@ -558,3 +558,7 @@ Measured 2026-11-17 on a copy of an AX-8 project (controller description
   their own. Import reported `full_download: true` for the change.
 - **Second generation** (AX-816/864EP1ME1TP, description `16f7 0430`):
   not measured, no project was at hand.
+- **Other devices outside a master with channels** (Modbus, CANopen,
+  PROFINET and the like): the rule takes them too, but none of the three
+  sample projects has one, so neither their read nor their write is
+  measured.

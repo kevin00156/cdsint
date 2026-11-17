@@ -12,8 +12,8 @@ All notable changes to this project will be documented in this file.
   hand in the IDE after every rebuild. Outside a master, every device with
   an IO channel of its own now has a file, laid out like the tree
   (`Device/BuiltIn/BuiltIn_DIO.device`), and `import` applies it under the
-  same `"devices": true`. The controller itself has no channel, so its run
-  mode, FTP and network settings stay out. Every `.device` file's first
+  same `"devices": true`. An AX-8 controller itself has no channel, so its
+  run mode, FTP and network settings stay out. Every `.device` file's first
   line now reads `# cdsint device settings.`, so the first export after
   updating rewrites that line in every device file.
 

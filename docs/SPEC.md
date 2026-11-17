@@ -1448,18 +1448,22 @@ identifiers. So `device` and `device_module` stay `disabled` for the object
 sync, and the devices below are handled by a pass of their own, through the
 API.
 
-**Which devices.** Every device whose identification has type 64 (an
-EtherCAT master), and every device below one: slaves, their modules, and the
-SoftMotion axes under drives. Outside a master, every device with at least one
-mappable IO channel of its own, such as DIADesigner-AX's `BuiltIn_DIO` and
-`BuiltIn_Pulse_Encoder` under the controller's `BuiltIn` folder. It is the
-channel that decides, not the name or the model: on an AX-8 the controller,
-`BuiltIn`, `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` all identify as
-`4102|16f7 0412`, and only the last two have channels (research 12). The controller itself has none, so its run mode, FTP and
-network settings are never in a file. Nothing else about the device tree is
-touched. A sync folder exported before this rule has no file for a built-in
-IO device; the next export writes it, and until then import leaves that
-device alone, as it does any device with no file.
+**Which devices.** Every device whose identification has type 64 (an EtherCAT
+master), and every device below one: slaves, their modules, and the
+SoftMotion axes under drives. Outside a master, every device with at least
+one mappable IO channel of its own, such as DIADesigner-AX's `BuiltIn_DIO`
+and `BuiltIn_Pulse_Encoder` under the controller's `BuiltIn` folder. It is
+the channel that decides, not the name or the model: on an AX-8 the
+controller, `BuiltIn`, `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` all identify
+as `4102|16f7 0412`, and only the last two have channels (research 12). The
+AX-8 controller itself has none, so its run mode, FTP and network settings
+are in no file; a controller that did have a channel of its own would get
+one. Nothing else about the device tree is touched. A device outside a master
+whose parameters cannot be read is named in `failed_objects`, which also
+keeps the export from deleting its file as an orphan (D13). A sync folder
+exported before this rule has no file for a built-in IO device; the next
+export writes it, and until then import leaves that device alone, as it does
+any device with no file.
 
 **The file.** One per device, laid out like the tree:
 `.../<PLC device>/EtherCAT_2.device`, `.../EtherCAT_2/X5_7SEtherCAT_1.device`,

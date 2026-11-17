@@ -42,10 +42,11 @@ def _is_master(device):
 def _has_channel(device):
     try:
         return device_params.has_channel(device)
-    except Exception:
-        # Outside a master a device was never synchronised; one whose
-        # parameters cannot be read stays that way rather than failing the
-        # walk for every other device.
+    except Exception as exc:
+        # Named, not skipped (SPEC D13): if its file exists, it is not an
+        # orphan, and only an unaccounted object keeps the orphan sweep from
+        # deleting it. The walk goes on for the other devices.
+        unhandled.note(device, exc)
         return False
 
 
@@ -57,8 +58,8 @@ def synced_devices(project):
     Outside a master it is the channel that decides, not the name or the
     model: Delta's controller, its BuiltIn folder and BuiltIn_DIO all
     identify as 4102|16f7 0412, and only BuiltIn_DIO and
-    BuiltIn_Pulse_Encoder have channels. The controller itself has none, so
-    its run mode, FTP and network settings are not synchronised.
+    BuiltIn_Pulse_Encoder have channels. The AX-8 controller itself has
+    none, so its run mode, FTP and network settings stay out.
 
     Below a master the walk goes through nodes that are not devices: a
     modular coupler's modules hang under a "Port 1" connector node, and
