@@ -29,8 +29,8 @@ All notable changes to this project will be documented in this file.
   import that waited its turn behind another agent's import ran on the project
   that agent had just changed, with nobody told. Now `import`, `export`,
   `build`, `verify`, `trace apply`, `trace show` and every `plc` command but
-  `plc trace --stop` exit 6 at once when anybody else's command is queued or
-  running there, naming that command, since when, and the pid and folder it
+  `plc trace --stop` exit 6 at once when another caller's changing command is
+  queued or running there, naming that command, since when, and the pid and folder it
   came from; nothing is run. `ping`, `status`, `compare`, `discover`, `trace
   list`, `trace job` and `trace save` still wait in line. Exit 6 is new.
 

@@ -108,7 +108,9 @@ file has the same name and lives in `result\`.
 
 A command that changes something takes a turn rather than a place in line
 (SPEC 4.3, exit 6). The CLI writes its command file first and then lists
-`cmd\`: if any other caller's `.json` or `.running` is there, it deletes its
+`cmd\`: if any other caller's `.json` or `.running` of a changing command is there
+(a read waiting its turn does not count; a file it cannot read does), it
+deletes its
 own file and is refused, naming the other one from that file's `command`,
 `created_at` (or the `.running` file's time) and `caller`. Looking after
 writing is what makes it hold: of two callers, the second to write looks

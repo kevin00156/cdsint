@@ -362,7 +362,7 @@ again, `3` timed out with no report to show for it (raise `--timeout`: it bounds
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`
 the `plc` list in the project's settings file does not allow this command,
-`6` the IDE is taken: another caller's command is queued or running in that
+`6` the IDE is taken: another caller's changing command is queued or running in that
 watcher, so yours, which changes something, was refused rather than queued
 behind it. Nothing ran; the message names the other command, since when, and
 the pid and folder it came from. Wait for it and run the same line again.
@@ -428,7 +428,7 @@ for seconds — that is the CODESYS object model, not a bug. Send one command at
 time and wait for it. Another agent may be driving the same IDE: anything that
 changes something (import, export, build, verify, trace apply or show, every
 `plc` command but `trace --stop`) is refused with exit 6 while somebody else's
-command is queued or running there, and only reads (`ping`, `status`,
+changing command is queued or running there, and only reads (`ping`, `status`,
 `compare`, `discover`, `trace list`, `trace job`, `trace save`) wait in line.
 
 ## Never

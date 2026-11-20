@@ -515,7 +515,7 @@ Why `plc connect` refuses the `--target` form is in D8.
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
-| 6 | the watcher is taken: another caller's command is queued or running there, and a command that changes something is refused rather than queued behind it; nothing ran |
+| 6 | the watcher is taken: another caller's changing command is queued or running there, and a command that changes something is refused rather than queued behind it; nothing ran |
 
 2 has several causes, all in one row because the caller's response is the
 same: do not retry the same line, read the message first. 2 and 4 are two causes of "is there a live IDE
@@ -530,10 +530,11 @@ add, and a separate code would not save that parse.
 one IDE, and an import that waited its turn behind another agent's import ran
 on the project that agent had just changed, with nobody told (owner decision,
 2026-11-20). So in the `--target` form a command that changes something (in
-the IDE, on the controller, or in the sync folder) is refused while any other
-caller's command is queued or running there; one that only reads (`ping`,
+the IDE, on the controller, or in the sync folder) is refused while another
+caller's changing command is queued or running there; one that only reads (`ping`,
 `status`, `compare`, `discover`, `trace list`, `trace job`, `trace save`) and
-`plc trace --stop` still queue. The message names the other command, since
+`plc trace --stop` still queue, and a read waiting there does not refuse a
+change, since it changes nothing a change could land on. The message names the other command, since
 when, and the pid and working directory of whoever sent it. How the check is
 made atomic between CLIs is `cds/core/turns.py`.
 

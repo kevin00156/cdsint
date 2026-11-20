@@ -39,6 +39,7 @@ READS_ONLY = frozenset(["ping", "status", "stop", "compare", "discover",
 
 QUEUED = "queued"
 RUNNING = "running"
+_SUFFIX = {QUEUED: ".json", RUNNING: commands.RUNNING}
 
 
 def changes(command, args=None):
@@ -56,17 +57,35 @@ def caller():
 
 
 def others(root, instance_id, own_ids):
-    """Every command in the instance's directory that is not one of own_ids,
-    oldest first, as (cmd_id, QUEUED or RUNNING)."""
+    """Every changing command in the instance's directory that is not one of
+    own_ids, oldest first, as (cmd_id, QUEUED or RUNNING).
+
+    A read waiting its turn is not one: it changes nothing a change could
+    be run on top of, and counting it let somebody's compare, queued in the
+    gap between two of a verify's steps, fail that verify (bench,
+    2026-11-20). A file that will not read is counted, since what it holds
+    cannot be told; the cost is a retry."""
+    directory = ipc.command_dir(root, instance_id)
+    return [(cmd_id, state) for cmd_id, state in _all(directory, own_ids)
+            if _changing(os.path.join(directory, cmd_id + _SUFFIX[state]))]
+
+
+
+def _changing(path):
+    held = _read(path)
+    return held is None or changes(held.get("command"), held.get("args"))
+
+
+def _all(directory, own_ids):
     try:
-        names = os.listdir(ipc.command_dir(root, instance_id))
+        names = os.listdir(directory)
     except (IOError, OSError) as exc:
         if getattr(exc, "errno", None) == errno.ENOENT:
             return []
         raise
     found = []
     for name in sorted(names):
-        for suffix, state in ((".json", QUEUED), (commands.RUNNING, RUNNING)):
+        for state, suffix in sorted(_SUFFIX.items()):
             cmd_id = name[:-len(suffix)]
             if name.endswith(suffix) and cmd_id not in own_ids:
                 found.append((cmd_id, state))
@@ -77,8 +96,7 @@ def refusal(root, instance_id, command, cmd_id, state):
     """The sentence a refused caller is given: what holds the turn, since
     when, and who asked for it."""
     path = os.path.join(ipc.command_dir(root, instance_id),
-                        cmd_id + (".json" if state == QUEUED
-                                  else commands.RUNNING))
+                        cmd_id + _SUFFIX[state])
     held = _read(path) or {}
     who = held.get("caller") or {}
     by = (" by pid %s in %s" % (who.get("pid"), who.get("cwd"))

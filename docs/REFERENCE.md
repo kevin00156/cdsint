@@ -675,7 +675,7 @@ that recorded it, and an IDE cdsint starts has none and nobody to see it.
 | 3 | timed out with nothing to show for it |
 | 4 | the project is open elsewhere (another IDE, or another `cdsint --project` run on it), `--install` matched no IDE, or the IDE would not start |
 | 5 | the `plc` list in the project's settings file does not allow this command |
-| 6 | the IDE is taken: another caller's command is queued or running in that watcher, so this one, which changes something, was refused rather than queued; nothing ran, and the same line later is the cure |
+| 6 | the IDE is taken: another caller's changing command is queued or running in that watcher, so this one, which changes something, was refused rather than queued; nothing ran, and the same line later is the cure |
 
 ## Settings
 

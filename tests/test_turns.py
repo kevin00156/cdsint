@@ -300,3 +300,14 @@ def test_verify_json_is_json_alone_and_carries_the_count(watch, monkeypatch,
     out = capsys.readouterr()
     assert json.loads(out.out)[-1]["changes"] == watch.changed.token()
     assert "--after" in out.err
+
+
+def test_a_queued_read_does_not_refuse_a_change(watch, monkeypatch):
+    # Somebody's compare in the gap between two of a verify's steps failed
+    # that verify on the bench.
+    somebody_queued(watch, command="compare")
+    for name in ("compare", "build"):
+        watch.handlers[name] = lambda cmd, started: commands.new_result(
+            cmd, True)
+    answering(watch, monkeypatch)
+    assert cli.main(["build"]) == EXIT_OK
