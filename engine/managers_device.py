@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The manager for EtherCAT devices: a `.device` file out, its edits back in.
+"""The manager for synchronised devices: a `.device` file out, its edits back in.
 
 SPEC 6.10. The ObjectManager contract around engine/device_params.py, used
 by the device pass (engine/device_pass.py) on the way out and by the import's

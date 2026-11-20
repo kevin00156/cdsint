@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""The EtherCAT devices, synchronised beside the object sync (SPEC 6.10).
+"""The devices whose settings are synchronised, beside the object sync
+(SPEC 6.10).
 
 `device` and `device_module` stay disabled for the object sync: importing
 their native XML duplicates the tree (docs/ethercat-research.md 2.2). The
-devices under an EtherCAT master get this pass instead: one `.device` file
+devices under an EtherCAT master, and the other devices with IO channels of
+their own, get this pass instead: one `.device` file
 each, found by walking the device tree, compared, exported and imported
 through engine/device_params.py. The suffix is deliberately not a sync suffix,
 so the object sync never sees these files; this pass owns them.
@@ -37,9 +39,27 @@ def _is_master(device):
         return False
 
 
-def ethercat_devices(project):
+def _has_channel(device):
+    try:
+        return device_params.has_channel(device)
+    except Exception as exc:
+        # Named, not skipped (SPEC D13): if its file exists, it is not an
+        # orphan, and only an unaccounted object keeps the orphan sweep from
+        # deleting it. The walk goes on for the other devices.
+        unhandled.note(device, exc)
+        return False
+
+
+def synced_devices(project):
     """(device, rel_path) for each EtherCAT master and every device below it,
-    parents first, laid out like the device tree.
+    and every other device with an IO channel of its own (a controller's
+    built-in IO), parents first, laid out like the device tree.
+
+    Outside a master it is the channel that decides, not the name or the
+    model: Delta's controller, its BuiltIn folder and BuiltIn_DIO all
+    identify as 4102|16f7 0412, and only BuiltIn_DIO and
+    BuiltIn_Pulse_Encoder have channels. The AX-8 controller itself has
+    none, so its run mode, FTP and network settings stay out.
 
     Below a master the walk goes through nodes that are not devices: a
     modular coupler's modules hang under a "Port 1" connector node, and
@@ -57,7 +77,7 @@ def ethercat_devices(project):
             continue
         parts = parts + [clean_filename(safe_str(node.get_name()))]
         under = under or (is_device and _is_master(node))
-        if under and is_device:
+        if is_device and (under or _has_channel(node)):
             found.append((node, "/".join(parts) + device_text.SUFFIX))
         stack.extend((c, parts, under) for c in reversed(children_of(node)))
     return found
@@ -116,7 +136,7 @@ def with_device_changes(results, base_dir, project, values):
     allowed = bool(values.get("devices"))
     on_disk = _device_files(base_dir)
     missing = []
-    for device, rel in ethercat_devices(project):
+    for device, rel in synced_devices(project):
         found = on_disk.pop(normalize_path(rel), None)
         if found is None:
             missing.append(rel)
@@ -167,7 +187,7 @@ def export_devices(project, export_dir, context, managers):
     pending = []
     manager = managers[TYPE_GUIDS["device"]]
     cached = (context.get("cache_data") or {}).get("objects", {})
-    for device, rel in ethercat_devices(project):
+    for device, rel in synced_devices(project):
         # Carried first, as export_project does for objects: a file left
         # pending writes no entry, and without the old one the next export
         # overwrote the edit (measured on 3.5.21.40).

@@ -198,7 +198,7 @@ def export_project(export_dir, values, projects_obj=None):
     exported_new, exported_updated, exported_identical = (
         counts["new"], counts["updated"], counts["identical"])
 
-    # The EtherCAT devices are not objects of the sync above (SPEC 6.10).
+    # The synchronised devices are not objects of the sync above (SPEC 6.10).
     pending_import.extend(export_devices(project, export_dir, context, managers))
     # A file no object claims that the last sync did not leave that way is
     # somebody's work, so it waits for import rather than being deleted.

@@ -23,9 +23,9 @@ runs the other way, cds/ide drives an entry body by name (SPEC D12).
     managers_library    LibraryManager: the .libraries file of SPEC 6.9
     library_refs        a Library Manager's references, read and changed
     build_clean         clean before a build whose libraries changed
-    managers_device     DeviceManager: an EtherCAT device's .device file
+    managers_device     DeviceManager: a synchronised device's .device file
     device_params       a device's parameters and mappings, read and written
-    device_pass         the EtherCAT devices, synced beside the objects
+    device_pass         the devices with settings, synced beside the objects
     device_changes      which devices an import changed, for the result
     content_compare     is the IDE's text the same as the file's
     change_detect       what differs, object by object

@@ -46,9 +46,9 @@ it all out again, from an elevated shell if Delta has it:
 - **Edit PLC code as text.** Export the project to `.st` files, edit them, import
   them back, build, and get the compile errors. The text goes into git and
   pull requests like any other source.
-- **Libraries and EtherCAT settings as text.** The Library Manager and every
-  EtherCAT device's parameters and IO mapping are plain files an agent edits
-  and imports.
+- **Libraries and device settings as text.** The Library Manager and every
+  EtherCAT device's and built-in IO's parameters and IO mapping are plain
+  files an agent edits and imports.
 - **Work with the controller.** Download to it and check that it still runs
   what was downloaded; record variables from a running controller to CSV.
 - **Run with nobody at the IDE.** Every command can start an IDE of its own,

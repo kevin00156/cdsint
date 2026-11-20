@@ -579,7 +579,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `sync_folder` | string | the sync folder. A relative path (`./sync`, `..`, `../export`, `sync`) is relative to the directory holding the project file, never to the IDE's working directory; an absolute path (a drive, a UNC share) is used as written | none, asked on first run |
 | `plc` | list of strings | PLC authorisation; only `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` are recognised as elements, see 6.5 | empty list |
 | `debug` | boolean | write `sync_metadata.json` and `*.log` only when on | false |
-| `devices` | boolean | let `import` apply EtherCAT device settings (6.10) | false |
+| `devices` | boolean | let `import` apply device settings and IO mappings (6.10) | false |
 | `export_xml` | boolean | also save visualisations, alarms and text lists as XML | false |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | false |
 | `safety_backup` | boolean | back the `.project` up before an import | true |
@@ -1430,13 +1430,14 @@ and the IDE compiled for the other list. The record is local state like
 plain Python in `cds/core/`, tested in CI. Reading and changing references is
 an engine manager, `engine/managers_library.py`.
 
-### 6.10 EtherCAT device settings
+### 6.10 Device settings
 
 An agent changes an EtherCAT master's or slave's settings (cycle time, DC,
 station addresses, startup SDO values, PDO entries, a SoftMotion axis's
-scaling) and the variables mapped to its channels by editing one text file
-per device, and `import` applies it when the project allows it. The
-measurements behind every rule here are in `docs/ethercat-research.md`.
+scaling), a controller's built-in IO settings, and the variables mapped to
+their channels by editing one text file per device, and `import` applies it
+when the project allows it. The measurements behind every rule here are in
+`docs/ethercat-research.md`.
 
 **Not native XML.** Importing a device's native XML over the existing tree
 adds a renamed copy with new GUIDs and every IO mapping doubled; a single
@@ -1444,12 +1445,25 @@ slave does not import at all; and on DIADesigner-AX a deleted master is
 rebuilt at once from the network topology with every slave renamed. The
 script API changes one value at a time on both IDEs, with the same parameter
 identifiers. So `device` and `device_module` stay `disabled` for the object
-sync, and the devices under an EtherCAT master are handled by a pass of their
-own, through the API.
+sync, and the devices below are handled by a pass of their own, through the
+API.
 
-**Which devices.** Every device whose identification has type 64 (an
-EtherCAT master), and every device below one: slaves, their modules, and the
-SoftMotion axes under drives. Nothing else about the device tree is touched.
+**Which devices.** Every device whose identification has type 64 (an EtherCAT
+master), and every device below one: slaves, their modules, and the
+SoftMotion axes under drives. Outside a master, every device with at least
+one mappable IO channel of its own, such as DIADesigner-AX's `BuiltIn_DIO`
+and `BuiltIn_Pulse_Encoder` under the controller's `BuiltIn` folder. It is
+the channel that decides, not the name or the model: on an AX-8 the
+controller, `BuiltIn`, `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` all identify
+as `4102|16f7 0412`, and only the last two have channels (research 12). The
+AX-8 controller itself has none, so its run mode, FTP and network settings
+are in no file; a controller that did have a channel of its own would get
+one. Nothing else about the device tree is touched. A device outside a master
+whose parameters cannot be read is named in `failed_objects`, which also
+keeps the export from deleting its file as an orphan (D13). A sync folder
+exported before this rule has no file for a built-in IO device; the next
+export writes it, and until then import leaves that device alone, as it does
+any device with no file.
 
 **The file.** One per device, laid out like the tree:
 `.../<PLC device>/EtherCAT_2.device`, `.../EtherCAT_2/X5_7SEtherCAT_1.device`,

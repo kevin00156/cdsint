@@ -432,10 +432,11 @@ not added and `failed_objects` names it — tell the user, do not hunt for a cop
 `build` cleans first by itself after a library change, so a clean build result
 there is real.
 
-## EtherCAT devices: `<name>.device`
+## Devices: `<name>.device`
 
 Every EtherCAT master and every device below it is one text file, laid out like
-the device tree:
+the device tree; so is every other device with IO channels of its own, such as
+a controller's built-in IO (`BuiltIn/BuiltIn_DIO.device`):
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001

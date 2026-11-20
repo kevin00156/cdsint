@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Which EtherCAT devices this import changed, for the result (SPEC 6.10).
+"""Which devices this import changed, for the result (SPEC 6.10).
 
 A register for one command, like engine/unhandled.py: the device pass
 starts it, the device manager adds to it, and the import's result reads it

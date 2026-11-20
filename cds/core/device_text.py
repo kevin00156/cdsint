@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""An EtherCAT device's settings file: its lines, how they read, what differs.
+"""A device's settings file: its lines, how they read, what differs.
 
-SPEC 6.10. One file per device under an EtherCAT master, holding every
-ReadWrite leaf parameter and every channel, keyed by connector and
-parameter identifier, which are the same numbers on both IDEs
+SPEC 6.10. One file per synchronised device (under an EtherCAT master, or
+with IO channels of its own), holding every ReadWrite leaf parameter and
+every channel, keyed by connector and parameter identifier, which are the
+same numbers on both IDEs
 (docs/ethercat-research.md 7). Native XML is not the format: importing it
 duplicates the tree (research 2.2). Plain Python on text, shared by the IDE
 side and CI.
@@ -13,7 +14,7 @@ from __future__ import print_function
 import re
 
 SUFFIX = ".device"
-HEADER = ("# cdsint EtherCAT device settings. The device line is checked, "
+HEADER = ("# cdsint device settings. The device line is checked, "
           "never applied; '#' comments are for the reader.")
 # c1/1610633216, c1/1627394048/Value, dev/42: a connector (or the device's
 # own parameters) and a path of identifiers.
