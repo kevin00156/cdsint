@@ -278,6 +278,7 @@ class NoSwitch(Online):
 class Gateway(object):
     def __init__(self, name="Gateway-1"):
         self.name = name
+        self.guid = "guid-of-" + name
         self.asked = []
 
     def find_address_by_ip(self, address, port):
@@ -385,9 +386,12 @@ def ide(allowed=("connect", "download", "trace"), device=None, application=None,
     project = Project(values, children, PROJECT_PATH, application)
     online = Online(device=device, gateways=[Gateway()] if gateways is None
                     else gateways)
+    # The --project launcher always lends its wait (cds/ide/hold.py), and
+    # that is how a body tells its form from the watcher's.
     return {"system": FakeSystem(), "projects": Projects(project),
             "online": online, "CredentialSourceKind": CredentialSourceKind,
-            "OnlineChangeOption": OnlineChangeOption}
+            "OnlineChangeOption": OnlineChangeOption,
+            trace_run.HOLD_GLOBAL: lambda milliseconds: None}
 
 
 def download_info(guids=BOOTINFO_GUIDS, compileinfo=True, guid=BOOTINFO_GUID,

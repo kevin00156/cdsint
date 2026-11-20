@@ -173,7 +173,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
-| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | — | yes | download to the controller, read the CRC back, write it down |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT` | yes | download to the controller, read the CRC back, write it down; through a watcher, only into a logged-out IDE whose device node already points at `--gateway`, and logged out again afterwards |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
 | `plc login [-y --method download\|online_change] [--no-boot-app]` | yes | — | log the IDE's application in; without `--method` only when nothing on the controller changes, otherwise say what differs and which method would apply it |
@@ -311,11 +311,26 @@ more than one. Without it such a profile is refused with the names listed,
 and a name the profile does not have is refused too. `-y` on `connect` or
 `trace` is exit 2, since neither has anything to confirm.
 
-`plc connect` and `plc download` have no `--target` form. The watcher lives
-inside an IDE, and each of them logs in through a connection of its own, which
-would take the online session of whoever is using that IDE, so they always start
-an IDE of their own. To download through an open IDE's own application, use
-`plc login --method download -y` (below).
+`plc connect` has no `--target` form. The watcher lives inside an IDE, and
+connect reads the controller through a connection of its own, which would take
+the online session of whoever is using that IDE, so it always starts an IDE of
+its own.
+
+`plc download --target X -y --gateway IP --after COUNT` downloads through the
+IDE that has the project open, so a deployment does not start an IDE of its
+own for verify and another for the download. `COUNT` is the change count
+`verify --target` reported (its last line, or the last `--json` record's
+`changes`); if anything was changed in that IDE through cdsint since, the
+download is refused and nothing is sent. So is an IDE that is logged in,
+whoever logged it in: `plc logout` first. The project's device node is not
+re-aimed, since that would rewrite the open project: it has to point at
+`--gateway` already, through the gateway `--gateway-name` picks, or the
+download is refused with where it does point. Otherwise it is the `--project`
+download (full download, boot application, start, CRC read back and
+recorded under the same controller entry), followed by a logout that is read
+back: `data.logged_in` is `false`. Edits made by hand in the IDE are not
+counted. `plc login --method download -y` (below) downloads too, but leaves
+the application stopped and logged in and writes no CRC record.
 
 `connect` and `download` end in the same comparison: the CRC the controller reports now,
 against the one it reported right after the last `plc download` from this
@@ -392,7 +407,7 @@ the controller no longer holds what the CRC record in
 removed (all of them if the controller answered but its CRC would not come;
 one that does not answer stops the command with nothing changed), and a
 `plc connect` answers
-`UNKNOWN` for a removed entry until a `--project` `plc download -y` records it
+`UNKNOWN` for a removed entry until a `plc download -y` records it
 again.
 
 **Credentials.** The IDE running the watcher does not have

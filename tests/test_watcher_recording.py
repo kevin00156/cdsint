@@ -85,9 +85,9 @@ def recording(root, watch, handle, polls=99):
     return cmd_id
 
 
-def test_the_watcher_runs_plc_trace_but_not_connect_or_download():
+def test_the_watcher_runs_plc_trace_but_not_connect():
     assert "plc trace" in entries.COMMANDS
-    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download"}
+    assert set(entries.WATCHER_REFUSES) == {"plc connect"}
 
 
 def test_the_caller_is_answered_once_the_recording_is_done(root, watch):

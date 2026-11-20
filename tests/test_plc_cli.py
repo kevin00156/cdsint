@@ -98,16 +98,12 @@ def test_the_refusal_survives_the_trip_through_a_result_record():
 
 # --------------------------------------------------------------------------
 
-# Only the --project form (SPEC D8)
+# connect: only the --project form (SPEC D8)
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize("argv", [
-    ["plc", "connect", "--target", "X"],
-    ["plc", "download", "-y", "--target", "X"],
-])
-def test_the_watcher_form_is_refused_with_the_reason(argv, capsys):
+def test_the_watcher_form_of_connect_is_refused_with_the_reason(capsys):
     with pytest.raises(SystemExit) as raised:
-        cli.main(argv)
+        cli.main(["plc", "connect", "--target", "X"])
     assert raised.value.code == 2
     said = capsys.readouterr().err
     assert "online session" in said and "D8" in said
@@ -130,11 +126,12 @@ def test_the_project_form_no_longer_has_to_say_where_the_st_files_are():
     assert parsed.sync_dir is None
 
 
-def test_the_watcher_will_not_log_in_to_a_plc():
-    # plc trace runs there through the person's own login (SPEC 6.8).
+def test_the_watcher_will_not_connect_to_a_plc_but_downloads():
+    # plc trace runs there through the person's own login (SPEC 6.8), and
+    # plc download only into an IDE nobody is logged in from.
     assert "plc connect" not in entries.COMMANDS
-    assert "plc download" not in entries.COMMANDS
-    assert set(entries.WATCHER_REFUSES) == {"plc connect", "plc download"}
+    assert "plc download" in entries.COMMANDS
+    assert set(entries.WATCHER_REFUSES) == {"plc connect"}
 
 
 def test_the_watcher_refuses_by_name_rather_than_pretending_not_to_know():
@@ -159,7 +156,7 @@ def test_the_cli_spells_the_action_into_the_command_name():
                                         "port": None, "gateway_name": None,
                                         "job": None, "name": None,
                                         "stop": None, "method": None,
-                                        "no_boot_app": None}
+                                        "no_boot_app": None, "after": None}
 
 
 def test_the_gateway_flags_reach_the_body():
@@ -172,7 +169,7 @@ def test_the_gateway_flags_reach_the_body():
                                         "gateway_name": "Gateway-3",
                                         "job": None, "name": None,
                                         "stop": None, "method": None,
-                                        "no_boot_app": None}
+                                        "no_boot_app": None, "after": None}
 
 
 # --------------------------------------------------------------------------
@@ -262,9 +259,22 @@ def test_trace_takes_no_yes_and_the_sentence_names_who_does(tmp_path, capsys):
     assert "plc run" in err and "plc stop" in err
 
 
-def test_the_watcher_points_a_download_at_login(capsys):
-    err = refused(["plc", "download", "--target", "X", "-y"], capsys)
-    assert "plc login --method download" in err
+def test_a_watcher_download_needs_the_count_verify_reported(capsys):
+    err = refused(["plc", "download", "--target", "X", "-y", "--gateway",
+                   "192.168.1.5"], capsys)
+    assert "--after" in err and "verify" in err
+
+
+def test_a_watcher_download_still_needs_the_gateway(capsys):
+    err = refused(["plc", "download", "--target", "X", "-y", "--after",
+                   "s.1"], capsys)
+    assert "--gateway" in err
+
+
+def test_a_project_download_takes_no_count(capsys):
+    err = refused(["plc", "download", "-y", "--project", "P", "--install",
+                   "I", "--gateway", "192.168.1.5", "--after", "s.1"], capsys)
+    assert "--after" in err
 
 
 def test_the_four_reach_distinct_functions():

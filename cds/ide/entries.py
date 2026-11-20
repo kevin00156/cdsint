@@ -56,11 +56,11 @@ SCRIPTS = {
     "trace show": ("entry_trace.py", "show_data"),
 }
 
-# What the watcher will not run, whoever asks. plc connect and plc download
-# log in to a controller through a device connection of their own, which
-# takes the online session away from the person sitting in front of that IDE
-# (SPEC D8). The other plc commands work through the IDE's own application
-# and session, so they are the watcher's. The CLI stops these two with
+# What the watcher will not run, whoever asks. plc connect reads the
+# controller through a device connection of its own, which takes the online
+# session away from the person sitting in front of that IDE (SPEC D8). plc
+# download is the watcher's: it refuses an IDE that is logged in rather than
+# end that session (engine/plc_download_watch.py). The CLI stops connect with
 # --target at the parser; this is the same rule where a hand-written command
 # file would otherwise land, and it answers by name rather than by pretending
 # the command does not exist.
@@ -70,12 +70,6 @@ WATCHER_REFUSES = {
         "controller through a device connection of its own, and the watcher "
         "lives inside an IDE somebody is using: that would take their online "
         "session away from them (SPEC D8)."),
-    "plc download": (
-        "plc download only runs in the --project form. It logs in to the "
-        "controller through a connection of its own, and the watcher lives "
-        "inside an IDE somebody is using: that would take their online "
-        "session away from them (SPEC D8). To download through this IDE's "
-        "own application, use plc login --method download -y."),
 }
 
 # What the headless launcher will not run. Recorded data lives in the IDE

@@ -158,8 +158,8 @@ of its own. `--project` records carry `changes` as `null`.
   exit 5.
 - `args` may carry `credentials` (`user`, `password`) for the `plc` commands
   that make an online call. The CLI copies them from its own
-  `CDS_DEV_USER`/`CDS_DEV_PASS` into `plc login`, `logout`, `run`, `stop` and
-  `plc trace` (not `plc trace --stop`), and refuses those commands (exit 2)
+  `CDS_DEV_USER`/`CDS_DEV_PASS` into `plc login`, `logout`, `run`, `stop`,
+  `plc download` and `plc trace` (not `plc trace --stop`), and refuses those commands (exit 2)
   before writing a command file when either is unset or empty. A command file
   without both fails before its first online call. The watcher
   hands them to the IDE immediately before each online call and never reads the
@@ -198,7 +198,8 @@ of its own. `--project` records carry `changes` as `null`.
 | `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
-| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: each logs in through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). These two commands exist only in the `--project` form; the refusal of `plc download` points at `plc login --method download -y` |
+| `plc connect` | — | The watcher always refuses, with an error that states the reason: it reads the controller through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). It exists only in the `--project` form |
+| `plc download` | `yes`, `gateway`, `port`, `gateway_name`, `after`, `credentials` | "Confirm PLC Download" is answered by `yes`; without it `needs_input` comes back, before anything connects. Without `after` or `gateway` nothing is done; a stale `after` is refused before the body (section 3). Refused when the IDE is logged in, or when its device node does not already point at `gateway` (SPEC 6.6, "In the watcher") |
 | `plc login` | `method` (`download` or `online_change`), `no_boot_app`, `yes`, `credentials` | with no `method`, none: it logs in only when nothing on the controller changes, and otherwise fails with `data.methods` (SPEC 6.12). With a `method`, "Confirm PLC Download" or "Confirm PLC Online Change" is answered by `yes` (without it `needs_input` comes back, before anything connects), and `no_boot_app` skips writing the boot application. `yes` and `no_boot_app` without a `method` are accepted and ignored |
 | `plc logout` | `credentials` | none |
 | `plc run`, `plc stop` | `yes`, required; `credentials` | "Confirm PLC Run" or "Confirm PLC Stop" is answered by `yes`; without it, `needs_input` comes back. Neither logs in |

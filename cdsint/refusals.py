@@ -62,8 +62,8 @@ def _one_form_only(parser, ns, row):
 
     argparse could simply not offer the other form, but then asking for it
     reads as a typo. Which form a command has and why is a decision, so it
-    gets a sentence, and the sentence is the row's: plc connect and download
-    have only --project (SPEC D8), trace save and show only --target.
+    gets a sentence, and the sentence is the row's: plc connect has only
+    --project (SPEC D8), trace save and show only --target.
     """
     form, why = row.form_of(ns.action)
     shown = flags.wire_name(ns)

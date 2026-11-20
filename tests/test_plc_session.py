@@ -771,7 +771,7 @@ def test_a_watcher_download_never_leaves_a_stale_match(method):
     assert result["ok"], result["summary"]
     assert answer_now(path, device) != plc_crc.MATCH
     assert any(plc_fakes.CONTROLLER in note and
-               "the --project plc download -y" in note
+               "a plc download -y" in note
                for note in result["data"]["notes"])
 
 

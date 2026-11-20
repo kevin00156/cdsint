@@ -38,9 +38,9 @@ and stop, -y says the caller means this call. By the time a function in this
 file runs, they have been passed. trace needs no -y: it changes nothing the
 caller would confirm.
 
-connect and download are reached only in the --project form; login, logout,
-run and stop only in the watcher; trace in both, the watcher's through
-engine/plc_trace_watch.py. Neither form is the menu, so there is no menu stub
+connect is reached only in the --project form; login, logout, run and stop
+only in the watcher; download and trace in both, the watcher's through
+engine/plc_download_watch.py and engine/plc_trace_watch.py. Neither form is the menu, so there is no menu stub
 and the flags arrive as `command_args` rather than as answers to dialogs
 (cds/ide/silent.py). The exception is the confirmation of a download, a
 login by --method, a run or a stop, which is a question a person would have
@@ -51,6 +51,7 @@ from __future__ import print_function
 
 from engine import entry, plc_crc, unhandled
 from engine.plc_download import DownloadTrip
+from engine.plc_download_watch import WatchedDownloadTrip
 from engine.plc_method import MethodTrip
 from engine.plc_power import PowerTrip
 from engine.plc_session import SessionTrip
@@ -142,6 +143,8 @@ def download():
     if cancelled:
         return entry.result(False, cancelled, action="download",
                             crc=plc_crc.UNKNOWN)
+    if in_the_watcher():
+        return a_trip(WatchedDownloadTrip, "download").run()
     trip = a_trip(DownloadTrip, "download")
     return in_order(trip, [
         trip.reach_the_device,   # --gateway, the device, its application
@@ -277,9 +280,16 @@ def record():
     """
     if command_args.get("stop"):
         return entry.result(False, "trace: " + STOP_HERE, action="trace")
-    if entry.borrowed(globals(), trace_run.HOLD_GLOBAL) is None:
+    if in_the_watcher():
         return watched(WatchedTrip(command_args, globals()))
     return traced(TraceTrip(command_args, globals()))
+
+
+def in_the_watcher():
+    """Which form this run is: the --project launcher lends a wait
+    (cds/ide/hold.py), the watcher does not, because its timer may not wait
+    (SPEC D5)."""
+    return entry.borrowed(globals(), trace_run.HOLD_GLOBAL) is None
 
 
 def watched(trip):

@@ -140,9 +140,10 @@ add the word. **And the call has to be confirmed**: `plc download`,
 `plc login --method`, `plc run` and `plc stop` take `-y`, exactly as `import`
 does.
 
-`plc connect` and `plc download` have no `--target` form: each logs in through a
+`plc connect` has no `--target` form: it reads the controller through a
 connection of its own, which would take the online session of whoever is using
-the IDE. `login`, `logout`, `run` and `stop` are the other way round, below.
+the IDE. `plc download` has both (the `--target` one is below); `login`,
+`logout`, `run` and `stop` have only `--target`, below.
 
 Both commands answer one question — is this controller still holding what cdsint
 downloaded to it from this project. `download` writes the controller's CRC into
@@ -225,6 +226,29 @@ ends it early; the first command then answers with `data.stopped_early`.
 While it records, that IDE answers only `--stop`, `ping` and `status`; other
 commands are refused with when it ends. A trace the user started by hand is
 refused rather than taken over.
+
+### Downloading through the user's open IDE
+
+When the project is already open in an IDE with a watcher, verify and download
+through it instead of starting two IDEs of your own:
+
+```
+cdsint verify -y --target X --json > verify.json
+cdsint plc download -y --target X --gateway IP [--port N] [--gateway-name NAME] --after COUNT
+```
+
+`COUNT` is the change count verify reports: its last line says it, and with
+`--json` it is the last record's `changes`. The download is refused (exit 1,
+nothing sent) when anything changed the IDE through cdsint since that verify
+(run verify again), when the IDE is logged in (`plc logout` first; cdsint never
+ends a login it did not make), or when the project's device node does not
+already point at `--gateway` (the watcher never re-aims it: that would rewrite
+the user's project, so fix its Communication Settings or use `--project`). It
+then does what the `--project` download does — full download, boot
+application, start, CRC read back and recorded — and logs out again;
+`data.logged_in` is `false`. It needs `download` in the `plc` list, `-y`, and
+`CDS_DEV_USER`/`CDS_DEV_PASS` like the other watcher online commands. A change
+made by hand in the IDE is not counted; nothing can see it.
 
 ### Logging in, out, running and stopping through the user's open IDE
 

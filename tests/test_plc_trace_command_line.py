@@ -97,9 +97,8 @@ def test_stop_is_the_watchers_only(capsys):
     assert "does not take --stop" in err and "watcher" in err
 
 
-@pytest.mark.parametrize("action", ["connect", "download"])
-def test_connect_and_download_keep_the_project_form_only(action, capsys):
-    err = refused(["plc", action, "--target", "softplc", "--gateway",
+def test_connect_keeps_the_project_form_only(capsys):
+    err = refused(["plc", "connect", "--target", "softplc", "--gateway",
                    "1.2.3.4"], capsys)
     assert "no --target form" in err and "D8" in err
 

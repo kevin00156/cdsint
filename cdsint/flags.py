@@ -38,8 +38,11 @@ CONTROLLER_LOGIN = ("It logs in to the controller through a connection of "
                     "its own, and the watcher runs inside an IDE somebody "
                     "is using: that would take their online session away "
                     "from them (SPEC D8).")
-DOWNLOAD_LOGIN = (CONTROLLER_LOGIN + " To download through that IDE's own "
-                  "application, use plc login --method download -y.")
+AFTER_VERIFY = ("It is the change count verify reported: without it the "
+                "download would take whatever another caller made of that "
+                "IDE's project since (cds/core/turns.py).")
+OWN_IDE = ("An IDE this command starts has the project file open and "
+           "nobody else changing it while it runs.")
 SESSION_IN_THE_IDE = ("It logs this IDE's own application in or out, or "
                       "starts or stops it, so it runs in the watcher of the "
                       "IDE that holds the session.")
@@ -143,13 +146,17 @@ COMMANDS = {
                 "plc login --method: skip writing the boot application"),
                ("--gateway", NAME,
                 "reach the controller through this address; every --project "
-                "plc action needs it", "IP"),
+                "plc action needs it, and so does plc download --target, "
+                "whose IDE's device node must already point there", "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),
                ("--gateway-name", NAME,
                 "which of the IDE profile's gateways reaches --gateway; "
                 "needed when the profile has more than one"),
+               ("--after", NAME,
+                "plc download --target: the change count verify reported; "
+                "refused if the IDE has been changed since", "COUNT"),
                ("--job", JOB, "the trace job file; only plc trace takes it"),
                ("--name", NAME,
                 "plc trace: record this trace object as it is configured; "
@@ -169,7 +176,7 @@ COMMANDS = {
                              "where to write (SPEC 6.8)."}},
         takes={
             "connect": REACH,
-            "download": REACH + ("yes",),
+            "download": REACH + ("yes", "after"),
             "trace": REACH + ("job", "name", "stop"),
             "trace --stop": ("stop",),
             "login": ("method", "no_boot_app", "yes"),
@@ -183,7 +190,8 @@ COMMANDS = {
             + [(action, dict((dest, BY_DEVICE) for dest in REACH))
                for action in ONLINE_COMMANDS]),
         form_needs={
-            WATCHER: {"trace": {"name": WATCHER_NAMES}},
+            WATCHER: {"trace": {"name": WATCHER_NAMES},
+                      "download": {"after": AFTER_VERIFY}},
             HEADLESS: {"trace": {"gateway": WRONG_CONTROLLER
                                  % "a trace recorded from the wrong "
                                    "controller looks exactly like a right "
@@ -191,10 +199,10 @@ COMMANDS = {
         form_refuses={
             WATCHER: {"trace": dict((dest, THROUGH_THE_LOGIN) for dest in
                                     ("gateway", "port", "gateway_name"))},
-            HEADLESS: {"trace --stop": {"stop": STOP_IN_THE_WATCHER}}},
+            HEADLESS: {"trace --stop": {"stop": STOP_IN_THE_WATCHER},
+                       "download": {"after": OWN_IDE}}},
         action_forms=dict(
-            [("connect", (HEADLESS, CONTROLLER_LOGIN)),
-             ("download", (HEADLESS, DOWNLOAD_LOGIN))]
+            [("connect", (HEADLESS, CONTROLLER_LOGIN))]
             + [(action, (WATCHER, SESSION_IN_THE_IDE))
                for action in ONLINE_COMMANDS]),
         variant=("stop", "--stop")),

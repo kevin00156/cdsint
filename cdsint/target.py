@@ -36,7 +36,8 @@ GONE_AFTER_S = 1.0
 # The commands whose watcher may have to log in to the controller. The login
 # is asked of the environment only here, so every other command file is free
 # of it.
-NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace")
+NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace",
+                 "plc download")
 
 
 def forwards_a_login(command, args):

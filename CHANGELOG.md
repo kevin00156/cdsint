@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Unreleased
 
+- **`cdsint plc download --target`.** A deployment ran `verify --project` and
+  then `plc download --project`, each starting its own IDE and loading the
+  project, about half a minute apiece, when the user already had that project
+  open in an IDE with a watcher. Now `verify -y --target X` and `plc download -y
+  --target X --gateway IP --after COUNT` do it in that IDE. `COUNT` is the new
+  change count verify reports (the watcher counts every command that changes
+  something, and every project opened there); a download whose count is stale
+  is refused, so it cannot download what another caller imported after your
+  verify. verify itself now fails when another caller's command landed between
+  its steps. The download is also refused when the IDE is logged in (`plc
+  logout` first; cdsint never ends a login it did not make) and when the
+  project's device node does not already point at `--gateway`, which the watcher
+  never re-aims, since that would rewrite the open project. Otherwise it is the
+  `--project` download, CRC record included, and it logs out again afterwards.
+  This reverses the part of SPEC D8 that refused `plc download` in the
+  watcher; `plc connect` is still refused there. `--project` downloads are
+  unchanged.
+
 - **A command that changes something is refused, not queued, while another
   caller's command is in that IDE.** Several agents can drive one IDE, and an
   import that waited its turn behind another agent's import ran on the project

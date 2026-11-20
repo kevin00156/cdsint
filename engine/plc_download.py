@@ -25,6 +25,21 @@ def state_of(session):
 class DownloadTrip(Trip):
     """One plc download: the trip, and the steps that change the controller."""
 
+    def before_online(self):
+        """Right before each online call of send(): nothing in the --project
+        form, the forwarded login in the watcher's
+        (engine/plc_download_watch.py). None, or why the call must not be
+        made."""
+        return None
+
+    def online_call(self, call):
+        """call(), after before_online; what refused it is raised, so that
+        a download stopped halfway says so as any other failure there does."""
+        problem = self.before_online()
+        if problem:
+            raise RuntimeError(problem)
+        return call()
+
     def __init__(self, action, args, ide_globals):
         Trip.__init__(self, action, args, ide_globals)
         self.held_before = None     # the controller's CRC before this download
@@ -102,7 +117,9 @@ class DownloadTrip(Trip):
             return ("this IDE did not provide OnlineChangeOption, so a full "
                     "download cannot be asked for explicitly")
         try:
-            session = self.online.create_online_application(self.application)
+            session = self.online_call(lambda: self.online
+                                       .create_online_application(
+                                           self.application))
         except Exception as exc:
             return ("the IDE would not make an online application of %s, so "
                     "nothing was sent: %s"
@@ -114,6 +131,7 @@ class DownloadTrip(Trip):
                 # application left to report on.
                 self.state_after = state_of(session)
         finally:
+            self.before_online()
             plc_link.logout(session)
         if problem:
             return problem
@@ -130,9 +148,9 @@ class DownloadTrip(Trip):
         application stopped.
         """
         try:
-            session.login(option.Never, False)
-            session.create_boot_application()
-            session.start()
+            self.online_call(lambda: session.login(option.Never, False))
+            self.online_call(session.create_boot_application)
+            self.online_call(session.start)
         except Exception as exc:
             return ("the download did not complete, and the controller may "
                     "now be stopped or partly written: " + safe_str(exc))
