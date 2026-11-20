@@ -171,3 +171,120 @@ def test_the_watcher_keeps_the_mark_of_the_recording_it_holds(watch):
     watch.tick()
     assert turns.others(watch.root, watch.instance_id, set()) == [
         (held["id"], turns.RUNNING)]
+
+
+# --- the change count ------------------------------------------------------
+
+def cmd_of(command, **args):
+    return commands.new_command(command, args,
+                                caller={"pid": 7, "cwd": r"C:\wt\b"})
+
+
+def test_a_changing_command_moves_the_count_and_a_read_does_not():
+    count = turns.ChangeCount("s")
+    count.took(cmd_of("compare"))
+    assert count.token() == "s.0"
+    count.took(cmd_of("import", yes=True))
+    assert count.token() == "s.1"
+
+
+def test_a_matching_after_runs_and_a_moved_one_is_refused_by_name():
+    count = turns.ChangeCount("s")
+    assert count.stale(cmd_of("plc download", after="s.0")) is None
+    count.took(cmd_of("import", yes=True))
+    said = count.stale(cmd_of("plc download", after="s.0"))
+    assert "s.0" in said and "s.1" in said
+    assert "import" in said and "pid 7" in said
+
+
+def test_a_count_from_an_earlier_watcher_is_refused():
+    said = turns.ChangeCount("new").stale(cmd_of("plc download",
+                                                 after="old.0"))
+    assert "started again" in said
+
+
+def test_a_command_without_after_is_never_refused_by_the_count():
+    count = turns.ChangeCount("s")
+    count.took(cmd_of("import", yes=True))
+    assert count.stale(cmd_of("plc download")) is None
+
+
+def test_another_project_opened_moves_the_count():
+    count = turns.ChangeCount("s")
+    count.opened(r"C:\p\other.project")
+    assert count.token() == "s.1" and "other.project" in count.last["command"]
+
+
+def step(command, changes):
+    result = commands.new_result(commands.new_command(command), True)
+    result["changes"] = changes
+    return result
+
+
+def test_a_run_whose_steps_count_one_after_another_has_no_seam():
+    assert turns.seams([step("import", "s.4"), step("export", "s.5"),
+                        step("compare", "s.5"), step("build", "s.6")]) == []
+
+
+def test_a_jump_between_two_steps_names_them():
+    found = turns.seams([step("import", "s.4"), step("export", "s.6")])
+    assert len(found) == 1 and "between import and export" in found[0]
+
+
+def test_records_without_a_count_say_nothing():
+    assert turns.seams([step("import", None), step("export", None)]) == []
+
+
+def test_the_watcher_counts_what_it_runs_and_answers_with_the_count(
+        watch, monkeypatch):
+    watch.handlers["build"] = lambda cmd, started: commands.new_result(
+        cmd, True)
+    answering(watch, monkeypatch)
+    runner = target.Target(watch.root)
+    first, = runner.run([("build", {})])
+    second, = runner.run([("build", {})])
+    assert first["changes"] == watch.changed.session + ".1"
+    assert second["changes"] == watch.changed.session + ".2"
+
+
+def test_the_watcher_refuses_a_command_whose_after_is_stale(watch,
+                                                            monkeypatch):
+    ran = []
+    watch.handlers["build"] = lambda cmd, started: (
+        ran.append(1) or commands.new_result(cmd, True))
+    answering(watch, monkeypatch)
+    runner = target.Target(watch.root)
+    runner.run([("build", {})])
+    refused, = runner.run([("build", {"after": watch.changed.session
+                                       + ".0"})])
+    assert not refused["ok"] and "change count" in refused["error"]
+    # Refused before its body: nothing ran, and nothing was counted.
+    assert ran == [1] and watch.changed.count == 1
+
+
+def stub_round_trip(watch, between=None):
+    def body(cmd, started):
+        if between is not None and cmd["command"] == "compare":
+            between()
+        return commands.new_result(cmd, True, data={})
+    for name in ("import", "export", "compare", "build"):
+        watch.handlers[name] = body
+
+
+def test_verify_says_the_count_a_download_hands_back(watch, monkeypatch,
+                                                     capsys):
+    stub_round_trip(watch)
+    answering(watch, monkeypatch)
+    assert cli.main(["verify", "-y"]) == EXIT_OK
+    token = watch.changed.token()
+    assert "--after %s" % token in capsys.readouterr().out
+
+
+def test_verify_fails_when_another_caller_changed_the_ide_between_its_steps(
+        watch, monkeypatch, capsys):
+    # Somebody's import, landing in the gap before compare was queued.
+    stub_round_trip(watch, between=lambda: watch.changed.took(
+        cmd_of("import", yes=True)))
+    answering(watch, monkeypatch)
+    assert cli.main(["verify", "-y"]) != EXIT_OK
+    assert "changed by another caller" in capsys.readouterr().err

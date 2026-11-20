@@ -86,7 +86,8 @@ def run_verify(ns, runner):
     show_folder(ns, runner, results)
     report.show_notes(results, ns.json)
     report.show_steps(results, ns.json)
-    report.show_verify(problems, runner.describe())
+    report.show_verify(problems, runner.describe(),
+                       results[-1]["changes"] if results else None)
     return verify_code(results, problems)
 
 

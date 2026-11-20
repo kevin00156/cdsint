@@ -17,12 +17,16 @@ directory empty while the other's command runs. Two that queue at the same
 moment can see each other and both be refused; that costs a retry, never a
 project.
 
+The other half is the change count below, for what the turn cannot see:
+another caller's command between two of yours.
+
 Pure Python (PRINCIPLES.md 4): no CODESYS imports.
 """
 from __future__ import print_function
 
 import errno
 import os
+import random
 
 from cds.core import commands, ipc
 
@@ -104,3 +108,102 @@ def _since(path, held):
         except EnvironmentError:
             pass
     return held.get("created_at") or "a moment ago"
+
+
+# --------------------------------------------------------------------------
+# The change count
+# --------------------------------------------------------------------------
+
+class ChangeCount(object):
+    """How many changing commands one watcher has run, as a token a caller
+    can hand back: "<session>.<count>".
+
+    The turn above keeps two commands from running at once; it cannot keep
+    another caller's import from landing between somebody's verify and that
+    somebody's download, which are two commands. The sync folder is one per
+    project and every caller of this watcher shares it, so comparing the IDE
+    with the disk cannot tell whose content the IDE holds either. What can
+    is a count of what was done to it: verify hands back the token after its
+    last step, plc download --after hands it back, and the watcher refuses
+    the download if anything has been run since (owner decision,
+    2026-11-20). The session is new with every watcher, so a token outlives
+    neither a restart nor, since a project opened by hand is counted as a
+    change, the project it was taken on.
+
+    Every changing command counts once the watcher hands it to its body,
+    whether it then worked or not: an import that failed halfway has
+    changed the project as much as one that worked. Nothing done by hand in
+    the IDE is counted, but opening another project.
+    """
+
+    def __init__(self, session=None):
+        self.session = session or "%08x" % random.getrandbits(32)
+        self.count = 0
+        self.last = None    # what made the last change: command, at, caller
+
+    def token(self):
+        return "%s.%d" % (self.session, self.count)
+
+    def took(self, cmd, now=None):
+        """The watcher is about to run cmd."""
+        if changes(cmd.get("command"), cmd.get("args")):
+            self._changed(cmd.get("command"), cmd.get("caller"), now)
+
+    def opened(self, path, now=None):
+        """The IDE has another project open than it had."""
+        self._changed("opening %s" % (path or "no project"), None, now)
+
+    def _changed(self, what, caller, now):
+        self.count += 1
+        self.last = {"command": what, "at": ipc.iso(ipc.now(now)),
+                     "caller": caller}
+
+    def stale(self, cmd):
+        """Why cmd may not run, when its --after is not this token, or None."""
+        after = (cmd.get("args") or {}).get("after")
+        if after is None or after == self.token():
+            return None
+        if _session(after) != self.session:
+            why = ("that count was taken from another run of this watcher, "
+                   "which has been started again since")
+        else:
+            why = ("%d change(s) have been made since, the last %s"
+                   % (self.count - _count(after), _described(self.last)))
+        return ("%s did not run: it was asked to act on the IDE as it was at "
+                "change count %s, and it is at %s now: %s. Nothing was done; "
+                "run verify again and pass the count it reports"
+                % (cmd.get("command"), after, self.token(), why))
+
+
+def _described(last):
+    who = (last or {}).get("caller") or {}
+    by = " by pid %s in %s" % (who.get("pid"), who.get("cwd")) if who else ""
+    return "%s at %s%s" % (last["command"], last["at"], by)
+
+
+def _session(token):
+    return token.rsplit(".", 1)[0]
+
+
+def _count(token):
+    return int(token.rsplit(".", 1)[1])
+
+
+def seams(results):
+    """Where another caller changed the IDE between two steps of one run, as
+    sentences. Each step's count is the one before it, plus one if the step
+    changes something; a jump means somebody else's command ran in the gap
+    the turn cannot cover. Records without a count (the --project form) say
+    nothing."""
+    found = []
+    counted = [r for r in results if r.get("changes")]
+    for before, after in zip(counted, counted[1:]):
+        expected = "%s.%d" % (_session(before["changes"]),
+                              _count(before["changes"])
+                              + int(changes(after["command"])))
+        if after["changes"] != expected:
+            found.append("the IDE was changed by another caller between %s "
+                         "and %s: the change count went from %s to %s"
+                         % (before["command"], after["command"],
+                            before["changes"], after["changes"]))
+    return found

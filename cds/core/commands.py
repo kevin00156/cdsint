@@ -291,6 +291,9 @@ def new_result(cmd, ok, error=None, messages=None, needs_input=None,
         "needs_input": needs_input,
         "denied": denied,
         "data": data,
+        # The watcher's change count after this command (cds/core/turns.py);
+        # it alone has one, and fills it in as it writes the record.
+        "changes": None,
     }
 
 

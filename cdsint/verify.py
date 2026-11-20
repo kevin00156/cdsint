@@ -25,7 +25,7 @@ through an IDE of our own must reach the same verdict (SPEC D2).
 """
 from __future__ import print_function
 
-from cds.core import commands
+from cds.core import commands, turns
 from cdsint import flags
 
 # The counts compare hands back. Any of them above zero means the IDE and the
@@ -124,6 +124,9 @@ def problems(results, planned=None):
     ran = dict((r["command"], r) for r in results)
     if "compare" in ran and ran["compare"]["ok"]:
         found.extend(_differences(ran["compare"]["data"] or {}))
+    # A round trip somebody else's command ran in the middle of checked the
+    # IDE as that command left it, not as this run did.
+    found.extend(turns.seams(results))
     planned = len(ORDER) if planned is None else planned
     if len(ran) < planned:
         found.append("stopped after %d of %d steps" % (len(ran), planned))

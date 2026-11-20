@@ -14,7 +14,8 @@ BEAT_ATTEMPTS = 5
 
 
 class KeepsItsRecord(object):
-    """The registration and the beat. Needs Watcher's ide, root and reg."""
+    """The registration and the beat. Needs Watcher's ide, root, reg and
+    changed."""
 
     def _open_project_path(self):
         return project.path_of(self.ide.get("projects"))
@@ -27,7 +28,10 @@ class KeepsItsRecord(object):
         means it picks the wrong IDE or none at all. instance_id keeps its
         birth name — that one is a directory.
         """
-        instances.set_project(self.reg, self._open_project_path())
+        path = self._open_project_path()
+        if path != self.reg["project_path"]:
+            self.changed.opened(path)
+        instances.set_project(self.reg, path)
         self.reg["sync_dir"] = project.sync_dir(self.ide.get("projects"))
 
     def beat_if_due(self, now=None):
@@ -54,6 +58,7 @@ class KeepsItsRecord(object):
             instances.set_state(self.reg, state, now, command)
         self._refresh_project()
         instances.stamp_heartbeat(self.reg, now)
+        self.reg["changes"] = self.changed.token()
         failure = None
         for _attempt in range(BEAT_ATTEMPTS):
             try:

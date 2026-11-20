@@ -21,7 +21,7 @@ from __future__ import print_function
 import os
 import traceback
 
-from cds.core import commands, instances, ipc
+from cds.core import commands, instances, ipc, turns
 from cds.ide import display, entries, messages, project, silent
 from cds.ide.beat import KeepsItsRecord
 from cds.ide.recording import TRACE, WHILE_RECORDING, HoldsARecording
@@ -55,6 +55,7 @@ class Watcher(KeepsItsRecord, HoldsARecording):
         self.form = None        # the window itself, so session can close it
         self._last_beat = 0.0
         self._deferring = False
+        self.changed = turns.ChangeCount()
         self.handlers = {
             "ping": self._ping,
             "status": self._status,
@@ -181,6 +182,7 @@ class Watcher(KeepsItsRecord, HoldsARecording):
         return result
 
     def _write(self, result):
+        result["changes"] = self.changed.token()
         commands.write_result(self.root, self.instance_id, result)
         # A caller that gave up before we answered leaves its result
         # behind. Sweeping here keeps the directory bounded on a watcher
@@ -288,6 +290,10 @@ class Watcher(KeepsItsRecord, HoldsARecording):
         if self.recording is not None and name not in WHILE_RECORDING:
             return commands.new_result(cmd, False, started_at=started,
                                        error=self._recording_until())
+        stale = self.changed.stale(cmd)
+        if stale is not None:
+            return commands.new_result(cmd, False, started_at=started,
+                                       error=stale)
         handler = self.handlers.get(cmd.get("command"))
         if handler is None:
             known = ", ".join(sorted(self.handlers))
@@ -295,6 +301,7 @@ class Watcher(KeepsItsRecord, HoldsARecording):
                 cmd, False, started_at=started,
                 error="unknown command %r; this watcher knows %s"
                       % (cmd.get("command"), known))
+        self.changed.took(cmd)
         return handler(cmd, started)
 
     # -- the commands ------------------------------------------------------

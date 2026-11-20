@@ -104,7 +104,7 @@ def show_steps(results, want_json=False):
         show(result)
 
 
-def show_verify(problems, describe):
+def show_verify(problems, describe, changes=None):
     """The verdict over a whole round trip, which no single step carries.
 
     compare can pass every step and still have found differences, so this is
@@ -114,8 +114,16 @@ def show_verify(problems, describe):
     """
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
-    if not problems:
-        print("verify: %s round-tripped and built cleanly" % describe)
+    if problems:
+        return
+    print("verify: %s round-tripped and built cleanly" % describe)
+    if changes:
+        # The one value a following plc download --target has to hand back
+        # (cds/core/turns.py ChangeCount); --json has it as the last
+        # record's `changes`.
+        print("verify: the IDE is at change count %s; plc download --target "
+              "-y --after %s downloads it as verified here"
+              % (changes, changes))
 
 
 def show_instances(regs, want_json=False):

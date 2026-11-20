@@ -36,7 +36,7 @@ the process id from `os.getpid()`.
 
 The registration file's fields: `instance_id`, `pid`, `ide`, `project_path`,
 `project_name`, `sync_dir`, `state`, `busy_since`, `busy_command`, `heartbeat`,
-`started_at`, `watcher_version`. `busy_command` names what a busy instance is
+`started_at`, `watcher_version`, `changes`. `busy_command` names what a busy instance is
 running, so a caller whose `--timeout` is shorter than that is told "busy for
 312s running import" rather than "no live IDE found". Times come in two copies: the string one is for a person
 opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
@@ -126,8 +126,22 @@ refuse every change for as long as the watcher runs.
  "started_at": "...", "finished_at": "...", "elapsed_s": 4.2,
  "messages": [{"level": "info", "text": "Import complete! ..."}],
  "stdout_tail": "…last 200 lines…", "error": null, "needs_input": null,
- "denied": null, "data": null}
+ "denied": null, "data": null, "changes": "5f0c19a2.3"}
 ```
+
+`changes` is the watcher's change count after the command, and the
+registration carries the current one. It is `<session>.<count>`: the session
+is new with every watcher start, and the count goes up by one each time the
+watcher hands a command that changes something to its body (the same list
+the turn uses), whether or not the body then works, and each time the IDE has
+another project open than it had. Nothing a person does by hand in the IDE
+is counted otherwise. A command whose `args` carry `after` runs only if that
+is the count right now; otherwise it is answered `ok` false, naming the count
+it is at, how many changes came since and which command made the last one,
+and nothing is counted. `verify` checks that its four steps' counts follow
+one another, and fails when another caller's command landed in a gap between
+two of them; the turn cannot cover those gaps, since each step is a command
+of its own. `--project` records carry `changes` as `null`.
 
 - `deadline_epoch` is when the CLI stops waiting: the moment it queued the
   command plus its `--timeout`. A CLI that stops waiting for any reason,

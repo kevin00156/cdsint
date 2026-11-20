@@ -532,7 +532,8 @@ made atomic between CLIs is `cds/core/turns.py`.
 
 The `--json` output keeps the structure of the existing result file: `ok`,
 `command`, `elapsed_s`, `messages`, `stdout_tail`, `error`, `needs_input`,
-`denied`, `data`. The `--project` form adds `ide` (which install was used),
+`denied`, `data`, `changes` (the `--target` form's change count after the
+command, `null` in the other form; docs/WATCHER.md 3). The `--project` form adds `ide` (which install was used),
 `sync_dir` (this run's source of truth, the same value as at the top of the
 report), `report_path`, `notes`.
 
