@@ -288,3 +288,15 @@ def test_verify_fails_when_another_caller_changed_the_ide_between_its_steps(
     answering(watch, monkeypatch)
     assert cli.main(["verify", "-y"]) != EXIT_OK
     assert "changed by another caller" in capsys.readouterr().err
+
+
+def test_verify_json_is_json_alone_and_carries_the_count(watch, monkeypatch,
+                                                         capsys):
+    # A deploy script reads COUNT from this, so stdout must parse.
+    import json
+    stub_round_trip(watch)
+    answering(watch, monkeypatch)
+    assert cli.main(["verify", "-y", "--json"]) == EXIT_OK
+    out = capsys.readouterr()
+    assert json.loads(out.out)[-1]["changes"] == watch.changed.token()
+    assert "--after" in out.err

@@ -87,7 +87,7 @@ def run_verify(ns, runner):
     report.show_notes(results, ns.json)
     report.show_steps(results, ns.json)
     report.show_verify(problems, runner.describe(),
-                       results[-1]["changes"] if results else None)
+                       results[-1]["changes"] if results else None, ns.json)
     return verify_code(results, problems)
 
 
