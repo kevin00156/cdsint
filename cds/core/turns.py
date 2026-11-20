@@ -194,9 +194,10 @@ def seams(results):
     sentences. Each step's count is the one before it, plus one if the step
     changes something; a jump means somebody else's command ran in the gap
     the turn cannot cover. Records without a count (the --project form) say
-    nothing."""
+    nothing, and nor does a step that failed: it may have been refused
+    before its body, uncounted, and the run stops at it anyway."""
     found = []
-    counted = [r for r in results if r.get("changes")]
+    counted = [r for r in results if r.get("changes") and r["ok"]]
     for before, after in zip(counted, counted[1:]):
         expected = "%s.%d" % (_session(before["changes"]),
                               _count(before["changes"])

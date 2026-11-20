@@ -19,7 +19,8 @@ from cdsint import cli, flags, refusals, target
 from engine import plc_link
 
 SECRET = "s3cret-do-not-print"
-FORWARDED = ["plc login", "plc logout", "plc run", "plc stop", "plc trace"]
+FORWARDED = ["plc login", "plc logout", "plc run", "plc stop", "plc trace",
+             "plc download"]
 
 
 @pytest.fixture
@@ -296,6 +297,9 @@ def watcher_argv(command, tmp_path):
         job.write_text('{"duration_s": 1, "out": "o"}', encoding="utf-8")
         return ["plc", "trace", "--target", "i", "--name", "T", "--job",
                 str(job)]
+    if command == "plc download":
+        return ["plc", "download", "-y", "--target", "i", "--gateway",
+                "192.168.1.5", "--after", "s.1"]
     return command.split() + ["--target", "i"] + (
         ["-y"] if command in ("plc run", "plc stop") else [])
 

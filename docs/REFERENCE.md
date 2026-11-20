@@ -322,7 +322,8 @@ own for verify and another for the download. `COUNT` is the change count
 `verify --target` reported (its last line, or the last `--json` record's
 `changes`); if anything was changed in that IDE through cdsint since, the
 download is refused and nothing is sent. So is an IDE that is logged in,
-whoever logged it in: `plc logout` first. The project's device node is not
+whoever logged it in: `plc logout` first, then verify again, since the logout
+moves the count as well. The project's device node is not
 re-aimed, since that would rewrite the open project: it has to point at
 `--gateway` already, through the gateway `--gateway-name` picks, or the
 download is refused with where it does point. Otherwise it is the `--project`

@@ -38,7 +38,8 @@ NO_AFTER = ("--after is required in the watcher: it is the change count "
 LOGGED_IN = ("the IDE is logged in to the controller (by hand, by plc login, "
              "or for a plc trace), and a download here would end that "
              "session, so it was left alone: plc logout first, or log out "
-             "in the IDE; nothing was done")
+             "in the IDE, then verify again, since a plc logout moves the "
+             "change count; nothing was done")
 
 NOT_AIMED = ("the device node points at %s, not at %s:%d through %s (node "
              "address %s). In the watcher the node is not re-aimed, since "
@@ -53,13 +54,26 @@ class WatchedDownloadTrip(DownloadTrip):
     def __init__(self, action, args, ide_globals):
         DownloadTrip.__init__(self, action, args, ide_globals)
         self.found["logged_in"] = None
+        self.sent = False   # whether send() was reached, and so logged in
 
     def run(self):
         """Every step inside one nested script run; then the verdict."""
         problem = ide_private.in_script_run(
-            entry.borrowed(self.globals, "online"),
-            lambda: first_problem(self.steps()))
+            entry.borrowed(self.globals, "online"), self._through)
         return self.failed(problem) if problem else self.verdict()
+
+    def _through(self):
+        """The steps' problem. One from send() on still reports whether the
+        IDE is logged in: the logout after a failed download is not read
+        back by plc_link.logout, which only warns."""
+        problem = first_problem(self.steps())
+        if problem and self.sent and self.found["logged_in"] is None:
+            self.found["logged_in"], _unread = self._logged_in()
+        return problem
+
+    def send(self):
+        self.sent = True
+        return DownloadTrip.send(self)
 
     def steps(self):
         return [

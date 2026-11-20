@@ -240,8 +240,9 @@ cdsint plc download -y --target X --gateway IP [--port N] [--gateway-name NAME] 
 `COUNT` is the change count verify reports: its last line says it, and with
 `--json` it is the last record's `changes`. The download is refused (exit 1,
 nothing sent) when anything changed the IDE through cdsint since that verify
-(run verify again), when the IDE is logged in (`plc logout` first; cdsint never
-ends a login it did not make), or when the project's device node does not
+(run verify again), when the IDE is logged in (`plc logout`, then verify again,
+since the logout moves the count too; cdsint never ends a login it did not
+make), or when the project's device node does not
 already point at `--gateway` (the watcher never re-aims it: that would rewrite
 the user's project, so fix its Communication Settings or use `--project`). It
 then does what the `--project` download does — full download, boot

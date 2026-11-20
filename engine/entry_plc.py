@@ -286,10 +286,12 @@ def record():
 
 
 def in_the_watcher():
-    """Which form this run is: the --project launcher lends a wait
-    (cds/ide/hold.py), the watcher does not, because its timer may not wait
-    (SPEC D5)."""
-    return entry.borrowed(globals(), trace_run.HOLD_GLOBAL) is None
+    """Which form this run is. The --project launcher lends a wait
+    (cds/ide/hold.py), the watcher lends nothing, because its timer may not
+    wait (SPEC D5). Whether the name is there decides, not what it holds:
+    the launcher lends None to an IDE that has a window or will not say,
+    and a --project download in such an IDE is still the --project one."""
+    return trace_run.HOLD_GLOBAL not in globals()
 
 
 def watched(trip):

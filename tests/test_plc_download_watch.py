@@ -106,3 +106,23 @@ def test_without_a_forwarded_login_nothing_is_sent():
     outcome = download(ide_globals, credentials=None)
     assert not outcome.ok() and "device login" in outcome.result["summary"]
     assert calls(ide_globals) == []
+
+
+def test_a_project_download_whose_launcher_lent_no_wait_is_still_that_one():
+    # hold.lend puts None there for an IDE that has a window or will not
+    # say; the name being there is what says --project.
+    ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
+    ide_globals[trace_run.HOLD_GLOBAL] = None
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert outcome.ok(), outcome.result["summary"]
+    node = ide_globals["projects"].primary.get_children()[0]
+    assert node.gateway_set_to is not None
+
+
+def test_a_download_that_failed_still_says_whether_it_is_logged_in():
+    ide_globals = watcher_ide()
+    session = ide_globals["online"].session
+    session.refuse_login = "the download stopped halfway"
+    outcome = download(ide_globals)
+    assert not outcome.ok() and "halfway" in outcome.result["summary"]
+    assert outcome.result["data"]["logged_in"] is False
