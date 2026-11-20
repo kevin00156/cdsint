@@ -1923,3 +1923,19 @@ So the check refused a node that did reach the container, and passed
 project it would have downloaded to 11752 and recorded 11753. The watcher now
 aims the node as the `--project` form does (owner decision), which item 1
 shows is where the login goes.
+
+### 19.3 The aimed download (dce824f)
+
+The same bench, the node first aimed by IP at 127.0.0.1:11741 and saved.
+`plc download --target -y --gateway 100.91.234.73 --port 11752 --gateway-name
+Gateway-1 --after c4b2466a.3`: exit 0 in 21.6 s, `crc` MATCH (BC362AFB),
+`logged_in` false, the notes naming the aim and that the project is marked
+changed, the record holding only `Gateway-1/100.91.234.73:11752`, and the
+container's `Application.app` and `.crc` written at that moment. With `--port
+11799`, where nothing listens: exit 1, "did not answer: No connection to the
+device", at the CRC read before any login; no record entry for 11799 and the
+container's files untouched. The node is aimed before anything connects, so a
+download that fails that way leaves the open project pointing at the wrong
+port, as a `--project` run leaves its copy; the next download aims it again,
+but a person's own Login in that IDE goes there. `projects.primary.dirty`
+could not be read while the watcher held the IDE.
