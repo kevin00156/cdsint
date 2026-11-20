@@ -31,13 +31,14 @@ def both_set(monkeypatch):
 def picked():
     watcher = object.__new__(target.Target)
     watcher.root, watcher.instance_id, watcher.timeout = "r", "i", 1.0
+    watcher.sent = set()
     return watcher
 
 
 def sent_args(monkeypatch, command, args=None):
     seen = {}
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         seen.update(cmd["args"])
         return {"ok": True}
     monkeypatch.setattr(target, "send", send)
@@ -77,7 +78,7 @@ def test_the_caller_s_own_args_are_not_mutated(monkeypatch, both_set):
 
 
 def test_it_is_in_no_output_the_caller_sees(monkeypatch, both_set, capsys):
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         assert cmd["args"]["credentials"]["password"] == SECRET
         return commands.new_result(cmd, False, error="the login was refused")
     monkeypatch.setattr(target, "send", send)
@@ -310,7 +311,7 @@ def sends(monkeypatch):
     """What the CLI queued, answered ok, with no watcher to resolve."""
     sent = []
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         sent.append(cmd)
         return commands.new_result(cmd, True)
     monkeypatch.setattr(target, "send", send)

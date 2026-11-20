@@ -58,6 +58,10 @@ class HoldsARecording(object):
                   % (pending.cmd.get("id"), traceback.format_exc()))
         self._close(pending.cmd, result, pending.started)
 
+    def _held(self):
+        """The id of the command a recording keeps claimed, or None."""
+        return None if self.recording is None else self.recording.cmd["id"]
+
     def _rest_state(self):
         return (instances.STATE_RECORDING if self.recording is not None
                 else instances.STATE_IDLE)

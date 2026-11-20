@@ -105,6 +105,7 @@ class Watcher(HoldsARecording):
         self.busy = True
         try:
             self._poll_recording()
+            commands.clear_running(self.root, self.instance_id, self._held())
             cmd = commands.next_command(self.root, self.instance_id)
             if cmd is not None:
                 self.run_one(cmd)

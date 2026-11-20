@@ -127,11 +127,12 @@ def test_the_project_form_takes_a_name_with_a_run_only_job(tmp_path):
 def test_a_recording_is_waited_for_on_top_of_the_timeout(monkeypatch):
     seen = {}
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         seen["timeout"] = timeout
         return {"ok": True}
     monkeypatch.setattr(target, "send", send)
     picked = object.__new__(target.Target)
     picked.root, picked.instance_id, picked.timeout = "r", "i", 10.0
+    picked.sent = set()
     picked.run_one("plc trace", {"job": {"duration_s": 30.0}})
     assert seen["timeout"] == 40.0

@@ -207,7 +207,7 @@ def test_a_queued_command_and_a_headless_one_are_the_same_shape():
     # the record the watcher writes, built from this. Two shapes here would
     # be two shapes there, with only one set of readers.
     queued = commands.new_command("export", {"delete_orphans": True}, now=T0)
-    assert sorted(queued) == ["args", "command", "created_at",
+    assert sorted(queued) == ["args", "caller", "command", "created_at",
                               "deadline_epoch", "id"]
     assert queued["args"] == {"delete_orphans": True}
     assert queued["command"] == "export"

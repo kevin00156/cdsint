@@ -102,8 +102,24 @@ file has the same name and lives in `result\`.
 
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
- "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1}
+ "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1,
+ "caller": {"pid": 5120, "cwd": "C:\\wt\\line"}}
 ```
+
+A command that changes something takes a turn rather than a place in line
+(SPEC 4.3, exit 6). The CLI writes its command file first and then lists
+`cmd\`: if any other caller's `.json` or `.running` is there, it deletes its
+own file and is refused, naming the other one from that file's `command`,
+`created_at` (or the `.running` file's time) and `caller`. Looking after
+writing is what makes it hold: of two callers, the second to write looks
+after the first file was already there. Two that write at the same moment
+can both be refused. One whose file the watcher claimed before it could be
+deleted is running, and is waited for. The caller's own earlier steps do not
+count: the watcher removes a `.running` mark a moment after writing the
+result, and a `verify` queues its next step in that moment. The watcher in
+turn removes, between commands, every `.running` mark but that of a
+recording it holds, since such a mark is one whose removal failed and would
+refuse every change for as long as the watcher runs.
 
 ```json
 {"id": "1725453665123-a3f9c1", "ok": true, "command": "import",

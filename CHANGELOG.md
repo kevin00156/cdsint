@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **A command that changes something is refused, not queued, while another
+  caller's command is in that IDE.** Several agents can drive one IDE, and an
+  import that waited its turn behind another agent's import ran on the project
+  that agent had just changed, with nobody told. Now `import`, `export`,
+  `build`, `verify`, `trace apply`, `trace show` and every `plc` command but
+  `plc trace --stop` exit 6 at once when anybody else's command is queued or
+  running there, naming that command, since when, and the pid and folder it
+  came from; nothing is run. `ping`, `status`, `compare`, `discover`, `trace
+  list`, `trace job` and `trace save` still wait in line. Exit 6 is new.
+
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 
 - **The install puts a script dropdown on each IDE's toolbar.** Reaching

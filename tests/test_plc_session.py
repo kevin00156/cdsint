@@ -1042,7 +1042,7 @@ def test_the_cli_shows_it_once(monkeypatch, capsys, extra):
     monkeypatch.setenv("CDS_DEV_PASS", LOGIN["password"])
     ide_globals = already("run")
     monkeypatch.setattr(target, "send", lambda root, instance_id, cmd,
-                        timeout: entries.answer(ide_globals, cmd, ipc.now()))
+                        timeout, **_turn: entries.answer(ide_globals, cmd, ipc.now()))
     monkeypatch.setattr(target, "_resolve", lambda *a: {"instance_id": "i"})
     assert cli.main(["plc", "run", "--target", "i", "-y"] + extra) == EXIT_OK
     shown = capsys.readouterr()
