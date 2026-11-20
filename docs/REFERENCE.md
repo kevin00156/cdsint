@@ -173,7 +173,7 @@ Every command that touches a project takes one of two forms, and never both:
 | `build [--app NAME]` | yes | yes | compile, report the errors |
 | `verify -y` | yes | yes | import, export, compare and build, all four or nothing |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | — | yes | is the controller still holding the last download from here |
-| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT` | yes | download to the controller, read the CRC back, write it down; through a watcher, only into a logged-out IDE whose device node already points at `--gateway`, and logged out again afterwards |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT` | yes | download to the controller, read the CRC back, write it down; through a watcher, only into a logged-out IDE, aiming its device node at `--gateway`, and logged out again afterwards |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | — | yes | log in, record the variables a job file names (or what trace `T` records), log out, without downloading anything |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | — | record trace `T` through the login already open in that IDE; `--stop` ends it early |
 | `plc login [-y --method download\|online_change] [--no-boot-app]` | yes | — | log the IDE's application in; without `--method` only when nothing on the controller changes, otherwise say what differs and which method would apply it |
@@ -323,10 +323,10 @@ own for verify and another for the download. `COUNT` is the change count
 `changes`); if anything was changed in that IDE through cdsint since, the
 download is refused and nothing is sent. So is an IDE that is logged in,
 whoever logged it in: `plc logout` first, then verify again, since the logout
-moves the count as well. The project's device node is not
-re-aimed, since that would rewrite the open project: it has to point at
-`--gateway` already, through the gateway `--gateway-name` picks, or the
-download is refused with where it does point. Otherwise it is the `--project`
+moves the count as well. The project's device node is aimed at `--gateway`
+through the gateway `--gateway-name` picks, as the `--project` form does:
+the open project is then marked changed, and saving it keeps that setting;
+the notes say so. Otherwise it is the `--project`
 download (full download, boot application, start, CRC read back and
 recorded under the same controller entry), followed by a logout that is read
 back: `data.logged_in` is `false`. Edits made by hand in the IDE are not

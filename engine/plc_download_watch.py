@@ -3,15 +3,16 @@
 somebody has open, leaving it as it was found (owner decision, 2026-11-20).
 
 The steps are the download's own (engine/plc_download.py), and what it
-leaves on the controller and in the CRC record is the same. Four things
-differ, and each is a rule of the IDE being somebody's rather than of the
-download:
+leaves on the controller and in the CRC record is the same: the device node
+is aimed at --gateway as in the --project form, so both forms reach the
+controller the same way and name it the same way. That changes the open
+project's device setting, and the result says so. The node could not be
+checked instead: on the bench get_address() kept a value an IP aim had
+overridden, find_address_by_ip answered every address with the one it had
+found before, and a node found by scanning holds no IP at all (owner
+decision after the bench, 2026-11-20). Three things differ, each a rule of
+the IDE being somebody's rather than of the download:
 
-- The device node is not aimed. Aiming it rewrites the project of whoever
-  has the IDE open. --gateway is still required (SPEC 6.6), and the node has
-  to point there already, through the same gateway at the same node
-  address, or nothing is done. The controller is named from --gateway as in
-  the other form, so both forms write the same CRC record entry.
 - The IDE must be logged out. A login there is somebody's -- a person's, a
   plc login's, a recording plc trace's -- and the download would end it.
   The download logs out afterwards as the other form does, so the IDE is
@@ -25,10 +26,9 @@ download:
 """
 from __future__ import print_function
 
-from engine import entry, ide_private, ide_read, plc_crc, plc_link
+from engine import entry, ide_private, ide_read, plc_link
 from engine.plc_download import DownloadTrip
 from engine.plc_trip import NO_GATEWAY, first_problem, one_line
-from engine.strings import safe_str
 
 NO_AFTER = ("--after is required in the watcher: it is the change count "
             "verify reported, and without it this would download whatever "
@@ -41,11 +41,6 @@ LOGGED_IN = ("the IDE is logged in to the controller (by hand, by plc login, "
              "in the IDE, then verify again, since a plc logout moves the "
              "change count; nothing was done")
 
-NOT_AIMED = ("the device node points at %s, not at %s:%d through %s (node "
-             "address %s). In the watcher the node is not re-aimed, since "
-             "that rewrites the project of whoever has the IDE open: set its "
-             "Communication Settings there, or download with --project; "
-             "nothing was done")
 
 
 class WatchedDownloadTrip(DownloadTrip):
@@ -102,7 +97,8 @@ class WatchedDownloadTrip(DownloadTrip):
     # -- which controller ---------------------------------------------------
 
     def reach_the_device(self):
-        """The --project form's resolution, with a check where it aims."""
+        """The --project form's resolution and aim, with the forwarded login
+        rather than the IDE process's own environment (design R4)."""
         if not self.args.get("gateway"):
             return NO_GATEWAY
         problem = self.find_the_project()
@@ -111,35 +107,11 @@ class WatchedDownloadTrip(DownloadTrip):
         self.device_node, problem = plc_link.find_device(self.projects.primary)
         if problem:
             return problem
-        return self.name_the_application() or self.points_at_gateway()
-
-    def points_at_gateway(self):
-        """The node already reaches --gateway. None if it does."""
-        address = self.args.get("gateway")
-        port = int(self.args.get("port") or plc_link.DEFAULT_DEVICE_PORT)
-        gateways = list(getattr(self.online, "gateways", []) or [])
-        gateway, problem = plc_link.pick_gateway(
-            gateways, self.args.get("gateway_name"), address)
+        problem = self.name_the_application() or self.point_at_gateway()
         if problem:
             return problem
-        self.found["controller"] = plc_crc.controller_key(
-            plc_link.gateway_name(gateway), address, port)
-        try:
-            wanted = safe_str(gateway.find_address_by_ip(address, port))
-            aimed = (self.device_node.get_gateway() == gateway.guid
-                     and _same(self.device_node.get_address(), wanted))
-        except Exception as exc:
-            return ("whether the device node points at %s:%d could not be "
-                    "read, so nothing was done: %s"
-                    % (address, port, one_line(exc)))
-        if not aimed:
-            return NOT_AIMED % (
-                plc_link.node_address(self.device_node, gateways)
-                or "an address it would not give", address, port,
-                plc_link.gateway_name(gateway), wanted)
-        self.note("the device node points at %s:%d through %s (node address "
-                  "%s)" % (address, port, plc_link.gateway_name(gateway),
-                           wanted))
+        self.note("the device node of the open project now points there; "
+                  "the project is marked changed, and saving it keeps that")
         return None
 
     # -- whose session ------------------------------------------------------
@@ -175,7 +147,3 @@ class WatchedDownloadTrip(DownloadTrip):
                           % (ide_read.name_of(self.application),
                              one_line(exc)))
 
-
-def _same(node_address, wanted):
-    """Two node addresses as the IDE prints them, case aside."""
-    return safe_str(node_address).strip().upper() == wanted.strip().upper()

@@ -16,10 +16,11 @@ All notable changes to this project will be documented in this file.
   is refused, so it cannot download what another caller imported after your
   verify. verify itself now fails when another caller's command landed between
   its steps. The download is also refused when the IDE is logged in (`plc
-  logout` first; cdsint never ends a login it did not make) and when the
-  project's device node does not already point at `--gateway`, which the watcher
-  never re-aims, since that would rewrite the open project. Otherwise it is the
-  `--project` download, CRC record included, and it logs out again afterwards.
+  logout` first; cdsint never ends a login it did not make). It aims the
+  project's device node at `--gateway` as the `--project` download does, which
+  marks the open project changed; nothing on the node could tell where a login
+  goes. Otherwise it is the `--project` download, CRC record included, and it
+  logs out again afterwards.
   This reverses the part of SPEC D8 that refused `plc download` in the
   watcher; `plc connect` is still refused there. `--project` downloads are
   unchanged.

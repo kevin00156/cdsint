@@ -440,7 +440,7 @@ logout`, `plc run`, `plc stop`, `trace save` and `trace show` only the first
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT`, and only into a logged-out IDE whose device node already points at `--gateway` | yes | full download, write the boot application, start, read the CRC back and record it; in the watcher, log out again (6.6) |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT`, and only into a logged-out IDE; its device node is aimed at `--gateway` | yes | full download, write the boot application, start, read the CRC back and record it; in the watcher, log out again (6.6) |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | n/a | yes | log in, record the variables the job names (or what trace `T` is set to record) into files, log out, without downloading the application (6.8) |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | n/a | record trace `T` through the login already open in that IDE; `--stop` ends that recording early (6.8, "In the watcher") |
 | `plc login` | yes | refused | log the IDE's active application in only if nothing on the controller would change; otherwise change nothing, exit 1, and say what differs and which `--method` values would apply it (6.12) |
@@ -1043,12 +1043,16 @@ application started, the CRC read back and written to the same record entry,
 since the controller is named from `--gateway` exactly as above. It differs
 where the IDE is somebody's:
 
-- The device node is not aimed, because aiming it rewrites the project of
-  whoever has the IDE open. It has to point at `--gateway` already: the node's
-  gateway is the profile gateway picked as above, and its node address is the
-  one that gateway finds for the address and port. Otherwise it is refused
-  with where the node does point, and nothing is sent. `--gateway` stays
-  required for the reason above.
+- The device node is aimed at `--gateway` as above, which changes the open
+  project's device setting: the project is marked changed, a later save
+  keeps it, and the result's notes say so. It was first meant to be checked
+  rather than aimed, and the bench showed that nothing on the node can say
+  where a login goes: `get_address()` kept a value an IP aim had overridden,
+  `find_address_by_ip` answered every address and port with the node it had
+  found before, and a node found by scanning (`3001.401F`) holds no IP at
+  all. So the check could pass a wrong port, which is the one direction that
+  downloads to the wrong controller; aiming is what the `--project` form
+  already proves on the bench (owner decision, 2026-11-20).
 - An IDE that is logged in is refused, whoever logged it in (a person, `plc
   login`, a `plc trace` recording, which the watcher refuses anyway), with
   "plc logout first"; cdsint never ends a login it did not make. The download

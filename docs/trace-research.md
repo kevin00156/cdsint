@@ -1870,3 +1870,56 @@ WSL soft PLC, on a copy of `softplc_refactor.project`.
 With all three, a watcher `plc trace` of `%QD3` finished in 4.7 s with no
 window, and one of a symbol and three addresses in 6.5 s, `notes` naming each
 address; `trace save` in the watcher printed the same lines.
+
+## 19. plc download through the watcher (2026-11-20)
+
+Branch `plc-download-target` at 071b59b, run from the worktree with a private
+`CDS_INSTANCES_DIR`. An IDE of our own (CODESYS 3.5.21.40, with a window)
+opened a copy of the v0.6.0 bench project and ran the branch's watcher. The
+controller was a cdsimage container (`cdsint-a`, runtime at
+100.91.234.73:11752, reached through the profile's `Gateway-1`, localhost:1217),
+whose runtime has no user management. Credentials were made up.
+
+### 19.1 What held
+
+| Check | Result |
+|---|---|
+| A result carries `changes` | `"3398e093.0"` from `ping`: the branch's code was running |
+| A change while another runs | `import -y` during a `verify`: exit 6, naming `import`, its start and the other caller's pid and folder. A `compare` sent at the same time queued and ran |
+| `verify --json` | stdout parsed; the four steps counted .3, .4, .4, .5; the verdict line was on stderr |
+| A stale `--after` | `--after 3398e093.5` at .6 refused, naming the `build` that moved it; nothing reached the controller |
+| The download | 30.7 s; `crc` MATCH (97660BF4), `logged_in` false, application `run`; the record got `Gateway-1/100.91.234.73:11752`, and `plc connect --project` on the same copy answered MATCH |
+| A logged-in IDE | after `plc login --target`, the download was refused with "plc logout first"; `plc logout` read back logged out |
+| Made-up credentials, no user management | login, download, logout and the device connection all worked |
+| `projects.primary.dirty` | exists; False after a save. Its value after a verify was not read |
+
+A queued `compare` that landed between a verify's import and export got the
+export refused, and the verify failed: reads were then counted as rivals. They
+no longer are (b9b3079). A download refused inside its body (logged in) moves
+the count, as any changing command handed to its body does.
+
+### 19.2 Why the device node cannot be checked
+
+The first build checked that the node already pointed at `--gateway` rather
+than aiming it, so as not to change the open project. Three measurements
+ended that:
+
+1. `set_gateway_and_ip_address` does not update `get_address()`; only
+   `set_gateway_and_address` does. With `get_address()` reading
+   `3001.1000.2DDD.7F00.0001` (127.0.0.1:11741, a stopped WSL runtime) and the
+   node aimed by IP at the container, `plc login --method download` downloaded
+   to the container (its `Application.app` was written at that moment). The
+   login follows the IP aim; `get_address()` does not say where it goes.
+2. `gateway.find_address_by_ip(ip, port)` keeps state. In a fresh IDE,
+   127.0.0.1:11741 raised "No device responded to the scan request in time";
+   after 100.91.234.73:11752 answered `3001.1000.2DE8.645B.EA49`, both
+   127.0.0.1:11741 and 100.91.234.73:11741 answered that same address.
+3. A node found by scanning holds no IP: the AX8 project's node (DIADesigner-AX
+   1.10, read offline from a copy) is `3001.401F` behind `Gateway-1`.
+
+So the check refused a node that did reach the container, and passed
+`--port 11753` for a node and cache at 11752, saying it pointed at 11753; only
+`landed` stopped that run, because nothing had changed. With a changed
+project it would have downloaded to 11752 and recorded 11753. The watcher now
+aims the node as the `--project` form does (owner decision), which item 1
+shows is where the login goes.

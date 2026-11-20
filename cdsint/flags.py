@@ -146,8 +146,8 @@ COMMANDS = {
                 "plc login --method: skip writing the boot application"),
                ("--gateway", NAME,
                 "reach the controller through this address; every --project "
-                "plc action needs it, and so does plc download --target, "
-                "whose IDE's device node must already point there", "IP"),
+                "plc action needs it, and so does plc download --target",
+                "IP"),
                ("--port", NUMBER,
                 "device port behind --gateway; left out, the standard "
                 "CODESYS device port is used"),

@@ -50,25 +50,31 @@ def test_it_downloads_starts_logs_out_and_records_like_the_project_form():
     assert list(written) == [plc_fakes.CONTROLLER]
 
 
-def test_the_device_node_is_checked_not_aimed():
-    ide_globals = watcher_ide()
-    download(ide_globals)
-    node = ide_globals["projects"].primary.get_children()[0]
-    assert node.gateway_set_to is None
-
-
-def test_a_node_pointing_elsewhere_is_refused_before_anything_is_sent():
+def test_the_device_node_is_aimed_at_the_gateway_and_the_result_says_so():
+    # As the --project form does: nothing that reads the node can say
+    # where a login goes (bench, 2026-11-20).
     ide_globals = watcher_ide(aimed=False)
     outcome = download(ide_globals)
-    assert not outcome.ok()
-    assert "not re-aimed" in outcome.result["summary"]
-    assert calls(ide_globals) == []
+    assert outcome.ok(), outcome.result["summary"]
+    node = ide_globals["projects"].primary.get_children()[0]
+    gateway, address, port = node.gateway_set_to
+    assert (gateway.name, address) == ("Gateway-1", plc_fakes.ADDRESS)
+    assert any("marked changed" in n for n in outcome.result["data"]["notes"])
 
 
-def test_a_node_behind_another_gateway_is_refused():
+def test_the_named_gateway_names_the_controller_in_the_record():
     gateways = [Gateway("Gateway-1"), Gateway("Gateway-3")]
     ide_globals = watcher_ide(gateways=gateways)
-    outcome = download(ide_globals, gateway_name="Gateway-3")
+    assert download(ide_globals, gateway_name="Gateway-3").ok()
+    written = plc_crc.read_records(
+        plc_crc.record_path(plc_fakes.PROJECT_PATH))
+    assert list(written) == ["Gateway-3/%s:11740" % plc_fakes.ADDRESS]
+
+
+def test_several_gateways_and_none_named_is_refused_before_anything():
+    gateways = [Gateway("Gateway-1"), Gateway("Gateway-3")]
+    ide_globals = watcher_ide(gateways=gateways)
+    outcome = download(ide_globals)
     assert not outcome.ok() and calls(ide_globals) == []
 
 
