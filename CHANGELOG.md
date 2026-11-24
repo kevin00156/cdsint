@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased
+### 0.7.0 (2026-11-24) — download through the open IDE, built-in IO in git
 
 - **`cdsint plc download --target`.** A deployment ran `verify --project` and
   then `plc download --project`, each starting its own IDE and loading the
