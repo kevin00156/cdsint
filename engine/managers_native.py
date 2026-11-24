@@ -17,6 +17,7 @@ from engine.ide_tree import is_container_device
 from engine.st_text import read_sync_text
 from engine.strings import safe_str
 from engine.sync_log import log_info, log_error
+from engine.sync_write import TMP, replace
 from engine.codesys_constants import TYPE_GUIDS
 from engine.managers_base import ObjectManager
 from engine.native_import import import_native
@@ -150,7 +151,7 @@ class NativeManager(ObjectManager):
         old_hash = "" if is_new else self._hash_file(file_path)
         
         # Export to a temp file first, then compare
-        tmp_path = file_path + ".tmp"
+        tmp_path = file_path + TMP
         if self.project is None:
             raise RuntimeError("Native export failed: this manager was built "
                                "without a project.")
@@ -190,9 +191,7 @@ class NativeManager(ObjectManager):
                                                           context):
                 return self._pending(rel_path, context)
 
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            os.rename(tmp_path, file_path)
+            replace(tmp_path, file_path)
         finally:
             if os.path.exists(tmp_path):
                 try:

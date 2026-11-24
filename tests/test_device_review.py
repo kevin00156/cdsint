@@ -35,7 +35,7 @@ def test_a_file_with_no_device_is_refused_even_when_its_name_matches_another(tmp
 
 def test_a_file_whose_name_differs_only_in_case_is_the_devices_file(tmp_path):
     project, master, slave = a_project()
-    for device, rel in device_pass.ethercat_devices(project):
+    for device, rel in device_pass.synced_devices(project):
         write(str(tmp_path / rel.lower()), device_params.render(device))
     results = device_pass.with_device_changes(empty_results(), str(tmp_path),
                                               project, {"devices": True})
@@ -49,7 +49,7 @@ def test_device_files_are_sync_files_so_the_orphan_sweep_sees_them(tmp_path):
 
 def test_the_object_sync_does_not_report_device_files_twice(tmp_path):
     project, master, slave = a_project()
-    for device, rel in device_pass.ethercat_devices(project):
+    for device, rel in device_pass.synced_devices(project):
         write(str(tmp_path / rel), device_params.render(device))
     results = empty_results()
     rel = PLC + "/EtherCAT_2/X5_7SEtherCAT_1.device"

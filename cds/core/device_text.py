@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""An EtherCAT device's settings file: its lines, how they read, what differs.
+"""A device's settings file: its lines, how they read, what differs.
 
-SPEC 6.10. One file per device under an EtherCAT master, holding every
-ReadWrite leaf parameter and every mapped channel, keyed by connector and
-parameter identifier, which are the same numbers on both IDEs
+SPEC 6.10. One file per synchronised device (under an EtherCAT master, or
+with IO channels of its own), holding every ReadWrite leaf parameter and
+every channel, keyed by connector and parameter identifier, which are the
+same numbers on both IDEs
 (docs/ethercat-research.md 7). Native XML is not the format: importing it
 duplicates the tree (research 2.2). Plain Python on text, shared by the IDE
 side and CI.
@@ -13,7 +14,7 @@ from __future__ import print_function
 import re
 
 SUFFIX = ".device"
-HEADER = ("# cdsint EtherCAT device settings. The device line is checked, "
+HEADER = ("# cdsint device settings. The device line is checked, "
           "never applied; '#' comments are for the reader.")
 # c1/1610633216, c1/1627394048/Value, dev/42: a connector (or the device's
 # own parameters) and a path of identifiers.
@@ -30,12 +31,20 @@ def _with_comment(text, comment):
 
 
 def render(ident, values, maps):
-    """The file. values and maps are (key, value, comment) triples."""
+    """The file. values and maps are (key, value, comment) triples.
+
+    A channel with no variable is a commented-out map line, so the file
+    names every channel there is to map and mapping one is deleting the '# '
+    and typing the variable. Commented out, not an empty map line, because a
+    left-out map line already means "no variable" and every older file
+    relies on that.
+    """
     lines = [HEADER, "device  " + ident]
     for key, value, comment in sorted(values):
         lines.append(_with_comment("%s = %s" % (key, value), comment).rstrip())
     for key, variable, comment in sorted(maps):
-        lines.append(_with_comment("map %s = %s" % (key, variable), comment))
+        line = "map %s = %s" % (key, variable) if variable else "# map %s =" % key
+        lines.append(_with_comment(line, comment))
     return "\n".join(lines) + "\n"
 
 

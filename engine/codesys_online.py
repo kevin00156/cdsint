@@ -21,15 +21,8 @@ from engine.ide_private import in_script_run
 from engine.strings import safe_str
 from engine.sync_log import log_warning
 from engine.object_paths import get_container_prefix
-from engine.ide_read import children_of, kind_of, name_of
-
-# Applications sit at Device / [PLC Logic] / Application, so three levels
-# reach one; the rest is slack for folders sitting above the device.
-MAX_DEPTH = 5
-
-# The only kinds worth walking into, so the scan never sweeps a POU pool.
-CONTAINER_KINDS = ("device", "plc_logic", "folder")
-
+from engine.ide_read import name_of
+from engine.ide_tree import find_applications
 
 def find_logged_in_applications(project, online_api):
     """The 'Device/Application' labels of every application with a live login.
@@ -45,7 +38,7 @@ def find_logged_in_applications(project, online_api):
         log_warning("Login pre-flight skipped: the CODESYS 'online' API is not "
                     "reachable from this script run")
         return []
-    return [_app_label(app) for app in _find_applications(project)
+    return [_app_label(app) for app in find_applications(project)
             if _is_logged_in(online_api, app)]
 
 
@@ -61,29 +54,6 @@ def logged_in_block_message(app_labels):
 
 
 # --- Internals ---
-
-def _find_applications(project):
-    """Every application object in the project (bounded, pruned walk).
-
-    Breadth-first through containers only: a project with thousands of POUs
-    costs a handful of API calls, and nothing below an application is visited.
-    """
-    found = []
-    level = [project]
-    for _ in range(MAX_DEPTH):
-        next_level = []
-        for node in level:
-            for child in children_of(node):
-                kind = kind_of(child)
-                if kind == "application":
-                    found.append(child)
-                elif kind in CONTAINER_KINDS:
-                    next_level.append(child)
-        if not next_level:
-            break
-        level = next_level
-    return found
-
 
 def _is_logged_in(online_api, app):
     """True when `app` holds a live PLC login. Unanswerable counts as False.

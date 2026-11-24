@@ -34,6 +34,111 @@ All notable changes to this project will be documented in this file.
   queued or running there, naming that command, since when, and the pid and folder it
   came from; nothing is run. `ping`, `status`, `compare`, `discover`, `trace
   list`, `trace job` and `trace save` still wait in line. Exit 6 is new.
+- **A controller's built-in IO gets a `.device` file, so its mapping is
+  in git.** Only an EtherCAT master and the devices below it had one, so a
+  Delta AX-8's `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` were mapped by
+  hand in the IDE after every rebuild. Outside a master, every device with
+  an IO channel of its own now has a file, laid out like the tree
+  (`Device/BuiltIn/BuiltIn_DIO.device`), and `import` applies it under the
+  same `"devices": true`. An AX-8 controller itself has no channel, so its
+  run mode, FTP and network settings stay out. Every `.device` file's first
+  line now reads `# cdsint device settings.`, so the first export after
+  updating rewrites that line in every device file.
+
+### 0.6.2 (2026-11-16) — a .device file names every channel
+
+- **A `.device` file names every channel, so an unmapped module can be
+  mapped from the file.** Only channels with a variable had a line, so a
+  freshly added IO module's file held no channel at all and mapping it meant
+  clicking through the IDE. Export now writes each channel with no variable
+  as a commented-out line with its name and address,
+  `# map c1/33554434 =   # DI0, %IX206.0`; delete the `# `, type the
+  variable, and import maps it. Being a comment, it is never read, so files
+  written before mean the same. The first export after updating rewrites
+  every device file that has an unmapped channel.
+
+### 0.6.1 (2026-11-16) — sync fixes, and modular EtherCAT couplers
+
+- **The watcher's status window no longer opens off the screen.** It
+  reopens where it was last dragged, and that spot was trusted blindly: on a
+  laptop that remembered x=1904 on a 1920-wide screen the watcher ran with
+  its window out of sight and, having no taskbar button, nothing to find it
+  by. A remembered spot is now used only while the whole window fits on a
+  screen that is still there; otherwise it opens in the IDE's corner again.
+  Takes effect when the watcher restarts.
+- **The modules of a modular EtherCAT coupler get their `.device` files.**
+  Under an ICP DAS EC4-EP21 on DIADesigner-AX 1.10 the modules hang under a
+  `Port 1` node that is not a device, and the device pass stopped there, so
+  `export` wrote the coupler's file and none of its modules', and `import`
+  could not reach them either. The walk below a master now goes through
+  such a node, which becomes a folder: `Slave_1/Port 1/Slave_2.device`.
+  Paths of devices found before are unchanged. Takes effect on the next
+  command; the watcher need not restart.
+- **A command no longer lands in a project the IDE opened after you picked
+  it.** An IDE's id keeps the name of the project open when its watcher
+  started, so `--target Plant-1234` copied from `cdsint list` still reached
+  that IDE after someone opened another project in it. An `import -y` sent
+  there with the first project's sync folder would have deleted every object
+  of the second that the folder lacks, because disk wins. Now an id given to
+  `--target` is refused once its IDE holds another project, and the refusal
+  names the project to target instead. Every command also carries the
+  project the CLI saw, and the watcher refuses it, running nothing, when the
+  IDE has another one open by the time it takes the command, which covers a
+  project opened in the second between the two. `ping`, `status` and `stop`
+  are not checked. The CLI's half works at once; the watcher's half needs
+  the watcher restarted.
+- **An export cut short no longer leaves half a `.st` in the sync folder.**
+  A headless export killed by its timeout, or an IDE that crashed while
+  writing, left the file it was on half-written, and since the disk is the
+  truth the next import pushed half a POU into the project. The same held
+  for `.libraries`, `.device` and native `.xml` files, and a native file
+  being replaced was briefly not there at all. Now every one of them is
+  written beside the target as `<name>.tmp` and swapped in with one
+  rename, so the folder holds the old file or the new one; a `.tmp` left
+  by a killed run is gitignored, never read as an object, and overwritten
+  by the next export.
+- **A project-level POU whose file moved into an application is made again
+  there, not moved.** Import paired the file with the object by name and
+  moved it with `obj.move`, and the IDE can keep compiling an object moved
+  across applications where it was, so the build did not match the code.
+  It now deletes the project-level object and creates one from the file
+  inside the application, as it already did between two applications. The
+  new object has a new GUID; nothing cdsint keeps is keyed on it. A move
+  between project-level folders is still a move.
+- **Importing a second persistent variable list fails by name instead of
+  hanging.** CODESYS allows one per application and answers a request for a
+  second with a modal dialog, which nobody presses in a headless run, so
+  the import waited out its timeout. Import now looks in the application
+  first, folders included, creates nothing, and lists the file in
+  `failed_objects` with the name of the list already there. Another
+  application's list, or a child application's, does not count.
+- **Import refuses a file left mid-merge.** After a `git pull` that stopped on
+  a conflict, import took the `<<<<<<<` and `>>>>>>>` lines as the POU's code,
+  and the build errors pointed at the markers instead of at the unfinished
+  merge. Now an import that would send any file still holding a conflict
+  refuses the whole run before changing anything in the IDE, on every route,
+  and names each such file (`data.conflicted`). A marker inside a line, in a
+  string or a comment, is not a conflict.
+- **Compare says when a file is not UTF-8.** A GVL saved from an ANSI editor
+  on a Chinese-locale PC was listed as changed with no word of why, and import
+  then refused it. Now compare's line for it ends with "not UTF-8 text; save
+  it as UTF-8" and its row in `data.changes` carries the same text as
+  `problem`; import's failure for that file uses the same words. What counts
+  as changed is the same as before.
+- **An object named like a Windows device gets a file a clone can have.** An
+  FB called `AUX` was exported as `AUX.st`, which Windows 10 writes to the
+  AUX device and git on Windows 11 refuses to index, so the POU was missing
+  from every colleague's clone. The rule now: a name that, before its first
+  dot and in any case, is `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` or
+  `LPT1`–`LPT9` gets `_` after it, for `.st` and `.xml` files, folders,
+  applications, devices and `.device` files alike (`AUX` is `AUX_.st`, a
+  folder `COM1` is `COM1_`); a new object made from such a file or folder is
+  named without the `_`, and a name like `MAIN_` keeps its `_`. Every other
+  name keeps the file it had. And a folder like `IO: Inputs`, whose file name
+  is `IO_ Inputs`, is now found by that name: a new file inside it went into
+  a second folder `IO_ Inputs` made beside it. Two objects that come out as
+  one file name (`AUX` beside `AUX_`, `IO: A` beside `IO_ A`) are refused,
+  both named, instead of one standing for the other.
 
 ### 0.6.0 (2026-11-09) — log in and out, run and stop, from the watcher
 

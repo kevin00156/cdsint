@@ -2,8 +2,8 @@
 """A device's parameters and channel mappings, read and written by the API.
 
 SPEC 6.10. Every ReadWrite leaf outside a channel is a value; every mappable
-channel (a channel or one of its bits) with a variable is a mapping; keys are the connector (or `dev`) and the path of
-identifiers. Every write is read back, because the API reports success for
+channel (a channel or one of its bits) is a mapping, with "" for no variable;
+keys are the connector (or `dev`) and the path of identifiers. Every write is read back, because the API reports success for
 things that did not happen: a slave's DC cycle is replaced by the master's
 (docs/ethercat-research.md 4.2), and the first write after opening a project
 can raise and still leave the value (research 8.1). Reading everything first,
@@ -84,26 +84,30 @@ def _elements(device):
     return found
 
 
+def has_channel(device):
+    for entry in _elements(device):
+        if _is_channel(entry[1]):
+            return True
+    return False
+
+
 def read(device):
-    """(ident, values, maps, mappable): values and maps as (key, value,
-    comment) triples for device_text.render, mappable the channel keys."""
-    values, maps, mappable = [], [], set()
+    """(ident, values, maps): (key, value, comment) triples for
+    device_text.render. maps has every channel, "" for no variable."""
+    values, maps = [], []
     for key, element, in_channel, writable in _elements(device):
         name = _text(element.visible_name)
         if _is_channel(element):
-            mappable.add(key)
-            variable = element.io_mapping.variable
-            if variable:
-                maps.append((key, _text(variable), u"%s, %s" % (
-                    name, _text(element.io_mapping.manual_iec_address))))
+            maps.append((key, _text(element.io_mapping.variable), u"%s, %s" % (
+                name, _text(element.io_mapping.manual_iec_address))))
         elif (writable and not in_channel and not element.has_sub_elements
               and not _follows_master(key)):
             values.append((key, _text(element.value), name))
-    return ident_of(device), values, maps, mappable
+    return ident_of(device), values, maps
 
 
 def render(device):
-    ident, values, maps, _ = read(device)
+    ident, values, maps = read(device)
     return device_text.render(ident, values, maps)
 
 

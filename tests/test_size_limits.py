@@ -67,16 +67,16 @@ ALLOWED_FUNCTION_LINES = {
         "get_quick_ide_hash": 68,
     },
     "engine/managers_native.py": {
-        "NativeManager.export": 67,
+        "NativeManager.export": 65,
     },
     "engine/object_kind.py": {
         "classify_object": 100,
     },
     "engine/object_create.py": {
-        "create_new_object": 141,
+        "create_new_object": 140,
     },
     "engine/entry_compare.py": {
-        "compare_project": 87,
+        "compare_project": 65,
     },
     "engine/entry_export.py": {
         "export_project": 173,

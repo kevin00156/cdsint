@@ -29,6 +29,7 @@ from engine.st_text import (
     parse_st_file,
     determine_object_type,
 )
+from engine.file_names import clean_filename, name_from_file
 from engine.strings import safe_str
 from engine.sync_log import log_info, log_error, log_warning
 from cds.core.device_text import SUFFIX as DEVICE_SUFFIX
@@ -149,7 +150,7 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
     # A dotted base_name like "ST_PROGRAMM.ST_ACTION" means it's a child object.
     # We check both: (a) when type_guid indicates a child type, and
     #                 (b) when type_guid is None/unknown but filename has a dot.
-    name = base_name
+    name = name_from_file(base_name)
     nested_types = [TYPE_GUIDS.get("action"), TYPE_GUIDS.get("method"),
                     TYPE_GUIDS.get("property"), TYPE_GUIDS.get("property_accessor"),
                     TYPE_GUIDS.get("itf_method")]
@@ -159,9 +160,8 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
         type_guid == TYPE_GUIDS.get("pou") # Misdetected as POU
     )
     if is_nested:
-        parts = base_name.rsplit(".", 1)
-        parent_name = parts[0]
-        child_name = parts[1]
+        # Both stay as on disk, as tree lookups want; names go via name_from_file.
+        parent_name, child_name = base_name.rsplit(".", 1)
         log_info("Looking for parent POU: " + parent_name + " for child: " + child_name)
 
         # Resolve the parent POU using several strategies, in order:
@@ -174,13 +174,13 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
         #      (grouping-folder layout "<FB>/<FB>.Method.st" and stripped layout
         #      "<FB>.Method.st" both put the FB as a direct child of `container`).
         #   4. Legacy path lookup for an extra nested-folder layout.
-        pou_parent = find_object_by_name(parent_name, name_map)
+        pou_parent = find_object_by_name(name_from_file(parent_name), name_map)
         if not _is_pou_or_itf(pou_parent):
             pou_parent = None
 
         if not pou_parent and _is_pou_or_itf(container):
             try:
-                if container.get_name() == parent_name:
+                if clean_filename(container.get_name()) == parent_name:
                     pou_parent = container
             except:
                 pass
@@ -197,7 +197,7 @@ def create_new_object(rel_path, file_path, import_managers, name_map,
 
         if pou_parent:
             log_info("Found parent POU: " + safe_str(pou_parent))
-            name = child_name
+            name = name_from_file(child_name)
             container = pou_parent
             # If type_guid wasn't determined, infer from child name patterns
             if not type_guid or type_guid == TYPE_GUIDS.get("pou"):

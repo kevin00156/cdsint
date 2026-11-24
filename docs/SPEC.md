@@ -477,11 +477,19 @@ Only in the `--project` form: `--profile NAME`, `--report FILE`,
 prompts, and in the `--target` half there is a person sitting in front of the
 IDE whose prompts those are, so it does not go in the shared row.
 
-One safety line tied to "disk wins". `import` (on all three routes: the menu,
+Two safety lines tied to "disk wins". `import` (on all three routes: the menu,
 `--target`, `--project`) refuses when there is not a single `.st` in the sync
 folder, because that is not the fact "there is nothing on disk"; it is a folder
 nobody has exported to or a wrong path, and following the disk-wins rule from
 there would empty the project.
+
+On the same routes it refuses the whole import, before anything changes in the
+IDE, when a file it would send still holds an unresolved git conflict: a line
+starting `<<<<<<< ` followed later by one starting `>>>>>>> `. Taken as the
+truth, those lines would become the object's code. The refusal names every
+such file, in the message and in `data.conflicted`. Only both ends, each at
+the start of its line, count: ST has no operator spelled that way, and a
+`=======` row is an ordinary divider inside a comment.
 
 `--sync-dir` means "use this folder for this run": it is an argument of the
 command, travels into the IDE side by the same route as `-y`, and when the
@@ -592,7 +600,7 @@ first export or import's folder dialog has exactly one key, `sync_folder`.
 | `sync_folder` | string | the sync folder. A relative path (`./sync`, `..`, `../export`, `sync`) is relative to the directory holding the project file, never to the IDE's working directory; an absolute path (a drive, a UNC share) is used as written | none, asked on first run |
 | `plc` | list of strings | PLC authorisation; only `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` are recognised as elements, see 6.5 | empty list |
 | `debug` | boolean | write `sync_metadata.json` and `*.log` only when on | false |
-| `devices` | boolean | let `import` apply EtherCAT device settings (6.10) | false |
+| `devices` | boolean | let `import` apply device settings and IO mappings (6.10) | false |
 | `export_xml` | boolean | also save visualisations, alarms and text lists as XML | false |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | false |
 | `safety_backup` | boolean | back the `.project` up before an import | true |
@@ -629,6 +637,16 @@ The existing format is kept, not one byte changed (D15):
   object, which no flag answers and which, answered, drops `ABSTRACT`.
 - Paths follow the IDE tree; a POU's members go in a folder named after the
   POU, for example `Function Blocks/MC_BasicControl/MC_BasicControl.Main.st`.
+- A name becomes a file or folder name a part at a time (a member's file is
+  `<POU part>.<member part>.st`), and `engine/file_names.py` holds the rule
+  both ways. Each of `< > : " / \ | ? *` becomes `_`, which does not come
+  back. A part that, before its first dot, is a Windows device name (`CON`,
+  `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, any case) gets `_`
+  after that name: `AUX` is `AUX_.st`, a folder `COM1` is `COM1_`. A new
+  object made from disk loses that `_` again, and only that one: `MAIN_`
+  stays `MAIN_`. Looking up the IDE object for a disk part compares the part
+  with each object's file name, not its raw name; two objects whose names
+  come out as one part are refused by name, never one picked.
 - The `//% cds-text-sync.kind=<kind>` pragma is stamped only on kinds the
   keywords cannot express: persistent GVLs, parameter lists, actions,
   interface methods.
@@ -1470,13 +1488,14 @@ and the IDE compiled for the other list. The record is local state like
 plain Python in `cds/core/`, tested in CI. Reading and changing references is
 an engine manager, `engine/managers_library.py`.
 
-### 6.10 EtherCAT device settings
+### 6.10 Device settings
 
 An agent changes an EtherCAT master's or slave's settings (cycle time, DC,
 station addresses, startup SDO values, PDO entries, a SoftMotion axis's
-scaling) and the variables mapped to its channels by editing one text file
-per device, and `import` applies it when the project allows it. The
-measurements behind every rule here are in `docs/ethercat-research.md`.
+scaling), a controller's built-in IO settings, and the variables mapped to
+their channels by editing one text file per device, and `import` applies it
+when the project allows it. The measurements behind every rule here are in
+`docs/ethercat-research.md`.
 
 **Not native XML.** Importing a device's native XML over the existing tree
 adds a renamed copy with new GUIDs and every IO mapping doubled; a single
@@ -1484,16 +1503,32 @@ slave does not import at all; and on DIADesigner-AX a deleted master is
 rebuilt at once from the network topology with every slave renamed. The
 script API changes one value at a time on both IDEs, with the same parameter
 identifiers. So `device` and `device_module` stay `disabled` for the object
-sync, and the devices under an EtherCAT master are handled by a pass of their
-own, through the API.
+sync, and the devices below are handled by a pass of their own, through the
+API.
 
-**Which devices.** Every device whose identification has type 64 (an
-EtherCAT master), and every device below one: slaves, their modules, and the
-SoftMotion axes under drives. Nothing else about the device tree is touched.
+**Which devices.** Every device whose identification has type 64 (an EtherCAT
+master), and every device below one: slaves, their modules, and the
+SoftMotion axes under drives. Outside a master, every device with at least
+one mappable IO channel of its own, such as DIADesigner-AX's `BuiltIn_DIO`
+and `BuiltIn_Pulse_Encoder` under the controller's `BuiltIn` folder. It is
+the channel that decides, not the name or the model: on an AX-8 the
+controller, `BuiltIn`, `BuiltIn_DIO` and `BuiltIn_Pulse_Encoder` all identify
+as `4102|16f7 0412`, and only the last two have channels (research 12). The
+AX-8 controller itself has none, so its run mode, FTP and network settings
+are in no file; a controller that did have a channel of its own would get
+one. Nothing else about the device tree is touched. A device outside a master
+whose parameters cannot be read is named in `failed_objects`, which also
+keeps the export from deleting its file as an orphan (D13). A sync folder
+exported before this rule has no file for a built-in IO device; the next
+export writes it, and until then import leaves that device alone, as it does
+any device with no file.
 
 **The file.** One per device, laid out like the tree:
 `.../<PLC device>/EtherCAT_2.device`, `.../EtherCAT_2/X5_7SEtherCAT_1.device`,
-`.../EtherCAT_2/X5_7SEtherCAT_1/Axis_1.device`. UTF-8, `#` starts a comment:
+`.../EtherCAT_2/X5_7SEtherCAT_1/Axis_1.device`. A node below a master that
+is not a device, such as the `Port 1` connector a modular coupler's modules
+hang under, is a folder with no file: `.../Slave_1/Port 1/Slave_2.device`.
+UTF-8, `#` starts a comment:
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001
@@ -1501,6 +1536,7 @@ c1/1074855936 = 0                      # Physical Address of the Slave
 c1/1610743808 = 'x 1'                  # DC sync0 factor
 c1/1627394048/Value = 6                # Op mode / Value
 map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
+# map c1/33554436 =                    # Torque Actual Value, %IW6
 ```
 
 - `device TYPE|ID|VERSION`: the identification the device must have. It is
@@ -1519,7 +1555,11 @@ map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
   that key. The factor is written. Everything else follows from the written
   values or is the IDE's.
 - A `map` line: a channel with a variable mapped. A mappable channel with no
-  `map` line has no variable.
+  `map` line has no variable. Export writes each channel with no variable as
+  a commented-out `map` line carrying its name and address, so the file names
+  every channel there is to map: mapping one is deleting the `# ` and typing
+  the variable. It is a comment, not an empty `map` line, so it is never read
+  and older files without these lines mean the same.
 - Comments carry the parameter's visible name and a channel's IEC address,
   for the reader; they are never read back.
 

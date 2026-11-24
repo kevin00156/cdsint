@@ -39,6 +39,19 @@ def placement_path():
     return os.path.join(os.path.dirname(root), "statusform.json")
 
 
+def on_screen(x, y, screens):
+    """True when the whole window at (x, y) lies inside one of `screens`.
+
+    `screens` are (left, top, width, height) working areas, in the same
+    coordinates the form's Location uses. Whole, not partly: the window has
+    no taskbar button, so one pushed mostly off the edge is as lost as one
+    entirely off it.
+    """
+    return any(left <= x and top <= y
+               and x + WIDTH <= left + width and y + HEIGHT <= top + height
+               for left, top, width, height in screens)
+
+
 class StatusForm(object):
     """A borderless-ish tool window pinned to the IDE's bottom-right corner."""
 
@@ -118,11 +131,18 @@ class StatusForm(object):
         return None
 
     def _corner(self, owner):
-        """Where the user last dragged it, else inside the owner's corner."""
+        """Where the user last dragged it, else inside the owner's corner.
+
+        The saved spot is only kept while it is still on a screen: the
+        monitor or resolution it was saved on can be gone by the next start,
+        and a window restored there runs unseen with nothing to click.
+        """
         from System.Drawing import Point
         saved = ipc.read_json(placement_path())
         if saved and "x" in saved and "y" in saved:
-            return Point(int(saved["x"]), int(saved["y"]))
+            x, y = int(saved["x"]), int(saved["y"])
+            if on_screen(x, y, _screens()):
+                return Point(x, y)
         if owner is None:
             return Point(80, 80)
         return Point(owner.Left + owner.Width - WIDTH - MARGIN,
@@ -193,3 +213,13 @@ class StatusForm(object):
         except Exception:
             import traceback
             print("statusform: stopping failed\n" + traceback.format_exc())
+
+
+def _screens():
+    """Every monitor's working area, as on_screen() takes them."""
+    import clr
+    clr.AddReference("System.Windows.Forms")
+    from System.Windows.Forms import Screen
+    return [(s.WorkingArea.Left, s.WorkingArea.Top,
+             s.WorkingArea.Width, s.WorkingArea.Height)
+            for s in Screen.AllScreens]

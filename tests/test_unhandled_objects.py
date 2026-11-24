@@ -250,7 +250,7 @@ def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     import io
 
     export = entry_export
-    managers = sys.modules["engine.managers_base"]
+    writer = sys.modules["engine.sync_write"]
 
     sync = str(tmp_path)
     version = sys.modules["engine.codesys_constants"].SCRIPT_VERSION
@@ -258,10 +258,10 @@ def export_onto_a_disk_that_refuses(monkeypatch, tmp_path):
     projects = Projects(project)
     monkeypatch.setattr(export, "projects", projects, raising=False)
     monkeypatch.setattr(export, "system", DeafSystem(), raising=False)
-    # Only the manager's writes are refused: the export writes .gitattributes
-    # and the sync cache through other modules, and those are not what this
-    # test is about.
-    monkeypatch.setattr(managers, "io", RefusingCodecs(io))
+    # Only the object files' writes are refused: the export writes
+    # .gitattributes and the sync cache through other modules, and those are
+    # not what this test is about.
+    monkeypatch.setattr(writer, "io", RefusingCodecs(io))
     return lambda: export.export_project(sync, DEFAULTS, projects)
 
 

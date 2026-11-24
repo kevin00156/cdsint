@@ -54,8 +54,18 @@ def make_instance_id(project_path, pid):
     on Windows, so it is always a Windows path. ntpath splits on both slashes,
     so it reads that path correctly wherever the CLI happens to run.
     """
+    return "%s-%s" % (instance_stem(project_path), pid)
+
+
+def instance_stem(project_path):
+    """The part of an instance id that names the project."""
     stem = ntpath.splitext(ntpath.basename(project_path or "unsaved"))[0]
-    return "%s-%s" % (_UNSAFE.sub("_", stem) or "unsaved", pid)
+    return _UNSAFE.sub("_", stem) or "unsaved"
+
+
+def stem_of_id(instance_id):
+    """The project part of an id make_instance_id built."""
+    return instance_id.rsplit("-", 1)[0]
 
 
 def registration_path(root, instance_id):

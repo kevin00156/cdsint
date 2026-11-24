@@ -24,7 +24,7 @@ import zlib
 # from zero. Nothing compares this number against a project any more -- the
 # version stamp and the mismatch prompt went with the move to a settings file
 # (SPEC 6.7) -- so a release is free to renumber.
-SCRIPT_VERSION = "0.6.0"
+SCRIPT_VERSION = "0.6.2"
 
 # Sync direction policy values allowed in the profile
 _DIRECTION_VALUES = ("bidirectional", "export_only", "import_only", "disabled")
@@ -300,10 +300,6 @@ IMPL_MARKER = "// === IMPLEMENTATION ==="
 # Property accessor markers for combined property files
 PROPERTY_GET_MARKER = "// === GET ==="
 PROPERTY_SET_MARKER = "// === SET ==="
-
-
-# Characters forbidden in filenames
-FORBIDDEN_CHARS = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*"]
 
 # Files that should be ignored by the sync engine
 RESERVED_FILES = {

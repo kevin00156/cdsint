@@ -341,4 +341,8 @@ class Watcher(KeepsItsRecord, HoldsARecording):
 
     def _run_script(self, cmd, started):
         """Press the button on one of the commands in cds/ide/entries.py."""
+        refused = project.not_sent_for(self.ide.get("projects"), cmd)
+        if refused:
+            return commands.new_result(cmd, False, started_at=started,
+                                       error=refused)
         return entries.answer(self.ide, cmd, started)

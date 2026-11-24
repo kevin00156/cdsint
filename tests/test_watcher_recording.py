@@ -71,7 +71,8 @@ def watch(root, monkeypatch, handle):
 
 def send(root, watch, command, args=None):
     return commands.write_command(root, watch.instance_id, command,
-                                  args)["id"]
+                                  args, project=watch.reg["project_path"]
+                                  )["id"]
 
 
 def result(root, watch, cmd_id):

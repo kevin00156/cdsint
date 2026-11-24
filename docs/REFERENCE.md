@@ -245,12 +245,18 @@ counted too. On one 229-file project `discover` reports 407.
 
 Disk wins. That cuts both ways: an import reads the sync folder as the answer to
 "what should this project contain", and an export must not scribble over that
-answer. Three situations are therefore refused rather than measured:
+answer. Four situations are therefore refused rather than measured:
 
 - **An empty sync folder.** No `.st` anywhere under it is not the answer
   "nothing" — it is a folder nobody has exported to, or the wrong folder — so
   `import` refuses it on all three routes (Scripts menu, `--target`,
   `--project`) instead of deleting every object in the project.
+- **A file left mid-merge.** A file the import would send that still has a
+  line starting `<<<<<<< ` followed later by one starting `>>>>>>> ` is an
+  unfinished `git merge`, not code. `import` refuses the whole run on all three
+  routes before changing anything, and names every such file in the message and
+  in `data.conflicted`. A marker inside a line, in a string or a comment, does
+  not count, and neither does a `=======` row on its own.
 - **A copy that remembers where the original synced.** A `.project` copied
   somewhere else no longer carries the original's folder — that went with the
   settings move — but the settings file beside it might, so `--sync-dir`
@@ -701,7 +707,7 @@ like this is complete:
 | `sync_folder` | string | where the `.st` files live. A relative path (`./sync`, `../export`, `sync`) is relative to the directory holding the `.project`, however the IDE was started; an absolute path (a drive, a UNC share) is used as written | none — the first export asks |
 | `plc` | list of strings | which PLC commands this project allows; only `connect`, `download`, `trace`, `login`, `online_change`, `run` and `stop` are recognised | `[]` |
 | `debug` | boolean | write `sync_metadata.json` and the `*.log` files | `false` |
-| `devices` | boolean | let `import` apply EtherCAT device settings (`.device` files) | `false` |
+| `devices` | boolean | let `import` apply device settings and IO mappings (`.device` files) | `false` |
 | `export_xml` | boolean | also export visualisations, alarms and text lists as XML | `false` |
 | `backup_binary` | boolean | copy the `.project` into the sync folder on export | `false` |
 | `safety_backup` | boolean | back the `.project` up before an import | `true` |
@@ -745,6 +751,15 @@ with `--answer UpgradeProjectConfirmation=Yes`.
 **Where do the settings live?** In a text file beside the project — see
 **Settings**.
 
+**Why is my FB `AUX` in `AUX_.st`, and my folder `IO: Inputs` in `IO_ Inputs`?**
+A file or folder name cannot hold `< > : " / \ | ? *`, so each becomes `_`.
+Windows keeps `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9` and `LPT1`–`LPT9`
+(any case, with any extension) for devices, so a name that is one of those
+before its first dot gets `_` after it. A new file is created as the object
+`AUX` again; `MAIN_.st` stays `MAIN_`. Two objects that come out as one file
+name (`AUX` beside `AUX_`, `IO: A` beside `IO_ A`) are refused by name; rename
+one of them.
+
 ## Libraries: `Library Manager.libraries`
 
 Each application's Library Manager is one text file beside its code,
@@ -768,11 +783,14 @@ after a library change can report 0 errors for code it did not compile; it
 remembers what each application was built with in `<project>.cdsint-build.json`
 beside the project. SPEC 6.9 has the rules.
 
-## EtherCAT devices: `<name>.device`
+## Devices: `<name>.device`
 
 Every EtherCAT master and every device below it (slaves, modules, SoftMotion
 axes) is one text file, laid out like the device tree:
-`CODESYS_Control_for_Linux_SL/EtherCAT_2/X5_7SEtherCAT_1.device`.
+`CODESYS_Control_for_Linux_SL/EtherCAT_2/X5_7SEtherCAT_1.device`. So is every
+other device with IO channels of its own, such as a controller's built-in IO
+(`Device/BuiltIn/BuiltIn_DIO.device` on a Delta AX-8); the controller itself
+is not.
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001

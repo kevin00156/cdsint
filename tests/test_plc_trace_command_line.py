@@ -133,5 +133,6 @@ def test_a_recording_is_waited_for_on_top_of_the_timeout(monkeypatch):
     picked = object.__new__(target.Target)
     picked.root, picked.instance_id, picked.timeout = "r", "i", 10.0
     picked.sent = set()
+    picked.reg = {"project_path": None}
     picked.run_one("plc trace", {"job": {"duration_s": 30.0}})
     assert seen["timeout"] == 40.0

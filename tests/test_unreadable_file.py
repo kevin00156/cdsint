@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""A .st import cannot read is a failed import of that file, by name.
+"""A .st that is not UTF-8 is a failed import of that file, by name, and
+compare says why it lists it.
 
 parse_st_file printed the error and answered (None, None); the update read
 that as "nothing to change" and the run reported success with the IDE as it
@@ -8,6 +9,9 @@ it is not UTF-8 (PRINCIPLES 6, SPEC D13).
 """
 import pytest
 
+from cds.core import settings
+from engine import entry_compare, unhandled
+from tests.fakes import DeafSystem
 from tests.sync_bench import Bench, folder, pou
 
 
@@ -42,3 +46,50 @@ def test_an_unreadable_property_fails_the_same_way(tmp_path):
 
     with pytest.raises(ValueError):
         PropertyManager().update(object(), str(path))
+
+
+def compare(bench, monkeypatch):
+    monkeypatch.setattr(entry_compare, "system", DeafSystem(), raising=False)
+    return entry_compare.compare_project(str(bench.sync), settings.resolve({}),
+                                         bench.projects)
+
+
+def test_compare_says_the_file_is_not_utf8(bench, monkeypatch, capsys):
+    # A GVL saved from an ANSI editor on a Chinese-locale PC: compare listed
+    # it as changed and never said why, and import then refused it.
+    cp1252(bench, "A/Foo.st")
+
+    result = compare(bench, monkeypatch)
+
+    row = [r for r in result["data"]["changes"] if r["path"] == "A/Foo.st"][0]
+    assert row["state"] == "changed"
+    assert row["problem"].startswith("not UTF-8 text")
+    listed = [line for line in capsys.readouterr().out.splitlines()
+              if line.startswith("  M  A/Foo.st")]
+    assert listed and all("not UTF-8 text" in line for line in listed)
+
+
+def test_what_counts_as_different_is_unchanged(bench, monkeypatch):
+    cp1252(bench, "A/Foo.st")
+
+    result = compare(bench, monkeypatch)
+
+    assert result["ok"] is True
+    assert result["data"]["different"] == 1
+
+
+def test_an_ordinary_edit_carries_no_problem(bench, monkeypatch):
+    bench.edit("A/Foo.st", u"x := 1;", u"x := 2;")
+
+    rows = compare(bench, monkeypatch)["data"]["changes"]
+
+    assert rows == [{"name": "Foo", "path": "A/Foo.st", "state": "changed"}]
+
+
+def test_import_refuses_it_in_the_same_words(bench, monkeypatch):
+    cp1252(bench, "A/Foo.st")
+    said = compare(bench, monkeypatch)["data"]["changes"][0]["problem"]
+
+    bench.import_()
+
+    assert [r["reason"] for r in unhandled.records()] == [said]

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""An EtherCAT device's settings file (SPEC 6.10)."""
+"""A device's settings file (SPEC 6.10)."""
 from cds.core import device_text as dt
 
 IDENT = "65|766_0001000000000001|Revision=16#00000001"

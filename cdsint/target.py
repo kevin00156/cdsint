@@ -131,6 +131,7 @@ class Target(object):
 
     def run_one(self, command, args):
         cmd = commands.new_command(command, _with_login(command, args),
+                                   project=self.reg.get("project_path"),
                                    caller=turns.caller())
         self.sent.add(cmd["id"])
         # A recording answers when it is done: its duration_s is time the
@@ -200,7 +201,7 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S, mine=()):
     deadline = time.time() + timeout
     commands.write_command(root, instance_id, cmd["command"], cmd["args"],
                            cmd_id=cmd["id"], deadline=deadline,
-                           caller=cmd.get("caller"))
+                           project=cmd["project"], caller=cmd.get("caller"))
     watching = Watching(root, instance_id)
     try:
         my_turn(root, instance_id, cmd, set(mine) | set([cmd["id"]]))

@@ -3,13 +3,14 @@
 with no object, paired by file name within one application.
 
 Moved out of change_detect.py to keep that file under the size limit;
-_move_candidates and _same_application were written here, and
-detect_moved_files has changed since.
+_move_candidates, _same_application and the application prefixes were
+written here, and detect_moved_files has changed since.
 """
 from __future__ import print_function
 
 from cds.core.library_list import SUFFIX as LIBRARY_SUFFIX
 from engine.device_remap import build_device_remap, remap_path_device
+from engine.ide_tree import find_applications
 from engine.object_paths import get_container_prefix
 from engine.sync_cache import normalize_path
 from engine.sync_log import log_info
@@ -27,13 +28,36 @@ def _move_candidates(disk_by_name, base_name):
     return disk_by_name.get(base_name, [])
 
 
-def _same_application(ide_item, disk_path, remap):
+def _application_prefixes(project):
+    """Where on disk each application's folder starts: 'device/app/'.
+
+    Read from the IDE tree, the same device and application names
+    get_container_prefix writes a path with, because a folder on disk does
+    not say what it is: App1/ is an application or a plain folder only
+    according to the project.
+    """
+    return frozenset(_folder_of(get_container_prefix(app))
+                     for app in find_applications(project))
+
+
+def _folder_of(parts):
+    return normalize_path("".join(part + "/" for part in parts))
+
+
+def _same_application(ide_item, disk_path, remap, app_prefixes):
     """Is the file under the device and application the object is in?
 
     A file name says nothing about which application it belongs to, so
     App1/Foo.st deleted and an unrelated App2/Foo.st added paired up, and
     import would have carried App1's Foo across instead of making App2 its
     own. A move is a change of folder inside one application.
+
+    Both ends are asked which applications hold them, not only whether the
+    file is under the object's folder: a project-level object's folder is
+    the root, which holds every file, and pairing it with a file inside an
+    application moved it into one. The IDE keeps compiling an object moved
+    across applications where it was (cds-text-sync 4.1.0), so that is a
+    delete and a create, like App1 to App2.
 
     The disk path is read through the device remap first: a folder exported
     under a device since renamed names the old device, and without the remap
@@ -46,10 +70,14 @@ def _same_application(ide_item, disk_path, remap):
     the pass that produced these items, so this costs one guid read per
     object that has a file of its name to pair with.
     """
-    prefix = "/".join(get_container_prefix(ide_item["obj"]))
-    return not prefix or normalize_path(
-        remap_path_device(disk_path, remap)).startswith(
-            normalize_path(prefix) + "/")
+    home = _folder_of(get_container_prefix(ide_item["obj"]))
+    path = normalize_path(remap_path_device(disk_path, remap))
+    return path.startswith(home) and (_holders(path, app_prefixes)
+                                      == _holders(home, app_prefixes))
+
+
+def _holders(path, app_prefixes):
+    return frozenset(p for p in app_prefixes if path.startswith(p))
 
 
 def detect_moved_files(new_in_ide, new_on_disk, project):
@@ -78,10 +106,10 @@ def detect_moved_files(new_in_ide, new_on_disk, project):
     if not new_in_ide or not new_on_disk:
         return [], new_in_ide, new_on_disk
     remap = build_device_remap(project, new_on_disk)
+    app_prefixes = _application_prefixes(project)
     moved = []
     matched_ide_indices = set()
     matched_disk_indices = set()
-    
     # Build a lookup from base filename -> list of (index, item) for disk files
     disk_by_name = {}  # base_name_lower -> [(index, item), ...]
     for i, disk_item in enumerate(new_on_disk):
@@ -104,7 +132,7 @@ def detect_moved_files(new_in_ide, new_on_disk, project):
             disk_path = disk_item["path"]
             
             if ide_path == disk_path or not _same_application(
-                    ide_item, disk_path, remap):
+                    ide_item, disk_path, remap, app_prefixes):
                 continue
             
             # Determine direction: where is the "correct" location?

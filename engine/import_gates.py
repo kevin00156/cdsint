@@ -85,7 +85,7 @@ def stale_code_names(to_sync):
 def never_deleted(item, stale_code=()):
     """An object with no file that this import keeps anyway.
 
-    A Library Manager or an EtherCAT device: import never deletes either, and
+    A Library Manager or a synchronised device: import never deletes either, and
     a missing file means "not synchronised yet" (SPEC 6.9, 6.10). And code
     whose file is still the native XML an older export wrote: the new path
     has no file yet, the XML is refused, and deleting the object here would

@@ -103,7 +103,8 @@ file has the same name and lives in `result\`.
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
  "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1,
- "caller": {"pid": 5120, "cwd": "C:\\wt\\line"}}
+ "caller": {"pid": 5120, "cwd": "C:\\wt\\line"},
+ "project": "C:\\p\\softplc.project"}
 ```
 
 A command that changes something takes a turn rather than a place in line
@@ -151,6 +152,14 @@ of its own. `--project` records carry `changes` as `null`.
   is killed cannot, so a watcher that reaches
   a command past its deadline does not run it: it answers `ok` false with
   "the caller stopped waiting at …; not run". `null` means no deadline.
+- `project` is the project path the CLI saw that IDE holding when it picked
+  it. The watcher runs a command from `cds/ide/entries.py` only while the IDE
+  still holds that project, `null` included; otherwise it answers `ok` false
+  and runs nothing. `ping`, `status` and `stop` do not look at it. The
+  instance id keeps the name of the project open when the watcher started,
+  so the CLI also refuses an id given to `--target` once that IDE holds
+  another project, and names the project to target instead
+  (`cds/core/instances.py`).
 - When `ok` is false, `error` always carries text.
 - When the engine asked a question and the command's arguments held no answer,
   `ok` is false and `needs_input` carries the question verbatim and the flag
@@ -197,7 +206,7 @@ of its own. `--project` records carry `changes` as `null`.
 | `stop` | none | none |
 | `export` | `delete_orphans`, default false | "Delete Orphaned Files?" is answered by it |
 | `import` | `yes`, required | "Confirm Import" is answered by `yes`; without it, `needs_input` comes back |
-| `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`; the interactive picker window has been removed |
+| `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`, plus `problem` on a changed row whose file could not be read (a file that is not UTF-8 says so); the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
 | `plc connect` | — | The watcher always refuses, with an error that states the reason: it reads the controller through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). It exists only in the `--project` form |

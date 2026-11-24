@@ -464,10 +464,11 @@ not added and `failed_objects` names it — tell the user, do not hunt for a cop
 `build` cleans first by itself after a library change, so a clean build result
 there is real.
 
-## EtherCAT devices: `<name>.device`
+## Devices: `<name>.device`
 
 Every EtherCAT master and every device below it is one text file, laid out like
-the device tree:
+the device tree; so is every other device with IO channels of its own, such as
+a controller's built-in IO (`BuiltIn/BuiltIn_DIO.device`):
 
 ```
 device  65|766_0001000000000001|Revision=16#00000001
@@ -476,7 +477,9 @@ c1/1627394048/Value = 6                             # Op mode
 map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]  # Error Code, %IW5
 ```
 
-Change a value or a `map` line; delete a `map` line to unmap the channel. The
+Change a value or a `map` line; delete a `map` line to unmap the channel. A
+channel with no variable is a commented-out line, `# map c1/33554436 =`: to map
+it, delete the `# ` and type the variable after the `=`. The
 `device` line is checked, never applied: leave it alone. `import` applies these
 files only when the settings file has `"devices": true`, and without it says so —
 do not add that key without the user's word, because most device settings turn

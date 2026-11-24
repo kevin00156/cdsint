@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""The EtherCAT devices, synchronised beside the object sync (SPEC 6.10).
+"""The devices whose settings are synchronised, beside the object sync
+(SPEC 6.10).
 
 `device` and `device_module` stay disabled for the object sync: importing
 their native XML duplicates the tree (docs/ethercat-research.md 2.2). The
-devices under an EtherCAT master get this pass instead: one `.device` file
+devices under an EtherCAT master, and the other devices with IO channels of
+their own, get this pass instead: one `.device` file
 each, found by walking the device tree, compared, exported and imported
 through engine/device_params.py. The suffix is deliberately not a sync suffix,
 so the object sync never sees these files; this pass owns them.
@@ -19,7 +21,8 @@ from engine.managers_device import NOT_CREATED
 from engine.codesys_constants import TYPE_GUIDS, kind_of
 from engine.ide_read import children_of
 from engine.st_text import read_sync_text
-from engine.strings import clean_filename, safe_str
+from engine.file_names import clean_filename
+from engine.strings import safe_str
 from engine.sync_cache import load_sync_cache, normalize_path, save_sync_cache
 from engine.sync_log import log_info
 
@@ -36,18 +39,45 @@ def _is_master(device):
         return False
 
 
-def ethercat_devices(project):
-    """(device, rel_path) for each EtherCAT master and everything below it,
-    parents first, laid out like the device tree."""
+def _has_channel(device):
+    try:
+        return device_params.has_channel(device)
+    except Exception as exc:
+        # Named, not skipped (SPEC D13): if its file exists, it is not an
+        # orphan, and only an unaccounted object keeps the orphan sweep from
+        # deleting it. The walk goes on for the other devices.
+        unhandled.note(device, exc)
+        return False
+
+
+def synced_devices(project):
+    """(device, rel_path) for each EtherCAT master and every device below it,
+    and every other device with an IO channel of its own (a controller's
+    built-in IO), parents first, laid out like the device tree.
+
+    Outside a master it is the channel that decides, not the name or the
+    model: Delta's controller, its BuiltIn folder and BuiltIn_DIO all
+    identify as 4102|16f7 0412, and only BuiltIn_DIO and
+    BuiltIn_Pulse_Encoder have channels. The AX-8 controller itself has
+    none, so its run mode, FTP and network settings stay out.
+
+    Below a master the walk goes through nodes that are not devices: a
+    modular coupler's modules hang under a "Port 1" connector node, and
+    stopping there left every module without a file. The connector stays a
+    folder, so the path is the tree the IDE shows. Above a master a
+    non-device still ends the walk; it is an application or a folder, and
+    no master is under one.
+    """
     found = []
     stack = [(child, [], False) for child in reversed(children_of(project))]
     while stack:
         node, parts, under = stack.pop()
-        if not getattr(node, "is_device", False):
+        is_device = getattr(node, "is_device", False)
+        if not (is_device or under):
             continue
         parts = parts + [clean_filename(safe_str(node.get_name()))]
-        under = under or _is_master(node)
-        if under:
+        under = under or (is_device and _is_master(node))
+        if is_device and (under or _has_channel(node)):
             found.append((node, "/".join(parts) + device_text.SUFFIX))
         stack.extend((c, parts, under) for c in reversed(children_of(node)))
     return found
@@ -106,7 +136,7 @@ def with_device_changes(results, base_dir, project, values):
     allowed = bool(values.get("devices"))
     on_disk = _device_files(base_dir)
     missing = []
-    for device, rel in ethercat_devices(project):
+    for device, rel in synced_devices(project):
         found = on_disk.pop(normalize_path(rel), None)
         if found is None:
             missing.append(rel)
@@ -157,7 +187,7 @@ def export_devices(project, export_dir, context, managers):
     pending = []
     manager = managers[TYPE_GUIDS["device"]]
     cached = (context.get("cache_data") or {}).get("objects", {})
-    for device, rel in ethercat_devices(project):
+    for device, rel in synced_devices(project):
         # Carried first, as export_project does for objects: a file left
         # pending writes no entry, and without the old one the next export
         # overwrote the edit (measured on 3.5.21.40).
