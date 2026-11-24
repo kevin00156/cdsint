@@ -104,18 +104,29 @@ def show_steps(results, want_json=False):
         show(result)
 
 
-def show_verify(problems, describe):
+def show_verify(problems, describe, changes=None, want_json=False):
     """The verdict over a whole round trip, which no single step carries.
 
     compare can pass every step and still have found differences, so this is
     not a restatement of the records above it (cdsint/verify.py problems).
     Said in both modes for that reason: a --json caller could work it out
-    from the records, but only by re-implementing what verify decided.
+    from the records, but only by re-implementing what verify decided. With
+    --json it goes to stderr, all of it: stdout is the JSON, and a line after
+    it breaks the parse as surely as one in front (show_sync_dir).
     """
     for problem in problems:
         print("verify: " + problem, file=sys.stderr)
-    if not problems:
-        print("verify: %s round-tripped and built cleanly" % describe)
+    if problems:
+        return
+    said = sys.stderr if want_json else sys.stdout
+    print("verify: %s round-tripped and built cleanly" % describe, file=said)
+    if changes:
+        # The one value a following plc download --target has to hand back
+        # (cds/core/turns.py ChangeCount); --json has it as the last
+        # record's `changes`.
+        print("verify: the IDE is at change count %s; plc download --target "
+              "-y --after %s downloads it as verified here"
+              % (changes, changes), file=said)
 
 
 def show_instances(regs, want_json=False):

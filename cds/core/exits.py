@@ -14,6 +14,11 @@ split by cause, because an agent can do something different about each.
 list in the project's settings file, and no flag of ours can stand in for
 that decision, which is why it is not folded into 1 (SPEC 6.5).
 
+6 is the other one: nothing went wrong and nothing ran. The watcher had
+another caller's command in hand, and a command that changes something is
+refused rather than queued behind it (cds/core/turns.py); the line is right
+as it was typed, and the same line later is the cure.
+
 Pure Python (PRINCIPLES.md 4): no CODESYS imports.
 """
 from __future__ import print_function
@@ -25,3 +30,4 @@ EXIT_TARGET = 2     # the command line is wrong or incomplete, or no
 EXIT_TIMEOUT = 3    # nobody answered in time
 EXIT_HEADLESS = 4   # the project is open elsewhere, or the IDE would not start
 EXIT_DENIED = 5     # the settings file's plc list does not allow this
+EXIT_BUSY = 6       # the watcher is taken by another command; nothing ran

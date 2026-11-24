@@ -97,9 +97,8 @@ def test_stop_is_the_watchers_only(capsys):
     assert "does not take --stop" in err and "watcher" in err
 
 
-@pytest.mark.parametrize("action", ["connect", "download"])
-def test_connect_and_download_keep_the_project_form_only(action, capsys):
-    err = refused(["plc", action, "--target", "softplc", "--gateway",
+def test_connect_keeps_the_project_form_only(capsys):
+    err = refused(["plc", "connect", "--target", "softplc", "--gateway",
                    "1.2.3.4"], capsys)
     assert "no --target form" in err and "D8" in err
 
@@ -127,12 +126,13 @@ def test_the_project_form_takes_a_name_with_a_run_only_job(tmp_path):
 def test_a_recording_is_waited_for_on_top_of_the_timeout(monkeypatch):
     seen = {}
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         seen["timeout"] = timeout
         return {"ok": True}
     monkeypatch.setattr(target, "send", send)
     picked = object.__new__(target.Target)
     picked.root, picked.instance_id, picked.timeout = "r", "i", 10.0
+    picked.sent = set()
     picked.reg = {"project_path": None}
     picked.run_one("plc trace", {"job": {"duration_s": 30.0}})
     assert seen["timeout"] == 40.0

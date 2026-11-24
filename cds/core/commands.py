@@ -38,7 +38,7 @@ def new_id(now=None, suffix=None):
 
 
 def new_command(command, args=None, now=None, cmd_id=None, deadline=None,
-                project=None):
+                project=None, caller=None):
     """The record that says what to run, whether or not it is ever a file.
 
     A headless run never queues anything — one process runs the whole list —
@@ -53,6 +53,9 @@ def new_command(command, args=None, now=None, cmd_id=None, deadline=None,
     picked it. The watcher runs a project command only while the IDE still
     holds that one: the instance id keeps its birth name across a project
     swap, so a target picked a minute ago can be another project by now.
+
+    caller says who queued it, for whoever is refused while it runs
+    (cds/core/turns.py).
     """
     now = ipc.now(now)
     return {
@@ -62,13 +65,14 @@ def new_command(command, args=None, now=None, cmd_id=None, deadline=None,
         "created_at": ipc.iso(now),
         "deadline_epoch": deadline,
         "project": project,
+        "caller": caller,
     }
 
 
 def write_command(root, instance_id, command, args=None, now=None, cmd_id=None,
-                  deadline=None, project=None):
+                  deadline=None, project=None, caller=None):
     """Queue one command for an instance. Returns the record as written."""
-    cmd = new_command(command, args, now, cmd_id, deadline, project)
+    cmd = new_command(command, args, now, cmd_id, deadline, project, caller)
     ipc.write_json(_command_path(root, instance_id, cmd["id"]), cmd)
     return cmd
 
@@ -121,6 +125,20 @@ def _set_aside(path, why):
 
 def delete_command(root, instance_id, cmd_id):
     ipc.remove_file(_command_path(root, instance_id, cmd_id))
+
+
+def withdraw(root, instance_id, cmd_id):
+    """Take a queued command back. False when the watcher claimed it first,
+    or is renaming it as we ask: it is running, and only its result can say
+    how it went."""
+    try:
+        os.remove(_command_path(root, instance_id, cmd_id))
+    except (IOError, OSError) as exc:
+        if getattr(exc, "errno", None) in (errno.ENOENT, errno.EACCES,
+                                           errno.EPERM):
+            return False
+        raise
+    return True
 
 
 RUNNING = ".running"
@@ -185,6 +203,34 @@ def _discard_aside(path):
 
 def release_command(root, instance_id, cmd_id):
     ipc.remove_file(_running_path(root, instance_id, cmd_id))
+
+
+def clear_running(root, instance_id, keep=None):
+    """Remove every running mark but keep's. Only the watcher calls this,
+    between its commands, when nothing of its is running but a recording it
+    holds: any other mark is one a release failed to remove, and left there
+    it would refuse every changing command for as long as the watcher runs
+    (cds/core/turns.py). Returns the ids removed."""
+    removed = []
+    for name in _names(ipc.command_dir(root, instance_id)):
+        cmd_id = name[:-len(RUNNING)]
+        if not name.endswith(RUNNING) or cmd_id == keep:
+            continue
+        try:
+            release_command(root, instance_id, cmd_id)
+        except EnvironmentError as exc:
+            print("watcher: could not clear the mark of %s (%s)"
+                  % (cmd_id, exc))
+            continue
+        removed.append(cmd_id)
+    return removed
+
+
+def _names(directory):
+    try:
+        return os.listdir(directory)
+    except (IOError, OSError):
+        return []
 
 
 def running_since(root, instance_id):
@@ -253,6 +299,9 @@ def new_result(cmd, ok, error=None, messages=None, needs_input=None,
         "needs_input": needs_input,
         "denied": denied,
         "data": data,
+        # The watcher's change count after this command (cds/core/turns.py);
+        # it alone has one, and fills it in as it writes the record.
+        "changes": None,
     }
 
 

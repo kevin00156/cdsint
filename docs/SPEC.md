@@ -220,9 +220,10 @@ for `trace save`. The samples are recorded either way.
 
 **D8 Only actions that touch the PLC are under permission control, in two
 layers.** The `plc` list in the settings file decides whether this project
-allows it; `-y` confirms this one call. The watcher refuses `plc connect` and
-`plc download` outright, because each logs in through a connection of its own.
-It does log the IDE's own active application in and out and start and stop it
+allows it; `-y` confirms this one call. The watcher refuses `plc connect`
+outright, because it reads the controller through a connection of its own.
+It downloads (`plc download`, 6.6), but only into an IDE that is logged out,
+and logs out again afterwards. It does log the IDE's own active application in and out and start and stop it
 (`plc login`, `logout`, `run`, `stop`, 6.12), and `plc trace` records through
 that login (6.8). Each has a word in the list (6.5), and the ones that change
 or move the controller (`--method`, `run`, `stop`) also need `-y`; a plain
@@ -239,8 +240,14 @@ trace, to see the device online) or logged out (to change what only an offline
 project can) used to stop and wait for a person to press Login or Logout.
 That wait is what stalled the work. With no one at the IDE there is no session
 to take, and the gates stay: the word, and `-y` for whatever changes the
-controller. The refusal of `connect` and `download` stands, since a connection
-of its own would still take a session. The first layer used to be a project
+controller. The refusal of `connect` stands, since a connection of its own
+would still take a session. `download` was refused with it until the owner
+reversed that on 2026-11-20: a deployment that ran `verify --project` and then
+`plc download --project` started an IDE for each, half a minute apiece on top
+of the work, when the project was already open in an IDE cdsint was
+watching. The session it would take is handled by a rule rather than by the
+refusal: a watcher download refuses an IDE that is logged in, whoever logged
+it in, and leaves it logged out as it found it. The first layer used to be a project
 property, which meant "someone decided this inside
 the IDE"; after the settings moved to a text file (D10) that meaning no longer
 holds, the first layer is just "the file says so", and the real gate is `-y`.
@@ -412,7 +419,7 @@ Every command has two forms (D2). `--target X` finds the watcher in an open
 IDE; `--project P --install I` starts a headless IDE. The two sets of flags are
 mutually exclusive, and argparse blocks them directly. Two groups of
 exceptions, each refused with its reason rather than left out: `plc connect`
-and `plc download` have only the second form (D8), and `plc login`, `plc
+has only the second form (D8), and `plc login`, `plc
 logout`, `plc run`, `plc stop`, `trace save` and `trace show` only the first
 (6.12, 6.11).
 
@@ -433,7 +440,7 @@ logout`, `plc run`, `plc stop`, `trace save` and `trace show` only the first
 | `build [--app NAME]` | yes | yes | compile, return the error list |
 | `verify -y` | yes | yes | import, export, compare the disk for a diff, build, all in one run. It contains an import, so it needs `-y` like `import` does |
 | `plc connect --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | read-only: list files, pull `Application.crc`, compare with the value recorded at the last download |
-| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | refused | yes | full download, write the boot application, start, read the CRC back and record it |
+| `plc download -y --gateway IP [--port N] [--gateway-name NAME]` | yes, with `--after COUNT`, and only into a logged-out IDE; its device node is aimed at `--gateway` | yes | full download, write the boot application, start, read the CRC back and record it; in the watcher, log out again (6.6) |
 | `plc trace --gateway IP [--gateway-name NAME] [--name T] --job FILE` | n/a | yes | log in, record the variables the job names (or what trace `T` is set to record) into files, log out, without downloading the application (6.8) |
 | `plc trace --name T --job FILE`, `plc trace --stop` | yes | n/a | record trace `T` through the login already open in that IDE; `--stop` ends that recording early (6.8, "In the watcher") |
 | `plc login` | yes | refused | log the IDE's active application in only if nothing on the controller would change; otherwise change nothing, exit 1, and say what differs and which `--method` values would apply it (6.12) |
@@ -504,7 +511,7 @@ is no `-N`, because leaving out `-y` already means "don't"; the other dialogs
 with a safe default each have a named flag, and `--delete-orphans` answers
 "delete the orphans".
 
-Why `plc connect` and `plc download` refuse the `--target` form is in D8.
+Why `plc connect` refuses the `--target` form is in D8.
 
 ### 4.3 Exit codes and output
 
@@ -516,6 +523,7 @@ Why `plc connect` and `plc download` refuse the `--target` form is in D8.
 | 3 | timed out |
 | 4 | headless mode: no usable IDE for this project — the project is open in another process, `--install` matched no install (the message lists which are installed), or the IDE failed to start |
 | 5 | permission refused: the `plc` list in the settings file does not hold this command |
+| 6 | the watcher is taken: another caller's changing command is queued or running there, and a command that changes something is refused rather than queued behind it; nothing ran |
 
 2 has several causes, all in one row because the caller's response is the
 same: do not retry the same line, read the message first. 2 and 4 are two causes of "is there a live IDE
@@ -526,9 +534,22 @@ answer, not a failure. `needs_input` does not get its own row, because the
 agent has to read `needs_input.arg` in the JSON anyway to know which flag to
 add, and a separate code would not save that parse.
 
+6 is the only code whose cure is the same line, later. Several agents drive
+one IDE, and an import that waited its turn behind another agent's import ran
+on the project that agent had just changed, with nobody told (owner decision,
+2026-11-20). So in the `--target` form a command that changes something (in
+the IDE, on the controller, or in the sync folder) is refused while another
+caller's changing command is queued or running there; one that only reads (`ping`,
+`status`, `compare`, `discover`, `trace list`, `trace job`, `trace save`) and
+`plc trace --stop` still queue, and a read waiting there does not refuse a
+change, since it changes nothing a change could land on. The message names the other command, since
+when, and the pid and working directory of whoever sent it. How the check is
+made atomic between CLIs is `cds/core/turns.py`.
+
 The `--json` output keeps the structure of the existing result file: `ok`,
 `command`, `elapsed_s`, `messages`, `stdout_tail`, `error`, `needs_input`,
-`denied`, `data`. The `--project` form adds `ide` (which install was used),
+`denied`, `data`, `changes` (the `--target` form's change count after the
+command, `null` in the other form; docs/WATCHER.md 3). The `--project` form adds `ide` (which install was used),
 `sync_dir` (this run's source of truth, the same value as at the top of the
 report), `report_path`, `notes`.
 
@@ -907,9 +928,9 @@ Every other command is outside permission control.
 ### 6.6 PLC connection and download
 
 Moved from the probe, placed in the engine next to `codesys_online.py` (D12).
-`connect` and `download` are offered only in the `--project` form (D8);
-`login`, `logout`, `run` and `stop` only in the watcher (6.12), and `trace` in
-both (6.8). `entry_plc.py` is the front for the `plc` commands, `plc_trip.py`
+`connect` is offered only in the `--project` form (D8); `login`, `logout`,
+`run` and `stop` only in the watcher (6.12), and `download` and `trace` in
+both (6.8, and "In the watcher" below). `entry_plc.py` is the front for the `plc` commands, `plc_trip.py`
 the steps of one run, `plc_link.py` the part that connects to the controller,
 and `plc_crc.py` the verdict itself (pure bytes, paths and JSON; no IDE). The
 download and trace commands add their own steps on top of the trip, in
@@ -1032,6 +1053,43 @@ overwritten on every run of the same project and deleted before writing, so
 that a call that wrote no file cannot have the previous run's answer read as
 this run's. A file that cannot be deleted fails that fetch by name rather than
 being left to be read.
+
+**In the watcher** (`plc_download_watch.py`, owner decision 2026-11-20).
+`plc download --target X -y --gateway IP --after COUNT` takes the same steps
+and leaves the same things: a full download, the boot application, the
+application started, the CRC read back and written to the same record entry,
+since the controller is named from `--gateway` exactly as above. It differs
+where the IDE is somebody's:
+
+- The device node is aimed at `--gateway` as above, which changes the open
+  project's device setting: the project is marked changed, a later save
+  keeps it, and the result's notes say so. It was first meant to be checked
+  rather than aimed, and the bench showed that nothing on the node can say
+  where a login goes: `get_address()` kept a value an IP aim had overridden,
+  `find_address_by_ip` answered every address and port with the node it had
+  found before, and a node found by scanning (`3001.401F`) holds no IP at
+  all. So the check could pass a wrong port, which is the one direction that
+  downloads to the wrong controller; aiming is what the `--project` form
+  already proves on the bench (owner decision, 2026-11-20).
+- An IDE that is logged in is refused, whoever logged it in (a person, `plc
+  login`, a `plc trace` recording, which the watcher refuses anyway), with
+  "plc logout first"; cdsint never ends a login it did not make. The download
+  logs out at the end, and the logout is read back (`data.logged_in` false),
+  so the IDE is offline again as it was.
+- `--after COUNT` is required: the change count `verify` reported
+  (docs/WATCHER.md 3). Every caller of one watcher shares the project's sync
+  folder, so nothing on disk can say whose content the IDE holds; the count
+  can say that nobody's command has changed it since the verify. A stale
+  count is refused before the body runs, naming the change that moved it.
+- The device login comes from the caller's `CDS_DEV_USER`/`CDS_DEV_PASS`,
+  forwarded and handed over before every online call, as for the session
+  commands (6.12).
+
+What cannot be seen is said rather than guessed: a change made by hand in the
+IDE does not move the count, nor do unsaved edits there; an IDE whose own
+thread is held (a build started by hand) does not answer, so the command times
+out rather than being refused; and whether a dialog a person has open in that
+IDE stops the watcher's ticks has not been measured.
 
 ### 6.7 Setup flow
 

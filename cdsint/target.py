@@ -16,8 +16,8 @@ from __future__ import print_function
 import os
 import time
 
-from cds.core import commands, credentials, instances, ipc
-from cds.core.exits import EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
+from cds.core import commands, credentials, instances, ipc, turns
+from cds.core.exits import EXIT_BUSY, EXIT_FAILED, EXIT_TARGET, EXIT_TIMEOUT
 from cdsint import job_file, process
 from cdsint.exits import Failure
 from cdsint.flags import DEFAULT_TIMEOUT_S
@@ -36,7 +36,8 @@ GONE_AFTER_S = 1.0
 # The commands whose watcher may have to log in to the controller. The login
 # is asked of the environment only here, so every other command file is free
 # of it.
-NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace")
+NEEDS_A_LOGIN = ("plc login", "plc logout", "plc run", "plc stop", "plc trace",
+                 "plc download")
 
 
 def forwards_a_login(command, args):
@@ -111,6 +112,10 @@ class Target(object):
                                          r.get("project_path") or "(no project)")
                            for r in exc.matches])
         self.instance_id = self.reg["instance_id"]
+        # What this process sent, so the turn it is taking is not refused
+        # over a running mark of its own previous step, which the watcher
+        # removes a moment after it has answered.
+        self.sent = set()
 
     def describe(self):
         return self.instance_id
@@ -126,11 +131,13 @@ class Target(object):
 
     def run_one(self, command, args):
         cmd = commands.new_command(command, _with_login(command, args),
-                                   project=self.reg.get("project_path"))
+                                   project=self.reg.get("project_path"),
+                                   caller=turns.caller())
+        self.sent.add(cmd["id"])
         # A recording answers when it is done: its duration_s is time the
         # caller asked for, on top of the time the step may take.
         waited = self.timeout + job_file.waits_s(args)
-        result = send(self.root, self.instance_id, cmd, waited)
+        result = send(self.root, self.instance_id, cmd, waited, mine=self.sent)
         if result is GONE:
             return self._gone(cmd)
         if result is None:
@@ -177,8 +184,11 @@ class Target(object):
                                                    cmd["command"])
 
 
-def send(root, instance_id, cmd, timeout, poll=POLL_S):
+def send(root, instance_id, cmd, timeout, poll=POLL_S, mine=()):
     """Queue a command and wait for its result.
+
+    One that changes something is first held to its turn (my_turn); mine
+    are the ids of this caller's own, which do not count against it.
 
     None means it timed out; GONE means the watcher went away. However the
     wait ends the command file is removed: a timed-out command must not fire
@@ -191,9 +201,10 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
     deadline = time.time() + timeout
     commands.write_command(root, instance_id, cmd["command"], cmd["args"],
                            cmd_id=cmd["id"], deadline=deadline,
-                           project=cmd["project"])
+                           project=cmd["project"], caller=cmd.get("caller"))
     watching = Watching(root, instance_id)
     try:
+        my_turn(root, instance_id, cmd, set(mine) | set([cmd["id"]]))
         while True:
             result = collect(root, instance_id, cmd["id"])
             if result is not None:
@@ -204,6 +215,22 @@ def send(root, instance_id, cmd, timeout, poll=POLL_S):
             time.sleep(poll)
     finally:
         commands.delete_command(root, instance_id, cmd["id"])
+
+
+def my_turn(root, instance_id, cmd, own_ids):
+    """Refuse a changing command while anybody else's is there.
+
+    Asked after the command is queued, never before: that order is what
+    makes it hold between callers (cds/core/turns.py). One the watcher
+    claimed before it could be taken back is running, and is waited for.
+    """
+    if not turns.changes(cmd["command"], cmd["args"]):
+        return
+    others = turns.others(root, instance_id, own_ids)
+    if not others or not commands.withdraw(root, instance_id, cmd["id"]):
+        return
+    raise Failure(turns.refusal(root, instance_id, cmd["command"],
+                                *others[0]), EXIT_BUSY)
 
 
 def collect(root, instance_id, cmd_id):

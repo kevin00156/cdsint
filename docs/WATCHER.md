@@ -36,7 +36,7 @@ the process id from `os.getpid()`.
 
 The registration file's fields: `instance_id`, `pid`, `ide`, `project_path`,
 `project_name`, `sync_dir`, `state`, `busy_since`, `busy_command`, `heartbeat`,
-`started_at`, `watcher_version`. `busy_command` names what a busy instance is
+`started_at`, `watcher_version`, `changes`. `busy_command` names what a busy instance is
 running, so a caller whose `--timeout` is shorter than that is told "busy for
 312s running import" rather than "no live IDE found". Times come in two copies: the string one is for a person
 opening the file, and `heartbeat_epoch`, `busy_since_epoch` and
@@ -103,16 +103,48 @@ file has the same name and lives in `result\`.
 ```json
 {"id": "1725453665123-a3f9c1", "command": "import",
  "args": {"yes": true}, "created_at": "...", "deadline_epoch": 1725453785.1,
+ "caller": {"pid": 5120, "cwd": "C:\\wt\\line"},
  "project": "C:\\p\\softplc.project"}
 ```
+
+A command that changes something takes a turn rather than a place in line
+(SPEC 4.3, exit 6). The CLI writes its command file first and then lists
+`cmd\`: if any other caller's `.json` or `.running` of a changing command is there
+(a read waiting its turn does not count; a file it cannot read does), it
+deletes its
+own file and is refused, naming the other one from that file's `command`,
+`created_at` (or the `.running` file's time) and `caller`. Looking after
+writing is what makes it hold: of two callers, the second to write looks
+after the first file was already there. Two that write at the same moment
+can both be refused. One whose file the watcher claimed before it could be
+deleted is running, and is waited for. The caller's own earlier steps do not
+count: the watcher removes a `.running` mark a moment after writing the
+result, and a `verify` queues its next step in that moment. The watcher in
+turn removes, between commands, every `.running` mark but that of a
+recording it holds, since such a mark is one whose removal failed and would
+refuse every change for as long as the watcher runs.
 
 ```json
 {"id": "1725453665123-a3f9c1", "ok": true, "command": "import",
  "started_at": "...", "finished_at": "...", "elapsed_s": 4.2,
  "messages": [{"level": "info", "text": "Import complete! ..."}],
  "stdout_tail": "…last 200 lines…", "error": null, "needs_input": null,
- "denied": null, "data": null}
+ "denied": null, "data": null, "changes": "5f0c19a2.3"}
 ```
+
+`changes` is the watcher's change count after the command, and the
+registration carries the current one. It is `<session>.<count>`: the session
+is new with every watcher start, and the count goes up by one each time the
+watcher hands a command that changes something to its body (the same list
+the turn uses), whether or not the body then works, and each time the IDE has
+another project open than it had. Nothing a person does by hand in the IDE
+is counted otherwise. A command whose `args` carry `after` runs only if that
+is the count right now; otherwise it is answered `ok` false, naming the count
+it is at, how many changes came since and which command made the last one,
+and nothing is counted. `verify` checks that its four steps' counts follow
+one another, and fails when another caller's command landed in a gap between
+two of them; the turn cannot cover those gaps, since each step is a command
+of its own. `--project` records carry `changes` as `null`.
 
 - `deadline_epoch` is when the CLI stops waiting: the moment it queued the
   command plus its `--timeout`. A CLI that stops waiting for any reason,
@@ -137,8 +169,8 @@ file has the same name and lives in `result\`.
   exit 5.
 - `args` may carry `credentials` (`user`, `password`) for the `plc` commands
   that make an online call. The CLI copies them from its own
-  `CDS_DEV_USER`/`CDS_DEV_PASS` into `plc login`, `logout`, `run`, `stop` and
-  `plc trace` (not `plc trace --stop`), and refuses those commands (exit 2)
+  `CDS_DEV_USER`/`CDS_DEV_PASS` into `plc login`, `logout`, `run`, `stop`,
+  `plc download` and `plc trace` (not `plc trace --stop`), and refuses those commands (exit 2)
   before writing a command file when either is unset or empty. A command file
   without both fails before its first online call. The watcher
   hands them to the IDE immediately before each online call and never reads the
@@ -177,7 +209,8 @@ file has the same name and lives in `result\`.
 | `compare` | none | none. The per-object differences are in `data.changes`, one row per object with `name`, `path` and `state`, plus `problem` on a changed row whose file could not be read (a file that is not UTF-8 says so); the interactive picker window has been removed |
 | `discover` | none | none. The object tree is printed to stdout; unknown type GUIDs are in `data.unknown` |
 | `build` | `app`, when there is more than one application | `system.ui.choose` matches the option by the name in `app`; without it, `needs_input` comes back |
-| `plc connect`, `plc download` | — | The watcher always refuses, with an error that states the reason: each logs in through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). These two commands exist only in the `--project` form; the refusal of `plc download` points at `plc login --method download -y` |
+| `plc connect` | — | The watcher always refuses, with an error that states the reason: it reads the controller through a connection of its own, which would take the online session of whoever is using the IDE (SPEC D8). It exists only in the `--project` form |
+| `plc download` | `yes`, `gateway`, `port`, `gateway_name`, `after`, `credentials` | "Confirm PLC Download" is answered by `yes`; without it `needs_input` comes back, before anything connects. Without `after` or `gateway` nothing is done; a stale `after` is refused before the body (section 3). Refused when the IDE is logged in. The device node is aimed at `gateway`, which marks the open project changed (SPEC 6.6, "In the watcher") |
 | `plc login` | `method` (`download` or `online_change`), `no_boot_app`, `yes`, `credentials` | with no `method`, none: it logs in only when nothing on the controller changes, and otherwise fails with `data.methods` (SPEC 6.12). With a `method`, "Confirm PLC Download" or "Confirm PLC Online Change" is answered by `yes` (without it `needs_input` comes back, before anything connects), and `no_boot_app` skips writing the boot application. `yes` and `no_boot_app` without a `method` are accepted and ignored |
 | `plc logout` | `credentials` | none |
 | `plc run`, `plc stop` | `yes`, required; `credentials` | "Confirm PLC Run" or "Confirm PLC Stop" is answered by `yes`; without it, `needs_input` comes back. Neither logs in |

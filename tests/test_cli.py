@@ -475,7 +475,7 @@ def test_a_command_carries_the_project_its_ide_was_picked_for(watch,
                                                               monkeypatch):
     sent = []
     monkeypatch.setattr(target, "send",
-                        lambda root, instance_id, cmd, timeout:
+                        lambda root, instance_id, cmd, timeout, **_turn:
                         sent.append(cmd) or {"ok": True})
     target.Target(watch.root).run_one("import", {"yes": True})
     assert sent[0]["project"] == watch.reg["project_path"]

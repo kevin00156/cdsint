@@ -1,0 +1,134 @@
+# -*- coding: utf-8 -*-
+"""Tests for engine/plc_download_watch.py: plc download through the IDE
+somebody has open, leaving it as it was found."""
+from cds.core import trace_run
+from cds.ide import silent
+from engine import plc_crc
+import tests.plc_fakes as plc_fakes
+from tests.plc_fakes import CRC_B, Device, Gateway, PLC_BODY, at, ide
+from tests.plc_fakes import (   # noqa: F401  autouse fixtures
+    fake_codesys_ui, keep_the_engine_loaded, workspace)
+
+LOGIN = {"user": "u", "password": "p"}
+
+
+def watcher_ide(aimed=True, logged_in=False, gateways=None):
+    """The --project fake, made the watcher's: no wait lent (SPEC D5)."""
+    gateways = gateways or [Gateway()]
+    ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B),
+                      gateways=gateways)
+    del ide_globals[trace_run.HOLD_GLOBAL]
+    node = ide_globals["projects"].primary.get_children()[0]
+    if aimed:
+        node.gateway, node.address = gateways[0].guid, "0000.0001"
+    else:
+        node.gateway, node.address = gateways[0].guid, "0000.0099"
+    ide_globals["online"].session.is_logged_in = logged_in
+    return ide_globals
+
+
+def download(ide_globals, **more):
+    args = at(yes=True, after="s.3", credentials=LOGIN, gateway_name=None)
+    args.update(more)
+    return silent.run(ide_globals, PLC_BODY, "download", args)
+
+
+def calls(ide_globals):
+    return [c[0] for c in ide_globals["online"].session.calls]
+
+
+def test_it_downloads_starts_logs_out_and_records_like_the_project_form():
+    ide_globals = watcher_ide()
+    outcome = download(ide_globals)
+    assert outcome.ok(), outcome.result["summary"]
+    assert calls(ide_globals) == ["login", "create_boot_application",
+                                  "start", "logout"]
+    data = outcome.result["data"]
+    assert data["crc"] == plc_crc.MATCH and data["logged_in"] is False
+    written = plc_crc.read_records(
+        plc_crc.record_path(plc_fakes.PROJECT_PATH))
+    assert list(written) == [plc_fakes.CONTROLLER]
+
+
+def test_the_device_node_is_aimed_at_the_gateway_and_the_result_says_so():
+    # As the --project form does: nothing that reads the node can say
+    # where a login goes (bench, 2026-11-20).
+    ide_globals = watcher_ide(aimed=False)
+    outcome = download(ide_globals)
+    assert outcome.ok(), outcome.result["summary"]
+    node = ide_globals["projects"].primary.get_children()[0]
+    gateway, address, port = node.gateway_set_to
+    assert (gateway.name, address) == ("Gateway-1", plc_fakes.ADDRESS)
+    assert any("marked changed" in n for n in outcome.result["data"]["notes"])
+
+
+def test_the_named_gateway_names_the_controller_in_the_record():
+    gateways = [Gateway("Gateway-1"), Gateway("Gateway-3")]
+    ide_globals = watcher_ide(gateways=gateways)
+    assert download(ide_globals, gateway_name="Gateway-3").ok()
+    written = plc_crc.read_records(
+        plc_crc.record_path(plc_fakes.PROJECT_PATH))
+    assert list(written) == ["Gateway-3/%s:11740" % plc_fakes.ADDRESS]
+
+
+def test_several_gateways_and_none_named_is_refused_before_anything():
+    gateways = [Gateway("Gateway-1"), Gateway("Gateway-3")]
+    ide_globals = watcher_ide(gateways=gateways)
+    outcome = download(ide_globals)
+    assert not outcome.ok() and calls(ide_globals) == []
+
+
+def test_an_ide_that_is_logged_in_is_left_alone():
+    # Somebody's session: a person's, a plc login's, a recording's.
+    ide_globals = watcher_ide(logged_in=True)
+    outcome = download(ide_globals)
+    assert not outcome.ok()
+    assert "plc logout first" in outcome.result["summary"]
+    assert calls(ide_globals) == []
+
+
+def test_without_a_count_nothing_is_done():
+    # The CLI never sends one without it; the wire is not trusted.
+    ide_globals = watcher_ide()
+    outcome = download(ide_globals, after=None)
+    assert not outcome.ok() and "--after" in outcome.result["summary"]
+    assert calls(ide_globals) == []
+
+
+def test_without_a_gateway_nothing_is_done():
+    ide_globals = watcher_ide()
+    outcome = download(ide_globals, gateway=None)
+    assert not outcome.ok() and "--gateway" in outcome.result["summary"]
+
+
+def test_the_login_is_handed_over_before_the_online_calls():
+    ide_globals = watcher_ide()
+    download(ide_globals)
+    assert ide_globals["online"].credentials == ("u", "p")
+
+
+def test_without_a_forwarded_login_nothing_is_sent():
+    ide_globals = watcher_ide()
+    outcome = download(ide_globals, credentials=None)
+    assert not outcome.ok() and "device login" in outcome.result["summary"]
+    assert calls(ide_globals) == []
+
+
+def test_a_project_download_whose_launcher_lent_no_wait_is_still_that_one():
+    # hold.lend puts None there for an IDE that has a window or will not
+    # say; the name being there is what says --project.
+    ide_globals = ide(allowed=["download"], device=Device(crc=CRC_B))
+    ide_globals[trace_run.HOLD_GLOBAL] = None
+    outcome = silent.run(ide_globals, PLC_BODY, "download", at(yes=True))
+    assert outcome.ok(), outcome.result["summary"]
+    node = ide_globals["projects"].primary.get_children()[0]
+    assert node.gateway_set_to is not None
+
+
+def test_a_download_that_failed_still_says_whether_it_is_logged_in():
+    ide_globals = watcher_ide()
+    session = ide_globals["online"].session
+    session.refuse_login = "the download stopped halfway"
+    outcome = download(ide_globals)
+    assert not outcome.ok() and "halfway" in outcome.result["summary"]
+    assert outcome.result["data"]["logged_in"] is False

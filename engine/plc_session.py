@@ -38,10 +38,13 @@ CHANGED = {"nothing": "nothing on the controller changed",
            "download": "downloaded in full",
            "online_change": "changed online"}
 
-# The cure for a controller that does not hold this copy's download: the
-# watcher refuses plc download and points here instead.
-WATCHER_DOWNLOAD = ("use plc login --method download -y to put this working "
-                    "copy on it")
+# The cure for a controller that does not hold this copy's download, in the
+# watcher: both put this working copy on it, and only plc download writes
+# the CRC record a later plc connect or plc trace holds the controller to.
+WATCHER_DOWNLOAD = ("use plc download -y --gateway IP --after COUNT (COUNT "
+                    "from verify -y) to put this working copy on it and "
+                    "start it, or plc login --method download -y to download "
+                    "it and stay logged in")
 
 # The OnlineChangeOption member --method online_change logs in with. Not
 # Try, which falls back to a full download where an online change is not

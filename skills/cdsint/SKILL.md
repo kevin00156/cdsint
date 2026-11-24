@@ -140,9 +140,10 @@ add the word. **And the call has to be confirmed**: `plc download`,
 `plc login --method`, `plc run` and `plc stop` take `-y`, exactly as `import`
 does.
 
-`plc connect` and `plc download` have no `--target` form: each logs in through a
+`plc connect` has no `--target` form: it reads the controller through a
 connection of its own, which would take the online session of whoever is using
-the IDE. `login`, `logout`, `run` and `stop` are the other way round, below.
+the IDE. `plc download` has both (the `--target` one is below); `login`,
+`logout`, `run` and `stop` have only `--target`, below.
 
 Both commands answer one question — is this controller still holding what cdsint
 downloaded to it from this project. `download` writes the controller's CRC into
@@ -225,6 +226,29 @@ ends it early; the first command then answers with `data.stopped_early`.
 While it records, that IDE answers only `--stop`, `ping` and `status`; other
 commands are refused with when it ends. A trace the user started by hand is
 refused rather than taken over.
+
+### Downloading through the user's open IDE
+
+When the project is already open in an IDE with a watcher, verify and download
+through it instead of starting two IDEs of your own:
+
+```
+cdsint verify -y --target X --json > verify.json
+cdsint plc download -y --target X --gateway IP [--port N] [--gateway-name NAME] --after COUNT
+```
+
+`COUNT` is the change count verify reports: its last line says it, and with
+`--json` it is the last record's `changes`. The download is refused (exit 1,
+nothing sent) when anything changed the IDE through cdsint since that verify
+(run verify again), when the IDE is logged in (`plc logout`, then verify again,
+since the logout moves the count too; cdsint never ends a login it did not
+make). It aims the project's device node at `--gateway` as the `--project`
+form does, which marks the user's open project changed (the notes say so;
+tell the user). It then does what the `--project` download does — full download, boot
+application, start, CRC read back and recorded — and logs out again;
+`data.logged_in` is `false`. It needs `download` in the `plc` list, `-y`, and
+`CDS_DEV_USER`/`CDS_DEV_PASS` like the other watcher online commands. A change
+made by hand in the IDE is not counted; nothing can see it.
 
 ### Logging in, out, running and stopping through the user's open IDE
 
@@ -336,7 +360,11 @@ single live IDE matched — so change what you typed rather than running it
 again, `3` timed out with no report to show for it (raise `--timeout`: it bounds one step, default 120s, and
 big imports and builds need more), `4` the project is open elsewhere, the IDE
 would not start, or `--install` matched no IDE (it lists what there was), `5`
-the `plc` list in the project's settings file does not allow this command.
+the `plc` list in the project's settings file does not allow this command,
+`6` the IDE is taken: another caller's changing command is queued or running in that
+watcher, so yours, which changes something, was refused rather than queued
+behind it. Nothing ran; the message names the other command, since when, and
+the pid and folder it came from. Wait for it and run the same line again.
 
 A `--project` run that was killed after its report was written is not exit 3:
 the report is the answer, and the exit code is the thing that went missing. The
@@ -396,7 +424,11 @@ Without it the command exits 2 and lists the candidates.
 
 Waiting costs the IDE nothing, but export, import and build each hold the UI thread
 for seconds — that is the CODESYS object model, not a bug. Send one command at a
-time and wait for it.
+time and wait for it. Another agent may be driving the same IDE: anything that
+changes something (import, export, build, verify, trace apply or show, every
+`plc` command but `trace --stop`) is refused with exit 6 while somebody else's
+changing command is queued or running there, and only reads (`ping`, `status`,
+`compare`, `discover`, `trace list`, `trace job`, `trace save`) wait in line.
 
 ## Never
 

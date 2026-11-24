@@ -130,8 +130,8 @@ class MethodTrip(SessionTrip):
                     % (self.method, problem))
         if removed:
             self.note("removed from the CRC record in %s %s: a plc connect "
-                      "answers UNKNOWN for %s until the --project plc "
-                      "download -y records again"
+                      "answers UNKNOWN for %s until a plc download -y "
+                      "records again"
                       % (path, _which(held), ", ".join(removed)))
         return None
 

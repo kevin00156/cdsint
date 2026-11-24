@@ -19,7 +19,8 @@ from cdsint import cli, flags, refusals, target
 from engine import plc_link
 
 SECRET = "s3cret-do-not-print"
-FORWARDED = ["plc login", "plc logout", "plc run", "plc stop", "plc trace"]
+FORWARDED = ["plc login", "plc logout", "plc run", "plc stop", "plc trace",
+             "plc download"]
 
 
 @pytest.fixture
@@ -31,6 +32,7 @@ def both_set(monkeypatch):
 def picked():
     watcher = object.__new__(target.Target)
     watcher.root, watcher.instance_id, watcher.timeout = "r", "i", 1.0
+    watcher.sent = set()
     watcher.reg = {"project_path": None}
     return watcher
 
@@ -38,7 +40,7 @@ def picked():
 def sent_args(monkeypatch, command, args=None):
     seen = {}
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         seen.update(cmd["args"])
         return {"ok": True}
     monkeypatch.setattr(target, "send", send)
@@ -78,7 +80,7 @@ def test_the_caller_s_own_args_are_not_mutated(monkeypatch, both_set):
 
 
 def test_it_is_in_no_output_the_caller_sees(monkeypatch, both_set, capsys):
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         assert cmd["args"]["credentials"]["password"] == SECRET
         return commands.new_result(cmd, False, error="the login was refused")
     monkeypatch.setattr(target, "send", send)
@@ -297,6 +299,9 @@ def watcher_argv(command, tmp_path):
         job.write_text('{"duration_s": 1, "out": "o"}', encoding="utf-8")
         return ["plc", "trace", "--target", "i", "--name", "T", "--job",
                 str(job)]
+    if command == "plc download":
+        return ["plc", "download", "-y", "--target", "i", "--gateway",
+                "192.168.1.5", "--after", "s.1"]
     return command.split() + ["--target", "i"] + (
         ["-y"] if command in ("plc run", "plc stop") else [])
 
@@ -312,7 +317,7 @@ def sends(monkeypatch):
     """What the CLI queued, answered ok, with no watcher to resolve."""
     sent = []
 
-    def send(root, instance_id, cmd, timeout):
+    def send(root, instance_id, cmd, timeout, **_turn):
         sent.append(cmd)
         return commands.new_result(cmd, True)
     monkeypatch.setattr(target, "send", send)
