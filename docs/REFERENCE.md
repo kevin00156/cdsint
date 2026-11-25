@@ -811,6 +811,24 @@ file for another device model is refused. After an import that changed a
 device, `data.devices_changed` names them and `data.full_download` says
 whether the IDE now needs a full download. SPEC 6.10 has the rules.
 
+Which PDOs a slave sends is each PDO's `Sm` line, `-1` for unassigned.
+Changing one makes import rebuild the slave's channel list as the Process
+Data page does, so the channel keys on the `map` lines are renumbered and
+the addresses of the slaves behind move. The surest file is an export of a
+project where the change was made in the IDE, such as an older commit. Edited
+by hand, the sync manager's `length` has to be changed with the `Sm` lines, or
+the file is refused and nothing of it is written. The channel counts, the FMMU
+length and the map keys are the IDE's to compute: a line left at its old
+number fails the import naming the IDE's number, with the assignment made and
+every variable kept on its channel. Then delete that one file and `export`.
+Where the channel list cannot be rebuilt (a modular drive, an IDE without the
+means) the message says to use the Process Data page.
+
+After any device file is applied, import fails the device when its channels
+do not add up to its assigned PDOs. To check a PDO change yourself, export
+and compare the `%I` and `%Q` addresses in the comments of the *next* slave's
+file; the `map` lines of the changed slave do not show it.
+
 ## Sync pragmas in `.st` files
 
 An exported file may start with one or more `//% cds-text-sync.<key>=<value>`

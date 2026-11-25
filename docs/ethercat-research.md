@@ -234,8 +234,9 @@ unless noted; section 4.1 is what was actually written.
 | | PDOs: `PDOAssign`, `PDOConfig`, one `RxTxPdo` compound per PDO (`Index`, `Name`, `Sm`, `Mandatory`, `Fixed`, `NumberofEntries`, ...), its `Exclude` list and entries; sync managers, FMMUs |
 | | SoftMotion axis (the `Axis_N` child): scaling, software limits, drive id |
 
-Adding or deleting a startup SDO entry, or choosing which PDO is assigned, is
-not a single value in this list, and neither was tried (section 10).
+Adding or deleting a startup SDO entry is not a single value in this list, and
+was not tried. Choosing which PDO is assigned is one value per PDO (`Sm`), but
+writing it does not change the channels; section 13 has what does.
 
 ---
 
@@ -516,9 +517,8 @@ one removed disappears; neither is applied back.
 - **`Keep` with the other changes of 5.1** (startup SDO, slave address,
   library): only the IO channel and the master cycle were taken to the
   controller.
-- **PDO assignment and adding or deleting startup SDO entries**: not single
-  values in the API; where the selection is stored was not found, and neither
-  was tried through the API or the XML.
+- **Adding or deleting startup SDO entries**: not single values in the API, and
+  not tried through the API or the XML. PDO assignment is in section 13.
 - **A device whose description is absent altogether** (2.6 was a version
   mismatch).
 - **Delta: `update`, `add`, `remove` of a slave, the CSV import, the
@@ -562,3 +562,70 @@ Measured 2026-11-17 on a copy of an AX-8 project (controller description
   PROFINET and the like): the rule takes them too, but none of the three
   sample projects has one, so neither their read nor their write is
   measured.
+
+---
+
+## 13. PDO assignment (DIADesigner-AX 1.10, EtherCAT plug-in 4.10.0.0)
+
+Measured 2026-11-25 in `--noUI`, offline, on copies of one AX-8 project with
+an ICP DAS EC4-ENC2IT (`Slave_2`, four modules behind it) in two states set up
+in the GUI: 36 input bytes (TxPDO 1A00 1A01 1A02 1A10 1A11 1A12) and 40
+(1A00 1A01 1A05 1A10 1A11 1A15). GitHub #16.
+
+| | SM 3 length | Number of Inputs | input map lines | first channel of `Slave_3` |
+|---|---|---|---|---|
+| 36, GUI | 36 | 40 | 296 | %IX228.0 |
+| 40, GUI | 40 | 58 | 330 | %IX230.0 |
+| 40, all of 36's values written through the API | 36 | 40 | **330** | **%IX230.0** |
+
+Saving, reopening and building did not change the third row.
+
+- **Three accounts.** `Sm` of each PDO parameter (type `localTypes:RxTxPdo`),
+  the sync managers' `length`, and the channel parameters, which is what the
+  process image is laid out from. A PDO's entries (`localTypes:Entry`) have
+  the ids after it, inside the same 256; RxPDOs start at 16#70000000 and
+  TxPDOs at 16#70050000. A channel has `channel_type` `Input` or `Output`; its
+  `section` names its PDO. Padding entries are channels too, one per bit or
+  byte, named after the entry's `Name`.
+- **The relation that held** on all 14 devices with PDOs in both projects: the
+  assigned PDOs' entry bits equal the channels' bits in each direction, and an
+  SM's length is its PDOs' size in whole bytes. Two of the 14 (the
+  `i950_BS_STO` drives) have PDOs and SMs and no channel; their modules,
+  `Axis_A`, have the same PDOs, the channels and no SM.
+- **`update()`** to the same identification raised on all three slaves tried,
+  none of them changed: Delta replaces the command with one that opens a window
+  (`CustomizedUpdateDeviceCommand.ShowPromptDialog`, null reference).
+- **What rebuilds the list.** The plug-in's public class
+  `_3S.CoDeSys.Ethercat.LoadSavePDOData`: `LoadDataFromConfig(list,
+  connector)` fills a list of PDO items (`lParameterId`, `iSm`);
+  `SaveMappingToConfig(list, item, connector)` writes one and rebuilds its
+  direction's channels. The connector has to be the writable copy that the
+  script connector's private, generic `PerformWithWriteableCopy` hands a
+  callback. Found by listing members, not by reading the plug-in's code.
+  - One call for one moved item rebuilt that item's direction only. One call
+    per moved item did it all.
+  - Changed by it, 40 to 36: the six `Sm`, SM and FMMU lengths, `Number of
+    Inputs` and `Outputs` and their `Infos` copies, and the channels. Nothing
+    else; `Su` stays. All mapped variables stayed with their PDO entries.
+  - Saved, reopened and exported twice: `Slave_3` to `Slave_6` as in the GUI's
+    project. Both directions, 36 to 40 and 40 to 36.
+  - Saving every item unchanged changes nothing. An exception in the callback
+    leaves the device as it was.
+  - On the third row's project (values written, list stale) it makes things
+    worse: saving an assigned item of each direction unchanged left 57 input
+    channels, 17 of them from the old list, 436 bits for 288, and dropped the
+    variable of `Ch.1 Counter value`. It removes as many channels as `Number
+    of Inputs` says, and the values already said 40. So the assignment has to
+    go before the values, and a stale list is not repaired this way.
+  - `AddAndUpdateEntries` in its place rebuilds the channels and leaves the
+    unassigned PDOs' `Sm` at 3: not usable.
+  - In the same process the slaves behind keep their old addresses until the
+    project is saved or built; either one recomputes them.
+- **Stale reads.** The first export after a device change showing old values
+  (#16) was seen through a watcher; in the `--project` form the first and
+  second export were identical every time.
+
+**Not verified:** a watcher, that is an IDE with a window and perhaps an open
+editor; every other IDE; a slave whose PDOs exclude one another (none here
+do, and the plug-in's save was not shown to check it); a modular drive; the
+bus.

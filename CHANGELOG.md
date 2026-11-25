@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+### Unreleased
+
+- **Importing a `.device` file that assigns or removes a PDO rebuilds the
+  slave's channel list.** Import wrote the assignment and the sync manager
+  lengths as plain values, the IDE kept the old channel list, and everything
+  reported success: on a test bench every input behind the slave then read from
+  the wrong address, the E-stop among them, and a later start crashed in the
+  EtherCAT stack (#16). The assignment now goes through the EtherCAT plug-in's
+  own save, with the same result as the Process Data page. Where that cannot be
+  done, the file is refused and nothing of it is written. Verified on
+  DIADesigner-AX 1.10 with `--project`; an IDE whose plug-in has no such save
+  refuses.
+- **Import fails a device whose channels do not add up to its assigned PDOs**,
+  whatever the file changed, and also when an earlier version left it so: an
+  import that used to pass on such a device now exits 1. The fix is the slave's
+  Process Data page.
+
 ### 0.7.0 (2026-11-24) — download through the open IDE, built-in IO in git
 
 - **`cdsint plc download --target`.** A deployment ran `verify --project` and

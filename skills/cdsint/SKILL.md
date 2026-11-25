@@ -490,6 +490,20 @@ A value the IDE would not take is named in `failed_objects`. Import never adds,
 removes or updates a device, and a slave's DC cycle times are not in the file
 (they follow the master's); changes like those are for the user in the IDE.
 
+Assigning or removing a PDO is its `Sm` line (`-1` is unassigned), and it moves
+the address of every slave behind this one. Import rebuilds the slave's channel
+list, which renumbers the keys on the `map` lines. Best is a file exported after
+the change was made in the IDE (an older commit). By hand: change the `Sm` lines
+and the sync manager's `length` (bytes of the PDOs now on it) together, or
+nothing is written. Expect exit 1 for the numbers the IDE computes (counts, FMMU
+length, old `map` keys); the reason is the `Failed to import` line of the output,
+the assignment is made and the variables are still on their channels. Then
+delete that `.device` file, `export`, and read the diff: the next slaves'
+`%I`/`%Q` addresses, in the comments, must have moved by the PDO's size. If the
+message says to use the Process Data page, that step is the user's. After
+`the assigned PDOs are N bits and the channels are M` do not download: that
+project reads the wrong inputs.
+
 ## The `.st` format
 
 Declaration and implementation are split by one marker line:
