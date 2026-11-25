@@ -96,17 +96,17 @@ from data the IDE exposes (assigned PDOs and their entries vs. the channel list)
         set, an update/"apply" call, re-reading the device description, `system.commands`, ...).
   - [x] Acceptance: either a probe that turns the reproduced-bug project into one whose export equals `ref36`
         structurally, or a list of what was tried with the observed result of each.
-- [ ] **Stage 3: implement**
-  - [ ] Goal 1 if stage 2 found a way, otherwise goal 2. Goal 3 in both cases.
-  - [ ] Acceptance (if goal 1): copy of 40B + import of `ref36/Slave_2.device` -> second export is structurally
+- [x] **Stage 3: implement**
+  - [x] Goal 1 if stage 2 found a way, otherwise goal 2. Goal 3 in both cases.
+  - [x] Acceptance (if goal 1): copy of 40B + import of `ref36/Slave_2.device` -> second export is structurally
         identical to `ref36` for `Slave_2..Slave_6` (keys, names, addresses, lengths). And the reverse: copy of
         36B + `ref40/Slave_2.device` -> identical to `ref40`. `build` gives 0 errors in both.
-  - [ ] Acceptance (if goal 2): the same two imports exit non-zero, name `Slave_2` in `failed_objects`, and a
+  - [ ] (goal 1 reached, not applicable) Acceptance (if goal 2): the same two imports exit non-zero, name `Slave_2` in `failed_objects`, and a
         following export is structurally identical to the project's state *before* the import.
-  - [ ] Acceptance (goal 3): a test or scripted check where the guard fires on the stage-1 reproduction.
-  - [ ] Acceptance: a `.device` import that only changes `map` lines or a plain value still works exactly as
+  - [x] Acceptance (goal 3): a test or scripted check where the guard fires on the stage-1 reproduction.
+  - [x] Acceptance: a `.device` import that only changes `map` lines or a plain value still works exactly as
         before (run it on a copy; show before/after).
-  - [ ] Existing test suite green (`pytest`); new unit tests for whatever logic lives outside the IDE.
+  - [x] Existing test suite green (`pytest`); new unit tests for whatever logic lives outside the IDE.
 - [ ] **Stage 4: documents**
   - [ ] `docs/SPEC.md`, `docs/REFERENCE.md`, `docs/ethercat-research.md`, the skill text under `skills/`, and
         `CHANGELOG.md` say what `import` now does with PDO assignment changes and how to check the result.
@@ -182,6 +182,28 @@ channel: their module `Axis_A` carries the channels.
   writing it back would recreate the bug - cost: editing only `Sm` lines exits 1 until the named lines are fixed too.
 - Ruling: the guard fails any applied device that is inconsistent afterwards, also when it was before - "never silent"
   is decision 1 - cost: a slave whose channels legitimately differ from its PDOs (none found) exits 1 on every import.
+
+### Stage 3 result (DIADesigner-AX 1.10, `--project`, fresh copy per row, second export)
+
+| Import into a copy of | File | Exit | Result |
+|---|---|---|---|
+| 40B | `ref36/Slave_2.device` | 0 | identical to `ref36` for Slave_2..6, values too; build 0 errors |
+| 36B | `ref40/Slave_2.device` | 0 | identical to `ref40` for Slave_2..6, values too; build 0 errors |
+| 40B | a station alias, one mapping added, one removed | 0 | the three lines changed and nothing else; every exported file identical to the 0.7.0 engine's result |
+| 40B | 1A05/1A15 `Sm` to -1, lengths left at 40 | 1 | refused, names the 28 bytes; project unchanged |
+| 40B | an entry's `Size` of an assigned PDO | 1 | refused; project unchanged |
+| 40B | `Sm` and SM length edited, counts, FMMU length and map lines left | 1 | assignment landed and consistent, variables kept on their channels, each stale line named |
+| the stage-1 project (stale, 0.7.0) | a station alias | 1 | the guard names 288 against 320 and 288 against 128 bits |
+| the stage-1 project | `ref36/Slave_2.device` | 1 | the same, plus the mapping that has no channel |
+
+Guard run read-only over all 21 devices: 36B none, 40B none, stage-1 project only Slave_2, repaired copy none.
+
+- Ruling: a file whose map lines are still numbered for the old channel list writes no mapping at all - the rebuild has
+  already kept every variable on its channel, and an old number can be another channel's key (the field failure's second
+  half) - cost: after a hand edit of `Sm` lines the agent deletes the file and exports once to get the new numbers.
+- Ruling: the guard runs on the devices an import applies, not on every device of every import - reading every channel's
+  size costs each import a pass over 12296 channels on the large sample - cost: a stale list left by 0.7.0 on a device
+  nobody edits is not found by import.
 
 ## 8. Takeover prompt
 

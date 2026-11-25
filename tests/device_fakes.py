@@ -17,7 +17,8 @@ class Mapping(object):
 
 class Element(object):
     def __init__(self, identifier, value="", name=None, access="ReadWrite",
-                 subs=(), mapping=None, on_write=None):
+                 subs=(), mapping=None, on_write=None,
+                 channel="None", bits=0):
         self.identifier = identifier
         self.visible_name = name or identifier
         self._value = value
@@ -25,6 +26,7 @@ class Element(object):
         self._subs = list(subs)
         self.is_mappable_io = mapping is not None
         self.io_mapping = mapping
+        self.channel_type, self.bit_size = channel, bits
         self._on_write = on_write     # what the plug-in does with a write
 
     @property
@@ -140,3 +142,28 @@ class Port(object):
 
     def get_children(self, recursive=False):
         return list(self._children)
+
+
+# A slave's process data as a `.device` file holds it: one RxPDO of 16 bits on
+# SM 2, one TxPDO of 48 bits on SM 3, and another TxPDO of 32 bits that is
+# unassigned until other_sm says otherwise. The ids are the plug-in's.
+RX_PDO, TX_PDO, OTHER_TX_PDO = 1879048192, 1879375872, 1879376128
+
+
+def pdo_values(other_sm="-1", in_length="6"):
+    values = {}
+    for number, length in enumerate(("16#80", "16#80", "2", in_length)):
+        for field, value in (("length", length), ("flagtypedir", "32"),
+                             ("flagctrl", "1"), ("synctype", "0")):
+            values["c1/%d/%s" % (1342177281 + number, field)] = value
+    for pdo, index, sm, sizes in ((RX_PDO, "16#1600", "2", (16,)),
+                                  (TX_PDO, "16#1A00", "3", (16, 32)),
+                                  (OTHER_TX_PDO, "16#1A05", other_sm, (32,))):
+        for field, value in (("Index", index), ("Sm", sm),
+                             ("Mandatory", "False"),
+                             ("NumberofEntries", str(len(sizes)))):
+            values["c1/%d/%s" % (pdo, field)] = value
+        for place, size in enumerate(sizes):
+            values["c1/%d/Size" % (pdo + 2 + place)] = str(size)
+            values["c1/%d/SubIndex" % (pdo + 2 + place)] = str(place)
+    return values

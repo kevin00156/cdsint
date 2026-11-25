@@ -7,11 +7,14 @@ keys are the connector (or `dev`) and the path of identifiers. Every write is re
 things that did not happen: a slave's DC cycle is replaced by the master's
 (docs/ethercat-research.md 4.2), and the first write after opening a project
 can raise and still leave the value (research 8.1). Reading everything first,
-as apply() does, is what the research found avoids the second.
+as apply() does, is what the research found avoids the second. A slave's PDO
+assignment is the one value not written this way: the plug-in has to rebuild
+the channel list with it (engine/pdo_assignment.py).
 """
 from __future__ import print_function
 
-from cds.core import device_text
+from cds.core import device_text, pdo_layout
+from engine import pdo_assignment
 from engine.strings import safe_str
 
 READ_WRITE = "ReadWrite"
@@ -23,6 +26,11 @@ READ_WRITE = "ReadWrite"
 FOLLOWS_MASTER = ("1610633216", "1610764288")
 FOLLOWS_MASTER_WHY = ("follows the master's cycle; change the master's "
                       "MasterCycleTime or this slave's DC factor instead")
+
+OLD_NUMBERING = ("map %s: numbered for the channel list before this PDO "
+                 "assignment, so no mapping was written; the IDE kept every "
+                 "variable on its channel. Delete the file and export to get "
+                 "the new numbers")
 
 
 def _follows_master(key):
@@ -142,18 +150,71 @@ def _guarded(write, index, key, value, problems, label):
         problems.append("%s%s: %s" % (label, key, safe_str(exc)))
 
 
+def _index(device):
+    return dict((key, (element, inside, writable))
+                for key, element, inside, writable in _elements(device))
+
+
+def _write_values(device, changes, problems):
+    index = _index(device)
+    for key, value in sorted(changes.items()):
+        _guarded(_write_value, index, key, value, problems, "")
+
+
+def _write_mappings(device, changes, problems):
+    index = _index(device)
+    for key, variable in sorted(changes.items()):
+        _guarded(_write_mapping, index, key, variable, problems, "map ")
+
+
+def _write(device, have, wanted, problems):
+    changes = device_text.diff(have, wanted)
+    _write_values(device, changes["values"], problems)
+    _write_mappings(device, changes["maps"], problems)
+
+
+def _write_with_pdos(device, have, wanted, change, problems):
+    """_write(), for a file that also changes the PDO assignment.
+
+    The assignment goes first, because the rebuild renumbers the channels
+    the mappings are for, and once more after the values, because channels
+    take their names from them. A value the rebuild set itself is the IDE's
+    to compute: writing the file's older one back would put the layout out
+    of step again, so it is left for the read-back to name. A file whose map
+    lines are numbered for the old list maps nothing: the rebuild has kept
+    every variable on its channel, and those lines would move them off it.
+    """
+    change.rebuild()
+    rebuilt = as_doc(device)
+    values = device_text.diff(rebuilt, wanted)["values"]
+    _write_values(device, dict(
+        (key, value) for key, value in values.items()
+        if rebuilt["values"].get(key) == have["values"].get(key)), problems)
+    change.rebuild()
+    stale = pdo_layout.old_numbering(have, rebuilt, wanted)
+    if stale:
+        problems.extend(OLD_NUMBERING % key for key in stale)
+        return
+    _write_mappings(device, device_text.diff(as_doc(device), wanted)["maps"],
+                    problems)
+
+
 def apply(device, wanted):
     """Make the device's values and mappings what `wanted` says. Problems,
-    by key; each write is tried whatever happened to the others."""
-    index = dict((key, (element, inside, writable))
-                 for key, element, inside, writable in _elements(device))
-    changes = device_text.diff(as_doc(device), wanted)
+    by key; each write is tried whatever happened to the others, except that
+    a file whose PDO layout cannot be applied changes nothing."""
+    have = as_doc(device)
+    change = pdo_assignment.Change(device, have, wanted)
+    refused = change.refusals()
+    if refused:
+        return ["nothing changed: " + "; ".join(refused)]
     problems = []
-    for key, value in sorted(changes["values"].items()):
-        _guarded(_write_value, index, key, value, problems, "")
-    for key, variable in sorted(changes["maps"].items()):
-        _guarded(_write_mapping, index, key, variable, problems, "map ")
+    if change.moved:
+        _write_with_pdos(device, have, wanted, change, problems)
+    else:
+        _write(device, have, wanted, problems)
+    after = as_doc(device)
     reported = set(p.split(":")[0] for p in problems)
-    problems.extend(p for p in device_text.mismatches(as_doc(device), wanted)
+    problems.extend(p for p in device_text.mismatches(after, wanted)
                     if p.split(":")[0] not in reported)
-    return problems
+    return problems + pdo_assignment.leftovers(device, after)

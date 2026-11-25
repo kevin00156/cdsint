@@ -31,6 +31,16 @@ CREATE_SCRIPT_TRACE = "CreateScriptTraceObject"
 EDITOR_VIEW = "_view"
 LOAD_TRACE = "LoadTrace"
 
+# The EtherCAT plug-in's reader and writer of a slave's PDOs, which rebuilds the
+# channel list as its Process Data page does, and the two fields of the PDO
+# items it hands out (docs/ethercat-research.md 13).
+PDO_PLUGIN = "deviceeditorethercat.plugin"
+PDO_TYPE = "_3S.CoDeSys.Ethercat.LoadSavePDOData"
+LOAD_PDOS = "LoadDataFromConfig"
+SAVE_PDO = "SaveMappingToConfig"
+PDO_ID = "lParameterId"
+PDO_SM = "iSm"
+
 # Where in_script_run parks the call for the nested run to pick up. One name
 # is enough: inside the nested run the stack is not empty, so a call() that
 # itself goes through in_script_run calls straight through.
@@ -174,6 +184,111 @@ def loader_for(editor):
             return None
         return args[1] or "LoadTrace returned false and said nothing"
     return load
+
+
+def pdo_saver_for(connector):
+    """save({PDO parameter id: SM number}) for this connector, or None.
+
+    Writing a PDO's `Sm` through the script API leaves the slave's channel
+    list as it was (GitHub #16). The plug-in's own save rebuilds it, and
+    computes the sync managers' lengths and the channel counts. One save
+    covers one direction, so each PDO given is saved. Everything happens on
+    one writable copy, which the IDE drops when the callback raises: a save
+    that fails changes nothing.
+
+    None when this IDE's EtherCAT plug-in lacks any of it, which the caller
+    refuses on.
+    """
+    try:
+        import clr
+    except ImportError:
+        return None
+    from System import Array, Type
+    kind = _pdo_type()
+    load = _only_method(kind, LOAD_PDOS, 2)
+    save = _only_method(kind, SAVE_PDO, 3)
+    copying = _only_method(clr.GetClrType(type(connector)), MEMBER, 1)
+    if None in (load, save, copying) or not copying.IsGenericMethodDefinition:
+        return None
+    item, copy_type = [p.ParameterType for p in save.GetParameters()][1:]
+    fields = [item.GetField(name, _everything()) for name in (PDO_ID, PDO_SM)]
+    if None in fields:
+        return None
+    from System import Action
+    action = Action[clr.GetPythonType(copy_type)]
+    invoke = copying.MakeGenericMethod(Array[Type]([copy_type])).Invoke
+
+    def run(callback):
+        invoke(connector, Array[object]([action(callback)]))
+    return lambda sms: _aborting(
+        run, lambda copy: _save_pdos(load, save, fields, sms, copy))
+
+
+def _save_pdos(load, save, fields, sms, copy):
+    """Put each PDO in `sms` on its sync manager, on one writable connector."""
+    from System import Activator, Array, Int32
+    from System.Collections import ArrayList
+    id_of, sm_of = fields
+    pdos, plugin = ArrayList(), Activator.CreateInstance(load.DeclaringType)
+    load.Invoke(plugin, Array[object]([pdos, copy]))
+    chosen = [p for p in pdos if int(id_of.GetValue(p)) in sms]
+    if len(chosen) != len(sms):
+        raise RuntimeError("the EtherCAT plug-in lists %d of the %d PDOs to "
+                           "assign" % (len(chosen), len(sms)))
+    for pdo in chosen:
+        sm_of.SetValue(pdo, Int32(sms[int(id_of.GetValue(pdo))]))
+    for pdo in chosen:
+        save.Invoke(plugin, Array[object]([pdos, pdo, copy]))
+
+
+def _aborting(run, body):
+    """run(callback), raising what `body` raised instead of the wrapper
+    reflection puts around it, which says only that the target threw."""
+    raised = []
+
+    def callback(copy):
+        try:
+            body(copy)
+        except Exception as exc:
+            raised.append(exc)
+            raise
+
+    try:
+        run(callback)
+    except Exception as exc:
+        raise RuntimeError(_innermost(raised[0] if raised else exc))
+
+
+def _innermost(exc):
+    """The text of the .NET exception at the bottom, or of `exc` itself."""
+    inner = getattr(exc, "clsException", None)
+    while inner is not None and inner.InnerException is not None:
+        inner = inner.InnerException
+    return str(exc) if inner is None else inner.Message
+
+
+def _pdo_type():
+    """The plug-in's PDO class, or None. Two loaded versions are no answer:
+    nothing says which of them this project's slaves belong to."""
+    from System import AppDomain
+    found = [a.GetType(PDO_TYPE) for a in AppDomain.CurrentDomain.GetAssemblies()
+             if a.GetName().Name.lower() == PDO_PLUGIN]
+    return found[0] if len(found) == 1 else None
+
+
+def _everything():
+    from System.Reflection import BindingFlags
+    return (BindingFlags.Instance | BindingFlags.Public
+            | BindingFlags.NonPublic)
+
+
+def _only_method(kind, name, count):
+    """The one method of that name and parameter count, or None."""
+    if kind is None:
+        return None
+    found = [m for m in kind.GetMethods(_everything())
+             if m.Name == name and len(m.GetParameters()) == count]
+    return found[0] if len(found) == 1 else None
 
 
 def _field(obj, name):
