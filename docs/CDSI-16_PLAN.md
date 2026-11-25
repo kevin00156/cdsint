@@ -84,11 +84,11 @@ from data the IDE exposes (assigned PDOs and their entries vs. the channel list)
 
 ## 5. Stages and acceptance
 
-- [ ] **Stage 1: reproduce and build the reference**
-  - [ ] Export each fixture (copy first) to its own sync dir, twice. Keep the second exports as `ref36/` and `ref40/`.
-  - [ ] Acceptance: a written table (in this file, section 7) of Slave_2's input SM length, map-line count, and
+- [x] **Stage 1: reproduce and build the reference**
+  - [x] Export each fixture (copy first) to its own sync dir, twice. Keep the second exports as `ref36/` and `ref40/`.
+  - [x] Acceptance: a written table (in this file, section 7) of Slave_2's input SM length, map-line count, and
         the `%I` address of the first channel of `Slave_3`, for both references.
-  - [ ] Reproduce the bug: on a copy of the 40B project, import `ref36`'s `Slave_2.device`. Acceptance: export
+  - [x] Reproduce the bug: on a copy of the 40B project, import `ref36`'s `Slave_2.device`. Acceptance: export
         (twice) shows SM length 36 but a map-line count and Slave_3 address that differ from `ref36`. Record the numbers.
 - [ ] **Stage 2: find out what the API can do**
   - [ ] Probe scripts under `tools/` or the scratch root that try to make the IDE rebuild the channel list after
@@ -122,6 +122,26 @@ reached and the evidence; what needs a human; what was not done; how to install 
 ## 7. Open questions and rulings
 
 Write decisions here as `Ruling: decision - reason - cost if wrong`. Stage-1 numbers go here too.
+
+### Stage 1 numbers (DIADesigner-AX 1.10, `--project`, copies of the fixtures)
+
+| | input SM length | output SM length | Number of Inputs | Number of Outputs | `335544xx` map lines (all map lines) | `Ch.1 Counter value` | Slave_3 first channel |
+|---|---|---|---|---|---|---|---|
+| `ref36` | 36 | 36 | 40 | 60 | 296 (596) | `c1/33554470`, %ID53 | DI0, %IX228.0 |
+| `ref40` | 40 | 16 | 58 | 38 | 330 (464) | `c1/33554479`, %ID53 | DI0, %IX230.0 |
+| 40B + import of `ref36/Slave_2.device`, 0.7.0 engine | 36 | 36 | 40 | 60 | **330 (464)** | **`c1/33554479`** | **DI0, %IX230.0** |
+
+The import exited 1, but only because the file maps `c1/16777258`, a key that does not exist in the stale
+40B channel list; every PDO and SM value had been written and the project saved. In the field every mapped
+key happened to exist and it exited 0. Both exports after the import are identical.
+
+Stale-read quirk: not seen in `--project` mode. The two exports of each fixture, and the two after the import,
+are identical (only `sync_cache.json` differs).
+
+Every other "plain" value that differs between the references: PDO `Sm` of 1602/1612, 1A02/1A12, 1A05/1A15;
+SM and FMMU lengths; `Number of Inputs/Outputs` on both `c1/16777216`+`c1/33554432` and their copies
+`c1/268435456`+`c1/536870912`. The remaining 500 or so are spelling (`false`/`False`, `16#1a00`/`16#1A00`,
+entry `Default`), left by the description the GUI read.
 
 ## 8. Takeover prompt
 
