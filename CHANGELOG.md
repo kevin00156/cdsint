@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-### Unreleased
+### Unreleased (0.7.1)
 
 - **Importing a `.device` file that assigns or removes a PDO rebuilds the
   slave's channel list.** Import wrote the assignment and the sync manager
