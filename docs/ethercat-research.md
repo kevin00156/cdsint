@@ -611,6 +611,12 @@ Saving, reopening and building did not change the third row.
     project. Both directions, 36 to 40 and 40 to 36.
   - Saving every item unchanged changes nothing. An exception in the callback
     leaves the device as it was.
+  - On the third row's project (values written, list stale) it makes things
+    worse: saving an assigned item of each direction unchanged left 57 input
+    channels, 17 of them from the old list, 436 bits for 288, and dropped the
+    variable of `Ch.1 Counter value`. It removes as many channels as `Number
+    of Inputs` says, and the values already said 40. So the assignment has to
+    go before the values, and a stale list is not repaired this way.
   - `AddAndUpdateEntries` in its place rebuilds the channels and leaves the
     unassigned PDOs' `Sm` at 3: not usable.
   - In the same process the slaves behind keep their old addresses until the

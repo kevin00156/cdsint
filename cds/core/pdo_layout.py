@@ -22,8 +22,8 @@ FIRST_TX_PDO = 0x70050000
 
 def _number(text):
     """A value as the API writes it: 40, 16#28, or nothing at all."""
-    text = (text or "").strip()
-    return int(text[3:], 16) if text.startswith("16#") else int(text or 0)
+    base, sharp, digits = (text or "0").strip().partition("#")
+    return int(digits, int(base)) if sharp else int(base)
 
 
 def _parameters(values):

@@ -157,6 +157,7 @@ from the entry `Name` values the file would also write.
 | plain value writes (0.7.0), save, reopen, build | channel list stays 40B (stage 1) |
 | `device.update()` to the same identification | raises, on all three slaves tried, untouched ones too: Delta replaces the command and opens a window (`CustomizedUpdateDeviceCommand.ShowPromptDialog`, `NullReferenceException`) |
 | `LoadSavePDOData.AddAndUpdateEntries` instead | channels rebuilt, but the `Sm` of 1A05/1A15 stays assigned: inconsistent |
+| `SaveMappingToConfig` on the stage-1 project itself, nothing moved | worse: 57 input channels, 436 bits for 288, one variable lost; it removes as many channels as `Number of Inputs` already says |
 | `SaveMappingToConfig` for one moved PDO only | rebuilds its direction only; one call per moved PDO is needed |
 | `SaveMappingToConfig` for every PDO, nothing moved | no difference: idempotent |
 | an exception inside the writable copy | nothing is committed: one transaction |
@@ -168,6 +169,9 @@ alarm; fires on the stage-1 project (288 against 320, 288 against 128). Two driv
 channel: their module `Axis_A` carries the channels.
 
 ### Rulings
+
+Stage 2's box is ticked on the list above and on the probe from a clean 40B copy. The reproduced-bug project itself was
+not turned into `ref36`: the plug-in cannot repair a list that is already stale, so import refuses it.
 
 - Ruling: goal 1, through the plug-in's own class - it reproduces the GUI's result exactly and commits atomically -
   if a later plug-in renames it, import falls back to refusing (goal 2), by name.
@@ -201,9 +205,10 @@ Guard run read-only over all 21 devices: 36B none, 40B none, stage-1 project onl
 - Ruling: a file whose map lines are still numbered for the old channel list writes no mapping at all - the rebuild has
   already kept every variable on its channel, and an old number can be another channel's key (the field failure's second
   half) - cost: after a hand edit of `Sm` lines the agent deletes the file and exports once to get the new numbers.
-- Ruling: the guard runs on the devices an import applies, not on every device of every import - reading every channel's
-  size costs each import a pass over 12296 channels on the large sample - cost: a stale list left by 0.7.0 on a device
-  nobody edits is not found by import.
+- Ruling: the guard runs on the devices an import applies, not on every device of every import - that
+  is what goal 3 says, and the check was shown free of false alarms on one project only - cost: a stale list left by 0.7.0 on a
+  device nobody edits is not found by import. Not a cost in time: 0.04 s for 21 devices, against 0.4 to 0.7 s for
+  reading their values. Checking every device is a decision for the owner.
 
 ## 8. Takeover prompt
 
