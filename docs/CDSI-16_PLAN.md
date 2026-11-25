@@ -90,11 +90,11 @@ from data the IDE exposes (assigned PDOs and their entries vs. the channel list)
         the `%I` address of the first channel of `Slave_3`, for both references.
   - [x] Reproduce the bug: on a copy of the 40B project, import `ref36`'s `Slave_2.device`. Acceptance: export
         (twice) shows SM length 36 but a map-line count and Slave_3 address that differ from `ref36`. Record the numbers.
-- [ ] **Stage 2: find out what the API can do**
-  - [ ] Probe scripts under `tools/` or the scratch root that try to make the IDE rebuild the channel list after
+- [x] **Stage 2: find out what the API can do**
+  - [x] Probe scripts under `tools/` or the scratch root that try to make the IDE rebuild the channel list after
         a PDO assignment change (whatever the object model offers: methods on the device/connector/parameter
         set, an update/"apply" call, re-reading the device description, `system.commands`, ...).
-  - [ ] Acceptance: either a probe that turns the reproduced-bug project into one whose export equals `ref36`
+  - [x] Acceptance: either a probe that turns the reproduced-bug project into one whose export equals `ref36`
         structurally, or a list of what was tried with the observed result of each.
 - [ ] **Stage 3: implement**
   - [ ] Goal 1 if stage 2 found a way, otherwise goal 2. Goal 3 in both cases.
@@ -142,6 +142,46 @@ Every other "plain" value that differs between the references: PDO `Sm` of 1602/
 SM and FMMU lengths; `Number of Inputs/Outputs` on both `c1/16777216`+`c1/33554432` and their copies
 `c1/268435456`+`c1/536870912`. The remaining 500 or so are spelling (`false`/`False`, `16#1a00`/`16#1A00`,
 entry `Default`), left by the description the GUI read.
+
+### Stage 2 result: the IDE can rebuild the list (DIADesigner-AX 1.10, `--noUI`)
+
+What works: inside the script connector's private `PerformWithWriteableCopy`, the EtherCAT plug-in's public class
+`LoadSavePDOData`: `LoadDataFromConfig(list, connector)`, set `iSm` on the PDOs that move, `SaveMappingToConfig(list,
+pdo, connector)` for each moved one. On a 40B copy it produced 36B: channels, keys, SM and FMMU lengths, all four
+counts, nothing else. Mapped variables stayed with their entries. Saved, reopened in another process, exported twice:
+Slave_3..6 identical to `ref36`; Slave_2 differs only in seven padding channels' names (`---` for empty), which come
+from the entry `Name` values the file would also write.
+
+| Tried | Result |
+|---|---|
+| plain value writes (0.7.0), save, reopen, build | channel list stays 40B (stage 1) |
+| `device.update()` to the same identification | raises, on every slave, untouched ones too: Delta replaces the command and opens a window (`CustomizedUpdateDeviceCommand.ShowPromptDialog`, `NullReferenceException`) |
+| `LoadSavePDOData.AddAndUpdateEntries` instead | channels rebuilt, but the `Sm` of 1A05/1A15 stays assigned: inconsistent |
+| `SaveMappingToConfig` for one moved PDO only | rebuilds its direction only; one call per moved PDO is needed |
+| `SaveMappingToConfig` for every PDO, nothing moved | no difference: idempotent |
+| an exception inside the writable copy | nothing is committed: one transaction |
+| downstream addresses in the same process | old until the project is saved or built; either recomputes them |
+
+Guard candidate, measured on every device of both fixtures (16 with PDOs, 8 models): per connector and direction, the
+assigned PDOs' entry bits equal the channels' bits, and each sync manager's length equals its PDOs' bytes. No false
+alarm; fires on the stage-1 project (288 against 320, 288 against 128). Two drives (`i950_BS_STO`) have PDOs and no
+channel: their module `Axis_A` carries the channels.
+
+### Rulings
+
+- Ruling: goal 1, through the plug-in's own class - it reproduces the GUI's result exactly and commits atomically -
+  if a later plug-in renames it, import falls back to refusing (goal 2), by name.
+- Ruling: "structurally identical" = per slave, the set of (channel key, name, address) and every length, `Sm` and
+  count; spelling of other values is reported, not judged - the two fixtures spell 500 values differently - a real
+  difference in one of those would be missed here, but import reads every value back anyway.
+- Ruling: refused before anything is written: a device whose list does not match its PDOs already, one with no
+  channels or no sync managers of its own (a modular drive or its module), a file whose lengths disagree with its
+  own assignment, an entry `Size` change - none of these was shown to rebuild right, and the Process Data page does
+  them - cost: a person has to open the IDE for them.
+- Ruling: lengths and counts the rebuild computed are not overwritten from the file; a line that disagrees is named -
+  writing it back would recreate the bug - cost: editing only `Sm` lines exits 1 until the named lines are fixed too.
+- Ruling: the guard fails any applied device that is inconsistent afterwards, also when it was before - "never silent"
+  is decision 1 - cost: a slave whose channels legitimately differ from its PDOs (none found) exits 1 on every import.
 
 ## 8. Takeover prompt
 
