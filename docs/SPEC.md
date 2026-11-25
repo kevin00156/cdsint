@@ -1572,15 +1572,51 @@ map c1/33554435 = Application.GVL_Axis.aDriveErrorCodes[1]   # Error Code, %IW5
    or moves a device; a device with no file is left alone.
 3. Read every parameter of the device once, then write only the values and
    mappings that differ. Reading first also avoids the first write after
-   opening a project failing half way (research 8.1).
+   opening a project failing half way (research 8.1). A changed PDO
+   assignment goes first, and not as a value (below).
 4. Read everything back. A value not as written is a failure naming the
-   device and the key.
+   device and the key. So is a channel list that does not match the assigned
+   PDOs (below).
 5. When any device changed, the result says so in `data.devices_changed`, and
    `data.full_download` carries the IDE's own judgement: true when
    `is_online_change_possible` is false after the change, which it was for a
    changed cycle, startup SDO or station address (research 5.1). A full
    download stops the application; this is the caller's warning before any
    `plc` command.
+
+**PDO assignment.** Which PDOs a slave sends is each PDO's `Sm` line (`-1` is
+unassigned). The IDE lays the process image out from the slave's channel
+list, and writing `Sm` and the sync manager's `length` as values leaves that
+list as it was: the build is clean and every slave behind this one reads the
+wrong bytes (GitHub #16). So when a file changes an `Sm`:
+
+- It is assigned through the EtherCAT plug-in's own save, which the script API
+  does not offer (`engine/ide_private.py`, research 13). It rebuilds the
+  channel list, renumbers the channel keys, keeps each variable on its PDO
+  entry, and computes the sync manager and FMMU lengths and the channel
+  counts. Addresses of the slaves behind follow on the save or the build.
+- The file's other values come next, except the ones the rebuild computed,
+  then its mappings. A line that disagrees with a computed value is a failure
+  naming both numbers. A file with a `map` line still numbered for the old
+  list writes no mapping, and names each such line.
+- Refused before anything is written, the project unchanged: a file whose
+  sync manager length is not the size of the PDOs it assigns, an entry `Size`
+  changed in the same file, a mandatory PDO unassigned, a sync manager that
+  does not exist, a device whose list did not match its PDOs before, a device
+  without channels or sync managers of its own (a modular drive, or its
+  module), and an IDE whose plug-in has no such save. The message says when
+  the change is to be made on the Process Data page instead.
+
+A file that changes no `Sm` but would leave the list not matching, such as an
+entry's `Size`, is refused the same way.
+
+**The check.** After any device file is applied, for each connector with
+channels: the bits of the assigned PDOs' entries equal the bits of the
+channels, in each direction, and each sync manager's length is its PDOs'
+size. Otherwise the device is in `failed_objects`, also when it was already
+so before the import. A connector with PDOs and no channel is not compared:
+a modular drive's module carries the channels. A device whose file changes
+nothing is not checked.
 
 **Permission.** A new settings key, `devices` (boolean, default `false`).
 Without it, export and compare work as usual and import applies nothing to a
@@ -1896,6 +1932,7 @@ or a person's record; anything else is "should work".
 | PLC trace: private buffer member `PerformWithWriteableCopy` present | verified by reflection and by recording, 2026-09-23 | not checked | not checked | not checked | not checked |
 | Watcher: private `ScriptOnline._executor`, which online calls from the watcher's timer go through (`docs/trace-research.md` 15.2): the import pre-flight and the watcher's `plc trace` checks | verified by reflection and by the import pre-flight in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 | Watcher: `login`, `logout`, `create_boot_application`, `start`, `stop`, `create_online_device` and `upload_file` from the watcher's timer through the same nested script run, with `OnlineChangeOption` `Keep`, `Never`, `Force` and `Try` (6.12). No private member beyond the row above | each call measured by probe in an interactive IDE against one soft PLC, 2026-10-21 (`docs/trace-research.md` 17); `plc login` (plain and both `--method`s), `logout`, `run`, `stop` and a watcher `plc trace` after them run end to end there through the watcher, each checked against the controller's audit log, 2026-10-21 (17.13) | not checked | not checked | not checked | not checked |
+| Device import: the script connector's private `PerformWithWriteableCopy` and the EtherCAT plug-in's `LoadSavePDOData` (6.10, `docs/ethercat-research.md` 13) | not checked | not checked | not checked | not checked | verified in the `--project` form, plug-in 4.10.0.0, 2026-11-25; not checked through the watcher |
 | Trace commands: private `ScriptTraceObject.CreateScriptTraceObject` and the trace editor's `_view` / `LoadTrace` (6.11) | verified by job, apply, save and show in an interactive IDE, 2026-10-12 | not checked | not checked | not checked | not checked |
 
 Every cell in this table is "one vendor's IDE opening its own project". One

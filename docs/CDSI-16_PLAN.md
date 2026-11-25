@@ -107,8 +107,8 @@ from data the IDE exposes (assigned PDOs and their entries vs. the channel list)
   - [x] Acceptance: a `.device` import that only changes `map` lines or a plain value still works exactly as
         before (run it on a copy; show before/after).
   - [x] Existing test suite green (`pytest`); new unit tests for whatever logic lives outside the IDE.
-- [ ] **Stage 4: documents**
-  - [ ] `docs/SPEC.md`, `docs/REFERENCE.md`, `docs/ethercat-research.md`, the skill text under `skills/`, and
+- [x] **Stage 4: documents**
+  - [x] `docs/SPEC.md`, `docs/REFERENCE.md`, `docs/ethercat-research.md`, the skill text under `skills/`, and
         `CHANGELOG.md` say what `import` now does with PDO assignment changes and how to check the result.
   - [ ] Acceptance (needs a human): pushing the branch, opening the PR, installing the build into the user's
         IDEs. Do not do these. List them.
@@ -155,14 +155,14 @@ from the entry `Name` values the file would also write.
 | Tried | Result |
 |---|---|
 | plain value writes (0.7.0), save, reopen, build | channel list stays 40B (stage 1) |
-| `device.update()` to the same identification | raises, on every slave, untouched ones too: Delta replaces the command and opens a window (`CustomizedUpdateDeviceCommand.ShowPromptDialog`, `NullReferenceException`) |
+| `device.update()` to the same identification | raises, on all three slaves tried, untouched ones too: Delta replaces the command and opens a window (`CustomizedUpdateDeviceCommand.ShowPromptDialog`, `NullReferenceException`) |
 | `LoadSavePDOData.AddAndUpdateEntries` instead | channels rebuilt, but the `Sm` of 1A05/1A15 stays assigned: inconsistent |
 | `SaveMappingToConfig` for one moved PDO only | rebuilds its direction only; one call per moved PDO is needed |
 | `SaveMappingToConfig` for every PDO, nothing moved | no difference: idempotent |
 | an exception inside the writable copy | nothing is committed: one transaction |
 | downstream addresses in the same process | old until the project is saved or built; either recomputes them |
 
-Guard candidate, measured on every device of both fixtures (16 with PDOs, 8 models): per connector and direction, the
+Guard candidate, measured on every device of both fixtures (14 with PDOs, 12 of them with channels): per connector and direction, the
 assigned PDOs' entry bits equal the channels' bits, and each sync manager's length equals its PDOs' bytes. No false
 alarm; fires on the stage-1 project (288 against 320, 288 against 128). Two drives (`i950_BS_STO`) have PDOs and no
 channel: their module `Axis_A` carries the channels.
